@@ -1,0 +1,11 @@
+{
+  "extends": ["stylelint-config-standard", "stylelint-prettier/recommended"],
+  "plugins": ["stylelint-prettier"],
+  "rules": {
+    "prettier/prettier": true,
+    "selector-class-pattern": null,
+    "custom-property-pattern": null,
+    "no-descending-specificity": null,
+    "no-empty-source": null
+  }
+}

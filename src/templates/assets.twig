@@ -1,0 +1,629 @@
+{% extends '_layouts/cp' %}
+
+{% set title = 'Asset Accessibility'|t('accessibility-audit') %}
+{% set selectedSubnavItem = 'assets' %}
+{% set crumbs = [
+    { label: 'Accessibility Audit'|t('accessibility-audit'), url: cpUrl('accessibility-audit') },
+    { label: title },
+] %}
+
+{% block actionButton %}
+<div class="flex gap-s">
+    {% if canRunScans %}
+    
+        <form method="post">
+            {{ csrfInput() }}
+            {{ actionInput('accessibility-audit/audit/scan-assets') }}
+            {{ redirectInput(url('accessibility-audit/assets')) }}
+            <button type="submit" class="btn">{{ 'Scan all assets'|t('accessibility-audit') }}</button>
+        </form>
+    {% endif %}
+    {% if assetIssues|length > 0 and hasApiKey and activeFilter != 'decorative' %}
+    <button id="accessibility-audit-generate-all" class="btn submit">
+        <span class="cp-icon small" aria-hidden="true">{{ iconSvg('sparkles') }}</span>
+        {{ 'Generate all alt text'|t('accessibility-audit') }}
+    </button>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block main %}
+<div>
+    
+    
+       
+        {% if not hasApiKey %}
+    <p class="light mb-l">
+            <a href="{{ url('accessibility-audit/settings') }}" class="go">{{ 'Add an Anthropic API key to enable AI alt text generation.'|t('accessibility-audit') }}</a>
+    </p>
+        {% endif %}
+    
+
+
+    {% set issueGroups = {
+        'asset-alt-missing':  { label: 'Missing alt'|t('accessibility-audit'),        severity: 'warning', desc: 'these images are invisible to screen readers unless they are decorative'|t('accessibility-audit'), rows: [] },
+        'asset-alt-filename': { label: 'Filename as alt'|t('accessibility-audit'),     severity: 'warning', desc: 'alt text looks auto-generated from the filename'|t('accessibility-audit'),   rows: [] },
+        'asset-alt-short':    { label: 'Very short alt'|t('accessibility-audit'),      severity: 'notice',  desc: 'very short alt text may not describe the image'|t('accessibility-audit'),    rows: [] },
+        'pdf-accessibility':  { label: 'PDF accessibility'|t('accessibility-audit'),   severity: 'notice',  desc: 'PDF files need a manual accessibility review'|t('accessibility-audit'),      rows: [] },
+    } %}
+
+    {% if activeFilter == 'decorative' %}
+        {% set groups = {
+            'decorative': { label: 'Decorative'|t('accessibility-audit'), severity: 'notice', desc: 'these images are marked decorative and correctly carry no alt text'|t('accessibility-audit'), rows: [] },
+        } %}
+        {% for row in assetIssues %}
+            {% set groups = groups|merge({
+                'decorative': groups['decorative']|merge({
+                    rows: groups['decorative'].rows|merge([{ asset: row.asset, currentAlt: row.currentAlt ?? '', decorative: true }]),
+                }),
+            }) %}
+        {% endfor %}
+    {% else %}
+        {% set groups = issueGroups %}
+        {% for row in assetIssues %}
+            {% for issue in row.issues %}
+                {% if groups[issue.ruleId] is defined %}
+                    {% set groups = groups|merge({
+                        (issue.ruleId): groups[issue.ruleId]|merge({
+                            rows: groups[issue.ruleId].rows|merge([{ asset: row.asset, issue: issue, currentAlt: row.currentAlt, decorative: row.decorative ?? false }]),
+                        }),
+                    }) %}
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+    {% endif %}
+
+   
+    {% set siteParam = craft.app.request.getQueryParam('site') %}
+    {% set hasIssues = (storedStats and storedStats.withIssues > 0) or (activeFilter != 'decorative' and assetIssues|length > 0) %}
+    {% set hasDecorative = decorativeCount > 0 %}
+    {% set allCount = storedStats ? storedStats.withIssues : (activeFilter == 'decorative' ? 0 : assetIssues|length) %}
+    {% if hasIssues or hasDecorative or volumes|length > 1 or currentSearch %}
+        <div class="accessibility-audit-toolbar mb-m">
+            {% if hasIssues or hasDecorative %}
+
+                {% set filterBase = {} %}
+                {% if siteParam %}{% set filterBase = filterBase|merge({site: siteParam}) %}{% endif %}
+                {% if currentVolume %}{% set filterBase = filterBase|merge({volume: currentVolume}) %}{% endif %}
+                {% if currentSearch %}{% set filterBase = filterBase|merge({search: currentSearch}) %}{% endif %}
+                <div class="btngroup accessibility-audit-asset-filters" role="group" aria-label="{{ 'Filter by issue type'|t('accessibility-audit') }}">
+                    <a href="{{ url('accessibility-audit/assets', filterBase) }}" class="btn accessibility-audit-asset-filter{% if not activeFilter %} active{% endif %}"{% if not activeFilter %} aria-current="page"{% endif %}>{{ 'All'|t('accessibility-audit') }} <span class="badge"> {{ allCount }}</span></a>
+                    {% for ruleId, group in issueGroups %}
+                        {% set ruleCount = storedStats ? (storedStats.byRule[ruleId] ?? 0) : (activeFilter == 'decorative' ? 0 : group.rows|length) %}
+                        {% if ruleCount > 0 %}
+                            <a href="{{ url('accessibility-audit/assets', filterBase|merge({filter: ruleId})) }}" class="btn accessibility-audit-asset-filter{% if activeFilter == ruleId %} active{% endif %}"{% if activeFilter == ruleId %} aria-current="page"{% endif %}>{{ group.label }} <span class="badge">  {{ ruleCount }}</span></a>
+                        {% endif %}
+                    {% endfor %}
+                    {% if hasDecorative %}
+                        <a href="{{ url('accessibility-audit/assets', filterBase|merge({filter: 'decorative'})) }}" class="btn accessibility-audit-asset-filter{% if activeFilter == 'decorative' %} active{% endif %}"{% if activeFilter == 'decorative' %} aria-current="page"{% endif %}>{{ 'Decorative'|t('accessibility-audit') }} <span class="badge" id="accessibility-audit-decorative-count">  {{ decorativeCount }}</span></a>
+                    {% endif %}
+                </div>
+            {% endif %}
+            <span class="accessibility-audit-spacer"></span>
+       
+            <form method="get" class="accessibility-audit-asset-search" role="search">
+                {% if siteParam %}<input type="hidden" name="site" value="{{ siteParam }}">{% endif %}
+                {% if currentVolume %}<input type="hidden" name="volume" value="{{ currentVolume }}">{% endif %}
+                <div class="texticon search icon clearable">
+                    <input type="text" class="text" name="search" value="{{ currentSearch }}" placeholder="{{ 'Search filenames'|t('accessibility-audit') }}" autocomplete="off" aria-label="{{ 'Search filenames'|t('accessibility-audit') }}">
+                </div>
+                <noscript><button type="submit" class="btn">{{ 'Search'|t('app') }}</button></noscript>
+            </form>
+            {% if volumes|length > 1 %}
+                <form method="get" class="accessibility-audit-asset-volume">
+                    {% if siteParam %}<input type="hidden" name="site" value="{{ siteParam }}">{% endif %}
+                    {% if currentSearch %}<input type="hidden" name="search" value="{{ currentSearch }}">{% endif %}
+                    <label for="accessibility-audit-volume-filter" class="accessibility-audit-meta">{{ 'Volume'|t('accessibility-audit') }}</label>
+                    <div class="select">
+                        <select id="accessibility-audit-volume-filter" name="volume">
+                            <option value="">{{ 'All volumes'|t('accessibility-audit') }}</option>
+                            {% for volume in volumes %}
+                                <option value="{{ volume.handle }}"{% if volume.handle == currentVolume %} selected{% endif %}>{{ volume.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <noscript><button type="submit" class="btn">{{ 'Filter'|t('app') }}</button></noscript>
+                </form>
+            {% endif %}
+        </div>
+    {% endif %}
+
+    {% if assetIssues|length == 0 %}
+        <div class="pane accessibility-audit-assets-empty zilch">
+            {% if activeFilter == 'decorative' %}
+                <p>{{ 'No images marked decorative.'|t('accessibility-audit') }}</p>
+            {% elseif storedStats is null %}
+
+                <p>{{ 'No asset scan has run yet'|t('accessibility-audit') }}</p>
+                <p class="light">{{ 'Run “Scan all assets” to check every image for alt text. It runs in the background as your queue processes.'|t('accessibility-audit') }}</p>
+            {% elseif currentSearch %}
+                <p>{{ 'No images with alt-text issues match “{search}”.'|t('accessibility-audit', {search: currentSearch}) }}</p>
+            {% elseif currentVolume %}
+                <p>{{ 'Every image in this volume has alt text, nice work!'|t('accessibility-audit') }}</p>
+            {% else %}
+                <p>{{ 'All images have alt text, nice work!'|t('accessibility-audit') }}</p>
+            {% endif %}
+        </div>
+    {% else %}
+        <div id="accessibility-audit-generate-progress" class="light mb-m" aria-live="polite" hidden></div>
+
+        <div id="accessibility-audit-bulk-bar" class="accessibility-audit-bulk-bar mb-m" role="region" aria-label="{{ 'Selected'|t('app') }}" hidden>
+            <span class="accessibility-audit-bulk-count" id="accessibility-audit-bulk-count" aria-live="polite"></span>
+            <span class="accessibility-audit-spacer"></span>
+            <button type="button" class="btn small accessibility-audit-bulk-mark">{{ 'Mark decorative'|t('accessibility-audit') }}</button>
+            <button type="button" class="btn small accessibility-audit-bulk-clear">{{ 'Clear decorative'|t('accessibility-audit') }}</button>
+            <button type="button" class="btn small accessibility-audit-bulk-deselect">{{ 'Clear selection'|t('accessibility-audit') }}</button>
+        </div>
+
+        <div id="accessibility-audit-assets-groups" class="pane" style="padding:0;overflow:hidden" data-view="{{ activeFilter }}">
+
+            <div class="accessibility-audit-table-scroll">
+                <table class="data fullwidth">
+                <thead>
+                    <tr>
+                        <th scope="col" class="checkbox-cell thin" style="width:34px">
+                            <input type="checkbox" id="accessibility-audit-select-all" class="checkbox" aria-label="{{ 'Select all images'|t('accessibility-audit') }}">
+                            <label for="accessibility-audit-select-all"></label>
+                        </th>
+                        <th scope="col" style="width:56px"><span class="visually-hidden">{{ 'Thumbnail'|t('accessibility-audit') }}</span></th>
+                        <th scope="col">{{ 'Asset'|t('accessibility-audit') }}</th>
+                        <th scope="col">{{ 'Alt text'|t('accessibility-audit') }}</th>
+                        <th scope="col" style="width:120px">{{ 'Decorative'|t('accessibility-audit') }}</th>
+                        <th scope="col"><span class="visually-hidden">{{ 'Actions'|t('accessibility-audit') }}</span></th>
+                    </tr>
+                </thead>
+                {% for ruleId, group in groups %}
+                    {% if group.rows|length > 0 %}
+                        {% set firstIssue = group.rows|first.issue ?? null %}
+                        <tbody class="accessibility-audit-asset-group" data-rule="{{ ruleId }}">
+                            <tr class="accessibility-audit-asset-band">
+                                <td colspan="6">
+                                    <span class="accessibility-audit-rowline" style="gap:8px">
+                                        <span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--{{ group.severity }}" aria-hidden="true" title="{{ group.label }}"></span>
+                                        <strong>{{ group.label }}</strong>
+                                        <span class="light">&middot; {% if ruleId == 'decorative' %}<span id="accessibility-audit-decorative-band-count">{{ group.rows|length }}</span>{% else %}{{ group.rows|length }}{% endif %}</span>
+                                        <span class="light">{{ group.desc }}</span>
+                                        <span class="accessibility-audit-spacer"></span>
+                                        {% if firstIssue and firstIssue.wcagCriterion %}
+                                            <span class="light">{{ 'WCAG {c} · Level {l}'|t('accessibility-audit', { c: firstIssue.wcagCriterion, l: firstIssue.wcagLevel ?? 'A' }) }}</span>
+                                        {% endif %}
+                                    </span>
+                                </td>
+                            </tr>
+                            {% for item in group.rows %}
+                                {% set asset = item.asset %}
+                                {% set thumbUrl = asset.kind == 'image' ? asset.getUrl({width:104,height:104}) : null %}
+                       
+                                {% set currentAlt = item.currentAlt ?? '' %}
+                                {% set isFilename = ruleId == 'asset-alt-filename' %}
+                                {% set isImageRow = ruleId != 'pdf-accessibility' %}
+                                {% set isDecorative = item.decorative ?? false %}
+                                <tr class="accessibility-audit-asset-item{% if isDecorative %} accessibility-audit-asset-item--decorative{% endif %}" data-asset-id="{{ asset.id }}" data-rule="{{ ruleId }}">
+                                    <td class="checkbox-cell thin">
+                                        {% if isImageRow %}
+                                            <input type="checkbox" id="accessibility-audit-select-{{ asset.id }}" class="checkbox accessibility-audit-row-select" aria-label="{{ 'Select image'|t('accessibility-audit') }}" data-asset-id="{{ asset.id }}">
+                                            <label for="accessibility-audit-select-{{ asset.id }}"></label>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="accessibility-audit-asset-thumb"{% if thumbUrl %} style="background-image:url('{{ thumbUrl|e }}');background-size:cover;background-position:center"{% endif %} aria-hidden="true">
+                                            {% if not thumbUrl %}
+                                                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="3" width="16" height="14" rx="2" stroke="#8A8178" stroke-width="1.5"/><circle cx="7" cy="8" r="1.5" fill="#8A8178"/><path d="M2 14l4-4 3 3 4-5 5 6" stroke="#8A8178" stroke-width="1.5"/></svg>
+                                            {% endif %}
+                                        </span>
+                                    </td>
+                                    <th scope="row">
+                                        <a href="{{ asset.cpEditUrl }}">{{ asset.title ?: asset.filename }}</a>
+                                        <div class="light" style="font-size:11px">{% if asset.width %}{{ asset.width }}×{{ asset.height }} &middot; {% endif %}{{ asset.volume.name ?? '' }}</div>
+                                    </th>
+                                    <td class="accessibility-audit-asset-alt">
+                                        {% if isFilename or ruleId == 'asset-alt-short' %}
+                                            <span class="accessibility-audit-filename-alt">"{{ currentAlt }}"</span>
+                                        {% else %}
+                                            <span class="accessibility-audit-no-alt">{{ 'No alt text'|t('accessibility-audit') }}</span>
+                                        {% endif %}
+                                        <span class="accessibility-audit-decorative-note"{% if not isDecorative %} hidden{% endif %}>{{ 'Marked decorative, no alt text needed.'|t('accessibility-audit') }}</span>
+                                    </td>
+                                    <td class="accessibility-audit-asset-decorative">
+                                        {% if isImageRow %}
+                                            <button type="button"
+                                                    class="accessibility-audit-decorative-switch{% if isDecorative %} on{% endif %}"
+                                                    role="switch"
+                                                    aria-checked="{{ isDecorative ? 'true' : 'false' }}"
+                                                    aria-label="{{ 'Mark as decorative'|t('accessibility-audit') }}"
+                                                    data-asset-id="{{ asset.id }}">
+                                                <span class="accessibility-audit-decorative-switch__knob"></span>
+                                            </button>
+                                        {% endif %}
+                                    </td>
+                                    <td class="accessibility-audit-asset-action">
+                                        <button type="button" class="btn small accessibility-audit-edit-btn"{% if isDecorative %} hidden{% endif %}
+                                                data-asset-id="{{ asset.id }}"
+                                                data-value="{{ currentAlt|e('html_attr') }}">
+                                            {{ isFilename ? 'Rewrite'|t('accessibility-audit') : 'Add alt'|t('accessibility-audit') }}
+                                        </button>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    {% endif %}
+                {% endfor %}
+            </table>
+            </div>
+
+
+            {% set issueCount = stats.withIssues ?? 0 %}
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:14px 20px;border-top:1px solid var(--aa-border-section)">
+                <span class="accessibility-audit-meta">
+                    {{ '{total} images scanned'|t('accessibility-audit', {total: stats.total}) }}
+                    &middot;
+                    {% if issueCount == -1 %}
+                        {{ 'issue count needs a scan on a library this size'|t('accessibility-audit') }}
+                    {% else %}
+                        {{ '{count} with issues'|t('accessibility-audit', {count: issueCount}) }}
+                    {% endif %}
+                    {% if storedStats %}&middot; {{ 'last scanned {date}'|t('accessibility-audit', {date: storedStats.dateScanned|date('short')}) }}{% endif %}
+                    <span id="accessibility-audit-asset-draft-stat" hidden>&middot; <span id="accessibility-audit-asset-draft-count">0</span> {{ 'draft pending review'|t('accessibility-audit') }}</span>
+                </span>
+                <span class="accessibility-audit-spacer"></span>
+                {% if totalPages > 1 %}
+                    {% include '_includes/pagination' with {
+                        pageInfo: pageInfo,
+                        itemLabel: 'image'|t('accessibility-audit'),
+                        itemsLabel: 'images'|t('accessibility-audit'),
+                    } only %}
+                {% endif %}
+                <a href="{{ cpUrl('assets') }}" class="go">{{ 'Open asset library'|t('accessibility-audit') }}</a>
+            </div>
+        </div>
+    {% endif %}
+
+</div>
+
+{% js %}
+(function () {
+  const generateUrl     = {{ actionUrl('accessibility-audit/alt/generate')|json_encode|raw }};
+  const saveUrl         = {{ actionUrl('accessibility-audit/alt/save')|json_encode|raw }};
+  const setDecorativeUrl = {{ actionUrl('accessibility-audit/alt/set-decorative')|json_encode|raw }};
+  const setDecorativeBulkUrl = {{ actionUrl('accessibility-audit/alt/set-decorative-bulk')|json_encode|raw }};
+  const csrfName    = window.Craft ? Craft.csrfTokenName  : (window.csrfTokenName  || 'CRAFT_CSRF_TOKEN');
+  const csrfValue   = window.Craft ? Craft.csrfTokenValue : (window.csrfTokenValue || '');
+  const sparkleIcon = {{ iconSvg('sparkles')|json_encode|raw }};
+  const checkIcon   = {{ iconSvg('check')|json_encode|raw }};
+  const activeView = {{ activeFilter|json_encode|raw }};
+  const emptyAllHaveAlt   = {{ 'All images now have alt text, nice work!'|t('accessibility-audit')|json_encode|raw }};
+  const emptyNoDecorative = {{ 'No images marked decorative.'|t('accessibility-audit')|json_encode|raw }};
+
+  function post(url, data) {
+    const fd = new FormData();
+    fd.append(csrfName, csrfValue);
+    Object.entries(data).forEach(([k, v]) => {
+      if (Array.isArray(v)) {
+        v.forEach((item) => fd.append(k + '[]', item));
+      } else {
+        fd.append(k, v);
+      }
+    });
+    return fetch(url, {
+      method: 'POST',
+      body: fd,
+      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    }).then(r => r.json());
+  }
+
+  /* Shared with cp.js and the frontend overlay via accessibility-audit-shared.js */
+  var esc = window.AccessibilityAuditShared.escHtml;
+
+  (function () {
+    const select = document.getElementById('accessibility-audit-volume-filter');
+    if (select && select.form) {
+      select.addEventListener('change', () => select.form.submit());
+    }
+  })();
+
+  function updateDraftCount() {
+    const count = document.querySelectorAll('.accessibility-audit-alt-input--pending').length;
+    const stat  = document.getElementById('accessibility-audit-asset-draft-stat');
+    const out    = document.getElementById('accessibility-audit-asset-draft-count');
+    if (out) out.textContent = String(count);
+    if (stat) stat.hidden = count === 0;
+  }
+
+  const hasApiKey = {{ hasApiKey ? 'true' : 'false' }};
+
+  function openEditor(row, value) {
+    const assetId = row.dataset.assetId;
+    const altCell = row.querySelector('.accessibility-audit-asset-alt');
+    const actCell = row.querySelector('.accessibility-audit-asset-action');
+    // Guard against re-opening an already-open row.
+    if (!altCell || !actCell || row.querySelector('.accessibility-audit-alt-input')) return;
+
+    row._restAlt = altCell.innerHTML;
+    row._restAct = actCell.innerHTML;
+
+    const labelId = 'accessibility-audit-alt-' + esc(String(assetId));
+    altCell.innerHTML =
+      '<label for="' + labelId + '" class="visually-hidden">{{ 'Alt text'|t('accessibility-audit') }}</label>' +
+      '<input type="text" id="' + labelId + '" class="text accessibility-audit-alt-input accessibility-audit-alt-input--pending" maxlength="125" ' +
+      'placeholder="{{ 'Describe what the image shows…'|t('accessibility-audit') }}" value="' + esc(value || '') + '">';
+
+    actCell.innerHTML =
+      (hasApiKey
+        ? '<button type="button" class="btn accessibility-audit-icon-btn accessibility-audit-gen-btn" title="{{ 'Generate with AI'|t('accessibility-audit') }}" aria-label="{{ 'Generate with AI'|t('accessibility-audit') }}"><span class="cp-icon small" aria-hidden="true">' + sparkleIcon + '</span></button>'
+        : '') +
+      '<button type="button" class="btn submit accessibility-audit-save-btn">{{ 'Save'|t('app') }}</button>' +
+      '<button type="button" class="btn accessibility-audit-icon-btn accessibility-audit-cancel-btn" title="{{ 'Cancel'|t('app') }}" aria-label="{{ 'Cancel'|t('app') }}"><span data-icon="remove" aria-hidden="true"></span></button>';
+
+    altCell.querySelector('.accessibility-audit-alt-input').focus();
+    updateDraftCount();
+  }
+
+  function closeEditor(row) {
+    if (row._restAlt != null) row.querySelector('.accessibility-audit-asset-alt').innerHTML = row._restAlt;
+    if (row._restAct != null) row.querySelector('.accessibility-audit-asset-action').innerHTML = row._restAct;
+    updateDraftCount();
+  }
+
+  async function generateInto(row) {
+    const input  = row.querySelector('.accessibility-audit-alt-input');
+    const genBtn = row.querySelector('.accessibility-audit-gen-btn');
+    if (!input) return;
+    if (genBtn) genBtn.disabled = true;
+    const data = await post(generateUrl, { assetId: row.dataset.assetId });
+    if (genBtn) genBtn.disabled = false;
+    if (data.success) {
+      input.value = data.alt;
+      input.focus();
+    } else if (window.Craft && Craft.cp) {
+      Craft.cp.displayError(data.error);
+    }
+  }
+
+  async function saveAlt(row) {
+    const input   = row.querySelector('.accessibility-audit-alt-input');
+    const saveBtn = row.querySelector('.accessibility-audit-save-btn');
+    if (!input || !saveBtn) return;
+    saveBtn.textContent = '{{ 'Saving…'|t('accessibility-audit') }}';
+    saveBtn.disabled    = true;
+
+    const data = await post(saveUrl, { assetId: row.dataset.assetId, altText: input.value.trim() });
+    if (data.success) {
+      if (window.Craft && Craft.cp) {
+        (Craft.cp.displaySuccess || Craft.cp.displayNotice).call(Craft.cp, '{{ 'Alt text saved.'|t('accessibility-audit') }}');
+      }
+      removeRow(row, emptyAllHaveAlt);
+    } else {
+      saveBtn.textContent = '{{ 'Save'|t('app') }}';
+      saveBtn.disabled = false;
+      if (window.Craft && Craft.cp) Craft.cp.displayError(data.error);
+    }
+  }
+
+  function removeRow(row, emptyMessage) {
+    row.style.transition = 'opacity 0.3s';
+    row.style.opacity    = '0';
+    setTimeout(() => {
+      const section = row.closest('.accessibility-audit-asset-group');
+      row.remove();
+      if (section && section.querySelectorAll('.accessibility-audit-asset-item').length === 0) {
+        section.remove();
+      }
+      const groups = document.getElementById('accessibility-audit-assets-groups');
+      if (groups && groups.querySelectorAll('.accessibility-audit-asset-item').length === 0) {
+        groups.innerHTML =
+          '<div class="pane accessibility-audit-assets-empty"><p class="accessibility-audit-empty-title">' + esc(emptyMessage) + '</p></div>';
+      }
+      updateDraftCount();
+      updateDecorativeCount();
+      updateBulkBar();
+    }, 300);
+  }
+
+  function updateDecorativeCount() {
+    if (activeView !== 'decorative') return;
+    const groups = document.getElementById('accessibility-audit-assets-groups');
+    const n = groups ? groups.querySelectorAll('.accessibility-audit-asset-item').length : 0;
+    const chip = document.getElementById('accessibility-audit-decorative-count');
+    if (chip) chip.textContent = String(n);
+    const band = document.getElementById('accessibility-audit-decorative-band-count');
+    if (band) band.textContent = String(n);
+  }
+
+  async function toggleDecorative(sw) {
+    const row = sw.closest('.accessibility-audit-asset-item');
+    if (!row || sw.disabled) return;
+
+    const next = !sw.classList.contains('on');
+    sw.disabled = true;
+
+    const data = await post(setDecorativeUrl, { assetId: sw.dataset.assetId, decorative: next ? '1' : '' });
+    sw.disabled = false;
+
+    if (!data.success) {
+      if (window.Craft && Craft.cp) Craft.cp.displayError(data.error);
+      return;
+    }
+
+    if (window.Craft && Craft.cp) {
+      Craft.cp.displayNotice(next
+        ? '{{ 'Marked decorative.'|t('accessibility-audit') }}'
+        : '{{ 'No longer decorative.'|t('accessibility-audit') }}');
+    }
+
+    if (activeView === 'decorative' && !next) {
+      removeRow(row, emptyNoDecorative);
+      return;
+    }
+
+    applyDecorativeUi(row, next);
+  }
+
+  function applyDecorativeUi(row, on) {
+
+    if (row.querySelector('.accessibility-audit-alt-input')) closeEditor(row);
+
+    const sw = row.querySelector('.accessibility-audit-decorative-switch');
+    if (sw) {
+      sw.classList.toggle('on', on);
+      sw.setAttribute('aria-checked', on ? 'true' : 'false');
+    }
+
+    row.classList.toggle('accessibility-audit-asset-item--decorative', on);
+
+    const editBtn = row.querySelector('.accessibility-audit-edit-btn');
+    if (editBtn) editBtn.hidden = on;
+    const note = row.querySelector('.accessibility-audit-decorative-note');
+    if (note) note.hidden = !on;
+  }
+
+  function selectedRowCheckboxes() {
+    return [...document.querySelectorAll('.accessibility-audit-row-select:checked')];
+  }
+
+  function updateBulkBar() {
+    const bar = document.getElementById('accessibility-audit-bulk-bar');
+    if (!bar) return;
+
+    const all      = [...document.querySelectorAll('.accessibility-audit-row-select')];
+    const selected = all.filter((cb) => cb.checked);
+
+    bar.hidden = selected.length === 0;
+
+    const label = document.getElementById('accessibility-audit-bulk-count');
+    if (label && window.Craft) {
+      label.textContent = Craft.t('accessibility-audit', '{n} selected', { n: selected.length });
+    }
+
+    const selectAll = document.getElementById('accessibility-audit-select-all');
+    if (selectAll) {
+      selectAll.checked = all.length > 0 && selected.length === all.length;
+      selectAll.indeterminate = selected.length > 0 && selected.length < all.length;
+    }
+  }
+
+  function clearSelection() {
+    document.querySelectorAll('.accessibility-audit-row-select:checked')
+      .forEach((cb) => { cb.checked = false; });
+    updateBulkBar();
+  }
+
+  function setBulkBusy(busy) {
+    document.querySelectorAll('#accessibility-audit-bulk-bar .btn')
+      .forEach((b) => { b.disabled = busy; });
+  }
+
+  async function applyBulk(decorative) {
+    const checkboxes = selectedRowCheckboxes();
+    if (!checkboxes.length) return;
+
+    const ids = checkboxes.map((cb) => cb.dataset.assetId);
+
+    if (decorative && window.Craft) {
+      const message = Craft.t(
+        'accessibility-audit',
+        'Marking images decorative hides missing-alt warnings. Only mark images that carry no information. Mark {n} images decorative?',
+        { n: ids.length },
+      );
+      if (!window.confirm(message)) return;
+    }
+
+    setBulkBusy(true);
+    const data = await post(setDecorativeBulkUrl, { assetIds: ids, decorative: decorative ? '1' : '' });
+    setBulkBusy(false);
+
+    if (!data.success) {
+      if (window.Craft && Craft.cp) Craft.cp.displayError(data.error);
+      return;
+    }
+
+    checkboxes.forEach((cb) => {
+      const row = cb.closest('.accessibility-audit-asset-item');
+      cb.checked = false;
+      if (!row) return;
+      if (activeView === 'decorative' && !decorative) {
+        removeRow(row, emptyNoDecorative);
+        return;
+      }
+      applyDecorativeUi(row, decorative);
+    });
+    updateBulkBar();
+
+    if (window.Craft && Craft.cp) {
+      const notice = decorative
+        ? Craft.t('accessibility-audit', '{n} images marked decorative.', { n: data.count })
+        : Craft.t('accessibility-audit', '{n} images no longer decorative.', { n: data.count });
+      Craft.cp.displayNotice(notice);
+    }
+  }
+
+  (function () {
+    const selectAll = document.getElementById('accessibility-audit-select-all');
+    if (selectAll) {
+      selectAll.addEventListener('change', () => {
+        document.querySelectorAll('.accessibility-audit-row-select')
+          .forEach((cb) => { cb.checked = selectAll.checked; });
+        updateBulkBar();
+      });
+    }
+
+    // Row checkboxes are delegated so the bar stays in sync no matter which
+    // group a row sits in.
+    document.addEventListener('change', (e) => {
+      if (e.target.classList && e.target.classList.contains('accessibility-audit-row-select')) {
+        updateBulkBar();
+      }
+    });
+  })();
+
+  // ── Delegated row-action clicks ────────────────────────────────────────────
+  document.addEventListener('click', (e) => {
+    const decoSwitch = e.target.closest('.accessibility-audit-decorative-switch');
+    if (decoSwitch) { toggleDecorative(decoSwitch); return; }
+    const editBtn = e.target.closest('.accessibility-audit-edit-btn');
+    if (editBtn) { openEditor(editBtn.closest('.accessibility-audit-asset-item'), editBtn.dataset.value); return; }
+    const genBtn = e.target.closest('.accessibility-audit-gen-btn');
+    if (genBtn) { generateInto(genBtn.closest('.accessibility-audit-asset-item')); return; }
+    const saveBtn = e.target.closest('.accessibility-audit-save-btn');
+    if (saveBtn) { saveAlt(saveBtn.closest('.accessibility-audit-asset-item')); return; }
+    const cancelBtn = e.target.closest('.accessibility-audit-cancel-btn');
+    if (cancelBtn) { closeEditor(cancelBtn.closest('.accessibility-audit-asset-item')); return; }
+    const bulkMark = e.target.closest('.accessibility-audit-bulk-mark');
+    if (bulkMark) { applyBulk(true); return; }
+    const bulkClear = e.target.closest('.accessibility-audit-bulk-clear');
+    if (bulkClear) { applyBulk(false); return; }
+    const bulkDeselect = e.target.closest('.accessibility-audit-bulk-deselect');
+    if (bulkDeselect) { clearSelection(); return; }
+  });
+
+  // ── Generate all ──────────────────────────────────────────────────────────
+
+  const generateAllBtn  = document.getElementById('accessibility-audit-generate-all');
+  const progressEl      = document.getElementById('accessibility-audit-generate-progress');
+
+  if (generateAllBtn) {
+    generateAllBtn.addEventListener('click', async () => {
+      const rows = [...document.querySelectorAll('.accessibility-audit-asset-item')];
+      generateAllBtn.disabled = true;
+      if (progressEl) progressEl.hidden = false;
+
+      let done = 0;
+      for (const row of rows) {
+        if (progressEl) {
+          progressEl.textContent = `{{ 'Generating'|t('accessibility-audit') }} ${done + 1} / ${rows.length}…`;
+        }
+        const eb = row.querySelector('.accessibility-audit-edit-btn');
+        if (eb) openEditor(row, eb.dataset.value);
+        await generateInto(row);
+        done++;
+        
+        await new Promise(r => setTimeout(r, 300));
+      }
+
+      if (progressEl) progressEl.hidden = true;
+      generateAllBtn.disabled = false;
+    });
+  }
+
+})();
+{% endjs %}
+{% endblock %}

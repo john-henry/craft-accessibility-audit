@@ -1,0 +1,426 @@
+{% extends '_layouts/cp' %}
+{% import '_includes/forms.twig' as forms %}
+
+{% set title = 'Accessibility Statement'|t('accessibility-audit') %}
+{% set selectedSubnavItem = 'statement' %}
+{% set crumbs = [
+    { label: 'Accessibility Audit'|t('accessibility-audit'), url: cpUrl('accessibility-audit') },
+    { label: title },
+] %}
+{% set docTitle = title ~ ': Accessibility Audit' %}
+
+{% set fullPageForm = true %}
+
+{% if sites|length > 1 %}
+    {% set crumbs = [{
+        id: 'site-crumb',
+        icon: 'world',
+        label: requestedSite.name|t('site'),
+        menu: { items: siteMenuItems(sites, requestedSite), label: 'Select site'|t('app') },
+    }]|merge(crumbs ?? []) %}
+{% endif %}
+
+{% block actionButton %}
+    <a href="{{ cpUrl('accessibility-audit/statement/preview', { site: siteHandle }) }}"
+       target="_blank" rel="noopener" class="btn">
+        {{ 'Preview'|t('accessibility-audit') }}
+    </a>
+    <button type="submit" class="btn submit">{{ 'Save'|t('app') }}</button>
+{% endblock %}
+
+{% block details %}
+<fieldset>
+    <legend class="h6">{{ 'Statement or VPAT?'|t('accessibility-audit') }}</legend>
+    <div class="meta accessibility-audit-ref">
+        <p class="accessibility-audit-ref__intro">{{ 'This is the page you publish on the site telling the public how accessible it is and who to contact. In the EU and the UK, publishing one is a legal obligation.'|t('accessibility-audit') }}</p>
+        <p class="accessibility-audit-ref__intro">
+            {{ 'A VPAT answers a different question, for a buyer who asked for it. Plenty of organisations need both, and the two share their organisation and contact details.'|t('accessibility-audit') }}
+            <a href="{{ cpUrl('accessibility-audit/vpat', { site: siteHandle }) }}">{{ 'Open the VPAT'|t('accessibility-audit') }} →</a>
+        </p>
+    </div>
+</fieldset>
+<fieldset>
+    <legend class="h6">{{ 'What this jurisdiction requires'|t('accessibility-audit') }}</legend>
+    <div class="meta accessibility-audit-ref">
+        <p class="accessibility-audit-ref__intro">
+            {% if statement.legislation %}
+                {{ '{profile}, under {legislation}.'|t('accessibility-audit', { profile: statement.profileLabel, legislation: statement.legislation }) }}
+            {% else %}
+                {{ '{profile}. No statutory statement requirement applies, so nothing below is compulsory.'|t('accessibility-audit', { profile: statement.profileLabel }) }}
+            {% endif %}
+        </p>
+        <ul class="accessibility-audit-reflist">
+            <li>{{ 'Reported against {standard}.'|t('accessibility-audit', { standard: statement.standard }) }}</li>
+            {% if statement.profile in ['eu', 'uk'] %}
+                <li>{{ 'An enforcement body is required: the national body somebody escalates to when your own answer has not satisfied them.'|t('accessibility-audit') }}</li>
+                <li>{{ 'Shortfalls must be split three ways. A non-compliance is work you owe; a disproportionate burden is an exemption you have to justify and review; out-of-scope content is simply not covered.'|t('accessibility-audit') }}</li>
+                <li>{{ 'The statement must say how it was prepared and when it was last reviewed.'|t('accessibility-audit') }}</li>
+            {% else %}
+                <li>{{ 'The three shortfall categories are still worth using: they read very differently to somebody deciding whether you are taking this seriously.'|t('accessibility-audit') }}</li>
+            {% endif %}
+        </ul>
+    </div>
+</fieldset>
+<fieldset>
+    <legend class="h6">{{ 'Why full compliance is held back'|t('accessibility-audit') }}</legend>
+    <div class="meta accessibility-audit-ref">
+        <p class="accessibility-audit-ref__intro">{{ 'Automated testing reaches about a third of WCAG. It can tell you an image has no alt text; it cannot tell you whether the alt text you wrote is any use, or whether a keyboard user can get through your checkout. A scanner finding nothing has not established that there is nothing to find.'|t('accessibility-audit') }}</p>
+        <p class="accessibility-audit-ref__intro">{{ 'So the claim is lowered on the evidence and never raised by it. To state full compliance, confirm the manual review under Preparation, or sign the criteria off individually on the VPAT.'|t('accessibility-audit') }}</p>
+        <p class="accessibility-audit-ref__intro">{{ 'Stating something narrower than the evidence suggests is always yours to do: you may well know something the scanner does not.'|t('accessibility-audit') }}</p>
+    </div>
+</fieldset>
+{% endblock %}
+
+{% block content %}
+<div class="accessibility-audit-util-wrap" id="accessibility-audit-statement">
+
+    {% set statusLabels = {
+        'nonCompliant': 'Not compliant'|t('accessibility-audit'),
+        'partiallyCompliant': 'Partially compliant'|t('accessibility-audit'),
+        'fullyCompliant': 'Fully compliant'|t('accessibility-audit'),
+    } %}
+    {% set statusClass = statement.status == 'fullyCompliant' ? 'pass' : (statement.status == 'partiallyCompliant' ? 'warn' : 'error') %}
+
+    <div class="pane accessibility-audit-statpane">
+        <div class="accessibility-audit-statstrip">
+            <div>
+                <div class="light accessibility-audit-statlabel">{{ 'Compliance status'|t('accessibility-audit') }}</div>
+                <div class="accessibility-audit-statfig accessibility-audit-statfig--{{ statusClass }}">{{ statusLabels[statement.status] ?? statement.status }}</div>
+            </div>
+            <div>
+                <div class="light accessibility-audit-statlabel">{{ 'Failing criteria'|t('accessibility-audit') }}</div>
+                <div class="accessibility-audit-statfig">{{ derivation.failingCriteria|length }}</div>
+                {% if derivation.failingCriteria|length %}
+                    <a class="go" href="{{ cpUrl('accessibility-audit/issues', { site: siteHandle }) }}">{{ 'Fix in Issues'|t('accessibility-audit') }}</a>
+                {% endif %}
+            </div>
+            <div>
+                <div class="light accessibility-audit-statlabel">{{ 'Awaiting human review'|t('accessibility-audit') }}</div>
+                <div class="accessibility-audit-statfig">{{ derivation.unconfirmedCriteria|length }}</div>
+            </div>
+            <div>
+                <div class="light accessibility-audit-statlabel">{{ 'Jurisdiction'|t('accessibility-audit') }}</div>
+                <div class="accessibility-audit-statfig accessibility-audit-statfig--sm">{{ statement.profileLabel }}</div>
+            </div>
+        </div>
+    </div>
+
+    {% if not derivation.hasScanData %}
+        <blockquote class="note warning">
+            <p>{{ 'Nothing has been scanned for this site yet, so the compliance status below is not based on any evidence. Run a scan before publishing.'|t('accessibility-audit') }}</p>
+        </blockquote>
+    {% endif %}
+
+    {% if not statement.targetLevelSatisfies %}
+        <blockquote class="note warning">
+            <p>
+                {{ 'Your Target WCAG Level is {level}, but this jurisdiction requires AA. A statement claiming that standard would be asserting a level the site was never measured against.'|t('accessibility-audit', { level: statement.targetLevel }) }}
+                <a href="{{ cpUrl('accessibility-audit/settings/general') }}">{{ 'Change the target level'|t('accessibility-audit') }} →</a>
+            </p>
+        </blockquote>
+    {% endif %}
+
+    {% if statement.isStale %}
+        <blockquote class="note warning">
+            <p>{{ 'There are failing criteria this statement does not mention. A published statement that omits a known failure is worse than no statement: see Non-accessible content below.'|t('accessibility-audit') }}</p>
+        </blockquote>
+    {% endif %}
+
+    {% if derivation.canClaimFull %}
+        <blockquote class="note">
+            <p>{{ 'Nothing is failing and every criterion has been signed off, so this site can claim full compliance. Set it below if that is what you intend to publish.'|t('accessibility-audit') }}</p>
+        </blockquote>
+    {% elseif derivation.unconfirmedCriteria|length > 0 %}
+        <blockquote class="note">
+            <p>
+                {{ '{n} criteria cannot be checked by a scanner. Automated testing reaches about a third of WCAG, so full compliance cannot be claimed until a person has reviewed them.'|t('accessibility-audit', { n: derivation.unconfirmedCriteria|length }) }}
+                {% if canUseVpat %}
+                    {{ 'Sign them off individually on the VPAT, or confirm the review below.'|t('accessibility-audit') }}
+                    <a href="{{ cpUrl('accessibility-audit/vpat', { site: siteHandle }) }}">{{ 'Open the VPAT'|t('accessibility-audit') }} →</a>
+                {% else %}
+                    {{ 'Confirm the review below once you have done it.'|t('accessibility-audit') }}
+                {% endif %}
+            </p>
+
+            {% if unconfirmedDetails|length %}
+                <details class="accessibility-audit-review-details">
+                    <summary>{{ 'Show the {n} criteria to review'|t('accessibility-audit', { n: unconfirmedDetails|length }) }}</summary>
+                    <ul class="accessibility-audit-review-list">
+                        {% for c in unconfirmedDetails %}
+                            <li>
+                                <span class="accessibility-audit-level accessibility-audit-level--{{ c.level|lower }}">{{ c.level }}</span>
+                                <span class="accessibility-audit-review-num">{{ c.number }}</span>
+                                <span class="accessibility-audit-review-name">{{ c.name }}</span>
+                                <a href="{{ c.url }}" target="_blank" rel="noopener">{{ 'Understanding'|t('accessibility-audit') }}<span class="visually-hidden"> ({{ 'opens in new tab'|t('accessibility-audit') }})</span> ↗</a>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </details>
+            {% endif %}
+        </blockquote>
+    {% endif %}
+
+    {{ actionInput('accessibility-audit/statement/save-meta') }}
+    {{ redirectInput('accessibility-audit/statement' ~ (siteHandle ? '?site=' ~ siteHandle : '')) }}
+    <input type="hidden" name="siteId" value="{{ siteId }}">
+
+        <div class="pane">
+            <h2>{{ 'Jurisdiction and status'|t('accessibility-audit') }}</h2>
+
+            {{ forms.selectField({
+                label: 'Jurisdiction profile'|t('accessibility-audit'),
+                instructions: 'Decides which sections your statement must carry. Pick the regime the organisation answers to, not the one you would prefer.'|t('accessibility-audit'),
+                id: 'profile',
+                name: 'profile',
+                options: profiles,
+                value: statement.profile,
+            }) }}
+
+            {{ forms.selectField({
+                label: 'Compliance status'|t('accessibility-audit'),
+                instructions: 'Left on "Use the derived status", this follows your scan data and VPAT sign-off. You can always state something narrower than the evidence suggests; you cannot claim full compliance until nothing is failing and every criterion has been reviewed.'|t('accessibility-audit'),
+                id: 'statusOverride',
+                name: 'statusOverride',
+                options: [
+                    { value: '', label: 'Use the derived status ({status})'|t('accessibility-audit', { status: statusLabels[statement.derivedStatus] ?? statement.derivedStatus }) },
+                    { value: 'nonCompliant', label: statusLabels.nonCompliant },
+                    { value: 'partiallyCompliant', label: statusLabels.partiallyCompliant },
+                    { value: 'fullyCompliant', label: statusLabels.fullyCompliant ~ (derivation.canClaimFull ? '' : ' ' ~ '(not yet available)'|t('accessibility-audit')) },
+                ],
+                value: statement.meta.statusOverride ?? '',
+            }) }}
+        </div>
+
+        <div class="pane">
+            <h2>{{ 'Organisation and contact'|t('accessibility-audit') }}</h2>
+            <p class="light">{{ 'Shared with the VPAT: editing either updates both.'|t('accessibility-audit') }}</p>
+
+            {{ forms.textField({
+                label: 'Website or organisation name'|t('accessibility-audit'),
+                id: 'productName',
+                name: 'productName',
+                value: statement.meta.productName ?? '',
+                required: true,
+            }) }}
+
+            {{ forms.textField({
+                label: 'Accessibility contact'|t('accessibility-audit'),
+                instructions: 'The person or team who answers accessibility problems.'|t('accessibility-audit'),
+                id: 'contactName',
+                name: 'contactName',
+                value: statement.meta.contactName ?? '',
+            }) }}
+
+            {{ forms.textField({
+                label: 'Contact email'|t('accessibility-audit'),
+                id: 'contactEmail',
+                name: 'contactEmail',
+                type: 'email',
+                value: statement.meta.contactEmail ?? '',
+            }) }}
+
+            {{ forms.textField({
+                label: 'Contact phone'|t('accessibility-audit'),
+                id: 'contactPhone',
+                name: 'contactPhone',
+                value: statement.meta.contactPhone ?? '',
+            }) }}
+
+            {{ forms.textField({
+                label: 'Response time'|t('accessibility-audit'),
+                instructions: 'How quickly feedback is answered, e.g. "within 5 working days". Say what you can actually keep to.'|t('accessibility-audit'),
+                id: 'feedbackResponseTime',
+                name: 'feedbackResponseTime',
+                value: statement.meta.feedbackResponseTime ?? '',
+            }) }}
+        </div>
+
+        <div class="pane" data-requires-enforcement>
+            <h2>{{ 'Enforcement procedure'|t('accessibility-audit') }}</h2>
+            <p class="light">{{ 'Where somebody goes when your own response has not satisfied them. Required by the EU and UK regimes; the body differs by country, so it is yours to name.'|t('accessibility-audit') }}</p>
+
+            {{ forms.textField({
+                label: 'Enforcement body'|t('accessibility-audit'),
+                id: 'enforcementBody',
+                name: 'enforcementBody',
+                value: statement.meta.enforcementBody ?? '',
+            }) }}
+
+            {{ forms.textField({
+                label: 'Enforcement body URL'|t('accessibility-audit'),
+                id: 'enforcementUrl',
+                name: 'enforcementUrl',
+                type: 'url',
+                value: statement.meta.enforcementUrl ?? '',
+            }) }}
+
+            {{ forms.textareaField({
+                label: 'Additional details'|t('accessibility-audit'),
+                instructions: 'A postal address or complaints reference, if the body expects one.'|t('accessibility-audit'),
+                id: 'enforcementNotes',
+                name: 'enforcementNotes',
+                rows: 3,
+                value: statement.meta.enforcementNotes ?? '',
+            }) }}
+        </div>
+
+        <div class="pane">
+            <h2>{{ 'Preparation'|t('accessibility-audit') }}</h2>
+
+            {{ forms.selectField({
+                label: 'How was this assessed?'|t('accessibility-audit'),
+                id: 'preparationMethod',
+                name: 'preparationMethod',
+                options: [
+                    { value: 'self', label: 'Self-assessment'|t('accessibility-audit') },
+                    { value: 'thirdParty', label: 'Evaluated by an external organisation'|t('accessibility-audit') },
+                ],
+                value: statement.meta.preparationMethod ?? 'self',
+            }) }}
+
+            {{ forms.textField({
+                label: 'Evaluated by'|t('accessibility-audit'),
+                instructions: 'Name the organisation that carried out the evaluation. An unnamed independent claim is one nobody can check.'|t('accessibility-audit'),
+                id: 'preparedBy',
+                name: 'preparedBy',
+                value: statement.meta.preparedBy ?? '',
+            }) }}
+
+            {{ forms.dateField({
+                label: 'Statement prepared on'|t('accessibility-audit'),
+                id: 'statementDate',
+                name: 'statementDate',
+                value: statement.meta.statementDate ? statement.meta.statementDate|date('Y-m-d') : null,
+            }) }}
+
+            {{ forms.dateField({
+                label: 'Last reviewed on'|t('accessibility-audit'),
+                id: 'reviewDate',
+                name: 'reviewDate',
+                value: statement.meta.reviewDate ? statement.meta.reviewDate|date('Y-m-d') : null,
+            }) }}
+
+            {{ forms.textareaField({
+                label: 'Evaluation methods'|t('accessibility-audit'),
+                instructions: 'One per line. Shared with the VPAT. Only list testing somebody actually did.'|t('accessibility-audit'),
+                id: 'evalMethods',
+                name: 'evalMethods',
+                rows: 4,
+                value: (statement.meta.evalMethods ?? [])|join("\n"),
+            }) }}
+
+            {{ forms.lightswitchField({
+                label: 'I have reviewed the criteria a scanner cannot check'|t('accessibility-audit'),
+                instructions: 'Keyboard operation, screen reader output, whether your alt text is actually useful: the things automated testing cannot reach. Tick this only if somebody has genuinely been through them, because it is what unlocks a full compliance claim.'|t('accessibility-audit'),
+                id: 'manualReviewConfirmed',
+                name: 'manualReviewConfirmed',
+                on: statement.meta.manualReviewConfirmed ?? false,
+            }) }}
+
+            {{ forms.textareaField({
+                label: 'Opening commitment'|t('accessibility-audit'),
+                instructions: 'Leave empty to use the wording generated for your jurisdiction.'|t('accessibility-audit'),
+                id: 'commitmentOverride',
+                name: 'commitmentOverride',
+                rows: 4,
+                value: statement.meta.commitmentOverride ?? '',
+            }) }}
+        </div>
+
+    <div class="pane">
+        <h2>{{ 'Non-accessible content'|t('accessibility-audit') }}</h2>
+        <p class="light">
+            {{ 'What falls short, and why. The three categories carry different obligations: a non-compliance is work you owe, a disproportionate burden is an exemption you have to justify, and out-of-scope content simply is not covered by the legislation.'|t('accessibility-audit') }}
+        </p>
+
+        {% if suggestions|length %}
+            <div class="accessibility-audit-statement-suggestions">
+                <span class="accessibility-audit-label">{{ 'Found by scanning, not yet mentioned'|t('accessibility-audit') }}</span>
+                <span class="accessibility-audit-help">{{ 'Add one and edit the wording. Scanner phrasing is aimed at a developer; this document is read by the public.'|t('accessibility-audit') }}</span>
+                <div class="accessibility-audit-tags">
+                    {% for suggestion in suggestions %}
+                        <button type="submit" class="btn small add icon"
+                                name="addSuggestion"
+                                value="{{ suggestion.criterion }}"
+                                formnovalidate>
+                            {{ suggestion.name }} ({{ suggestion.criterion }})
+                            <span class="light accessibility-audit-suggestion-count">
+                                {{- suggestion.occurrences -}}
+                                <span class="visually-hidden"> {{ suggestion.occurrences == 1 ? 'occurrence'|t('accessibility-audit') : 'occurrences'|t('accessibility-audit') }}</span>
+                            </span>
+                        </button>
+                    {% endfor %}
+                </div>
+            </div>
+        {% endif %}
+
+        <div class="accessibility-audit-col accessibility-audit-col--g10">
+            {% for i, entry in statement.entries %}
+                <div class="accessibility-audit-subcard">
+                    {{ forms.selectField({
+                        label: 'Category'|t('accessibility-audit'),
+                        name: 'entries[' ~ i ~ '][category]',
+                        id: 'entry-' ~ i ~ '-category',
+                        options: [
+                            { value: 'nonCompliance', label: 'Does not comply (we owe a fix)'|t('accessibility-audit') },
+                            { value: 'disproportionateBurden', label: 'Disproportionate burden (claimed exemption)'|t('accessibility-audit') },
+                            { value: 'outOfScope', label: 'Not covered by the legislation'|t('accessibility-audit') },
+                        ],
+                        value: entry.category ?? 'nonCompliance',
+                    }) }}
+
+                    {{ forms.textField({
+                        label: 'What is affected'|t('accessibility-audit'),
+                        instructions: 'Describe it the way a member of the public would recognise it.'|t('accessibility-audit'),
+                        name: 'entries[' ~ i ~ '][content]',
+                        id: 'entry-' ~ i ~ '-content',
+                        value: entry.content ?? '',
+                    }) }}
+
+                    {{ forms.textareaField({
+                        label: 'Why'|t('accessibility-audit'),
+                        name: 'entries[' ~ i ~ '][reason]',
+                        id: 'entry-' ~ i ~ '-reason',
+                        rows: 2,
+                        value: entry.reason ?? '',
+                    }) }}
+
+                    <div class="accessibility-audit-statement-entry-row">
+                        {{ forms.textField({
+                            label: 'WCAG criterion'|t('accessibility-audit'),
+                            name: 'entries[' ~ i ~ '][criterion]',
+                            id: 'entry-' ~ i ~ '-criterion',
+                            placeholder: '1.4.3',
+                            size: 10,
+                            value: entry.criterion ?? '',
+                        }) }}
+
+                        {{ forms.dateField({
+                            label: 'Expected fix date'|t('accessibility-audit'),
+                            name: 'entries[' ~ i ~ '][plannedDate]',
+                            id: 'entry-' ~ i ~ '-plannedDate',
+                            value: entry.plannedDate ?? null,
+                        }) }}
+
+                        <button type="submit" class="btn small" data-icon="remove" name="removeEntry" value="{{ i }}" formnovalidate
+                                data-confirm="{{ 'Remove this entry? Your other changes on this page are saved with it.'|t('accessibility-audit') }}">
+                            {{ 'Remove'|t('accessibility-audit') }}
+                        </button>
+                    </div>
+                </div>
+            {% else %}
+                <div class="accessibility-audit-emptybox">
+                    {{ 'Nothing listed yet. If the site has known problems, saying so plainly is better for you than silence.'|t('accessibility-audit') }}
+                </div>
+            {% endfor %}
+        </div>
+
+        <div class="accessibility-audit-statement-actions">
+            <button type="submit" class="btn dashed add icon" name="addEntry" value="1" formnovalidate>
+                {{ 'Add an entry'|t('accessibility-audit') }}
+            </button>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

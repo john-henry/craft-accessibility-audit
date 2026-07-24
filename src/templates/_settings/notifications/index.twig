@@ -1,0 +1,135 @@
+{% extends "accessibility-audit/_settings/layout" %}
+
+{% import "_includes/forms" as forms %}
+{% import 'accessibility-audit/_macros' as macros %}
+
+{% set crumbs = [] %}
+
+
+{% set fullPageForm = (isPro ?? false) %}
+
+{% block blockContent %}
+    <h2>{{ 'Notifications'|t('accessibility-audit') }}</h2>
+
+    {% if not (isPro ?? false) %}
+        {% include 'accessibility-audit/_includes/pro-upsell' with {
+            feature: 'Notifications'|t('accessibility-audit'),
+            headline: 'Never ship an accessibility regression again'|t('accessibility-audit'),
+            description: 'Pro watches every scan for you and alerts your team the moment something breaks. Plus everything else in Pro:'|t('accessibility-audit'),
+            checklist: [
+                'Email & Slack alerts'|t('accessibility-audit'),
+                'VPAT export'|t('accessibility-audit'),
+                'Readability analysis'|t('accessibility-audit'),
+                'CI/CD Integration'|t('accessibility-audit'),
+            ],
+        } only %}
+    {% else %}
+    {{ actionInput('accessibility-audit/settings/save-notifications') }}
+    {{ redirectInput(url('accessibility-audit/settings/notifications')) }}
+
+    <p class="light">
+        {{ 'Get notified when a scan finds a new problem or when a page\'s accessibility score drops. Notifications are checked each time an element is re-scanned, comparing against its previous scan.'|t('accessibility-audit') }}
+    </p>
+
+    <h3>{{ 'When to notify'|t('accessibility-audit') }}</h3>
+
+    {{ forms.lightswitchField({
+        label: 'New error found'|t('accessibility-audit'),
+        instructions: 'Notify when a scan turns up a new error-severity issue that wasn\'t on the page\'s previous scan.'|t('accessibility-audit'),
+        id: 'notifyOnNewError',
+        name: 'settings[notifyOnNewError]',
+        on: settings.notifyOnNewError,
+        errors: settings.getErrors('notifyOnNewError'),
+    }) }}
+
+    {{ forms.lightswitchField({
+        label: 'Score drop'|t('accessibility-audit'),
+        instructions: 'Notify when a page\'s score falls by at least the threshold below, compared to its previous scan.'|t('accessibility-audit'),
+        id: 'notifyOnScoreDrop',
+        name: 'settings[notifyOnScoreDrop]',
+        on: settings.notifyOnScoreDrop,
+        errors: settings.getErrors('notifyOnScoreDrop'),
+    }) }}
+
+    {{ forms.textField({
+        label: 'Score drop threshold'|t('accessibility-audit'),
+        instructions: 'How many points a score has to fall before a notification fires.'|t('accessibility-audit'),
+        id: 'notifyScoreDropThreshold',
+        name: 'settings[notifyScoreDropThreshold]',
+        type: 'number',
+        size: 5,
+        value: settings.notifyScoreDropThreshold,
+        min: 1,
+        max: 100,
+        errors: settings.getErrors('notifyScoreDropThreshold'),
+    }) }}
+
+    <hr>
+
+    <h3>{{ 'Email'|t('accessibility-audit') }}</h3>
+
+    {{ forms.lightswitchField({
+        label: 'Send email notifications'|t('accessibility-audit'),
+        id: 'notifyEmailEnabled',
+        name: 'settings[notifyEmailEnabled]',
+        on: settings.notifyEmailEnabled,
+        errors: settings.getErrors('notifyEmailEnabled'),
+    }) }}
+
+    {{ forms.textareaField({
+        label: 'Recipients'|t('accessibility-audit'),
+        instructions: 'One address per line, or separated by commas. Notifications go to every address listed.'|t('accessibility-audit'),
+        id: 'notifyEmailRecipients',
+        name: 'settings[notifyEmailRecipients]',
+        value: settings.notifyEmailRecipients,
+        rows: 3,
+        placeholder: 'team@example.com',
+        errors: settings.getErrors('notifyEmailRecipients'),
+    }) }}
+
+    <hr>
+
+    <h3>{{ 'Slack'|t('accessibility-audit') }}</h3>
+
+    {{ forms.lightswitchField({
+        label: 'Send Slack notifications'|t('accessibility-audit'),
+        id: 'notifySlackEnabled',
+        name: 'settings[notifySlackEnabled]',
+        on: settings.notifySlackEnabled,
+        errors: settings.getErrors('notifySlackEnabled'),
+    }) }}
+
+    {{ forms.autosuggestField({
+        label: 'Incoming webhook URL'|t('accessibility-audit'),
+        instructions: 'Create an incoming webhook in Slack and paste its URL here. You can also reference an environment variable: type $ to see suggestions.'|t('accessibility-audit'),
+        id: 'notifySlackWebhookUrl',
+        name: 'settings[notifySlackWebhookUrl]',
+        value: settings.notifySlackWebhookUrl,
+        suggestEnvVars: true,
+        suggestAliases: false,
+        placeholder: '$SLACK_WEBHOOK_URL or https://hooks.slack.com/services/…',
+        errors: settings.getErrors('notifySlackWebhookUrl'),
+    }) }}
+
+    <hr>
+    
+    {{ forms.selectField({
+        label: 'Test'|t('accessibility-audit'),
+        instructions: 'The connection check confirms delivery works. The dummy options send sample content through the exact same formatting as a real alert, so you can see how each lands in the inbox or channel; dummy subjects carry a "[Test]" prefix so nobody mistakes one for a live regression. "Both together" mirrors a scan that trips both triggers at once: they arrive as two separate messages.'|t('accessibility-audit'),
+        id: 'testPreview',
+        name: 'preview',
+        options: [
+            { value: 'connection', label: 'Connection check'|t('accessibility-audit') },
+            { value: 'new-error', label: 'Dummy: New error found'|t('accessibility-audit') },
+            { value: 'score-drop', label: 'Dummy: Score drop'|t('accessibility-audit') },
+            { value: 'both', label: 'Dummy: both together'|t('accessibility-audit') },
+        ],
+    }) }}
+
+    <div class="field">
+        <button type="submit" class="btn" formaction="{{ actionUrl('accessibility-audit/settings/test-notification') }}" aria-describedby="testPreview-instructions">
+            {{ 'Send test notification'|t('accessibility-audit') }}
+        </button>
+    </div>
+    {% endif %}
+{% endblock %}

@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VPAT{% if report.meta.productName ?? false %}: {{ report.meta.productName }}{% endif %}</title>
+<style>
+/* ── Base ─────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #222;
+    background: #fff;
+    margin: 0;
+    padding: 0;
+}
+a { color: #0d78f2; }
+a:hover { text-decoration: underline; }
+
+/* ── Print ───────────────────────────────────────────────────────────────── */
+@media print {
+    body { font-size: 11px; }
+    .vpat-print-bar { display: none; }
+    table { page-break-inside: avoid; }
+    h2, h3 { page-break-after: avoid; }
+    .vpat-section { page-break-inside: avoid; }
+}
+
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+.vpat-print-bar {
+    background: #1b3a6b;
+    color: #fff;
+    padding: 10px 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+.vpat-print-bar a { color: #7eb8f7; }
+.vpat-print-bar__actions { display: flex; gap: 12px; align-items: center; }
+.vpat-print-bar button {
+    background: #fff;
+    color: #1b3a6b;
+    border: 0;
+    padding: 6px 16px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.vpat-doc {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 40px 40px 80px;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.vpat-header {
+    border-bottom: 3px solid #1b3a6b;
+    padding-bottom: 20px;
+    margin-bottom: 30px;
+}
+.vpat-header h1 {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1b3a6b;
+    margin: 0 0 4px;
+}
+.vpat-header .vpat-subtitle {
+    font-size: 13px;
+    color: #555;
+    margin: 0;
+}
+
+/* ── Section headings ────────────────────────────────────────────────────── */
+.vpat-section { margin-bottom: 30px; }
+.vpat-section h2 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1b3a6b;
+    border-bottom: 1px solid #c8d4e8;
+    padding-bottom: 6px;
+    margin: 0 0 14px;
+}
+.vpat-section h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 20px 0 10px;
+}
+
+/* ── Info table (product metadata) ──────────────────────────────────────── */
+.vpat-info-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.vpat-info-table td,
+.vpat-info-table th {
+    padding: 5px 10px 5px 0;
+    vertical-align: top;
+}
+.vpat-info-table th {
+    font-weight: 600;
+    white-space: nowrap;
+    width: 200px;
+    color: #555;
+    text-align: left;
+}
+
+/* ── Conformance tables ──────────────────────────────────────────────────── */
+.vpat-criteria-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-bottom: 30px;
+}
+.vpat-criteria-table th {
+    background: #1b3a6b;
+    color: #fff;
+    padding: 8px 10px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+.vpat-criteria-table td {
+    padding: 8px 10px;
+    border: 1px solid #d6dde8;
+    vertical-align: top;
+}
+.vpat-criteria-table tr:nth-child(even) td { background: #f5f8fc; }
+.vpat-criteria-table th:first-child,
+.vpat-criteria-table td:first-child { width: 100px; }
+.vpat-criteria-table th:nth-child(2),
+.vpat-criteria-table td:nth-child(2) { width: 220px; }
+.vpat-criteria-table th:nth-child(3),
+.vpat-criteria-table td:nth-child(3) { width: 175px; }
+
+.vpat-crit-num {
+    font-weight: 700;
+    white-space: nowrap;
+}
+.vpat-crit-num a {
+    color: inherit;
+    text-decoration: none;
+}
+.vpat-crit-num a:hover { text-decoration: underline; }
+
+/* ── Conformance badges ──────────────────────────────────────────────────── */
+.vpat-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.vpat-badge--supports       { background: #d4f4df; color: #1b6b35; }
+.vpat-badge--partial        { background: #fef3cd; color: #7a5200; }
+.vpat-badge--fail           { background: #fde8e8; color: #9b1c1c; }
+.vpat-badge--na             { background: #ebebeb; color: #555; }
+.vpat-badge--not-evaluated  { background: #ede9fe; color: #5b21b6; }
+.vpat-badge--empty          { color: #aaa; font-weight: 400; font-style: italic; font-size: 11px; }
+
+/* ── Scope & methods lists ───────────────────────────────────────────────── */
+.vpat-scope-list,
+.vpat-methods-list {
+    margin: 6px 0 0;
+    padding-left: 20px;
+    columns: 2;
+    column-gap: 40px;
+}
+.vpat-scope-list li,
+.vpat-methods-list li {
+    margin-bottom: 3px;
+    break-inside: avoid;
+}
+
+/* ── Terms legend ────────────────────────────────────────────────────────── */
+.vpat-terms dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 20px;
+    font-size: 12px;
+}
+.vpat-terms dt { font-weight: 600; }
+.vpat-terms dd { margin: 0; }
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+.vpat-footer {
+    margin-top: 50px;
+    padding-top: 16px;
+    border-top: 1px solid #d6dde8;
+    font-size: 11px;
+    color: #999;
+}
+</style>
+</head>
+<body>
+
+<div class="vpat-print-bar">
+    <span>VPAT®: WCAG 2.2 Level AA Conformance Report</span>
+    <div class="vpat-print-bar__actions">
+        <button type="button" onclick="window.close()"><span aria-hidden="true">←</span> Back to editor</button>
+        <button type="button" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+</div>
+
+<div class="vpat-doc">
+
+    <div class="vpat-header">
+        <h1>Accessibility Conformance Report</h1>
+        <p class="vpat-subtitle">
+            WCAG Edition &nbsp;·&nbsp;
+            Based on VPAT® Version 2.5Rev
+        </p>
+    </div>
+
+    <div class="vpat-section">
+        <h2>Name of Product / Version</h2>
+        <p>
+            <strong>{{ report.meta.productName ?? '[Product Name]' }}</strong>
+            {% if report.meta.productVersion ?? false %}
+                &nbsp;&nbsp;Version {{ report.meta.productVersion }}
+            {% endif %}
+        </p>
+
+        {% if report.meta.productDescription ?? false %}
+            <h2>Product Description</h2>
+            <p>{{ report.meta.productDescription|nl2br }}</p>
+        {% endif %}
+
+        <h2>Report Date</h2>
+        <table class="vpat-info-table">
+            <tr>
+                <th scope="row">Report Date:</th>
+                <td>{{ report.meta.reportDate ?? '[Not specified]' }}</td>
+            </tr>
+            <tr>
+                <th scope="row">Evaluation Period:</th>
+                <td>
+                    {% if (report.meta.reportPeriodFrom ?? false) or (report.meta.reportPeriodTo ?? false) %}
+                        {{ report.meta.reportPeriodFrom ?? '—' }} to {{ report.meta.reportPeriodTo ?? '—' }}
+                    {% else %}
+                        [Not specified]
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <th scope="row">Contact:</th>
+                <td>
+                    {{ report.meta.contactName ?? '' }}
+                    {% if report.meta.contactEmail ?? false %}
+                        &lt;<a href="mailto:{{ report.meta.contactEmail }}">{{ report.meta.contactEmail }}</a>&gt;
+                    {% endif %}
+                    {% if report.meta.contactPhone ?? false %}
+                        &nbsp;&nbsp;{{ report.meta.contactPhone }}
+                    {% endif %}
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    {% if report.meta.notes ?? false %}
+        <div class="vpat-section">
+            <h2>Notes</h2>
+            <p>{{ report.meta.notes|nl2br }}</p>
+        </div>
+    {% endif %}
+
+    {% if (report.meta.scopePages ?? []) is not empty %}
+        <div class="vpat-section">
+            <h2>Scope of Evaluation</h2>
+            <p>The evaluation covered the following pages and screens:</p>
+            <ul class="vpat-scope-list">
+                {% for page in report.meta.scopePages %}
+                    <li>{{ page }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+
+    <div class="vpat-section">
+        <h2>Evaluation Methods Used</h2>
+        {% if (report.meta.evalMethods ?? []) is not empty %}
+            <ul class="vpat-methods-list">
+                {% for method in report.meta.evalMethods %}
+                    <li>{{ method }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+        {% if report.meta.evalMethodology ?? false %}
+            <p>{{ report.meta.evalMethodology|nl2br }}</p>
+        {% elseif (report.meta.evalMethods ?? []) is empty %}
+            <p>Automated scanning with axe-core and server-side HTML analysis.</p>
+        {% endif %}
+    </div>
+
+    <div class="vpat-section">
+        <h2>Applicable Standards / Guidelines</h2>
+        <p>
+            This report covers conformance with the following accessibility standard:
+            <strong>Web Content Accessibility Guidelines (WCAG) 2.2</strong> at Level AA,
+            published by the W3C World Wide Web Consortium at
+            <a href="https://www.w3.org/TR/WCAG22/">https://www.w3.org/TR/WCAG22/</a>.
+        </p>
+        {% if report.en301549 ?? false %}
+        <p>
+            <strong>EN 301 549</strong> (the European standard behind the EU Web
+            Accessibility Directive and the European Accessibility Act) adopts the
+            WCAG Level AA success criteria for web content in its clause 9, so the
+            results above speak to that clause. Clauses covering non-web ICT, such
+            as hardware, software, documents and support services, are outside the
+            scope of this report.
+        </p>
+        {% endif %}
+    </div>
+
+    <div class="vpat-section vpat-terms">
+        <h2>Terms Used in the Conformance Level Column</h2>
+        <dl>
+            <dt>Supports</dt>
+            <dd>The functionality of the product meets the criterion without exception.</dd>
+            <dt>Partially Supports</dt>
+            <dd>Some functionality of the product meets the criterion, while other functionality does not.</dd>
+            <dt>Does Not Support</dt>
+            <dd>The majority of product functionality does not meet the criterion.</dd>
+            <dt>Not Applicable</dt>
+            <dd>The criterion is not relevant to this product.</dd>
+            <dt>Not Evaluated</dt>
+            <dd>The product has not been evaluated against this criterion. (Allowed for Level AAA only.)</dd>
+        </dl>
+    </div>
+
+    <div class="vpat-section">
+        <h2>WCAG 2.2 Report</h2>
+        <p>
+            Note: When reporting on conformance with the WCAG 2.x Success Criteria,
+            they are scoped for full pages, complete processes, and accessibility-supported ways.
+        </p>
+
+        <h3>Table 1: Success Criteria, Level A</h3>
+        <table class="vpat-criteria-table">
+            <thead>
+                <tr>
+                    <th scope="col">Criteria</th>
+                    <th scope="col">Conformance Level</th>
+                    <th scope="col">Remarks and Explanations</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for num, row in report.levelA %}
+                    <tr>
+                        <td class="vpat-crit-num">
+                            <a href="{{ row.url }}" target="_blank" rel="noopener">{{ num }}</a>
+                            {{ row.name }}
+                        </td>
+                        <td>
+                            {% if row.effectiveLevel %}
+                                {% set badgeClass = {
+                                    'Supports':          'supports',
+                                    'Partially Supports':'partial',
+                                    'Does Not Support':  'fail',
+                                    'Not Applicable':    'na',
+                                    'Not Evaluated':     'not-evaluated',
+                                }[row.effectiveLevel] ?? 'na' %}
+                                <span class="vpat-badge vpat-badge--{{ badgeClass }}">{{ row.effectiveLevel }}</span>
+                            {% else %}
+                                <span class="vpat-badge vpat-badge--empty">Not evaluated</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ row.effectiveRemarks|nl2br ?: '' }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <h3>Table 2: Success Criteria, Level AA</h3>
+        <table class="vpat-criteria-table">
+            <thead>
+                <tr>
+                    <th scope="col">Criteria</th>
+                    <th scope="col">Conformance Level</th>
+                    <th scope="col">Remarks and Explanations</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for num, row in report.levelAA %}
+                    <tr>
+                        <td class="vpat-crit-num">
+                            <a href="{{ row.url }}" target="_blank" rel="noopener">{{ num }}</a>
+                            {{ row.name }}
+                        </td>
+                        <td>
+                            {% if row.effectiveLevel %}
+                                {% set badgeClass = {
+                                    'Supports':          'supports',
+                                    'Partially Supports':'partial',
+                                    'Does Not Support':  'fail',
+                                    'Not Applicable':    'na',
+                                    'Not Evaluated':     'not-evaluated',
+                                }[row.effectiveLevel] ?? 'na' %}
+                                <span class="vpat-badge vpat-badge--{{ badgeClass }}">{{ row.effectiveLevel }}</span>
+                            {% else %}
+                                <span class="vpat-badge vpat-badge--empty">Not evaluated</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ row.effectiveRemarks|nl2br ?: '' }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if report.meta.legalDisclaimer ?? false %}
+        <div class="vpat-section">
+            <h2>Legal Disclaimer</h2>
+            <p>{{ report.meta.legalDisclaimer|nl2br }}</p>
+        </div>
+    {% endif %}
+
+    <div class="vpat-footer">
+        <p>
+            VPAT® is a registered service mark of the Information Technology Industry Council (ITI).
+            This report was generated using the Accessibility Audit plugin for Craft CMS.
+            Generated: {{ now|date('Y-m-d') }}.
+        </p>
+    </div>
+
+</div>
+</body>
+</html>

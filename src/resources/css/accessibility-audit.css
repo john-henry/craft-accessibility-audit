@@ -1,0 +1,3686 @@
+/* =========================================================================
+   Accessibility Audit: control panel styles (merged design-system + CP).
+   Requires: accessibility-audit-tokens.css (design tokens).
+   ========================================================================= */
+
+/* ==========================================================================
+   Accessibility Audit — "Signal" component classes · v1
+   Requires: accessibility-audit-tokens.css
+   Everything is scoped under .accessibility-audit.
+   ========================================================================== */
+
+.accessibility-audit {
+  font-family: var(--aa-font-ui);
+  color: var(--text-color);
+  background: var(--aa-surface);
+}
+
+.accessibility-audit a {
+  color: var(--aa-link);
+}
+
+.accessibility-audit a:hover {
+  color: var(--aa-link-hover);
+}
+
+.accessibility-audit-col-label {
+  font: var(--aa-text-column-label);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--light-text-color);
+}
+
+.accessibility-audit-meta {
+  font-size: 12px;
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-stat {
+  font: var(--aa-stat-numeral);
+  color: var(--text-color);
+}
+
+.accessibility-audit-stat--small {
+  font-size: 27px;
+}
+
+.accessibility-audit-data {
+  font: var(--aa-data);
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-data--ink {
+  color: var(--text-color);
+}
+
+/* Navigation CTAs ("View issues by page", "Review and fix", ...) use Craft's
+   native `.go` link: blue text plus the circular-arrow icon, so they read as
+   the same affordance as every other widget link in the CP. Right-align the
+   ones that stand alone at the foot of a pane, matching "View all resolved". */
+.accessibility-audit-cta-right {
+  text-align: right;
+  margin-top: 12px;
+}
+
+/* ---- Buttons -------------------------------------------------------------- */
+
+/* Re-scan buttons: a refresh glyph that spins while the scan runs. The glyph is
+   drawn by Craft's icon font via [data-icon]:before, so the span is made an
+   inline-block box for the transform to take, then rotated. Motion is dropped
+   for anyone who asks for reduced motion, which matters doubly in an
+   accessibility tool. */
+
+/* The glyph is a font character drawn by Craft's [data-icon]:before, which
+   carries vertical-align: middle — a baseline-relative shift that reads as
+   off-centre inside a flex/grid cell. Neutralise it and let the button's grid
+   do the centring. */
+.accessibility-audit-icon-btn [data-icon] {
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+
+.accessibility-audit-icon-btn [data-icon]::before {
+  display: block;
+  vertical-align: unset;
+  line-height: 1;
+
+  /* Sized to read as a peer of the 16px SVG icons: the font glyph's inked area
+     runs smaller than an SVG at the same nominal size. */
+  font-size: 16px;
+}
+
+/* The SVG-set icons (cp-icon) centre as a flex box of their own. */
+.accessibility-audit-icon-btn .cp-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* A cp-icon leading a text label inside a .btn: the button is inline-flex,
+   which discards the whitespace-only node between the icon and the text, so
+   the gap has to be a margin (same bug and fix as the suggestion count). Icon-
+   only buttons are excluded so their glyph stays dead-centre. */
+.btn .cp-icon:not(:only-child) {
+  margin-inline-end: 6px;
+}
+
+/* Icon-only square button (Re-scan, the alt editor's AI-draft and cancel).
+   Any text label is kept in the DOM but visually hidden, so the button still
+   has an accessible name and any aria-live status swaps are announced; a title
+   gives sighted users a hover tooltip. Compounded with .btn so it out-specifies Craft's own .btn sizing
+   (which sets padding-inline + height at a single-class weight): equal
+   inline/block size for a true square, a touch larger than .btn's stock
+   2.125rem height, padding and gap zeroed so
+   the glyph, already centred by .btn's flex, sits dead-centre. */
+
+/* The alt editor's action row: one shared 28px height for all three buttons
+   (AI draft, Save, cancel), sized to the icon squares and clear of the WCAG
+   2.5.8 24px target-size floor — which Craft's own .btn.small (22px) misses,
+   a poor look in this plugin in particular. Save keeps its text at small-button
+   scale; the height does the matching. */
+.btn.accessibility-audit-save-btn {
+  height: 1.75rem;
+  min-height: 1.75rem;
+  font-size: 12px;
+  padding-inline: var(--s);
+}
+
+.btn.accessibility-audit-icon-btn {
+  width: 1.75rem;
+  height: 1.75rem;
+
+  /* Craft's base .btn carries min-height: 2.125rem, which would win over the
+     height above and leave the icon squares 34px beside the 28px Save. */
+  min-height: 1.75rem;
+  min-width: 0;
+  padding: 0;
+  gap: 0;
+
+  /* Grid, not .btn's flex: one cell, glyph centred on both axes with no
+     baseline arithmetic involved. */
+  display: inline-grid;
+  place-items: center;
+}
+
+@keyframes accessibility-audit-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* Re-scan buttons follow Craft's queue-button pattern (data-icon on the button,
+   visible label); while a scan runs the refresh glyph spins. The glyph is the
+   button's :before, already inline-block via Craft's icon rules, so it takes
+   the transform directly. */
+.btn.accessibility-audit-spin[data-icon]::before {
+  animation: accessibility-audit-spin 0.7s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn.accessibility-audit-spin[data-icon]::before {
+    animation: none;
+  }
+
+  /* The edition-badge label swap and the usage pill's Go Pro chip still change
+     state, just instantly. */
+  .accessibility-audit-standard--outlined,
+  .accessibility-audit-standard__swap > span,
+  .accessibility-audit-usage-badge__pro {
+    transition: none;
+  }
+}
+
+.accessibility-audit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--aa-radius-control);
+  padding: 9px 15px;
+  cursor: pointer;
+  color: var(--text-color);
+  background: var(--aa-surface);
+  border: 1px solid var(--aa-border-control);
+  white-space: nowrap;
+}
+
+.accessibility-audit-btn:hover {
+  border-color: var(--light-text-color);
+}
+
+.accessibility-audit-btn--dark:hover {
+  filter: brightness(1.15);
+  border-color: transparent;
+}
+
+/* One per screen. */
+.accessibility-audit-btn--primary {
+  color: #fff;
+  background: var(--aa-brand-end);
+  border: none;
+  padding: 10px 18px;
+}
+
+.accessibility-audit-btn--primary:hover {
+  filter: brightness(0.94);
+}
+
+.accessibility-audit-btn--dark {
+  color: #fff;
+  background: var(--aa-ink);
+  border: none;
+}
+
+.accessibility-audit-btn--small {
+  font-size: 12px;
+  border-radius: var(--aa-radius-small);
+  padding: 6px 12px;
+}
+
+/* Icon-only button: square, so the ✨ / ✕ actions don't read as clipped text. */
+.accessibility-audit-btn--icon {
+  padding: 6px;
+}
+
+.accessibility-audit-btn--icon .cp-icon {
+  margin: 0;
+}
+
+/* "✦ Draft with AI" and similar tertiary actions */
+.accessibility-audit-btn--quiet {
+  font-size: 11px;
+  background: var(--aa-surface-chrome);
+  border-color: var(--aa-border-card);
+  border-radius: var(--aa-radius-small);
+  padding: 5px 11px;
+}
+
+.accessibility-audit-btn:focus-visible,
+.accessibility-audit-select:focus-visible {
+  outline: none;
+  border: var(--aa-focus-border);
+  box-shadow: var(--aa-focus-halo);
+}
+
+/* ---- Chips & badges -------------------------------------------------------- */
+
+/* Edition badge beside the dashboard title. Mirrors Craft's own #edition-logo
+   geometry and type (11px/600, 1.7px tracking, content-box + 1px border, the
+   asymmetric inline padding that offsets the tracking on the last letter) so it
+   sits at the same height as the CP's native PRO badge, but filled red with
+   white text instead of Craft's bordered/tinted treatment. Border is the same
+   red as the fill: it keeps the box the exact size of Craft's without drawing a
+   clashing line. */
+.accessibility-audit-pro--solid {
+  display: inline-flex;
+  box-sizing: content-box;
+  color: #fff;
+  background: var(--aa-brand-end);
+  border: 1px solid var(--aa-brand-end);
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 8px;
+  letter-spacing: 1.7px;
+  text-transform: uppercase;
+  padding-block: 6px;
+  padding-inline: 7px 5px;
+}
+
+.accessibility-audit-standard--outlined {
+  display: inline-flex;
+  box-sizing: content-box;
+  overflow: hidden;
+  border: 1px solid var(--gray-600);
+  border-radius: 3px;
+  font-family: inherit;
+  color: var(--gray-600);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 8px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding-block: 6px;
+  padding-inline: 7px 5px;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+
+/* Roll over (or focus) Standard and the badge fills Pro red while the label
+   crossfades to "Go Pro": the upgrade shown, not told. */
+.accessibility-audit-standard--outlined:hover,
+.accessibility-audit-standard--outlined:focus-visible {
+  color: #fff;
+  background: var(--aa-brand-end);
+  border-color: var(--aa-brand-end);
+  text-decoration: none;
+}
+
+/* Both labels share one grid cell; the box stays sized by the wider word so
+   nothing reflows during the swap. */
+.accessibility-audit-standard__swap {
+  display: inline-grid;
+  justify-items: center;
+}
+
+.accessibility-audit-standard__swap > span {
+  grid-area: 1 / 1;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+.accessibility-audit-standard__pro {
+  opacity: 0;
+  transform: translateY(5px);
+}
+
+.accessibility-audit-standard--outlined:hover .accessibility-audit-standard__now,
+.accessibility-audit-standard--outlined:focus-visible .accessibility-audit-standard__now {
+  opacity: 0;
+  transform: translateY(-5px);
+}
+
+.accessibility-audit-standard--outlined:hover .accessibility-audit-standard__pro,
+.accessibility-audit-standard--outlined:focus-visible .accessibility-audit-standard__pro {
+  opacity: 1;
+  transform: none;
+}
+
+/* Score chips — bands: <50 low, 50–89 mid, >=90 high */
+.accessibility-audit-score {
+  font:
+    600 13px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  border-radius: var(--aa-radius-small);
+  padding: 4px 10px;
+}
+
+.accessibility-audit-score--low {
+  color: var(--aa-error);
+  background: var(--aa-error-bg);
+}
+
+.accessibility-audit-score--mid {
+  color: var(--aa-warning-strong);
+  background: var(--aa-warning-bg);
+}
+
+.accessibility-audit-score--high {
+  color: var(--aa-pass);
+  background: var(--aa-pass-bg);
+}
+
+/* WCAG level: A / AA / AAA; --bp for axe best-practice rules */
+.accessibility-audit-level {
+  font:
+    600 11px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: var(--text-color);
+  border: 1px solid var(--aa-border-control);
+  border-radius: var(--aa-radius-chip);
+  padding: 2px 7px;
+}
+
+.accessibility-audit-level--bp {
+  color: var(--light-text-color);
+  border-style: dashed;
+}
+
+/* Tiered fill: one slate hue at rising weight (A faint outline, AA stronger
+   outline, AAA filled). The ramp reads as increasing WCAG strictness without
+   borrowing the red/amber/blue severity palette. */
+.accessibility-audit-level--a {
+  color: var(--medium-text-color);
+  border-color: var(--aa-border-control);
+}
+
+.accessibility-audit-level--aa {
+  color: var(--text-color);
+  border-color: #55637a;
+}
+
+.accessibility-audit-level--aaa {
+  color: #fff;
+  background: #55637a;
+  border-color: #55637a;
+}
+
+.accessibility-audit-owner {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 12px;
+  padding: 3px 10px;
+}
+
+.accessibility-audit-owner--dev {
+  color: var(--aa-owner-dev);
+  background: var(--aa-owner-dev-bg);
+}
+
+.accessibility-audit-owner--content {
+  color: var(--aa-owner-content);
+  background: var(--aa-owner-content-bg);
+}
+
+.accessibility-audit-owner--design {
+  color: var(--aa-owner-design);
+  background: var(--aa-owner-design-bg);
+}
+
+.accessibility-audit-owner--technical {
+  color: var(--aa-owner-technical);
+  background: var(--aa-owner-technical-bg);
+}
+
+/* Normal weight so the category token in the bold <th scope="row"> matches the
+   owner token in a <td>. Scoped to the plugin table so it never touches Craft's
+   own .token elements elsewhere in the CP. */
+.accessibility-audit-grouped-table th .token {
+  font-weight: 400;
+}
+
+/* Owner colours applied on Craft's native .token chip (Issues owner column).
+   The .token.X specificity outranks Craft's base .token background. */
+.token.accessibility-audit-owner--dev {
+  color: var(--aa-owner-dev);
+  background: var(--aa-owner-dev-bg);
+}
+
+.token.accessibility-audit-owner--content {
+  color: var(--aa-owner-content);
+  background: var(--aa-owner-content-bg);
+}
+
+.token.accessibility-audit-owner--design {
+  color: var(--aa-owner-design);
+  background: var(--aa-owner-design-bg);
+}
+
+.token.accessibility-audit-owner--technical {
+  color: var(--aa-owner-technical);
+  background: var(--aa-owner-technical-bg);
+}
+
+.accessibility-audit-badge-pass {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--aa-pass);
+  background: var(--aa-pass-bg);
+  border-radius: 12px;
+  padding: 3px 12px;
+}
+
+.accessibility-audit-badge-fail {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--aa-error);
+  background: var(--aa-error-bg);
+  border-radius: 12px;
+  padding: 3px 10px;
+}
+
+/* Small neutral tag, e.g. category next to a rule name */
+.accessibility-audit-tag {
+  font-size: 10px;
+  color: var(--light-text-color);
+  background: var(--aa-surface-chrome);
+  border-radius: var(--aa-radius-chip);
+  padding: 2px 6px;
+}
+
+/* Standard-edition scan-quota badge in the overview action bar. A link to the
+   Plugin Store: rolling over (or focusing) slides a small Go Pro chip open
+   inside the pill. White with a hairline so it still reads as a pill on the
+   CP's grey page background. */
+.accessibility-audit-usage-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--aa-text-secondary);
+  background: var(--white);
+  border: 1px solid var(--hairline-color);
+  text-decoration: none;
+}
+
+a.accessibility-audit-usage-badge:hover,
+a.accessibility-audit-usage-badge:focus-visible {
+  color: var(--aa-text-secondary);
+  border-color: var(--medium-hairline-color);
+  text-decoration: none;
+}
+
+.accessibility-audit-usage-badge--full {
+  color: var(--aa-error-deep);
+  background: var(--aa-error-bg);
+  border-color: transparent;
+}
+
+/* The chip is always in the DOM but closed (no width, no gap); hover opens it
+   by animating max-width so the variable-width label needs no fixed sizes. */
+.accessibility-audit-usage-badge__pro {
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  margin-left: 0;
+  padding-inline: 0;
+  border-radius: 9px;
+  color: #fff;
+  background: var(--aa-brand-end);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  line-height: 16px;
+  text-transform: uppercase;
+  transition:
+    max-width 0.25s ease,
+    opacity 0.2s ease,
+    margin-left 0.25s ease,
+    padding 0.25s ease;
+}
+
+a.accessibility-audit-usage-badge:hover .accessibility-audit-usage-badge__pro,
+a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge__pro {
+  max-width: 80px;
+  opacity: 1;
+  margin-left: 8px;
+  padding-inline: 8px;
+}
+
+.accessibility-audit-row {
+  display: grid;
+  align-items: center;
+  column-gap: 12px;
+  padding: var(--aa-pad-row);
+  border-bottom: 1px solid var(--aa-border-row);
+}
+
+.accessibility-audit-row:last-of-type {
+  border-bottom: none;
+}
+
+.accessibility-audit-num {
+  font:
+    500 13px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: var(--text-color);
+  text-align: right;
+}
+
+.accessibility-audit-delta {
+  font:
+    600 13px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: var(--aa-pass);
+  text-align: right;
+}
+
+/* ---- Callouts & banners ------------------------------------------------------ */
+
+.accessibility-audit-callout {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 17px;
+  border-left: var(--aa-flag-edge-width) solid transparent;
+  border-radius: 0 var(--aa-radius-card) var(--aa-radius-card) 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.accessibility-audit-callout--success {
+  background: var(--aa-pass-bg);
+  border-left-color: var(--aa-pass-edge);
+  color: var(--aa-pass-deep);
+}
+
+.accessibility-audit-callout--notice {
+  background: var(--aa-notice-bg);
+  border-left-color: var(--aa-notice-edge);
+  color: var(--aa-notice-deep);
+}
+
+.accessibility-audit-callout strong {
+  color: var(--text-color);
+}
+
+/* Summary stat banner: native surface/text (it is a summary, not a group
+   header); the red count chip carries the "needs attention" signal. */
+.accessibility-audit-banner--warning {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 17px;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--aa-radius-card);
+  font-size: 13px;
+  color: var(--medium-text-color);
+}
+
+.accessibility-audit-banner--warning strong {
+  color: var(--text-color);
+}
+
+/* On narrower screens the one-line banner runs out of room (the date and the
+   go-link start wrapping mid-phrase), so it stacks: stat, then the summary,
+   then the link on its own line. */
+@media (width <= 1000px) {
+  .accessibility-audit-banner--warning {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .accessibility-audit-banner--warning .accessibility-audit-spacer {
+    display: none;
+  }
+}
+
+.accessibility-audit-banner__stat {
+  font:
+    600 13px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: #fff;
+  background: var(--aa-error);
+  border-radius: var(--aa-radius-small);
+  padding: 4px 8px;
+}
+
+/* ---- Forms -------------------------------------------------------------------- */
+
+.accessibility-audit-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+.accessibility-audit-help {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--aa-text-secondary);
+}
+
+/* ---- Code ------------------------------------------------------------------- */
+
+.accessibility-audit-code {
+  font:
+    500 11px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: var(--text-color);
+  background: var(--aa-surface-chrome);
+  border: 1px solid var(--aa-border-card);
+  border-radius: var(--aa-radius-chip);
+  padding: 1px 6px;
+}
+
+.accessibility-audit-spacer {
+  flex: 1;
+}
+
+/* Vertical page stack — spaces top-level dashboard sections by the page gap. */
+.accessibility-audit-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--aa-gap-page);
+}
+
+.accessibility-audit-legend-row {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 6px;
+}
+
+/* The hidden attribute must win over any of the plugin's own display:* classes
+   (e.g. a hidden .accessibility-audit-col would otherwise stay flex and show
+   through). Scoped to the plugin's own elements so this !important never leaks
+   onto Craft's native [hidden] handling elsewhere in the control panel. */
+[class*='accessibility-audit-'][hidden] {
+  display: none !important;
+}
+
+.accessibility-audit-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.accessibility-audit-col--g4 {
+  gap: 4px;
+}
+
+.accessibility-audit-col--g6 {
+  gap: 6px;
+}
+
+.accessibility-audit-col--g8 {
+  gap: 8px;
+}
+
+.accessibility-audit-col--g10 {
+  gap: 10px;
+}
+
+.accessibility-audit-col--g12 {
+  gap: 12px;
+}
+
+.accessibility-audit-col--g14 {
+  gap: 14px;
+}
+
+.accessibility-audit-rowline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.accessibility-audit-baseline {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+/* ---- KPI band (overview) ---- */
+
+/* Three separate native .pane cards in a gapped grid (the panes supply the
+   box: bg, border, radius, shadow, padding). */
+
+/* Open issues gets more room than it did: its severity bar and three-item
+   legend were squeezed into 300px while the conformance card, which holds two
+   short bars, took every spare pixel. The middle column is the flexible one, so
+   widening the right-hand card comes out of the slack rather than the score. */
+
+/* A row of equal stat cards: the overall score, one per WCAG level up to the
+   target, and open issues. Equal flex-basis with wrap so a two-level (AA) band
+   sits four-up and a three-level (AAA) band five-up, both filling the row; on a
+   narrow CP the cards wrap to a second line rather than being crushed. */
+.accessibility-audit-kpi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: stretch;
+}
+
+.accessibility-audit-kpi__cell {
+  flex: 1 1 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  position: relative;
+}
+
+/* Two per row on tablet, one on phone, so the numbers never shrink to fit. */
+@media (width <= 760px) {
+  .accessibility-audit-kpi__cell {
+    flex-basis: calc(50% - 7px);
+  }
+}
+
+@media (width <= 460px) {
+  .accessibility-audit-kpi__cell {
+    flex-basis: 100%;
+  }
+}
+
+/* ---- Narrow screens ------------------------------------------------------
+   Until now the plugin had no responsive rules at all, so a CP at tablet width
+   scrolled sideways: the multi-column card grids held their track counts, and
+   the data tables (up to fifteen columns) simply stretched the page.
+
+   Cards stack; tables scroll inside their own box with a floor width, so the
+   columns stay legible instead of being crushed and the page itself never
+   scrolls horizontally. */
+@media (width <= 900px) {
+  .accessibility-audit-statcards,
+  .accessibility-audit-statcards--3 {
+    grid-template-columns: 1fr;
+  }
+
+  .accessibility-audit-table-scroll {
+    overflow-x: auto;
+  }
+
+  .accessibility-audit-table-scroll > table {
+    min-width: 640px;
+  }
+}
+
+/* Native CP font for the KPI numbers, not the custom mono (scoped to the band). */
+.accessibility-audit-kpi .accessibility-audit-stat,
+.accessibility-audit-kpi .accessibility-audit-kpi__sub strong {
+  font-family: inherit;
+}
+
+/* The score/percentage numeral leads each card; the unit rides its baseline. */
+.accessibility-audit-kpi .accessibility-audit-stat {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.accessibility-audit-kpi__unit {
+  font-size: 14px;
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-stat--ink {
+  color: var(--text-color);
+}
+
+/* Sub-line under the bar: the target gap, the failing-criteria count, or the
+   split of open issues by severity. */
+.accessibility-audit-kpi__sub {
+  font-size: 12px;
+  color: var(--aa-text-secondary);
+  margin-top: 2px;
+}
+
+.accessibility-audit-kpi__sub--counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.accessibility-audit-kpi__sub--counts strong {
+  font-weight: 600;
+}
+
+.accessibility-audit-kpi__ct--error {
+  color: var(--aa-error);
+}
+
+.accessibility-audit-kpi__ct--warning {
+  color: var(--aa-warning-strong);
+}
+
+.accessibility-audit-kpi__ct--notice {
+  color: var(--aa-notice);
+}
+
+/* Target level: an amber ring and a soft badge, so the number that actually
+   matters is the one the eye lands on first. Uses box-shadow rather than a
+   border so the card doesn't shift by a pixel against its unhighlighted siblings. */
+.accessibility-audit-kpi__cell--target {
+  box-shadow: inset 0 0 0 2px var(--aa-warning-marker);
+}
+
+.accessibility-audit-kpi__badge {
+  display: inline-block;
+  margin-inline-start: 6px;
+  padding: 1px 6px;
+  border-radius: 9px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--aa-warning-strong);
+  background: var(--aa-warning-bg);
+  vertical-align: 1px;
+}
+
+/* Filter btngroup pinned top-right of a position:relative pane heading (Overview). */
+.accessibility-audit-filter-corner {
+  position: absolute;
+  top: 22px;
+  right: 24px;
+}
+
+/* On narrower screens the corner chips would ride over the pane's heading, so
+   they drop back into the flow, below the title and its subline, above the
+   table. Wrapping keeps them tidy at any width. */
+@media (width <= 1250px) {
+  .accessibility-audit-filter-corner {
+    position: static;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    margin: 0 0 14px;
+  }
+}
+
+/* Readability stats strip: single pane, native font + ink, grade colour only. */
+.accessibility-audit-statstrip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 18px 24px;
+}
+
+.accessibility-audit-statlabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.accessibility-audit-statfig {
+  font-size: 20px;
+  font-weight: 700;
+  margin-top: 5px;
+}
+
+.accessibility-audit-statfig--pass {
+  color: var(--aa-pass);
+}
+
+.accessibility-audit-statfig--warn {
+  color: var(--aa-warning-strong);
+}
+
+.accessibility-audit-statfig--error {
+  color: var(--aa-error);
+}
+
+/* ---- Statement: the "awaiting human review" checklist behind the count ---- */
+.accessibility-audit-review-details {
+  margin-top: 10px;
+}
+
+.accessibility-audit-review-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--link-color);
+}
+
+.accessibility-audit-review-list {
+  margin: 10px 0 2px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.accessibility-audit-review-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.accessibility-audit-review-num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  min-width: 3.4em;
+}
+
+.accessibility-audit-review-name {
+  flex: 1;
+}
+
+/* ---- Entry sidebar panel (Access panel, like the SEO preview) ---- */
+
+/* Full-bleed to the sidebar edges, matching Craft's own .meta panels (which
+   negative-margin past the details pane's 24px padding). */
+.accessibility-audit-panel {
+  overflow: hidden;
+  margin: 0 -24px;
+}
+
+/* .accessibility-audit-panel__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 12px 18px 0; }
+.accessibility-audit-panel__title { margin: 0; font-size: 14px; font-weight: 700; color: var(--text-color); } */
+
+/* Sub-tabs */
+.accessibility-audit-panel__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px 18px 0;
+  border-bottom: 1px solid var(--aa-border-section);
+}
+
+.accessibility-audit-panel__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--aa-text-secondary);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+
+.accessibility-audit-panel__tab.accessibility-audit-panel-tab--active {
+  color: var(--text-color);
+  font-weight: 600;
+  border-bottom-color: var(--blue-600, #1f5eeb);
+}
+
+.accessibility-audit-panel__badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--aa-text-secondary);
+  background: var(--aa-surface-tint);
+  border-radius: 8px;
+  padding: 1px 6px;
+}
+
+/* Score row */
+.accessibility-audit-panel__scorerow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--aa-border-section);
+}
+
+.accessibility-audit-panel__score {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.accessibility-audit-panel__score-num {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-color);
+  line-height: 1;
+}
+
+.accessibility-audit-panel__score-max {
+  font-size: 12px;
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-panel__legend {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-panel__leg {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.accessibility-audit-panel__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.accessibility-audit-panel__dot--error {
+  background: var(--aa-error);
+}
+
+.accessibility-audit-panel__dot--warning {
+  background: var(--aa-warning-marker);
+}
+
+.accessibility-audit-panel__dot--notice {
+  background: var(--aa-notice);
+}
+
+/* Collapsible issue list (native <details>) */
+.accessibility-audit-panel__issue {
+  border-bottom: 1px solid var(--aa-border-section);
+}
+
+.accessibility-audit-panel__issue-sum {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 18px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.accessibility-audit-panel__issue-sum::-webkit-details-marker {
+  display: none;
+}
+
+.accessibility-audit-panel__issue-sum:hover {
+  background: var(--aa-surface-tint);
+}
+
+.accessibility-audit-panel__issue-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--blue-600, #1f5eeb);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.accessibility-audit-panel__chev {
+  color: var(--light-text-color);
+  font-size: 15px;
+  transition: transform 0.12s;
+}
+
+.accessibility-audit-panel__issue[open] .accessibility-audit-panel__chev {
+  transform: rotate(90deg);
+}
+
+.accessibility-audit-panel__issue-body {
+  padding: 0 18px 12px 35px;
+}
+
+/* Occurrence count on a grouped issue row, pushed to sit just before the
+   chevron. Mono so a column of counts lines up. */
+.accessibility-audit-panel__issue-count {
+  margin-inline-start: auto;
+  font:
+    500 11px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-panel__issue-msg {
+  margin: 0;
+  font-size: 12px;
+  color: var(--aa-text-secondary);
+  line-height: 1.5;
+}
+
+.accessibility-audit-panel__issue-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.accessibility-audit-panel__fix {
+  font-size: 11px;
+  font-weight: 600;
+  margin-inline-start: auto;
+  white-space: nowrap;
+}
+
+/* Footers + empty states */
+.accessibility-audit-panel__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 18px;
+}
+
+.accessibility-audit-panel__empty {
+  padding: 14px 18px;
+}
+
+/* Readability tiles */
+.accessibility-audit-panel__tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.accessibility-audit-panel__tile {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--aa-border-section);
+}
+
+.accessibility-audit-panel__tile:first-child {
+  border-right: 1px solid var(--aa-border-section);
+}
+
+.accessibility-audit-panel__tile-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-panel__tile-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 5px;
+}
+
+.accessibility-audit-panel__tile-num {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+.accessibility-audit-panel__target {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--aa-border-section);
+}
+
+.accessibility-audit-panel__target-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.accessibility-audit-panel__longest {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--aa-border-section);
+}
+
+.accessibility-audit-panel__longest-text {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--aa-text-secondary);
+  line-height: 1.55;
+}
+
+/* Dashed empty-state hint for the readability inline-results area. */
+.accessibility-audit-emptybox {
+  margin-top: 14px;
+  padding: 12px 16px;
+  border: 1px dashed var(--aa-border-card);
+  border-radius: 6px;
+  background: var(--aa-surface-tint);
+  color: var(--aa-text-secondary);
+  font-size: 12px;
+}
+
+/* Assets page empty state: a plain white pane, not an error note. Covers both
+   "no sweep yet" (a prompt) and "all clear" (a positive), so neither is dressed
+   as a warning. */
+.accessibility-audit-assets-empty {
+  text-align: center;
+  padding: 28px 24px;
+}
+
+.accessibility-audit-empty-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.accessibility-audit-assets-empty p.light {
+  margin: 6px 0 0;
+}
+
+/* Utilities page: native CP font only, no custom mono (ratio, hex box, RGB). */
+.accessibility-audit-util-wrap .accessibility-audit-ratio,
+.accessibility-audit-util-wrap .accessibility-audit-data,
+.accessibility-audit-util-wrap .accessibility-audit-hexbox {
+  font-family: inherit;
+}
+
+.accessibility-audit-progress {
+  height: 6px;
+  background: var(--aa-border-section);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.accessibility-audit-progress__fill {
+  height: 100%;
+  background: var(--aa-brand-gradient);
+  border-radius: 3px;
+}
+
+/* Flush against the figure above it, so a card's number, bar and sub-line read
+   as one unit. Height and radius are deliberately not overridden: every bar in
+   the plugin is the same weight, so a row of cards does not read as unrelated
+   widgets. */
+.accessibility-audit-progress--flush {
+  margin-top: 0;
+}
+
+.accessibility-audit-progress__fill--ink {
+  background: var(--aa-ink);
+}
+
+.accessibility-audit-progress__fill--muted {
+  background: #c9c1b7;
+}
+
+/* ---- Distribution bar + legend ---- */
+.accessibility-audit-dist {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  gap: 2px;
+}
+
+.accessibility-audit-dist__seg--error {
+  background: var(--aa-error);
+}
+
+.accessibility-audit-dist__seg--warning {
+  background: var(--aa-warning-marker);
+}
+
+.accessibility-audit-dist__seg--notice {
+  background: var(--aa-notice);
+}
+
+.accessibility-audit-dist__seg--pass {
+  background: var(--aa-pass);
+}
+
+.accessibility-audit-legend {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.accessibility-audit-legend__dot {
+  display: inline-block;
+  vertical-align: middle;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+/* Severity dot used inline before a rule link (macros.severityDot), where there
+   is no flex gap to space it from the following text. */
+.accessibility-audit-sevdot {
+  margin-right: 5px;
+}
+
+/* Assets page: light section header per issue-type band, replacing the heavy
+   coloured flag banner. Severity now reads from the leading dot. */
+.accessibility-audit-asset-band td {
+  background: var(--gray-050);
+  padding: 8px 16px;
+  border-top: 1px solid var(--aa-border-section);
+}
+
+/* Dashboard resolved-issues pane: green check marking each fixed rule. */
+
+/* Green check-in-circle marking a resolved row: the check glyph from Craft's
+   icon font on a pass-tinted disc, replacing the old hand-drawn SVG. */
+.accessibility-audit-resolved-check {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--aa-pass-bg);
+  color: var(--aa-pass);
+  font-size: 9px;
+}
+
+.accessibility-audit-legend__dot--error {
+  background: var(--aa-error);
+}
+
+.accessibility-audit-legend__dot--warning {
+  background: var(--aa-warning-marker);
+}
+
+.accessibility-audit-legend__dot--notice {
+  background: var(--aa-notice);
+}
+
+/* Respect the CP user's "Use shapes to represent statuses" preference (Craft
+   adds body.use-shapes): the severity dot is otherwise colour-only, so give each
+   severity a distinct shape as well (notice = circle, warning = triangle,
+   error = diamond), mirroring how Craft reshapes its own .status indicators.
+
+   Covers all three surfaces that draw one: the dashboard legend, the element
+   sidebar panel and the page report. Only the dashboard honoured it before, so
+   somebody with that preference on still read the other two by colour alone. */
+body.use-shapes .accessibility-audit-legend__dot--notice,
+body.use-shapes .accessibility-audit-panel__dot--notice,
+body.use-shapes .accessibility-audit-pr-dot--notice {
+  border-radius: 50%;
+}
+
+body.use-shapes .accessibility-audit-legend__dot--warning,
+body.use-shapes .accessibility-audit-panel__dot--warning,
+body.use-shapes .accessibility-audit-pr-dot--warning {
+  border-radius: 0;
+  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+}
+
+body.use-shapes .accessibility-audit-legend__dot--error,
+body.use-shapes .accessibility-audit-panel__dot--error,
+body.use-shapes .accessibility-audit-pr-dot--error {
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+
+.accessibility-audit-legend strong {
+  color: var(--text-color);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* ---- Difficulty dots ---- */
+.accessibility-audit-dots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e4dcd2;
+}
+
+.accessibility-audit-dot--amber {
+  background: var(--aa-warning-marker);
+}
+
+.accessibility-audit-dot--green {
+  background: var(--aa-pass);
+}
+
+/* ---- Toolbar / search / tabs ---- */
+.accessibility-audit-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Bulk-action bar: shows only when at least one image row is selected. Marks or
+   clears decorative across the whole page's selection in one go. */
+.accessibility-audit-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--aa-surface, #fff);
+  border: 1px solid var(--aa-border-card, #d5d0c8);
+  border-radius: var(--aa-radius-small, 5px);
+}
+
+.accessibility-audit-bulk-count {
+  font-weight: 600;
+}
+
+/* Volume filter: label + native select, kept on one line at the toolbar's right. */
+.accessibility-audit-asset-volume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.accessibility-audit-asset-volume .select {
+  margin: 0;
+}
+
+.accessibility-audit-asset-alt {
+  min-width: 0;
+}
+
+.accessibility-audit-alt-input {
+  width: 100%;
+}
+
+/* Action cell: buttons in a right-aligned row (resting = one button; editing =
+   ✨ Save ✕). */
+.accessibility-audit-asset-action {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.accessibility-audit-asset-action .btn + .btn {
+  margin-inline-start: 6px;
+}
+
+/* The cell is a plain td, so its buttons are inline boxes on the text
+   baseline — and an icon-only button (no text) baselines on its bottom edge
+   while Save baselines on its text, which no amount of height-matching fixes.
+   Aligning their middles puts all three on one line. */
+.accessibility-audit-asset-action .btn {
+  vertical-align: middle;
+}
+
+/* ---- Re-homed page utilities (were in the unloaded cp-old.css) ---- */
+.accessibility-audit-util-wrap {
+  max-width: 900px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--aa-gap-page);
+}
+
+/* ---- Stat cards (readability etc.) ---- */
+.accessibility-audit-statcards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.accessibility-audit-statcards--3 {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.accessibility-audit-statcard {
+  background: var(--aa-surface-tint);
+  border: 1px solid var(--aa-border-card);
+  border-radius: var(--aa-radius-card);
+  padding: 15px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.accessibility-audit-statcard--white {
+  background: var(--aa-surface);
+  gap: 4px;
+  padding: 14px 16px;
+}
+
+.accessibility-audit-statcard--fail {
+  background: var(--aa-error-bg);
+  border-color: var(--aa-error-border);
+}
+
+.accessibility-audit-statcard__num {
+  font:
+    600 27px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: var(--text-color);
+}
+
+.accessibility-audit-statcard__num--error {
+  color: var(--aa-error);
+}
+
+.accessibility-audit-statcard__num--warn {
+  color: var(--aa-warning-strong);
+}
+
+.accessibility-audit-statcard__num--pass {
+  color: var(--aa-pass);
+}
+
+.accessibility-audit-statcard__num--sm {
+  font-size: 26px;
+}
+
+.accessibility-audit-statcard__hint {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-statcard__sub {
+  font-size: 11px;
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-statcard__fail {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--aa-error);
+}
+
+.accessibility-audit-statcard--fail .accessibility-audit-col-label,
+.accessibility-audit-statcard--fail .accessibility-audit-statcard__sub {
+  color: #8a4640;
+}
+
+.accessibility-audit-task {
+  display: flex;
+  gap: 13px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--aa-border-row);
+  align-items: flex-start;
+}
+
+.accessibility-audit-task:last-child {
+  border-bottom: none;
+}
+
+.accessibility-audit-task__icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  margin-top: 1px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.accessibility-audit-task__icon--done {
+  background: var(--aa-pass-bg);
+  color: var(--aa-pass);
+}
+
+/* Lock glyph in an upsell: just the glyph, no background disc or border. */
+.accessibility-audit-task__icon--locked {
+  background: none;
+  color: var(--light-text-color);
+}
+
+.accessibility-audit-task__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.accessibility-audit-task__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+.accessibility-audit-asset-filter {
+  display: flex;
+  column-gap: 8px;
+}
+
+/* The readability page borrows .accessibility-audit-util-wrap for its shared
+   font handling, but not its 900px cap: the results table wants the full
+   content pane (beside the details sidebar), like the issue-detail page. */
+.accessibility-audit-rl-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: none;
+}
+
+.accessibility-audit-rl-url-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.accessibility-audit-rl-claude-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.accessibility-audit-rl-claude-label label {
+  margin: 0;
+}
+
+/* Longest-sentence rows: created by readability.twig's inline JS, so the class
+   names only ever appear there, not in template markup. */
+.accessibility-audit-rl-sentence {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--gray-050);
+  border: 1px solid var(--aa-border-section);
+  border-radius: 6px;
+}
+
+.accessibility-audit-rl-sentence__n {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--gray-100);
+  color: var(--gray-600);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.accessibility-audit-rl-sentence__text {
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-color);
+  overflow-wrap: anywhere;
+}
+
+.accessibility-audit-rl-sentence__count {
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 2px;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--medium-text-color);
+}
+
+.accessibility-audit-error {
+  color: var(--aa-error);
+  font-size: 13px;
+}
+
+/* Coloured metric numbers in the results grid (pass/warn/error). */
+.accessibility-audit-num--pass {
+  color: var(--aa-pass);
+  font-weight: 600;
+}
+
+.accessibility-audit-num--warn {
+  color: var(--aa-warning-strong);
+  font-weight: 600;
+}
+
+.accessibility-audit-num--error {
+  color: var(--aa-error);
+  font-weight: 600;
+}
+
+/* Readability: inline analysis results (JS-populated after Analyse). Reuses
+   .accessibility-audit-statcards / .accessibility-audit-statcard / .accessibility-audit-sentence / .accessibility-audit-progress from the design system; these
+   add the ease-bar fill colours, the stat row, and the AI-suggestion cards. */
+.accessibility-audit-progress__fill--pass {
+  background: var(--aa-pass);
+}
+
+.accessibility-audit-progress__fill--warn {
+  background: var(--aa-warning-edge);
+}
+
+.accessibility-audit-progress__fill--error {
+  background: var(--aa-error);
+}
+
+.accessibility-audit-hr {
+  margin: 20px 0;
+  border: none;
+  border-top: 1px solid var(--aa-border-card);
+}
+
+.accessibility-audit-statrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px;
+  padding: 2px;
+}
+
+.accessibility-audit-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.accessibility-audit-suggest {
+  border: 1px solid var(--aa-border-card);
+  border-radius: var(--aa-radius-control);
+  padding: 12px 14px;
+}
+
+.accessibility-audit-suggest + .accessibility-audit-suggest {
+  margin-top: 10px;
+}
+
+.accessibility-audit-suggest__from {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--aa-text-body);
+  margin: 0 0 6px;
+}
+
+.accessibility-audit-suggest__why {
+  font-size: 11px;
+  color: var(--aa-text-secondary);
+  margin: 0 0 6px;
+}
+
+.accessibility-audit-suggest__to {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--aa-pass-deep);
+  font-weight: 500;
+  margin: 0;
+}
+
+/* Reference panels in the CP sidebar (Readability + VPAT #details blocks).
+   Self-contained (no Craft .meta class) so Craft's high-specificity
+   `#details .details .meta` heading/list rules don't override these. Selectors
+   are bumped with #details so they win inside that container regardless. */
+.accessibility-audit-ref,
+#details .accessibility-audit-ref {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.accessibility-audit-ref + .accessibility-audit-ref {
+  margin-top: 14px;
+}
+
+.accessibility-audit-ref__title,
+#details .pane .accessibility-audit-ref__title {
+  font: var(--aa-text-card-heading);
+  color: var(--text-color);
+  margin: 0;
+}
+
+.accessibility-audit-ref__intro,
+#details .accessibility-audit-ref .accessibility-audit-ref__intro {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--aa-text-secondary);
+  margin: 0;
+}
+
+.accessibility-audit-scale {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.accessibility-audit-scale td,
+.accessibility-audit-scale th {
+  padding: 5px 0;
+  font-size: 12px;
+  text-align: left;
+  vertical-align: top;
+  color: var(--aa-text-body);
+}
+
+.accessibility-audit-scale__score {
+  font-weight: 700;
+  padding-right: 14px;
+  white-space: nowrap;
+}
+
+.accessibility-audit-scale__score--pass {
+  color: var(--aa-pass);
+}
+
+.accessibility-audit-scale__score--warn {
+  color: var(--aa-warning-strong);
+}
+
+.accessibility-audit-scale__score--error {
+  color: var(--aa-error);
+}
+
+.accessibility-audit-reflist,
+#details .accessibility-audit-ref .accessibility-audit-reflist {
+  list-style: disc;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--aa-text-body);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#details .accessibility-audit-ref .accessibility-audit-reflist li {
+  color: var(--aa-text-body);
+}
+
+/* ---- VPAT editor ----
+   Row layout lives in vpat.twig's own {% css %} block, which styles the real
+   <table>. This file only carries the cell-level chrome. Nothing here may set
+   `display` on .accessibility-audit-vpat-row: it is a <tr>, and a grid or flex
+   display on it detaches the cells from the <thead> columns. */
+.accessibility-audit-vpat-sc {
+  font:
+    600 12px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: var(--aa-link);
+  text-decoration: none;
+}
+
+.accessibility-audit-vpat-auto {
+  font:
+    600 10px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: var(--text-color);
+  border: 1px solid var(--aa-border-control);
+  border-radius: var(--aa-radius-chip);
+  padding: 1px 5px;
+}
+
+.accessibility-audit-vpat-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-color);
+  line-height: 1.35;
+}
+
+/* .accessibility-audit-vpat-select is a real <select> inside Craft's own
+   `.select` wrapper, so it takes the CP's dropdown chrome and needs no styling
+   of its own. It carried a pill/badge rule here (flex, 700 weight, padding)
+   left over from when the conformance level was rendered as a coloured chip;
+   on a form control that only bolded the chosen option and fought the wrapper. */
+
+.accessibility-audit-vpat-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ---- Contrast analyser ---- */
+.accessibility-audit-picker-grid {
+  display: grid;
+  grid-template-columns: 1fr 44px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.accessibility-audit-picker {
+  border: 1px solid var(--aa-border-card);
+  border-radius: var(--aa-radius-card);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.accessibility-audit-picker__fields {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.accessibility-audit-picker__dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--aa-border-card);
+}
+
+/* Colour swatch: a native <input type="color"> stripped of its browser chrome
+   so the colour fills a clean rounded square, matching the design mockup. */
+.accessibility-audit-picker__swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--aa-radius-small);
+  border: 1px solid var(--aa-border-card);
+  appearance: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.accessibility-audit-picker__swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.accessibility-audit-picker__swatch::-webkit-color-swatch {
+  border: none;
+  border-radius: var(--aa-radius-small);
+}
+
+.accessibility-audit-picker__swatch::-moz-color-swatch {
+  border: none;
+  border-radius: var(--aa-radius-small);
+}
+
+.accessibility-audit-hexbox {
+  display: flex;
+  align-items: center;
+  background: var(--aa-surface);
+  border: 1px solid var(--aa-border-control);
+  border-radius: var(--aa-radius-control);
+  padding: 7px 11px;
+  font:
+    500 13px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: var(--text-color);
+}
+
+/* Focus ring only while the field is actually focused (it was a static class
+   before, so the foreground hex box always looked focused). */
+.accessibility-audit-hexbox:focus-visible {
+  border: var(--aa-focus-border);
+  box-shadow: var(--aa-focus-halo);
+  outline: none;
+}
+
+.accessibility-audit-swap-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--aa-surface);
+  border: 1px solid var(--aa-border-control);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  justify-self: center;
+  font-family: inherit;
+}
+
+/* ── Lightness slider ────────────────────────────────────────────────────── */
+
+/* A real, draggable native range input. (The previous .slider__knob rules
+   styled the whole <input> as an 18px circle pinned at left:8%, so it couldn't
+   be dragged.) The track gradient is set inline per-colour by the tool's JS. */
+.accessibility-audit-cc-slider-wrap {
+  flex: 1;
+}
+
+.accessibility-audit-cc-lightness-slider {
+  appearance: none;
+  width: 100%;
+  height: 12px;
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+  border: 1px solid var(--hairline-color);
+}
+
+/* Keyboard focus indicator: replaces the removed default outline so the
+   slider remains operable and visible for keyboard users. */
+.accessibility-audit-cc-lightness-slider:focus-visible {
+  outline: 2px solid var(--link-color);
+  outline-offset: 2px;
+}
+
+.accessibility-audit-cc-lightness-slider:focus-visible::-webkit-slider-thumb {
+  border-color: var(--link-color);
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 35%);
+}
+
+.accessibility-audit-cc-lightness-slider:focus-visible::-moz-range-thumb {
+  border-color: var(--link-color);
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 35%);
+}
+
+.accessibility-audit-cc-lightness-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--white);
+  border: 2px solid var(--medium-text-color);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 20%);
+  cursor: pointer;
+  transition:
+    border-color 0.1s,
+    box-shadow 0.1s;
+}
+
+.accessibility-audit-cc-lightness-slider::-webkit-slider-thumb:hover {
+  border-color: var(--link-color);
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 20%);
+}
+
+.accessibility-audit-cc-lightness-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--white);
+  border: 2px solid var(--medium-text-color);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 20%);
+  cursor: pointer;
+}
+
+.accessibility-audit-ratio {
+  font:
+    600 26px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: var(--aa-pass);
+}
+
+/* Ratio state colours, driven by the tool's JS. Reuse the design system's
+   pass/warning/error tokens so the headline number matches the badges below:
+   green when it clears AA normal text (4.5:1), amber when it only clears the
+   large-text/UI threshold (3:1), red when it fails both. */
+.accessibility-audit-ratio--good {
+  color: var(--aa-pass);
+}
+
+.accessibility-audit-ratio--fair {
+  color: var(--aa-warning-strong);
+}
+
+.accessibility-audit-ratio--poor {
+  color: var(--aa-error);
+}
+
+.accessibility-audit-ratio__base {
+  font-size: 15px;
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-preview-normal {
+  font-size: 14px;
+  color: #1a1a1a;
+}
+
+.accessibility-audit-preview-large {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+/* ---- Utilities: one white pane per tool, tinted sub-panels inside ---- */
+.accessibility-audit-tool {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.accessibility-audit-tool__head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.accessibility-audit-tool__head h2 {
+  margin: 0;
+}
+
+.accessibility-audit-tool__head p {
+  margin: 0;
+}
+
+.accessibility-audit-subcard {
+  background: var(--aa-surface);
+  border: 1px solid var(--aa-border-section);
+  border-radius: var(--aa-radius-card, 8px);
+  padding: 16px 18px;
+}
+
+/* ---- Colour blindness simulator ---- */
+.accessibility-audit-cvd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  background: var(--aa-border-section);
+}
+
+.accessibility-audit-cvd-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 16px 18px;
+  background: var(--aa-surface);
+}
+
+.accessibility-audit-cvd-chip {
+  height: 58px;
+  border-radius: 6px;
+  border: 1px solid var(--aa-border-section);
+  margin-bottom: 9px;
+}
+
+.accessibility-audit-cvd-sub {
+  font-size: 11px;
+  margin-top: -1px;
+}
+
+/* ---- Contrast grid ----
+   Headers stay on the page background with a swatch beside the hex; only the
+   cells carry colour, so the grid reads as a matrix of pairings rather than a
+   block of colour with text fighting it. */
+.accessibility-audit-cg-table {
+  border-collapse: separate;
+  border-spacing: 6px;
+}
+
+.accessibility-audit-cg-corner {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--aa-text-secondary);
+  padding: 6px 10px;
+  text-align: start;
+  white-space: nowrap;
+}
+
+/* The cell itself keeps table-cell display so the columns line up over the
+   grid; the chrome lives on the wrapper inside it. Giving the <th> `display:
+   flex` pulled it out of the table and stacked every header in one column. */
+.accessibility-audit-cg-head {
+  padding: 0;
+  font-weight: 400;
+  vertical-align: middle;
+}
+
+.accessibility-audit-cg-head__inner {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 11px;
+  border: 1px solid var(--aa-border-section);
+  border-radius: var(--aa-radius-small, 4px);
+  background: var(--aa-surface);
+  white-space: nowrap;
+}
+
+.accessibility-audit-cg-chip {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  border-radius: 3px;
+  border: 1px solid var(--aa-border-card);
+}
+
+.accessibility-audit-cg-hex {
+  font:
+    500 11px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: var(--text-color);
+}
+
+.accessibility-audit-cg-cell {
+  width: 104px;
+  height: 74px;
+  border-radius: var(--aa-radius-small, 4px);
+  text-align: center;
+  vertical-align: middle;
+  line-height: 1.2;
+}
+
+.accessibility-audit-cg-cell b {
+  display: block;
+  margin-bottom: 5px;
+  font:
+    700 17px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+/* Diagonal hatch for a colour paired with itself: not a usable combination, so
+   it gets no number rather than a meaningless 1:1. */
+.accessibility-audit-cg-cell--same {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 6px,
+    rgb(120 120 120 / 22%) 6px,
+    rgb(120 120 120 / 22%) 12px
+  );
+}
+
+/* Verdict badges keep their own light background. On a failing pairing the
+   text is meant to be hard to read: the verdict must not be. */
+.accessibility-audit-cg-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font: 700 10px/1.4 var(--aa-font-ui, inherit);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.accessibility-audit-cg-badge--aaa {
+  background: #d9f2e3;
+  color: #1c6b3f;
+}
+
+.accessibility-audit-cg-badge--aa {
+  background: #d9f2e3;
+  color: #1c6b3f;
+}
+
+.accessibility-audit-cg-badge--large {
+  background: #fbe9d0;
+  color: #8a5a1a;
+}
+
+.accessibility-audit-cg-badge--fail {
+  background: #fff;
+  color: #b3261e;
+}
+
+.accessibility-audit-cg-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  align-items: center;
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--aa-border-section);
+}
+
+.accessibility-audit-cg-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.accessibility-audit-cg-legend__note {
+  font-size: 11px;
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-cg-empty {
+  padding: 16px 20px;
+  margin: 0;
+}
+
+/* Palette input: label above its textarea, not beside it. */
+
+/* ---- Pro upsell ---- */
+.accessibility-audit-upsell {
+  display: grid;
+  grid-template-columns: 1fr 218px;
+  background: var(--white);
+  border: 1px solid var(--hairline-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.accessibility-audit-upsell__body {
+  padding: 22px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.accessibility-audit-upsell__cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 22px;
+  border-inline-start: 1px solid var(--hairline-color);
+  background: var(--white);
+}
+
+.accessibility-audit-upsell__features {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 24px;
+}
+
+.accessibility-audit-feature {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.accessibility-audit-feature::before {
+  content: '✓';
+  color: var(--aa-pass);
+  font-weight: 800;
+}
+
+.accessibility-audit-upsell__headline {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-color);
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.accessibility-audit-pro-lock {
+  display: flex;
+  gap: 14px;
+  background: var(--gray-050);
+  border: 1px solid var(--hairline-color);
+  border-radius: var(--aa-radius-card);
+  padding: 16px 18px;
+  align-items: flex-start;
+}
+
+.accessibility-audit-pro-lock--inline {
+  padding: 12px 14px;
+  gap: 11px;
+
+  /* No outline in the entry sidebar: it sits inside the panel's own framing. */
+  border: none;
+}
+
+/* ---- Asset alt-text ---- */
+.accessibility-audit-asset-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--aa-radius-small);
+  background: linear-gradient(135deg, #e7e1d8, #d9d2c9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.accessibility-audit-no-alt {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--aa-error);
+  background: var(--aa-error-bg);
+  border-radius: var(--aa-radius-small);
+  padding: 4px 10px;
+}
+
+.accessibility-audit-filename-alt {
+  font:
+    500 12px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: var(--aa-warning-strong);
+  background: var(--aa-warning-bg);
+  border-radius: var(--aa-radius-small);
+  padding: 4px 10px;
+}
+
+.accessibility-audit-decorative-note {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--aa-ok, #3f8f5b);
+}
+
+.accessibility-audit-asset-item--decorative .accessibility-audit-no-alt,
+.accessibility-audit-asset-item--decorative .accessibility-audit-filename-alt {
+  display: none;
+}
+
+.accessibility-audit-asset-item--decorative .accessibility-audit-asset-thumb {
+  opacity: 0.55;
+}
+
+/* A lightswitch-styled toggle whose interaction the plugin owns (so it can save
+   over AJAX). The on/off state, including the knob position, is pure CSS keyed
+   off the .on class, so it renders correctly server-side with no Garnish. */
+.accessibility-audit-decorative-switch {
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: var(--gray-200, #cdd8e4);
+  cursor: pointer;
+  vertical-align: middle;
+  transition: background-color 0.15s ease;
+}
+
+.accessibility-audit-decorative-switch:focus-visible {
+  outline: 2px solid var(--bg-enabled, #1ca672);
+  outline-offset: 2px;
+}
+
+.accessibility-audit-decorative-switch__knob {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-start: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 25%);
+  transition: inset-inline-start 0.15s ease;
+}
+
+.accessibility-audit-decorative-switch.on {
+  background: var(--bg-enabled, #1ca672);
+}
+
+.accessibility-audit-decorative-switch.on .accessibility-audit-decorative-switch__knob {
+  inset-inline-start: 14px;
+}
+
+.accessibility-audit-decorative-switch[disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.accessibility-audit-card {
+  background: var(--aa-surface);
+  border: 1px solid var(--aa-border-card);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.accessibility-audit-card-subhead {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-card > .accessibility-audit-rule-table,
+.accessibility-audit-card > .data {
+  margin: 0;
+}
+
+.accessibility-audit-card > .accessibility-audit-hint,
+.accessibility-audit-card > .accessibility-audit-clean,
+.accessibility-audit-card > p {
+  padding: 12px 16px;
+  margin: 0;
+}
+
+.accessibility-audit-card > .accessibility-audit-filter-chips {
+  padding: 12px 16px 0;
+  margin: 0 0 12px;
+}
+
+/* Right-align numeric cells in a rule table (specificity-qualified so it beats
+   the table's default left-aligned text). */
+.accessibility-audit-num,
+.accessibility-audit-rule-table th.accessibility-audit-num,
+.accessibility-audit-rule-table td.accessibility-audit-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Centre numeric cells (same specificity-qualified selectors as .accessibility-audit-num
+   above, needed to beat the table's own text-align: left). */
+.accessibility-audit-num-center,
+.accessibility-audit-rule-table th.accessibility-audit-num-center,
+.accessibility-audit-rule-table td.accessibility-audit-num-center {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+table.data thead th.accessibility-audit-num-center.orderable button {
+  text-align: center;
+  padding-inline: 35px;
+}
+
+/* A right-aligned sortable header: the th's text-align doesn't reach the
+   <button> Craft renders inside it, so the button itself is pushed right
+   (mirroring the centred variant above). */
+table.data thead th.rightalign.orderable button {
+  justify-content: flex-end;
+  text-align: right;
+  width: 100%;
+}
+
+/* Numbers compare down a column, so right-aligned cells get tabular figures:
+   right alignment only works when every digit is the same width. Covers both
+   the plugin's hand-rolled tables and the Vue admin tables, whose columns pass
+   rightalign through titleClass/dataClass. */
+table.data td.rightalign,
+.vue-admin-table td.rightalign,
+.vue-admin-table th.rightalign {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Score display (number + /100 label), distinct from the .accessibility-audit-score chip. */
+.accessibility-audit-score-display {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.accessibility-audit-score-display__number {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.accessibility-audit-score-display__label {
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.accessibility-audit-score-display--good .accessibility-audit-score-display__number {
+  color: var(--accessibility-audit-good);
+}
+
+.accessibility-audit-score-display--fair .accessibility-audit-score-display__number {
+  color: var(--accessibility-audit-fair);
+}
+
+.accessibility-audit-score-display--poor .accessibility-audit-score-display__number {
+  color: var(--accessibility-audit-poor);
+}
+
+.accessibility-audit-counts {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.accessibility-audit-count {
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 20px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+/* Tint severity pills (the original look), tokenised: light tinted background,
+   dark same-hue number, plus a coloured border so the pill stays visible on
+   white even when the tint is very pale (e.g. the warning cream). */
+.accessibility-audit-count--error {
+  background: var(--aa-error-bg);
+  color: var(--aa-error-deep);
+  border-color: var(--aa-error-border);
+}
+
+.accessibility-audit-count--warning {
+  background: var(--aa-warning-bg);
+  color: var(--aa-warning-deep);
+  border-color: var(--aa-warning-border);
+}
+
+.accessibility-audit-count--notice {
+  background: var(--aa-notice-bg);
+  color: var(--aa-notice-deep);
+  border-color: var(--aa-notice-border);
+}
+
+.accessibility-audit-count--clean {
+  background: var(--aa-pass-bg);
+  color: var(--aa-pass-deep);
+  border-color: var(--aa-pass-edge);
+}
+
+.accessibility-audit-issues {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.accessibility-audit-issue {
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.accessibility-audit-issue__severity {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  display: block;
+  margin-bottom: 2px;
+  opacity: 0.8;
+}
+
+.accessibility-audit-issue__msg {
+  line-height: 1.4;
+}
+
+.accessibility-audit-issue__context {
+  display: block;
+  font-size: 10px;
+  background: rgb(0 0 0 / 5%);
+  border-radius: 3px;
+  padding: 4px 6px;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.accessibility-audit-clean {
+  color: var(--accessibility-audit-good);
+  font-size: 13px;
+}
+
+.accessibility-audit-hint {
+  color: var(--aa-text-secondary);
+  font-size: 12px;
+}
+
+/* Pages-with-issues cell: the page title reads as plain text (it is the thing,
+   not a link), and the row's one action is an explicit right-aligned
+   "View report →" so nothing masquerades as the live page. */
+.accessibility-audit-page-name {
+  font-weight: 500;
+  color: var(--text-color);
+}
+
+/* Pages-with-issues cell: the expand caret centres vertically against the
+   title + URL text column instead of aligning to the title's line. */
+.accessibility-audit-page-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.accessibility-audit-page-cell__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* View report + Re-scan row actions: full label where the table has room; on a
+   narrower viewport each collapses to its glyph alone, to keep the row from
+   getting wide. The label stays in the DOM (clipped, not display:none) so the
+   button keeps its accessible name, and a title gives a sighted tooltip. Craft
+   gives a labelled [data-icon] a 5px trailing margin, zeroed here so the lone
+   glyph sits clean. */
+@media (width <= 1100px) {
+  .accessibility-audit-rowbtn__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .accessibility-audit-rowbtn[data-icon]::before {
+    margin-inline-end: 0;
+  }
+}
+
+.accessibility-audit-table-scroll {
+  overflow-x: auto;
+}
+
+/* `.accessibility-audit-table` marks every table in this plugin so the border-radius fix stays
+   scoped. Specificity (0,4,4): `.accessibility-audit-table thead:first-child…` alone is (0,4,3),
+   one element short since `.accessibility-audit-table` carries no element type of its own. */
+table.accessibility-audit-table thead:first-child tr:first-child th:first-child {
+  border-end-start-radius: 0;
+}
+
+table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
+  border-end-end-radius: 0;
+}
+
+.accessibility-audit-rule-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.accessibility-audit-rule-table th,
+.accessibility-audit-rule-table td {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--aa-border-card);
+}
+
+.accessibility-audit-rule-table th {
+  /* Matches Craft core's own `table.data thead th` treatment: bold, same size
+     as the body cells, default text colour, no uppercase/letter-spacing: the
+     previous small-caps styling here was a custom look that diverged from
+     every other data table in the CP. */
+  background: var(--aa-surface-tint);
+  font-weight: 700;
+}
+
+.accessibility-audit-sev {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.accessibility-audit-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--aa-border-card);
+  margin-bottom: 0;
+}
+
+.accessibility-audit-tab {
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--aa-text-secondary);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.accessibility-audit-tab:hover {
+  color: var(--text-color);
+}
+
+.accessibility-audit-difficulty {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.accessibility-audit-difficulty__dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+/* The difficulty scale's own dot. Distinct from .accessibility-audit-dot (the
+   grouped board's --green/--amber dot): same concept, different markup, so they
+   must not share a base class. */
+.accessibility-audit-difficulty-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--aa-border-section);
+  border: 1px solid var(--aa-border-control);
+}
+
+.accessibility-audit-difficulty--beginner .accessibility-audit-difficulty-dot.filled {
+  background: var(--aa-pass);
+  border-color: var(--aa-pass);
+}
+
+.accessibility-audit-difficulty--intermediate .accessibility-audit-difficulty-dot.filled {
+  background: var(--accessibility-audit-warn);
+  border-color: var(--accessibility-audit-warn);
+}
+
+.accessibility-audit-difficulty--advanced .accessibility-audit-difficulty-dot.filled {
+  background: var(--aa-error);
+  border-color: var(--aa-error);
+}
+
+.accessibility-audit-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-right: 6px;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  color: var(--light-text-color);
+  cursor: pointer;
+  vertical-align: middle;
+  flex-shrink: 0;
+  transition:
+    color 0.1s,
+    background 0.1s;
+}
+
+.accessibility-audit-expand-btn:hover {
+  background: var(--aa-surface-tint);
+  color: var(--text-color);
+}
+
+.accessibility-audit-expand-icon {
+  transition: transform 0.15s;
+  display: block;
+}
+
+.accessibility-audit-loading {
+  color: var(--aa-text-secondary);
+  font-size: 13px;
+}
+
+.accessibility-audit-page-issues-table {
+  width: 100%;
+  background: var(--aa-surface);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* Roomier rule rows than Craft's tight .data default. The severity-band header
+   cells carry an inline padding:0, so they stay flush and are unaffected. */
+.accessibility-audit-page-issues-table tbody td,
+.accessibility-audit-page-issues-table tbody th,
+.accessibility-audit-grouped-table tbody td,
+.accessibility-audit-grouped-table tbody th {
+  padding-block: 12px;
+}
+
+.accessibility-audit-abilities-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.accessibility-audit-ability {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: var(--aa-surface-tint);
+  border: 1px solid var(--aa-border-card);
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-pr-acc-header .accessibility-audit-expand-icon {
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+
+.accessibility-audit-pr-acc-open .accessibility-audit-expand-icon {
+  transform: rotate(180deg);
+}
+
+.accessibility-audit-preview-iframe {
+  width: 100%;
+  flex: 1;
+  border: none;
+  display: block;
+  background: var(--aa-surface);
+
+  /* colour blindness filter applied via JS */
+  transition: filter 0.3s ease;
+}
+
+.accessibility-audit-panel-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 14px 9px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--aa-text-secondary);
+  cursor: pointer;
+  margin-bottom: -1px;
+  transition:
+    color 0.1s,
+    border-color 0.1s;
+}
+
+.accessibility-audit-panel-tab:hover {
+  color: var(--text-color);
+}
+
+.accessibility-audit-panel-tab--active {
+  color: var(--text-color);
+  border-bottom-color: var(--ui-control-color, var(--blue-500));
+  font-weight: 600;
+}
+
+.accessibility-audit-rl-ease-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition:
+    width 0.4s ease,
+    background 0.4s ease;
+}
+
+.accessibility-audit-rl-suggestion {
+  border: 1px solid var(--aa-border-card);
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+
+.accessibility-audit-rl-jargon-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.accessibility-audit-rl-jargon-tag {
+  background: var(--accessibility-audit-warn-bg);
+  color: var(--accessibility-audit-warn-text);
+  border: 1px solid var(--accessibility-audit-warn-border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.accessibility-audit-note {
+  font-size: 11px;
+}
+
+.accessibility-audit-note--md {
+  font-size: 12px;
+}
+
+.accessibility-audit-note--mt {
+  margin-top: 10px;
+}
+
+.accessibility-audit-center {
+  text-align: center;
+}
+
+.accessibility-audit-widget-score {
+  text-align: center;
+  padding: 8px 0 4px;
+}
+
+.accessibility-audit-widget-caption {
+  margin: 4px 0 0;
+}
+
+.accessibility-audit-widget-link {
+  margin-top: 6px;
+}
+
+.accessibility-audit-justify-center {
+  justify-content: center;
+}
+
+.accessibility-audit-mt-4 {
+  margin-top: 16px;
+}
+
+.accessibility-audit-score-display--inline {
+  font-size: 12px;
+}
+
+.accessibility-audit-score-display--inline .accessibility-audit-score-display__number {
+  font-size: 16px;
+}
+
+.accessibility-audit-score-display--field-tab .accessibility-audit-score-display__number {
+  font-size: 13px;
+}
+
+.accessibility-audit-col-criteria {
+  width: 110px;
+}
+
+.accessibility-audit-col-name {
+  width: 220px;
+}
+
+.accessibility-audit-col-conformance {
+  width: 200px;
+}
+
+.accessibility-audit-grid-full {
+  grid-column: 1 / -1;
+}
+
+.accessibility-audit-inline-result {
+  font-size: 13px;
+}
+
+.accessibility-audit-inline-result--success {
+  color: var(--aa-pass);
+}
+
+.accessibility-audit-inline-result--error {
+  color: var(--aa-error);
+}
+
+.accessibility-audit-verify-row {
+  margin-top: -8px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* An unsaved value (typed or AI-drafted) awaiting review. Blue, not green:
+   in the CP's own language green marks a pass/success verdict, while blue is
+   the modified/attention state (drafts, focus, selection), and this value
+   hasn't earned a verdict yet. Craft's blue tokens; focus hands over to the
+   native focus ring. */
+.accessibility-audit-alt-input--pending {
+  border-color: var(--blue-300);
+  box-shadow: 0 0 0 1px var(--blue-300);
+}
+
+.accessibility-audit-alt-input--pending:focus {
+  border-color: var(--blue-600);
+  box-shadow: var(--focus-ring);
+}
+
+/* ==========================================================================
+   Restored dynamic modifiers — these severity/responsibility/ability variants
+   are built by string interpolation in both the Twig macros and cp.js
+   (e.g. `accessibility-audit-sev--${severity}`), so they never appear as literal class names
+   and were missed by the initial relocation sweep. Tokenised design-system
+   colours; class names kept (JS re-injects them).
+   ========================================================================== */
+
+/* Score numerals coloured by the good/fair/poor band (scoreClass()); built
+   dynamically as accessibility-audit-stat-value--${band} in templates + cp.js, so — like the
+   severity variants below — they never appear literally and were dropped by
+   the relocation sweep. */
+.accessibility-audit-stat-value--good {
+  color: var(--aa-pass);
+}
+
+.accessibility-audit-stat-value--fair {
+  color: var(--aa-warning-strong);
+}
+
+.accessibility-audit-stat-value--poor {
+  color: var(--aa-error);
+}
+
+/* Severity text badge — solid so the status label reads clearly. */
+.accessibility-audit-sev--error {
+  background: var(--aa-error);
+  color: #fff;
+}
+
+.accessibility-audit-sev--warning {
+  background: var(--aa-warning);
+  color: #fff;
+}
+
+.accessibility-audit-sev--notice {
+  background: var(--aa-notice);
+  color: #fff;
+}
+
+/* Potential-issue review in the page report sidebar. One question per rule,
+   then a card per occurrence. The context line is the load-bearing bit: it is
+   the only thing that tells two occurrences of the same question apart, so it
+   gets the emphasis and the question recedes to a heading. */
+
+/* Matches the 16px inset the issue rows carry, so the review content lines up
+   with the lists above and below it instead of sitting flush to the edge. */
+.accessibility-audit-pr-acc-body--padded {
+  padding: 12px 16px 14px;
+}
+
+.accessibility-audit-pr-review-intro {
+  margin: 0 0 12px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.accessibility-audit-pr-review-group {
+  margin-bottom: 14px;
+}
+
+.accessibility-audit-pr-review-group:last-of-type {
+  margin-bottom: 0;
+}
+
+.accessibility-audit-pr-review__q {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--aa-text-secondary);
+  line-height: 1.35;
+}
+
+/* Clicking the card highlights its elements in the preview. Only a mouse
+   shortcut for the "Show on page" button, so it stays a hover hint rather
+   than pretending to be a control. */
+.accessibility-audit-pr-review {
+  background: var(--aa-surface-tint);
+  border: 1px solid var(--aa-border-section);
+  border-radius: var(--aa-radius-small, 4px);
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.accessibility-audit-pr-review:last-child {
+  margin-bottom: 0;
+}
+
+.accessibility-audit-pr-review:hover {
+  border-color: var(--aa-border-control, var(--hairline-color));
+}
+
+.accessibility-audit-pr-review__actions button {
+  cursor: pointer;
+}
+
+/* The offending markup or link, verbatim. Monospaced so a URL reads cleanly,
+   and clipped rather than wrapped so one long link can't push the buttons
+   off the sidebar. The full value is on the title attribute. */
+.accessibility-audit-pr-review__ctx {
+  margin: 0;
+  font:
+    500 11px/1.45 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: var(--text-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow-wrap: break-word;
+}
+
+.accessibility-audit-pr-review__msg {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.accessibility-audit-pr-review__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.accessibility-audit-pr-review__status {
+  font-size: 11px;
+  color: var(--aa-text-secondary);
+}
+
+/* Confirming marks the site down, so it is a quiet text action rather than a
+   button competing with the common answer next to it. It stays a real button
+   for keyboard and screen-reader users; only its weight is reduced. */
+.accessibility-audit-pr-review__confirm {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--aa-text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  border-radius: var(--aa-radius-small, 4px);
+}
+
+.accessibility-audit-pr-review__confirm:hover {
+  color: var(--aa-error);
+}
+
+.accessibility-audit-pr-review__confirm:focus-visible {
+  outline: 2px solid var(--aa-focus-ring, currentColor);
+  outline-offset: 1px;
+}
+
+/* Dismissed rulings: present but out of the way, and reversible. */
+.accessibility-audit-pr-dismissed {
+  margin-top: 14px;
+  border-top: 1px solid var(--aa-border-section);
+  padding-top: 10px;
+}
+
+.accessibility-audit-pr-dismissed__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-pr-dismissed__toggle:hover {
+  color: var(--text-color);
+}
+
+.accessibility-audit-pr-review--dismissed {
+  opacity: 0.75;
+  margin-top: 8px;
+}
+
+/* EN 301 549 standing note, under the WCAG conformance scores. */
+.accessibility-audit-en-note {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+/* Ability tag icons. Craft's icon set, not emoji: these take currentColor and
+   render identically on every platform, where the emoji versions were at the
+   mercy of the system font and turned into coloured blobs at small sizes. */
+.accessibility-audit-ability__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+
+.accessibility-audit-ability__icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  fill: currentcolor;
+}
+
+/* VueAdminTable pages table: expand caret rotation keyed off the button class
+   (its rows have no .accessibility-audit-page-row ancestor), and the injected tinted detail row. */
+.accessibility-audit-vt-expand .accessibility-audit-expand-icon {
+  transition: transform 0.15s;
+  transform-origin: center;
+  transform: rotate(-90deg);
+}
+
+.accessibility-audit-vt-expand[aria-expanded='true'] .accessibility-audit-expand-icon {
+  transform: rotate(0deg);
+}
+
+.accessibility-audit-vt-detail {
+  background: var(--aa-surface-tint);
+  border-bottom: 1px solid var(--aa-border-row);
+}
+
+.accessibility-audit-vt-detail > td {
+  border-top: none;
+  padding: 0;
+}
+
+.accessibility-audit-issues-detail {
+  padding: 4px 20px 14px 36px;
+}
+
+/* ---- VueAdminTable followed by other content in the same block ----
+   Craft's table footer (the pagination bar) is `position: sticky; bottom: 0`
+   with an opaque background and `margin-bottom: calc(var(--xl) * -1)`. That
+   assumes the table is the last thing in its pane, so the bar can bleed into
+   the pane's bottom padding. Where we put a legend or a chart after a table,
+   the bar instead floats over it and the negative margin drags it up 24px
+   underneath. Craft neutralises the identical problem for slideouts with
+   `.so-body .vue-admin-table-footer`; this is the same treatment for in-flow
+   tables, scoped to our own wrapper so no native class is restyled globally. */
+.accessibility-audit-table-inflow .vue-admin-table-footer {
+  position: static;
+  margin-bottom: 0;
+}
+
+/* ---- Metric tiles pane (issue-detail) ----
+   Craft tints every `.pane` nested in #content via `#content .pane`, which
+   reads `--secondary-pane-bg`. Rather than out-specify that rule, set the
+   variable Craft already exposes: no !important, no native class restyled.
+   The keyline border from that same rule stays. */
+.accessibility-audit-statpane {
+  --secondary-pane-bg: var(--aa-surface);
+}
+
+/* Dividers between tiles. The 1px grid gaps expose the container's background,
+   which is the only thing drawing the lines: the tiles paint over the rest.
+   Beats `border-inline-start` + `:first-child`, which leaves a stray leading
+   line on the first tile of every wrapped row (the strip is auto-fit, so it
+   wraps at narrow widths). Row lines come for free on wrap. */
+.accessibility-audit-statpane .accessibility-audit-statstrip {
+  gap: 1px;
+  background: var(--aa-border-section);
+}
+
+.accessibility-audit-statpane .accessibility-audit-statstrip > * {
+  background: var(--aa-surface);
+  padding: var(--pane-padding) 22px;
+}
+
+.accessibility-audit-statpane .accessibility-audit-statstrip > *:first-child {
+  padding-inline-start: 0;
+}
+
+/* Narrow screens: auto-fit wrapping leaves the divider-coloured background
+   showing wherever the last row is short (a grey block beside the final
+   tiles), so the strip switches to a fixed two-column grid with the dividers
+   drawn as per-tile borders instead. Position-based, so it holds for any tile
+   count: right-column tiles carry the vertical line, every row after the
+   first carries the horizontal one. */
+@media (width <= 1150px) {
+  .accessibility-audit-statpane .accessibility-audit-statstrip {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0;
+    background: transparent;
+  }
+
+  .accessibility-audit-statpane .accessibility-audit-statstrip > *,
+  .accessibility-audit-statpane .accessibility-audit-statstrip > *:first-child {
+    padding: 12px 16px;
+  }
+
+  .accessibility-audit-statpane .accessibility-audit-statstrip > *:nth-child(even) {
+    border-inline-start: 1px solid var(--aa-border-section);
+  }
+
+  .accessibility-audit-statpane .accessibility-audit-statstrip > *:nth-child(n + 3) {
+    border-top: 1px solid var(--aa-border-section);
+  }
+}
+
+@media (width <= 600px) {
+  .accessibility-audit-statpane .accessibility-audit-statstrip {
+    grid-template-columns: 1fr;
+  }
+
+  .accessibility-audit-statpane .accessibility-audit-statstrip > *:nth-child(even) {
+    border-inline-start: none;
+  }
+
+  .accessibility-audit-statpane .accessibility-audit-statstrip > *:nth-child(n + 2) {
+    border-top: 1px solid var(--aa-border-section);
+  }
+}
+
+/* Narrow-screen note on the page report. Hidden by default; shows once the
+   screen is too tight for the preview pane to be genuinely usable. */
+.accessibility-audit-pr-mobile-note {
+  display: none;
+}
+
+@media (width <= 1024px) {
+  .accessibility-audit-pr-mobile-note {
+    display: block;
+    margin-bottom: 12px;
+  }
+}
+
+/* "About this rule" on the issue detail page: description and abilities sit
+   side by side with room, or stack when the pane narrows enough that the
+   description would wrap every few words. */
+.accessibility-audit-about-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px 32px;
+  margin-top: 14px;
+}
+
+@media (width <= 1150px) {
+  .accessibility-audit-about-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Run the dividers edge to edge: the pane hands its vertical padding to the
+   tiles, so the gaps reach the top and bottom borders instead of stopping at
+   the padding edge. `--pane-padding` inherits from #content's .content-pane,
+   so the tiles reinstate the exact value the pane gave up and the pane's
+   overall height is unchanged. Selector carries .pane to beat its `padding`
+   shorthand on specificity rather than relying on stylesheet order. */
+.pane.accessibility-audit-statpane {
+  padding-block: 0;
+}
+
+/* ---- Dashboard first-run state (index.twig) ----
+   Craft's own .zilch is a single muted line for an empty table; this is a
+   guided first run, so it borrows the centred/muted feel and adds the icon,
+   steps and CTA. Deliberately not `.note.warning`: nothing has failed. */
+.accessibility-audit-zilch {
+  max-width: 560px;
+  margin: 24px auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.accessibility-audit-zilch__icon {
+  width: 56px;
+  height: 56px;
+}
+
+.accessibility-audit-zilch__icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.accessibility-audit-zilch__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+.accessibility-audit-zilch__lede {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--medium-text-color);
+}
+
+/* Steps read as a list to assistive tech; the numerals are decorative, so the
+   real <ol> marker is dropped and the badge carries aria-hidden. */
+.accessibility-audit-steps {
+  list-style: none;
+  margin: 6px 0 4px;
+  padding: 0;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.accessibility-audit-steps__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-color);
+}
+
+.accessibility-audit-steps__num {
+  flex: 0 0 auto;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  background: var(--aa-surface-chrome);
+  border: 1px solid var(--aa-border-card);
+  color: var(--aa-text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 19px;
+  text-align: center;
+}
+
+.accessibility-audit-zilch__btn {
+  margin-top: 4px;
+}
+
+.accessibility-audit-zilch__cli {
+  margin: 0;
+  font-size: 12px;
+}
+
+.accessibility-audit-zilch__cli code {
+  display: inline-block;
+  margin-top: 5px;
+}
+
+/* ── Accessibility statement editor ──────────────────────────────────────── */
+.accessibility-audit-statement-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.accessibility-audit-statement-actions .error {
+  color: var(--aa-error);
+}
+
+/* Craft's .btn is inline-flex, which discards whitespace-only text nodes
+   between its children, so the count rendered flush against the criterion:
+   "(1.4.3)72". A margin rather than a &nbsp; or a gap on .btn itself, which
+   would also shift the icon Craft draws with its own margin. */
+.accessibility-audit-suggestion-count {
+  margin-inline-start: 6px;
+}
+
+/* The page cell is a <th scope="row"> so screen readers announce which row a
+   figure belongs to when moving across it. Craft styles every table.data th at
+   700, which is right for a column header and heavy for a row of page names, so
+   the weight is dialled back without giving up the semantics. */
+.accessibility-audit-rl-table tbody th {
+  font-weight: 400;
+}
+
+.accessibility-audit-statement-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+/* The date and criterion inputs sit on one line with Remove pushed to the end;
+   `align-items: end` keeps the button on the inputs' baseline rather than the
+   taller field labels'. */
+.accessibility-audit-statement-entry-row {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.accessibility-audit-statement-entry-row .field {
+  margin: 0;
+}
+
+.accessibility-audit-statement-entry-row [data-remove-entry] {
+  margin-left: auto;
+}
+
+.accessibility-audit-statfig--sm {
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+/* ── Icons in admin-table action menus ───────────────────────────────────── */
+
+/* Craft's Vue admin table hardcodes <ul class="padded"> on its action menu,
+   which reserves a leading slot the component then has no way to fill: a menu
+   action accepts a label, a status dot and a class, and nothing else. So the
+   items sit against an empty indent. Craft fills the same slot for checked
+   items via `.menu ul.padded li a.sel:before`, and these mirror that rule's
+   geometry exactly so an icon lands where a tick would.
+
+   The class arrives through the action's `class` key, which the component
+   spreads into Vue's class binding: it has to be an object, since spreading a
+   string would yield one class per character. */
+.menu ul.padded li a.accessibility-audit-menu-icon::before {
+  font-family: Craft, sans-serif;
+  font-feature-settings: 'liga', 'dlig';
+  font-variant: normal;
+  font-weight: 400;
+  speak: never;
+  color: currentcolor;
+  float: inline-start;
+  font-size: 14px;
+  width: 14px;
+  margin-block: 4px 0;
+  margin-block-start: 3px;
+  margin-inline: calc(-1.125rem - 4px) 0;
+}
+
+.menu ul.padded li a.accessibility-audit-menu-icon--refresh::before {
+  content: 'refresh' / '';
+}

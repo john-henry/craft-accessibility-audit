@@ -1,0 +1,74 @@
+{% extends "accessibility-audit/_settings/layout" %}
+
+{% import "_includes/forms" as forms %}
+{% import 'accessibility-audit/_macros' as macros %}
+
+
+
+{% set crumbs = [] %}
+
+{% set fullPageForm = true %}
+
+{% block blockContent %}
+  
+    {{ actionInput('accessibility-audit/settings/save-maintenance') }}
+    {{ redirectInput(url('accessibility-audit/settings/maintenance')) }}
+    
+    <h3>{{ 'Data Retention'|t('accessibility-audit') }}</h3>
+    
+    {{ forms.textField({
+        label: 'Retain Scan Results (days)'|t('accessibility-audit'),
+        instructions: (isPro ?? false)
+            ? 'Automatically delete scan results older than this many days. Set to 0 to keep forever.'|t('accessibility-audit')
+            : 'Automatically delete scan results older than this many days. The Standard edition keeps up to {n} days; upgrade to Pro for longer or unlimited retention.'|t('accessibility-audit', {n: retentionCap ?? 30}),
+        id: 'retainDays',
+        name: 'settings[retainDays]',
+        value: settings.retainDays,
+        type: 'number',
+        min: (isPro ?? false) ? 0 : 1,
+        max: (isPro ?? false) ? null : (retentionCap ?? 30),
+        size: 6,
+        errors: settings.getErrors('retainDays'),
+        warning: config.retainDays is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.retainDays is defined,
+    }) }}
+
+
+    {% set isProEdition = isPro ?? false %}
+    {{ forms.selectField({
+        label: 'Resolved Issues'|t('accessibility-audit'),
+        instructions: 'How resolved issues are kept when old scan results are pruned. Keeping them forever builds a permanent record but grows the database over time.'|t('accessibility-audit'),
+        id: 'resolvedRetention',
+        name: 'settings[resolvedRetention]',
+        value: settings.resolvedRetention,
+        options: [
+            { value: 'withScans', label: 'Prune with old scans'|t('accessibility-audit') },
+            { value: 'keepDays', label: 'Keep for the retention window after they are resolved'|t('accessibility-audit') },
+            {
+                value: 'forever',
+                label: isProEdition
+                    ? 'Keep forever (permanent record)'|t('accessibility-audit')
+                    : 'Keep forever (Pro feature)'|t('accessibility-audit'),
+                disabled: not isProEdition,
+            },
+        ],
+        errors: settings.getErrors('resolvedRetention'),
+        warning: config.resolvedRetention is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.resolvedRetention is defined,
+    }) }}
+
+    {% if not isProEdition %}
+        <p class="light">
+            {{ 'Keeping a permanent record of resolved issues is a Pro feature.'|t('accessibility-audit') }}
+            <a href="{{ cpUrl('plugin-store/accessibility-audit') }}" class="go">{{ 'Upgrade to Pro'|t('accessibility-audit') }}</a>
+        </p>
+    {% endif %}
+    
+    {% set pruneDays = settings.retainDays > 0 ? settings.retainDays : 90 %}
+    <div class="readable">
+        <blockquote class="note">
+            <p>{{ 'You can prune results manually via CLI:'|t('accessibility-audit') }}</p>
+            <pre><code>php craft accessibility-audit/audit/prune --days={{ pruneDays }}</code></pre>
+        </blockquote>
+    </div>
+{% endblock %}

@@ -1,0 +1,490 @@
+{% extends '_layouts/cp' %}
+{% import '_includes/forms.twig' as forms %}
+
+{% set title = 'VPAT: WCAG 2.2 AA' %}
+{% set selectedSubnavItem = 'vpat' %}
+{% set crumbs = [
+    { label: 'Accessibility Audit'|t('accessibility-audit'), url: cpUrl('accessibility-audit') },
+    { label: title },
+] %}
+{% set docTitle = title ~ ': Accessibility Audit' %}
+
+{% set exportUrl        = cpUrl('accessibility-audit/vpat/export', { site: siteHandle }) %}
+
+{% if sites|length > 1 %}
+    {% set crumbs = [{
+        id: 'site-crumb',
+        icon: 'world',
+        label: requestedSite.name|t('site'),
+        menu: { items: siteMenuItems(sites, requestedSite), label: 'Select site'|t('app') },
+    }]|merge(crumbs ?? []) %}
+{% endif %}
+
+{% block actionButton %}
+    {% if isPro %}
+        <a href="{{ exportUrl }}" target="_blank" class="btn submit">Export HTML</a>
+    {% endif %}
+{% endblock %}
+
+{% block details %}
+    {% if isPro %}
+<fieldset>
+    <legend class="h6">{{ 'What is a VPAT?'|t('accessibility-audit') }}</legend>
+    <div class="meta accessibility-audit-ref">
+        <p class="accessibility-audit-ref__intro">{{ 'A VPAT (Voluntary Product Accessibility Template) is the standard document buyers use to judge how a product conforms to WCAG. Governments, universities, and enterprise procurement teams routinely ask for one before signing.'|t('accessibility-audit') }}</p>
+        <p class="accessibility-audit-ref__intro">{{ 'The completed document is called an ACR (Accessibility Conformance Report). This editor produces one against WCAG 2.2 Level A and AA.'|t('accessibility-audit') }}</p>
+    </div>
+</fieldset>
+        <fieldset>
+            <legend class="h6">{{ 'Conformance Levels'|t('accessibility-audit') }}</legend>
+            <div class="meta accessibility-audit-ref">
+                <dl class="accessibility-audit-vpat-legend__list accessibility-audit-vpat-legend__list--stacked">
+                    <dt><span class="accessibility-audit-vpat-badge accessibility-audit-vpat-badge--supports">Supports</span></dt>
+                    <dd>{{ 'The functionality of the product meets the criterion without exception.'|t('accessibility-audit') }}</dd>
+                    <dt><span class="accessibility-audit-vpat-badge accessibility-audit-vpat-badge--partial">Partially Supports</span></dt>
+                    <dd>{{ 'Some functionality meets the criterion; some does not.'|t('accessibility-audit') }}</dd>
+                    <dt><span class="accessibility-audit-vpat-badge accessibility-audit-vpat-badge--fail">Does Not Support</span></dt>
+                    <dd>{{ 'The majority of product functionality does not meet the criterion.'|t('accessibility-audit') }}</dd>
+                    <dt><span class="accessibility-audit-vpat-badge accessibility-audit-vpat-badge--na">Not Applicable</span></dt>
+                    <dd>{{ 'The criterion is not relevant to this product.'|t('accessibility-audit') }}</dd>
+                    <dt><span class="accessibility-audit-vpat-badge accessibility-audit-vpat-badge--not-evaluated">Not Evaluated</span></dt>
+                    <dd>{{ 'The product has not been evaluated against this criterion.'|t('accessibility-audit') }} <strong>{{ 'Do not use for Level A or AA in a published conformance claim.'|t('accessibility-audit') }}</strong></dd>
+                </dl>
+            </div>
+        </fieldset>
+        <fieldset>
+            <legend class="h6">{{ 'Choosing a level'|t('accessibility-audit') }}</legend>
+        <div class="meta accessibility-audit-ref">
+        <ul class="accessibility-audit-reflist">
+            <li>{{ '"Partially Supports" is the most common honest answer for a real site. Reviewers trust reports that use it.'|t('accessibility-audit') }}</li>
+            <li>{{ 'A report that claims "Supports" on everything reads as unevaluated, not excellent.'|t('accessibility-audit') }}</li>
+            <li>{{ 'Use "Not Applicable" when the criterion cannot arise, e.g. Captions when the site has no video.'|t('accessibility-audit') }}</li>
+            <li>{{ '"Not Evaluated" is a placeholder while you work, not an answer to publish.'|t('accessibility-audit') }}</li>
+            <li>{{ 'With server-side browser scanning on, Non-text Contrast (1.4.11) and Target Size (2.5.8) mark themselves "Supports" when a clean sweep says so. The sweep renders every page at desktop and mobile widths, so both criteria are genuinely exercised. Focus Visible (2.4.7) always needs your own keyboard check.'|t('accessibility-audit') }}</li>
+        </ul>
+    </div>
+        </fieldset>
+        <fieldset>
+            <legend class="h6">{{ 'Writing remarks'|t('accessibility-audit') }}</legend>
+        <div class="meta accessibility-audit-ref">
+        <p class="accessibility-audit-ref__intro">{{ 'Say what you tested, what you found, and what the plan is for any gap. Scale matters more than adjectives.'|t('accessibility-audit') }}</p>
+        <p class="accessibility-audit-ref__intro"><strong>{{ 'Weak:'|t('accessibility-audit') }}</strong> {{ '"The site is accessible."'|t('accessibility-audit') }}</p>
+        <p class="accessibility-audit-ref__intro"><strong>{{ 'Better:'|t('accessibility-audit') }}</strong> {{ '"Most images carry text alternatives. Four decorative images in the blog archive are missing alt attributes; a fix is scheduled for the next release."'|t('accessibility-audit') }}</p>
+        <p class="accessibility-audit-ref__intro"><strong>{{ 'For Not Applicable:'|t('accessibility-audit') }}</strong> {{ '"The site contains no prerecorded audio or video content."'|t('accessibility-audit') }}</p>
+    </div>
+        </fieldset>
+        <fieldset>
+            <legend class="h6">{{ 'Completing this report'|t('accessibility-audit') }}</legend>
+            <div class="meta accessibility-audit-ref">
+                <ul class="accessibility-audit-reflist">
+                    <li>{{ 'Rows carrying a blue scan dot (solid for fully checked, half-filled for partly checked) are pre-filled from your latest scan, so review each one. Every other criterion needs your own judgement, and starts blank.'|t('accessibility-audit') }}</li>
+                    <li>{{ 'The scanner only ever sets the conformance level. Add a remark to each row yourself, explaining how the product meets the criterion or where the gap is.'|t('accessibility-audit') }}</li>
+                    <li>{{ 'Changes save automatically. Pick a level or type a remark and the row is stored a moment later, with a "Saved" note appearing beside it. There is no separate save button for the tables.'|t('accessibility-audit') }}</li>
+                    <li>
+                        {{ 'Anything left on'|t('accessibility-audit') }}
+                        <span class="accessibility-audit-vpat-badge accessibility-audit-vpat-badge--not-evaluated">{{ 'Not Evaluated'|t('accessibility-audit') }}</span>
+                        {{ 'must not appear in a published Level A or AA conformance claim, so give every criterion a real answer before you export.'|t('accessibility-audit') }}
+                    </li>
+                </ul>
+            </div>
+        </fieldset>
+        <fieldset>
+            <legend class="h6">{{ 'Suggested workflow'|t('accessibility-audit') }}</legend>
+        <div class="meta accessibility-audit-ref">
+        <ul class="accessibility-audit-reflist">
+            <li>{{ 'Scan the site first, so the machine-testable rows arrive pre-filled.'|t('accessibility-audit') }}</li>
+            <li>{{ 'Review each pre-filled row against its findings before accepting it.'|t('accessibility-audit') }}</li>
+            <li>{{ 'Work through the manual rows: keyboard-only, 200% zoom, focus visibility, forms with errors.'|t('accessibility-audit') }}</li>
+            <li>{{ 'Give every row a remark. "Draft with AI" writes a first pass from scan findings, or tidies rough notes you\'ve typed into the box.'|t('accessibility-audit') }}</li>
+            <li>{{ 'Clear every "Not Evaluated", then export.'|t('accessibility-audit') }}</li>
+        </ul>
+    </div>
+        </fieldset>
+        <fieldset>
+            <legend class="h6">{{ 'Resources'|t('accessibility-audit') }}</legend>
+        <div class="meta accessibility-audit-ref">
+        <ul class="accessibility-audit-reflist">
+            <li><a href="https://www.itic.org/policy/accessibility/vpat" target="_blank" rel="noopener">ITI: the official VPAT</a></li>
+            <li><a href="https://www.section508.gov/sell/how-to-create-acr-with-vpat/" target="_blank" rel="noopener">Section508.gov: creating an ACR</a></li>
+            <li><a href="https://www.w3.org/WAI/WCAG22/quickref/" target="_blank" rel="noopener">How to Meet WCAG 2.2 (quick reference)</a></li>
+            <li><a href="https://www.w3.org/WAI/test-evaluate/" target="_blank" rel="noopener">W3C WAI: evaluating accessibility</a></li>
+        </ul>
+    </div>
+        </fieldset>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+
+{% if not isPro %}
+    {% include 'accessibility-audit/_includes/pro-upsell' with {
+        feature: 'VPAT Conformance Reporting'|t('accessibility-audit'),
+        headline: 'Win the contracts that ask for a VPAT'|t('accessibility-audit'),
+        description: 'Pro generates a WCAG 2.2 AA conformance report from your live scan data, with per-criterion overrides and a standalone HTML export ready to hand to procurement. Plus everything else in Pro:'|t('accessibility-audit'),
+        checklist: [
+            'VPAT export'|t('accessibility-audit'),
+            'Email & Slack alerts'|t('accessibility-audit'),
+            'Readability analysis'|t('accessibility-audit'),
+            'CI/CD Integration'|t('accessibility-audit'),
+        ],
+    } only %}
+{% else %}
+
+<div id="accessibility-audit-vpat">
+
+    {% if not report.hasScanData %}
+        <div class="accessibility-audit-callout accessibility-audit-callout--notice">
+            <span><strong>No scan data yet.</strong>
+            Run scans from the <a href="{{ cpUrl('accessibility-audit') }}">Overview</a> page to enable
+            automated conformance suggestions. You can still fill in the VPAT manually below.</span>
+        </div>
+    {% endif %}
+
+    {% if report.en301549 ?? false %}
+        <div class="accessibility-audit-callout accessibility-audit-callout--notice">
+            <span>{{ 'This report is Level A and AA, so the export will also state EN 301 549 clause 9, which adopts the WCAG Level AA criteria for web content. Clauses covering non-web ICT are out of scope.'|t('accessibility-audit') }}</span>
+        </div>
+    {% endif %}
+
+    {% set metaErrors = errors ?? {} %}
+    {% set metaHasData = (report.meta.productName ?? '') is not empty %}
+    {% set metaSummary = report.meta.productName ?? '' %}
+    {% if (report.meta.productVersion ?? '') is not empty %}
+        {% set metaSummary = metaSummary ~ ' · v' ~ report.meta.productVersion %}
+    {% endif %}
+    <div class="accessibility-audit-vpat-card accessibility-audit-vpat-card--collapsible{{ metaHasData ? ' is-collapsed' : '' }}"
+         id="vpat-meta-card" data-vpat-collapsible="meta">
+        <h2 class="accessibility-audit-vpat-card__heading accessibility-audit-vpat-card__heading--toggle">
+            <button type="button" class="accessibility-audit-vpat-card__toggle" id="vpat-meta-toggle"
+                    aria-expanded="{{ metaHasData ? 'false' : 'true' }}" aria-controls="vpat-meta-body">
+                <span class="accessibility-audit-vpat-card__toggle-label">Product &amp; Report Information</span>
+                <span class="accessibility-audit-vpat-meta-summary">{{ metaSummary }}</span>
+                <span class="accessibility-audit-vpat-toggle-hint" aria-hidden="true">
+                    <span class="accessibility-audit-vpat-toggle-hint__show">{{ 'Show'|t('accessibility-audit') }}</span>
+                    <span class="accessibility-audit-vpat-toggle-hint__hide">{{ 'Hide'|t('accessibility-audit') }}</span>
+                </span>
+                <span class="accessibility-audit-expand-icon" data-icon="downangle" aria-hidden="true"></span>
+            </button>
+        </h2>
+
+        <div class="accessibility-audit-vpat-card__body" id="vpat-meta-body"{{ metaHasData ? ' hidden' : '' }}>
+
+        <p class="light">
+            {{ 'In VPAT terms your website is the product, so the site\'s name goes here. The exported report uses the official field names procurement teams expect.'|t('accessibility-audit') }}
+        </p>
+
+        <div class="accessibility-audit-vpat-meta-grid">
+            <div class="accessibility-audit-grid-full">
+                {{ forms.textField({
+                    label: 'Product Name',
+                    id: 'vpat-productName',
+                    name: 'productName',
+                    value: report.meta.productName ?? '',
+                    placeholder: 'e.g. My Website',
+                    errors: metaErrors.productName ?? [],
+                }) }}
+            </div>
+            <div class="accessibility-audit-grid-full">
+                {{ forms.textareaField({
+                    label: 'Product Description',
+                    id: 'vpat-productDescription',
+                    name: 'productDescription',
+                    rows: 2,
+                    value: report.meta.productDescription ?? '',
+                    placeholder: 'Brief description of the product or service being evaluated.',
+                    errors: metaErrors.productDescription ?? [],
+                }) }}
+            </div>
+            {{ forms.textField({
+                label: 'Product Version',
+                id: 'vpat-productVersion',
+                name: 'productVersion',
+                value: report.meta.productVersion ?? '',
+                placeholder: 'e.g. 2.0',
+                errors: metaErrors.productVersion ?? [],
+            }) }}
+            {{ forms.dateField({
+                label: 'Report Date',
+                id: 'vpat-reportDate',
+                name: 'reportDate',
+                value: report.meta.reportDate ?? null,
+            }) }}
+            {{ forms.dateField({
+                label: 'Evaluation Period From',
+                id: 'vpat-reportPeriodFrom',
+                name: 'reportPeriodFrom',
+                value: report.meta.reportPeriodFrom ?? null,
+            }) }}
+            {{ forms.dateField({
+                label: 'Evaluation Period To',
+                id: 'vpat-reportPeriodTo',
+                name: 'reportPeriodTo',
+                value: report.meta.reportPeriodTo ?? null,
+            }) }}
+            {{ forms.textField({
+                label: 'Contact Name',
+                id: 'vpat-contactName',
+                name: 'contactName',
+                value: report.meta.contactName ?? '',
+                errors: metaErrors.contactName ?? [],
+            }) }}
+            {{ forms.textField({
+                label: 'Contact Email',
+                id: 'vpat-contactEmail',
+                name: 'contactEmail',
+                type: 'email',
+                value: report.meta.contactEmail ?? '',
+                errors: metaErrors.contactEmail ?? [],
+            }) }}
+            {{ forms.textField({
+                label: 'Contact Phone',
+                id: 'vpat-contactPhone',
+                name: 'contactPhone',
+                type: 'tel',
+                value: report.meta.contactPhone ?? '',
+                errors: metaErrors.contactPhone ?? [],
+            }) }}
+        </div>
+
+        {% set evalMethodOptions = [
+            'Automated scanning with axe-core',
+            'Automated server-side HTML analysis',
+            'Screen reader testing with NVDA',
+            'Screen reader testing with JAWS',
+            'Screen reader testing with VoiceOver',
+            'Screen reader testing with Narrator',
+            'Screen reader testing with TalkBack',
+            'Keyboard-only testing',
+            'Touch and gesture testing',
+            'Browser zoom and reflow testing (up to 400%)',
+            'Colour contrast analysis',
+            'Visual inspection',
+            'Code inspection',
+        ] %}
+        {% set savedMethods = report.meta.evalMethods ?? [] %}
+        {% set customMethods = savedMethods|filter(m => m not in evalMethodOptions) %}
+        <div class="accessibility-audit-mt-4 field" id="vpat-evalMethods">
+            <div class="heading">
+                <span class="h6" id="vpat-evalMethods-label" style="display:block">{{ 'Evaluation Methods Used'|t('accessibility-audit') }}</span>
+                <div class="instructions"><p>{{ 'Tick only the testing that was actually carried out. The export lists these; an untested claim in a VPAT is worse than a gap.'|t('accessibility-audit') }}</p></div>
+            </div>
+            <fieldset class="checkbox-group" aria-labelledby="vpat-evalMethods-label">
+                {% for method in evalMethodOptions %}
+                    <div>
+                        <input type="checkbox" class="checkbox" id="vpat-method-{{ loop.index }}"
+                               value="{{ method }}" {% if method in savedMethods %}checked{% endif %}>
+                        <label for="vpat-method-{{ loop.index }}">{{ method }}</label>
+                    </div>
+                {% endfor %}
+            </fieldset>
+            <div class="accessibility-audit-mt-4">
+                {{ forms.textField({
+                    label: 'Other Methods'|t('accessibility-audit'),
+                    instructions: 'Anything not listed above, comma-separated (e.g. "Usability session with screen reader users").'|t('accessibility-audit'),
+                    id: 'vpat-evalMethodsCustom',
+                    name: 'evalMethodsCustom',
+                    value: customMethods|join(', '),
+                }) }}
+            </div>
+        </div>
+
+        <div class="accessibility-audit-mt-4">
+            {{ forms.textareaField({
+                label: 'Additional Methodology Notes',
+                instructions: 'Optional prose shown after the methods list: evaluator qualifications, tooling versions, how sessions were run.'|t('accessibility-audit'),
+                id: 'vpat-evalMethodology',
+                name: 'evalMethodology',
+                rows: 3,
+                value: report.meta.evalMethodology ?? '',
+                placeholder: 'e.g. Evaluation performed by an IAAP-certified auditor using NVDA 2025.1 on Firefox.',
+                errors: metaErrors.evalMethodology ?? [],
+            }) }}
+        </div>
+
+        <div class="accessibility-audit-mt-4">
+            {{ forms.textareaField({
+                label: 'Scope of Evaluation'|t('accessibility-audit'),
+                instructions: 'The pages or screens the evaluation covered, one per line. Shown as its own section in the export when filled.'|t('accessibility-audit'),
+                id: 'vpat-scopePages',
+                name: 'scopePages',
+                rows: 5,
+                value: (report.meta.scopePages ?? [])|join("\n"),
+                placeholder: "Home (https://example.com/)\nContact us (https://example.com/contact)",
+            }) }}
+            {% if scopeSuggestions is not empty %}
+                <div class="accessibility-audit-vpat-scope-actions">
+                    <button type="button" class="btn small" id="vpat-scope-fill">
+                        {{ 'Fill from scanned pages'|t('accessibility-audit') }} ({{ scopeSuggestions|length }})
+                    </button>
+                    <span class="accessibility-audit-vpat-status">{{ 'Adds pages the scanner has covered; your own lines are kept.'|t('accessibility-audit') }}</span>
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="accessibility-audit-mt-4">
+            {{ forms.textareaField({
+                label: 'Legal Disclaimer'|t('accessibility-audit'),
+                instructions: 'Optional. Rendered as its own section on the export, if your company adds one to conformance reports.'|t('accessibility-audit'),
+                id: 'vpat-legalDisclaimer',
+                name: 'legalDisclaimer',
+                rows: 3,
+                value: report.meta.legalDisclaimer ?? '',
+                errors: metaErrors.legalDisclaimer ?? [],
+            }) }}
+        </div>
+        {{ forms.textareaField({
+            label: 'Notes',
+            id: 'vpat-notes',
+            name: 'notes',
+            rows: 3,
+            value: report.meta.notes ?? '',
+            placeholder: 'Any general notes about this report or the product.',
+            errors: metaErrors.notes ?? [],
+        }) }}
+
+        <div class="accessibility-audit-vpat-meta-actions">
+            <button type="button" class="btn submit" id="vpat-save-meta">{{ 'Save information'|t('accessibility-audit') }}</button>
+            <span id="vpat-meta-status" class="accessibility-audit-vpat-status" aria-live="polite"></span>
+        </div>
+        </div>
+    </div>
+
+    <p class="light accessibility-audit-vpat-hint">
+        {{ 'Rows marked'|t('accessibility-audit') }}
+        <span class="accessibility-audit-vpat-auto-badge accessibility-audit-vpat-auto-badge--full" aria-hidden="true">⚡</span>
+        {{ 'or'|t('accessibility-audit') }}
+        <span class="accessibility-audit-vpat-auto-badge accessibility-audit-vpat-auto-badge--partial" aria-hidden="true">◑</span>
+        {{ 'are pre-filled from your latest scan, and changes save automatically. Give every criterion a real answer before you export; the full guidance is in the panel beside.'|t('accessibility-audit') }}
+    </p>
+
+    {% for level in [
+        { key: 'level-a', label: 'Success Criteria, Level A', rows: report.levelA },
+        { key: 'level-aa', label: 'Success Criteria, Level AA', rows: report.levelAA },
+    ] %}
+        {% set tableLabel = level.label %}
+        {% set rows = level.rows %}
+
+        {% set completedCount = rows|filter(r => r.effectiveLevel != '')|length %}
+        {% set needRemarksCount = rows|filter(r =>
+            r.effectiveLevel in ['Not Applicable', 'Partially Supports', 'Does Not Support']
+            and r.effectiveRemarks == ''
+        )|length %}
+        <div class="accessibility-audit-vpat-card accessibility-audit-vpat-card--flush accessibility-audit-vpat-card--collapsible"
+             data-vpat-collapsible="{{ level.key }}">
+            <h2 class="accessibility-audit-vpat-card__heading accessibility-audit-vpat-card__heading--table accessibility-audit-vpat-card__heading--toggle">
+                <button type="button" class="accessibility-audit-vpat-card__toggle"
+                        aria-expanded="true" aria-controls="vpat-{{ level.key }}-body">
+                    <span class="accessibility-audit-vpat-card__toggle-label">{{ tableLabel }}</span>
+                    <span class="accessibility-audit-vpat-table-count">
+                        {{ rows|length }} criteria
+                        &nbsp;·&nbsp;
+                        <span class="accessibility-audit-vpat-completed-count">{{ completedCount }}</span> completed<span
+                            class="accessibility-audit-vpat-needs-remarks{% if needRemarksCount == 0 %} hidden{% endif %}">&nbsp;·&nbsp;<span
+                            class="accessibility-audit-vpat-needs-remarks-count">{{ needRemarksCount }}</span> awaiting remarks</span>
+                    </span>
+                    <span class="accessibility-audit-vpat-progress" aria-hidden="true">
+                        <span class="accessibility-audit-vpat-progress__fill{% if completedCount == rows|length %} accessibility-audit-vpat-progress__fill--complete{% endif %}"
+                              style="width: {{ ((completedCount / rows|length) * 100)|round }}%"></span>
+                    </span>
+                    <span class="accessibility-audit-vpat-toggle-hint" aria-hidden="true">
+                        <span class="accessibility-audit-vpat-toggle-hint__show">{{ 'Show'|t('accessibility-audit') }}</span>
+                        <span class="accessibility-audit-vpat-toggle-hint__hide">{{ 'Hide'|t('accessibility-audit') }}</span>
+                    </span>
+                    <span class="accessibility-audit-expand-icon" data-icon="downangle" aria-hidden="true"></span>
+                </button>
+            </h2>
+
+            <div class="accessibility-audit-vpat-card__body" id="vpat-{{ level.key }}-body">
+
+            <table class="accessibility-audit-vpat-table">
+                <thead>
+                    <tr>
+                        <th scope="col" class="accessibility-audit-col-criteria">{{ 'Criteria'|t('accessibility-audit') }}</th>
+                        <th scope="col" class="accessibility-audit-col-name">{{ 'Name'|t('accessibility-audit') }}</th>
+                        <th scope="col" class="accessibility-audit-col-conformance">{{ 'Conformance Level'|t('accessibility-audit') }}</th>
+                        <th scope="col">{{ 'Remarks & Explanations'|t('accessibility-audit') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for num, row in rows %}
+                        {% set conformanceValue = row.overrideLevel ?? row.autoLevel ?? '' %}
+                        <tr class="accessibility-audit-vpat-row" data-criterion="{{ num }}" data-auto-level="{{ row.autoLevel ?? '' }}">
+                            <td class="accessibility-audit-vpat-num">
+                                <a href="{{ row.url }}" target="_blank" rel="noopener"
+                                   title="{{ row.desc|e }}">{{ num }}</a>
+                                {% if row.auto == 'automated' %}
+                                    <span class="accessibility-audit-vpat-auto-badge accessibility-audit-vpat-auto-badge--full" role="img" title="{{ 'Fully automated detection'|t('accessibility-audit') }}" aria-label="{{ 'Fully automated detection'|t('accessibility-audit') }}">⚡</span>
+                                {% elseif row.auto == 'partial' %}
+                                    <span class="accessibility-audit-vpat-auto-badge accessibility-audit-vpat-auto-badge--partial" role="img" title="{{ 'Partially automated detection'|t('accessibility-audit') }}" aria-label="{{ 'Partially automated detection'|t('accessibility-audit') }}">◑</span>
+                                {% endif %}
+                            </td>
+                            <td class="accessibility-audit-vpat-name">
+                                {{ row.name }}
+                            </td>
+                            <td class="accessibility-audit-vpat-level-cell">
+                                {% if row.autoLevel and not row.overrideLevel %}
+                                    <div class="accessibility-audit-vpat-auto-hint"
+                                         title="{{ 'Suggested by the latest page scans. Your dropdown choice overrides it.'|t('accessibility-audit') }}">
+                                        {{ 'From scans:'|t('accessibility-audit') }}
+                                        <span class="accessibility-audit-vpat-badge accessibility-audit-vpat-badge--{{ row.autoLevel|lower|replace({' ': '-', 'does-not': 'fail', 'partially': 'partial', 'supports': 'supports', 'not-applicable': 'na'}) }}">
+                                            {{ row.autoLevel }}
+                                        </span>
+                                    </div>
+                                {% endif %}
+                                <div class="select fullwidth">
+                                    <select class="accessibility-audit-vpat-select" data-criterion="{{ num }}"
+                                            aria-label="Conformance level for {{ row.name }}">
+                                        <option value="">— Select —</option>
+                                        {% for opt in ['Supports', 'Partially Supports', 'Does Not Support', 'Not Applicable', 'Not Evaluated'] %}
+                                            <option value="{{ opt }}"
+                                                    {% if conformanceValue == opt %}selected{% endif %}>
+                                                {{ opt }}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </td>
+                            <td class="accessibility-audit-vpat-remarks-cell">
+                                <textarea class="text fullwidth accessibility-audit-vpat-remarks" rows="3"
+                                          data-criterion="{{ num }}"
+                                          aria-label="Remarks for {{ row.name }}"
+                                          placeholder="Add remarks or explain the conformance level…">{{ row.overrideRemarks }}</textarea>
+                                <div class="accessibility-audit-vpat-remarks-foot">
+                                    {% if canDraftRemarks ?? false %}
+                                        <button type="button" class="accessibility-audit-vpat-draft-btn btn small"
+                                                data-criterion="{{ num }}"
+                                                title="{{ row.autoLevel
+                                                    ? 'Draft from the scanner’s findings'|t('accessibility-audit')
+                                                    : 'Tidy your rough notes into VPAT wording'|t('accessibility-audit') }}"
+                                                aria-label="Draft remarks for {{ row.name }} with AI">
+                                            {{ 'Draft with AI'|t('accessibility-audit') }}
+                                        </button>
+                                        <span class="accessibility-audit-vpat-draft-mode">
+                                            {{ row.autoLevel
+                                                ? 'from scan findings'|t('accessibility-audit')
+                                                : 'from your notes'|t('accessibility-audit') }}
+                                        </span>
+                                    {% endif %}
+                                    {% set rowNeedsRemark = row.effectiveLevel in ['Not Applicable', 'Partially Supports', 'Does Not Support']
+                                        and row.effectiveRemarks == '' %}
+                                    <span class="accessibility-audit-vpat-remark-nudge{% if not rowNeedsRemark %} hidden{% endif %}">
+                                        {{ 'This level needs a remark: say why.'|t('accessibility-audit') }}
+                                    </span>
+                                    <span class="accessibility-audit-vpat-row-status" aria-live="polite"></span>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            </div>
+        </div>
+
+    {% endfor %}
+
+</div>
+
+{% endif %}
+
+{% endblock %}
+

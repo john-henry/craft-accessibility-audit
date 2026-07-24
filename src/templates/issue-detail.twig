@@ -1,0 +1,310 @@
+{% extends '_layouts/cp' %}
+
+{% set title = ruleId|replace({'-': ' ', '_': ' '})|capitalize %}
+
+
+{% set isPotential = ruleId starts with 'potential:' %}
+{% set selectedSubnavItem = isPotential ? 'potential' : 'issues' %}
+{% set parentCrumb = isPotential
+    ? { label: 'Potential issues'|t('accessibility-audit'), url: cpUrl('accessibility-audit/potential', {site: siteHandle}) }
+    : { label: 'Issues'|t('accessibility-audit'), url: cpUrl('accessibility-audit/issues', {site: siteHandle}) } %}
+{% set crumbs = [
+    { label: 'Accessibility Audit'|t('accessibility-audit'), url: cpUrl('accessibility-audit') },
+    parentCrumb,
+    { label: title, url: cpUrl('accessibility-audit/issues/detail', {ruleId: ruleId, site: siteHandle}) },
+] %}
+
+{% if sites|length > 1 %}
+    {% set crumbs = [{
+        id: 'site-crumb',
+        icon: 'world',
+        label: requestedSite.name|t('site'),
+        menu: { items: siteMenuItems(sites, requestedSite), label: 'Select site'|t('app') },
+    }]|merge(crumbs ?? []) %}
+{% endif %}
+
+
+{% import 'accessibility-audit/_macros' as macros %}
+
+{% block actionButton %}
+    {% if detail is not empty and detail.helpUrl %}
+        <a href="{{ detail.helpUrl }}" target="_blank" rel="noopener" class="btn">{{ 'View WCAG guidance'|t('accessibility-audit') }}</a>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="accessibility-audit-stack">
+
+
+<div class="accessibility-audit-rowline" style="gap:10px">
+    {% if detail.severity is defined %}
+        {{ macros.severityDot(detail.severity) }}
+    {% endif %}
+    <code class="accessibility-audit-code">{{ ruleId }}</code>
+    {% if meta.elementType is defined and meta.elementType %}
+        <span class="token">{{ meta.elementType }}</span>
+    {% endif %}
+</div>
+
+{% if detail is empty %}
+    <div class="readable">
+        <blockquote class="note">
+            <p>{{ 'No active issues found for this rule.'|t('accessibility-audit') }}</p>
+        </blockquote>
+    </div>
+{% else %}
+
+<div class="pane accessibility-audit-statpane">
+    <div class="accessibility-audit-statstrip">
+        <div>
+            <div class="light accessibility-audit-statlabel">{{ 'Conformance'|t('accessibility-audit') }}</div>
+            <div class="accessibility-audit-baseline" style="margin-top:8px;gap:8px">
+                {{ macros.conformanceBadge(detail.wcagLevel ?? null) }}
+                {% if detail.wcagCriterion %}<span style="font-size:15px">{{ detail.wcagCriterion }}</span>{% endif %}
+            </div>
+        </div>
+        <div>
+            <div class="light accessibility-audit-statlabel">{{ 'Points to gain'|t('accessibility-audit') }}</div>
+            <div class="accessibility-audit-statfig accessibility-audit-statfig--pass">+{{ detail.pointsToGain|number_format(2) }}</div>
+        </div>
+        <div>
+            <div class="light accessibility-audit-statlabel">{{ 'Count'|t('accessibility-audit') }}</div>
+            <div class="accessibility-audit-statfig">{{ detail.occurrences }}</div>
+        </div>
+        <div>
+            <div class="light accessibility-audit-statlabel">{{ 'Pages affected'|t('accessibility-audit') }}</div>
+            <div class="accessibility-audit-statfig">{{ detail.pageCount }}</div>
+        </div>
+        <div>
+            <div class="light accessibility-audit-statlabel">{{ 'Difficulty'|t('accessibility-audit') }}</div>
+            <div style="margin-top:8px">{{ macros.difficulty(meta.difficulty ?? null) }}</div>
+        </div>
+        <div>
+            <div class="light accessibility-audit-statlabel">{{ 'Responsibility'|t('accessibility-audit') }}</div>
+            <div style="margin-top:8px">{{ macros.responsibility(meta.responsibility ?? null) }}</div>
+        </div>
+    </div>
+</div>
+
+
+{% if detail.message or (meta.abilities is defined and meta.abilities|length) or detail.helpUrl %}
+<div class="pane">
+    <h2>{{ 'About this rule'|t('accessibility-audit') }}</h2>
+    <div class="accessibility-audit-about-grid">
+        {% if detail.message %}
+            <div>
+                <div class="light accessibility-audit-statlabel">{{ 'Description'|t('accessibility-audit') }}</div>
+                <p style="margin:6px 0 0 0;line-height:1.5">{{ detail.message }}</p>
+            </div>
+        {% endif %}
+        {% if meta.abilities is defined and meta.abilities|length %}
+            <div>
+                <div class="light accessibility-audit-statlabel">{{ 'Abilities affected'|t('accessibility-audit') }}</div>
+
+                {% set abilityIcons = {
+                    vision: 'eye',
+                    cognition: 'brain',
+                    motor: 'hand',
+                    hearing: 'ear-listen',
+                } %}
+                <ul class="accessibility-audit-abilities-list accessibility-audit-tags" style="margin:8px 0 0 0;padding:0;list-style:none">
+                    {% for ability in meta.abilities %}
+                        <li class="accessibility-audit-ability accessibility-audit-ability--{{ ability }}">
+                            {%- if abilityIcons[ability] is defined -%}
+                                <span class="accessibility-audit-ability__icon" aria-hidden="true">{{ iconSvg(abilityIcons[ability]) }}</span>
+                            {%- endif -%}
+                            {{ ability|capitalize }}
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+    
+
+    <div style="display:flex;align-items:center;gap:10px">
+        <h2> {{ pageCount == 1
+                ? '1 page'|t('accessibility-audit')
+                : '{n} pages'|t('accessibility-audit', {n: pageCount}) }} {{ 'with this issue'|t('accessibility-audit') }}</h2>
+    </div>
+    
+    {% do view.registerAssetBundle('craft\\web\\assets\\admintable\\AdminTableAsset') %}
+
+   
+    <div class="accessibility-audit-table-inflow">
+        <div id="accessibility-audit-issue-pages-table"></div>
+    </div>
+
+    {% js %}
+    (() => {
+        const siteId = {{ siteId }};
+
+        const scoreCell = (value) => {
+            const band = value >= 80 ? 'high' : (value >= 50 ? 'mid' : 'low');
+            return '<span class="accessibility-audit-score accessibility-audit-score--' + band + '">' + value + '</span>';
+        };
+
+        // cp.js delegates the re-scan click handler on document, so a button
+        // rendered by VueAdminTable with these data hooks still fires it.
+        const rescanCell = (value) => value
+            ? '<button class="btn small accessibility-audit-rowbtn" data-icon="refresh" title="' + Craft.t('accessibility-audit', 'Re-scan') + '" data-accessibility-audit-scan-entry="' + value + '" data-site-id="' + siteId + '" aria-live="polite">'
+                + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'Re-scan') + '</span></button>'
+            : '';
+
+        // Page cell: the title links to the page's inspector (page-report) with
+        // an arrow flagging it as a link, and the page URL sits beneath it.
+        const pageCell = (p) => {
+            if (!p) return '';
+            const title = '<span class="accessibility-audit-page-name">' + Craft.escapeHtml(p.title) + '</span>';
+            const urlLine = p.url
+                ? '<div class="light code" style="font-size:11px;margin-top:2px">' + Craft.escapeHtml(p.url) + '</div>'
+                : '';
+            return title + urlLine;
+        };
+        // Navigation, so a link styled as a button (not a <button>), with the
+        // 'view' glyph and label mirroring the Re-scan action button. Opens the
+        // Page Report in a new tab, keeping the filtered list in place.
+        const reportCell = (v) => v
+            ? '<a class="btn small accessibility-audit-rowbtn" data-icon="view" href="' + v + '" target="_blank" rel="noopener" title="' + Craft.t('accessibility-audit', 'View report') + '">'
+                + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'View report') + '</span>'
+                + '<span class="visually-hidden"> (' + Craft.t('accessibility-audit', 'opens in new tab') + ')</span></a>'
+            : '';
+
+
+        const columns = [
+            { name: 'page', title: Craft.t('accessibility-audit', 'Page'), callback: pageCell, sortField: true },
+            { name: 'score', title: Craft.t('accessibility-audit', 'Score'), callback: scoreCell, sortField: true },
+            { name: 'count', title: Craft.t('accessibility-audit', 'Count'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
+            { name: 'firstDetected', title: Craft.t('accessibility-audit', 'First detected'), sortField: true },
+            { name: 'lastScanned', title: Craft.t('accessibility-audit', 'Last scanned'), sortField: true },
+            { name: 'report', title: '', callback: reportCell },
+            { name: 'rescan', title: '', callback: rescanCell },
+        ];
+
+        AccessibilityAuditTable.create({
+            container: '#accessibility-audit-issue-pages-table',
+            endpoint: 'accessibility-audit/dashboard/issue-pages-table',
+            endpointParams: 'ruleId={{ ruleId|url_encode }}',
+            siteId: siteId,
+            columns: columns,
+            emptyMessage: Craft.t('accessibility-audit', 'No pages found.'),
+            exportUrl: '{{ actionUrl('accessibility-audit/dashboard/issue-pages-export', {ruleId: ruleId, siteId: siteId}) }}',
+        });
+    })();
+    {% endjs %}
+
+    
+<div class="pane">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <h2 style="margin:0">{{ 'Progress with this issue'|t('accessibility-audit') }}</h2>
+        <span class="btngroup" id="accessibility-audit-trend-range" role="group" aria-label="{{ 'Trend date range'|t('accessibility-audit') }}" style="margin-left:auto">
+            {% for r in [{d: 30, l: '30 days'}, {d: 90, l: '90 days'}, {d: 180, l: '6 months'}] %}
+                <button type="button" class="btn small{{ trendRange == r.d ? ' active' }}" data-range="{{ r.d }}" aria-pressed="{{ trendRange == r.d ? 'true' : 'false' }}">{{ r.l|t('accessibility-audit') }}</button>
+            {% endfor %}
+        </span>
+    </div>
+
+    <div id="accessibility-audit-trend-chart"></div>
+
+    <p id="accessibility-audit-trend-status" role="status" aria-live="polite" class="visually-hidden"></p>
+    <p class="light" id="accessibility-audit-trend-empty" hidden>{{ 'Not enough scan history yet to chart a trend. Re-scan the affected pages over time to build one.'|t('accessibility-audit') }}</p>
+
+    {% js %}
+    (() => {
+        const ruleId = '{{ ruleId|e('js') }}';
+        const siteId = {{ siteId }};
+        const chartEl = document.getElementById('accessibility-audit-trend-chart');
+        const statusEl = document.getElementById('accessibility-audit-trend-status');
+        const emptyEl = document.getElementById('accessibility-audit-trend-empty');
+        const rangeGroup = document.getElementById('accessibility-audit-trend-range');
+
+        function renderTrend(trend) {
+            if (!trend || trend.length < 2) {
+                chartEl.innerHTML = '';
+                emptyEl.hidden = false;
+                return;
+            }
+            emptyEl.hidden = true;
+
+            const W = Math.max(320, chartEl.clientWidth || 760), H = 240;
+            const padL = 42, padR = 46, padT = 12;
+            const plotW = W - padL - padR, plotH = H - padT - 26;
+            const n = trend.length;
+          
+            const maxOcc = Math.max(1, ...trend.map((d) => d.occurrences)) * 1.15;
+            const maxPages = Math.max(1, ...trend.map((d) => d.pages)) * 1.15;
+
+            const x = (i) => padL + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+            const yOcc = (v) => padT + plotH - (v / maxOcc) * plotH;
+            const yPages = (v) => padT + plotH - (v / maxPages) * plotH;
+            const occPts = trend.map((d, i) => x(i) + ',' + yOcc(d.occurrences)).join(' ');
+            const pagePts = trend.map((d, i) => x(i) + ',' + yPages(d.pages)).join(' ');
+            const fmtDate = (s) => { const p = s.split('-'); return p[2] + '/' + p[1]; };
+
+            const svg = ['<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="' + Craft.t('accessibility-audit', 'Occurrences and affected pages over time') + '">'];
+            for (let g = 0; g <= 4; g++) {
+                const gy = padT + (g / 4) * plotH;
+                svg.push('<line x1="' + padL + '" y1="' + gy + '" x2="' + (W - padR) + '" y2="' + gy + '" stroke="var(--border-hairline)" stroke-width="1"/>');
+                svg.push('<text x="' + (padL - 6) + '" y="' + (gy + 3) + '" text-anchor="end" font-size="9" fill="var(--medium-text-color)">' + Math.round(maxOcc * (1 - g / 4)) + '</text>');
+                svg.push('<text x="' + (W - padR + 6) + '" y="' + (gy + 3) + '" text-anchor="start" font-size="9" fill="var(--medium-text-color)">' + Math.round(maxPages * (1 - g / 4)) + '</text>');
+            }
+            [0, Math.floor((n - 1) / 2), n - 1].forEach((i) => {
+                svg.push('<text x="' + x(i) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="9" fill="var(--medium-text-color)">' + fmtDate(trend[i].day) + '</text>');
+            });
+            svg.push('<polyline points="' + pagePts + '" fill="none" stroke="var(--medium-text-color)" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.6"/>');
+            svg.push('<polyline points="' + occPts + '" fill="none" stroke="var(--text-color)" stroke-width="2"/>');
+            trend.forEach((d, i) => {
+                svg.push('<circle cx="' + x(i) + '" cy="' + yPages(d.pages) + '" r="2.5" fill="var(--medium-text-color)" opacity="0.6"/>');
+                svg.push('<circle cx="' + x(i) + '" cy="' + yOcc(d.occurrences) + '" r="2.5" fill="var(--text-color)"/>');
+            });
+            svg.push('</svg>');
+            svg.push('<div style="display:flex;gap:16px;margin-top:8px;font-size:11px;color:var(--medium-text-color)">');
+            svg.push('<span><span style="display:inline-block;width:14px;border-top:2px solid var(--text-color);vertical-align:middle"></span> ' + Craft.t('accessibility-audit', 'Occurrences') + '</span>');
+            svg.push('<span><span style="display:inline-block;width:14px;border-top:2px dashed var(--medium-text-color);vertical-align:middle"></span> ' + Craft.t('accessibility-audit', 'Affected pages') + '</span>');
+            svg.push('</div>');
+
+          
+            let tbl = '<table class="visually-hidden"><caption>'
+                + Craft.t('accessibility-audit', 'Occurrences and affected pages by date') + '</caption><thead><tr><th>'
+                + Craft.t('accessibility-audit', 'Date') + '</th><th>'
+                + Craft.t('accessibility-audit', 'Occurrences') + '</th><th>'
+                + Craft.t('accessibility-audit', 'Affected pages') + '</th></tr></thead><tbody>';
+            trend.forEach((d) => {
+                tbl += '<tr><td>' + Craft.escapeHtml(String(d.day)) + '</td><td>' + (Number(d.occurrences) || 0) + '</td><td>' + (Number(d.pages) || 0) + '</td></tr>';
+            });
+            tbl += '</tbody></table>';
+
+            chartEl.innerHTML = svg.join('') + tbl;
+        }
+
+        renderTrend({{ trend|json_encode|raw }});
+
+       
+        rangeGroup.addEventListener('click', async (e) => {
+            const btn = e.target.closest('button[data-range]');
+            if (!btn) { return; }
+            rangeGroup.querySelectorAll('button').forEach((b) => {
+                const on = b === btn;
+                b.classList.toggle('active', on);
+                b.setAttribute('aria-pressed', on ? 'true' : 'false');
+            });
+            try {
+                const resp = await Craft.sendActionRequest('GET', 'accessibility-audit/dashboard/rule-trend', {
+                    params: { ruleId: ruleId, siteId: siteId, range: btn.dataset.range },
+                });
+                renderTrend(resp.data.trend);
+                if (statusEl) { statusEl.textContent = Craft.t('accessibility-audit', 'Chart updated.'); }
+            } catch (err) {
+                Craft.cp.displayError(Craft.t('accessibility-audit', 'Could not load the trend for that range.'));
+            }
+        });
+    })();
+    {% endjs %}
+</div>
+
+{% endif %}
+
+</div>
+{% endblock %}

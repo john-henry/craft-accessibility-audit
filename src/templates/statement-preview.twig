@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="{{ craft.app.language }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title>{{ 'Accessibility statement preview'|t('accessibility-audit') }}</title>
+    <style>
+        body { font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #1f2933; margin: 0; padding: 0 20px 60px; }
+        .aa-preview-banner { background: #fdf3d8; border-bottom: 1px solid #e8d9a8; color: #6b5314; margin: 0 -20px 32px; padding: 12px 20px; font-size: 14px; }
+        .aa-preview-inner { max-width: 46rem; margin: 0 auto; }
+        .accessibility-statement h1 { font-size: 2rem; line-height: 1.2; }
+        .accessibility-statement h2 { font-size: 1.35rem; margin-top: 2.2rem; }
+        .accessibility-statement h3 { font-size: 1.1rem; margin-top: 1.6rem; }
+        .accessibility-statement li { margin-bottom: 0.5rem; }
+        @media (prefers-color-scheme: dark) {
+            body { background: #14181c; color: #e5e9ec; }
+            .aa-preview-banner { background: #3a2f10; border-bottom-color: #5c4a18; color: #f0dfae; }
+            a { color: #7cb7ff; }
+        }
+    </style>
+</head>
+<body>
+    <div class="aa-preview-banner">
+        <div class="aa-preview-inner">
+            {{ 'Preview. This is the markup your site publishes; the styling here is the preview\'s own, and your own templates will style it differently.'|t('accessibility-audit') }}
+        </div>
+    </div>
+    <div class="aa-preview-inner">
+        {{ html|raw }}
+    </div>
+</body>
+</html>

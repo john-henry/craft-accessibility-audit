@@ -1,0 +1,207 @@
+{% extends '_layouts/cp' %}
+
+{% set title = 'Colour Tools'|t('accessibility-audit') %}
+{% set selectedSubnavItem = 'utilities' %}
+{% set crumbs = [
+    { label: 'Accessibility Audit'|t('accessibility-audit'), url: cpUrl('accessibility-audit') },
+    { label: title },
+] %}
+
+{% set siteParam = craft.app.request.getQueryParam('site') %}
+{% set tabBase = siteParam ? { site: siteParam } : {} %}
+{% set tabs = {
+    contrast:  { label: 'Contrast'|t('accessibility-audit'),  url: url('accessibility-audit/colour-tools', tabBase|merge({ tab: 'contrast' })) },
+    simulator: { label: 'Simulator'|t('accessibility-audit'), url: url('accessibility-audit/colour-tools', tabBase|merge({ tab: 'simulator' })) },
+    grid:      { label: 'Grid'|t('accessibility-audit'),      url: url('accessibility-audit/colour-tools', tabBase|merge({ tab: 'grid' })) },
+} %}
+{% set selectedTab = activeTab %}
+
+{% block content %}
+{% import '_includes/forms' as forms %}
+
+<div class="accessibility-audit-util-wrap">
+
+    {% if activeTab == 'contrast' %}
+    <section class="accessibility-audit-tool">
+        <div class="accessibility-audit-tool__head">
+            <h2>{{ 'Colour Contrast Analyser'|t('accessibility-audit') }}</h2>
+            <p class="light">{{ 'Check whether a foreground and background colour combination meets WCAG 2.1 contrast requirements.'|t('accessibility-audit') }}</p>
+        </div>
+
+        <div class="accessibility-audit-picker-grid">
+
+            <div class="accessibility-audit-subcard" id="accessibility-audit-cc-fg-card">
+                <div class="accessibility-audit-rowline" style="gap: 10px;">
+                    <span class="accessibility-audit-picker__dot" id="accessibility-audit-cc-fg-swatch"></span>
+                    <span class="accessibility-audit-label">{{ 'Foreground colour'|t('accessibility-audit') }}</span>
+                </div>
+                <div class="accessibility-audit-picker__fields">
+                    <label class="accessibility-audit-col-label" for="accessibility-audit-cc-fg-hex">{{ 'Hex'|t('accessibility-audit') }}</label>
+                    <div class="accessibility-audit-rowline">
+                        <span class="accessibility-audit-data">#</span>
+                        <input type="text" id="accessibility-audit-cc-fg-hex" class="accessibility-audit-hexbox" maxlength="6" value="1a1a1a" autocomplete="off" spellcheck="false">
+                        <input type="color" id="accessibility-audit-cc-fg-picker" class="accessibility-audit-picker__swatch" value="#1a1a1a" title="{{ 'Pick foreground colour'|t('accessibility-audit') }}" aria-label="{{ 'Pick foreground colour'|t('accessibility-audit') }}">
+                    </div>
+
+                    <span class="accessibility-audit-col-label" id="accessibility-audit-cc-fg-rgb-label">{{ 'RGB'|t('accessibility-audit') }}</span>
+                    <span id="accessibility-audit-cc-fg-rgb" class="accessibility-audit-data accessibility-audit-data--ink" aria-labelledby="accessibility-audit-cc-fg-rgb-label">26, 26, 26</span>
+
+                    <label class="accessibility-audit-col-label" for="accessibility-audit-cc-fg-lightness">{{ 'Lightness'|t('accessibility-audit') }}</label>
+                    <div class="accessibility-audit-cc-slider-wrap">
+                        <input type="range" id="accessibility-audit-cc-fg-lightness" class="accessibility-audit-cc-lightness-slider" min="0" max="100" value="10">
+                    </div>
+                </div>
+            </div>
+
+            <button class="accessibility-audit-swap-btn" id="accessibility-audit-cc-swap" title="{{ 'Swap colours'|t('accessibility-audit') }}" aria-label="{{ 'Swap colours'|t('accessibility-audit') }}" type="button">
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M4 6h10M11 3l3 3-3 3M14 12H4M7 9l-3 3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            </button>
+
+            <div class="accessibility-audit-subcard" id="accessibility-audit-cc-bg-card">
+                <div class="accessibility-audit-rowline" style="gap: 10px;">
+                    <span class="accessibility-audit-picker__dot" id="accessibility-audit-cc-bg-swatch"></span>
+                    <span class="accessibility-audit-label">{{ 'Background colour'|t('accessibility-audit') }}</span>
+                </div>
+                <div class="accessibility-audit-picker__fields">
+                    <label class="accessibility-audit-col-label" for="accessibility-audit-cc-bg-hex">{{ 'Hex'|t('accessibility-audit') }}</label>
+                    <div class="accessibility-audit-rowline">
+                        <span class="accessibility-audit-data">#</span>
+                        <input type="text" id="accessibility-audit-cc-bg-hex" class="accessibility-audit-hexbox" maxlength="6" value="ffffff" autocomplete="off" spellcheck="false">
+                        <input type="color" id="accessibility-audit-cc-bg-picker" class="accessibility-audit-picker__swatch" value="#ffffff" title="{{ 'Pick background colour'|t('accessibility-audit') }}" aria-label="{{ 'Pick background colour'|t('accessibility-audit') }}">
+                    </div>
+
+                    <span class="accessibility-audit-col-label" id="accessibility-audit-cc-bg-rgb-label">{{ 'RGB'|t('accessibility-audit') }}</span>
+                    <span id="accessibility-audit-cc-bg-rgb" class="accessibility-audit-data accessibility-audit-data--ink" aria-labelledby="accessibility-audit-cc-bg-rgb-label">255, 255, 255</span>
+
+                    <label class="accessibility-audit-col-label" for="accessibility-audit-cc-bg-lightness">{{ 'Lightness'|t('accessibility-audit') }}</label>
+                    <div class="accessibility-audit-cc-slider-wrap">
+                        <input type="range" id="accessibility-audit-cc-bg-lightness" class="accessibility-audit-cc-lightness-slider" min="0" max="100" value="100">
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="accessibility-audit-subcard" style="padding:0;overflow:hidden">
+
+            <div id="accessibility-audit-cc-preview" style="display:flex;flex-direction:column;gap:4px;border-bottom:1px solid var(--aa-border-section);padding:18px 20px">
+                <div class="accessibility-audit-preview-normal" id="accessibility-audit-cc-preview-normal">{{ 'Normal text (14px)'|t('accessibility-audit') }}</div>
+                <div class="accessibility-audit-preview-large" id="accessibility-audit-cc-preview-large">{{ 'Large text (24px bold)'|t('accessibility-audit') }}</div>
+            </div>
+
+            <div style="display:flex;align-items:baseline;gap:12px;border-bottom:1px solid var(--aa-border-section);padding:14px 20px">
+                <span class="light accessibility-audit-statlabel">{{ 'Contrast ratio'|t('accessibility-audit') }}</span>
+                <span class="accessibility-audit-ratio" id="accessibility-audit-cc-ratio" role="status" aria-live="polite">—</span>
+            </div>
+
+            <div class="accessibility-audit-table-scroll">
+                <table class="data fullwidth" aria-label="{{ 'WCAG contrast results'|t('accessibility-audit') }}">
+                <thead>
+                    <tr>
+                        <th scope="col">{{ 'Level'|t('accessibility-audit') }}</th>
+                        <th scope="col">{{ 'Normal Text'|t('accessibility-audit') }}</th>
+                        <th scope="col">{{ 'Large Text'|t('accessibility-audit') }}</th>
+                        <th scope="col">{{ 'UI Components'|t('accessibility-audit') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <th scope="row"><span class="accessibility-audit-baseline" style="gap:8px"><span class="accessibility-audit-level accessibility-audit-level--aa">AA</span> <span class="light">{{ '4.5:1 normal · 3:1 large'|t('accessibility-audit') }}</span></span></th>
+                        <td><span id="accessibility-audit-cc-aa-normal" class="accessibility-audit-cc-cell">—</span></td>
+                        <td><span id="accessibility-audit-cc-aa-large" class="accessibility-audit-cc-cell">—</span></td>
+                        <td><span id="accessibility-audit-cc-aa-ui" class="accessibility-audit-cc-cell">—</span></td>
+                    </tr>
+                    {% if (wcagLevel|default('AA')) == 'AAA' %}
+                    <tr>
+                        <th scope="row"><span class="accessibility-audit-baseline" style="gap:8px"><span class="accessibility-audit-level accessibility-audit-level--aaa">AAA</span> <span class="light">{{ '7:1 normal · 4.5:1 large'|t('accessibility-audit') }}</span></span></th>
+                        <td><span id="accessibility-audit-cc-aaa-normal" class="accessibility-audit-cc-cell">—</span></td>
+                        <td><span id="accessibility-audit-cc-aaa-large" class="accessibility-audit-cc-cell">—</span></td>
+                        <td><span class="accessibility-audit-tag">N/A</span></td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+            </div>
+
+            <p class="light" style="margin:0;padding:12px 20px 16px;font-size:12px;line-height:1.5">
+                {{ 'Large text = 18pt (24px) regular or 14pt (18.67px) bold. UI components = 3:1 (AA only). Based on WCAG 2.1 Success Criterion 1.4.3 and 1.4.6.'|t('accessibility-audit') }}
+            </p>
+        </div>
+    </section>
+    {% endif %}
+
+    {% if activeTab == 'simulator' %}
+    <section class="accessibility-audit-tool">
+        <div class="accessibility-audit-tool__head">
+            <h2>{{ 'Colour Blindness Simulator'|t('accessibility-audit') }}</h2>
+            <p class="light">{{ 'Preview a colour as people with different types of colour vision deficiency see it, to sense-check whether meaning in your palette survives without colour. The simulation is an approximation.'|t('accessibility-audit') }}</p>
+        </div>
+
+        <div class="accessibility-audit-rowline" style="gap:10px">
+            <span class="accessibility-audit-label">{{ 'Colour'|t('accessibility-audit') }}</span>
+            <span class="accessibility-audit-data" style="margin-inline-start:12px">#</span>
+            <input type="text" id="accessibility-audit-cvd-hex" class="accessibility-audit-hexbox" maxlength="6" value="d8401a" autocomplete="off" spellcheck="false">
+            <input type="color" id="accessibility-audit-cvd-picker" class="accessibility-audit-picker__swatch" value="#d8401a" title="{{ 'Pick colour'|t('accessibility-audit') }}" aria-label="{{ 'Pick colour'|t('accessibility-audit') }}">
+        </div>
+
+        <div class="accessibility-audit-subcard" style="padding:0;overflow:hidden">
+            <div class="accessibility-audit-cvd-grid">
+                {% for tile in [
+                    { key: 'normal',        label: 'Normal vision', sub: null },
+                    { key: 'protanopia',    label: 'Protanopia',    sub: 'no red' },
+                    { key: 'deuteranopia',  label: 'Deuteranopia',  sub: 'no green' },
+                    { key: 'tritanopia',    label: 'Tritanopia',    sub: 'no blue' },
+                    { key: 'achromatopsia', label: 'Achromatopsia', sub: 'no colour' },
+                ] %}
+                    <div class="accessibility-audit-cvd-tile">
+                        <div class="accessibility-audit-cvd-chip" id="accessibility-audit-cvd-{{ tile.key }}"></div>
+                        <div class="accessibility-audit-statlabel">{{ tile.label|t('accessibility-audit') }}</div>
+                        {% if tile.sub %}<div class="light accessibility-audit-cvd-sub">{{ tile.sub|t('accessibility-audit') }}</div>{% endif %}
+                        <div class="accessibility-audit-data light" id="accessibility-audit-cvd-{{ tile.key }}-hex">—</div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
+    {% if activeTab == 'grid' %}
+    <section class="accessibility-audit-tool">
+        <div class="accessibility-audit-tool__head">
+            <h2>{{ 'Contrast Grid'|t('accessibility-audit') }}</h2>
+            <p class="light">{{ 'Enter a palette to see every foreground-on-background pairing at once, each with its WCAG 2.1 contrast ratio and result. Read a column as the background and a row as the text on it.'|t('accessibility-audit') }}</p>
+        </div>
+
+        {{ forms.editableTableField({
+            label: 'Palette'|t('accessibility-audit'),
+            instructions: 'Each row is a colour in the grid. Add up to six.'|t('accessibility-audit'),
+            id: 'accessibility-audit-cg-palette',
+            name: 'accessibilityAuditPalette',
+            cols: {
+                colour: { heading: 'Colour'|t('accessibility-audit'), type: 'color' },
+            },
+            rows: [
+                { colour: '#1a1a1a' },
+                { colour: '#ffffff' },
+                { colour: '#d8401a' },
+                { colour: '#2b6e9c' },
+                { colour: '#3c8c57' },
+            ],
+            addRowLabel: 'Add a colour'|t('accessibility-audit'),
+            maxRows: 6,
+            static: false,
+            allowAdd: true,
+            allowDelete: true,
+            allowReorder: true,
+        }) }}
+
+        <p id="accessibility-audit-cg-status" role="status" aria-live="polite" class="visually-hidden"></p>
+        <div class="accessibility-audit-subcard" style="padding:14px;overflow:auto">
+            <div id="accessibility-audit-cg-output"></div>
+        </div>
+    </section>
+    {% endif %}
+
+</div>
+
+{% endblock %}

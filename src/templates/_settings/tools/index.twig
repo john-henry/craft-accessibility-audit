@@ -1,0 +1,156 @@
+{% extends "accessibility-audit/_settings/layout" %}
+
+{% import "_includes/forms" as forms %}
+{% import 'accessibility-audit/_macros' as macros %}
+
+
+{% set crumbs = [] %}
+
+{% set fullPageForm = true %}
+
+{% block blockContent %}
+  
+
+    {{ actionInput('accessibility-audit/settings/save-tools') }}
+    {{ redirectInput(url('accessibility-audit/settings/tools')) }}
+
+    <h3>{{ 'Alt Text'|t('accessibility-audit') }}</h3>
+    
+    {% set assetFieldOptions = [{ value: 'alt', label: 'alt (Craft built-in)' }] %}
+    {% for field in craft.app.fields.allFields %}
+        {% if field.className in [
+            'craft\\fields\\PlainText',
+            'craft\\fields\\Textarea',
+            'craft\\ckeditor\\Field',
+            'craft\\redactor\\Field',
+        ] %}
+            {% set assetFieldOptions = assetFieldOptions|merge([{ value: field.handle, label: field.name ~ ' (' ~ field.handle ~ ')' }]) %}
+        {% endif %}
+    {% endfor %}
+
+    {{ forms.selectField({
+        label: 'Alt Text Field'|t('accessibility-audit'),
+        instructions: 'The field handle used to store alt text on assets. Defaults to Craft\'s built-in "alt" field. Change this if your assets use a custom plain text field for alt text. The asset audit and AI generation both read and write this field.'|t('accessibility-audit'),
+        id: 'altTextField',
+        name: 'settings[altTextField]',
+        options: assetFieldOptions,
+        value: settings.altTextField,
+        errors: settings.getErrors('altTextField'),
+    }) }}
+    
+    
+
+    {{ forms.autosuggestField({
+        label: 'Anthropic API Key'|t('accessibility-audit'),
+        instructions: 'Used to generate alt text suggestions with Claude (Haiku). Get a key at console.anthropic.com. You can also reference an environment variable: type $ to see suggestions.'|t('accessibility-audit'),
+        id: 'anthropicApiKey',
+        name: 'settings[anthropicApiKey]',
+        value: settings.anthropicApiKey,
+        suggestEnvVars: true,
+        suggestAliases: false,
+        placeholder: '$ANTHROPIC_API_KEY or sk-ant-…',
+        errors: settings.getErrors('anthropicApiKey'),
+    }) }}
+    
+    {% if settings.anthropicApiKey %}
+        <div class="accessibility-audit-verify-row">
+            <button type="button" id="accessibility-audit-verify-key-btn" class="btn small">
+                {{ 'Verify API Key'|t('accessibility-audit') }}
+            </button>
+            <span id="accessibility-audit-verify-key-result" class="accessibility-audit-inline-result" role="status" aria-live="polite"></span>
+        </div>
+    {% endif %}
+    
+    {{ forms.selectField({
+        label: 'Language'|t('accessibility-audit'),
+        instructions: 'Language for generated alt text. Claude will respond in the selected language.'|t('accessibility-audit'),
+        id: 'altTextLanguage',
+        name: 'settings[altTextLanguage]',
+        options: [
+            { value: 'English',    label: 'English' },
+            { value: 'Spanish',    label: 'Spanish' },
+            { value: 'French',     label: 'French' },
+            { value: 'German',     label: 'German' },
+            { value: 'Portuguese', label: 'Portuguese' },
+            { value: 'Italian',    label: 'Italian' },
+            { value: 'Dutch',      label: 'Dutch' },
+            { value: 'Japanese',   label: 'Japanese' },
+            { value: 'Chinese',    label: 'Chinese (Simplified)' },
+            { value: 'Korean',     label: 'Korean' },
+            { value: 'Arabic',     label: 'Arabic' },
+            { value: 'Swedish',    label: 'Swedish' },
+            { value: 'Norwegian',  label: 'Norwegian' },
+            { value: 'Danish',     label: 'Danish' },
+            { value: 'Finnish',    label: 'Finnish' },
+        ],
+        value: settings.altTextLanguage,
+        errors: settings.getErrors('altTextLanguage'),
+    }) }}
+    
+    {{ forms.lightswitchField({
+        label: 'Generate for New Assets'|t('accessibility-audit'),
+        instructions: 'Automatically generate alt text when new image assets are uploaded. Jobs run in the background via the Craft queue. Existing alt text is never overwritten.'|t('accessibility-audit'),
+        id: 'autoGenerateAlt',
+        name: 'settings[autoGenerateAlt]',
+        on: settings.autoGenerateAlt,
+        errors: settings.getErrors('autoGenerateAlt'),
+    }) }}
+    
+    {{ forms.textareaField({
+        label: 'Site Context (optional)'|t('accessibility-audit'),
+        instructions: 'A short description of your site or brand. Sent with each generation request to improve accuracy. E.g. "E-commerce store selling premium fountain pens and stationery."'|t('accessibility-audit'),
+        id: 'altTextContext',
+        name: 'settings[altTextContext]',
+        value: settings.altTextContext,
+        rows: 2,
+        errors: settings.getErrors('altTextContext'),
+    }) }}
+
+    <hr>
+
+    <h3>{{ 'CI/CD Integration'|t('accessibility-audit') }}</h3>
+
+    {% if not (isPro ?? false) %}
+        {% include 'accessibility-audit/_includes/pro-upsell' with {
+            feature: 'CI/CD Integration'|t('accessibility-audit'),
+            text: 'Give your build pipeline a token to poll the site\'s accessibility score and gate deploys on a target. Available on the Pro edition.'|t('accessibility-audit'),
+            headingLevel: 4,
+        } only %}
+    {% else %}
+    <p class="light">
+        {{ 'Give your build pipeline a token to poll the site\'s current accessibility score. Point it at {url} with the token in an {header} header (or a {param} query parameter). The response reports whether the score meets the target set under General settings.'|t('accessibility-audit', {
+            url: '<code>' ~ actionUrl('accessibility-audit/ci/check') ~ '</code>',
+            header: '<code>Authorization: Bearer</code>',
+            param: '<code>ciToken</code>',
+        })|raw }}
+    </p>
+
+    {% if newCiApiToken is defined and newCiApiToken %}
+
+        {{ forms.copytextField({
+            label: 'New token'|t('accessibility-audit'),
+            instructions: 'Copy this now, it won\'t be shown in full again.'|t('accessibility-audit'),
+            id: 'new-ci-api-token',
+            value: newCiApiToken,
+        }) }}
+    {% endif %}
+
+    {% set tokenValue = settings.ciApiToken
+        ? 'A token is set. It is stored hashed, so it can only be shown in full once, at generation.'|t('accessibility-audit')
+        : 'No token generated yet.'|t('accessibility-audit') %}
+
+    {{ forms.field({
+        label: 'Current token'|t('accessibility-audit'),
+    }, '<span class="light">' ~ tokenValue|e ~ '</span>') }}
+
+    <div class="field">
+        <button type="submit"
+                class="btn"
+                formaction="{{ actionUrl('accessibility-audit/settings/generate-ci-token') }}">
+            {{ settings.ciApiToken
+                ? 'Regenerate token'|t('accessibility-audit')
+                : 'Generate token'|t('accessibility-audit') }}
+        </button>
+    </div>
+    {% endif %}
+{% endblock %}

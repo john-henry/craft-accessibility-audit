@@ -1,0 +1,422 @@
+{% extends '_layouts/cp' %}
+
+{% set title = 'Accessibility Audit'|t('accessibility-audit') %}
+{% set selectedSubnavItem = 'overview' %}
+{% set crumbs = [
+    { label: 'Accessibility Audit'|t('accessibility-audit'), url: cpUrl('accessibility-audit') },
+    { label: 'Overview'|t('accessibility-audit') },
+] %}
+
+
+{% if sites|length > 1 %}
+    {% set crumbs = [{
+        id: 'site-crumb',
+        icon: 'world',
+        label: requestedSite.name|t('site'),
+        menu: { items: siteMenuItems(sites, requestedSite), label: 'Select site'|t('app') },
+    }]|merge(crumbs ?? []) %}
+{% endif %}
+
+
+{% import 'accessibility-audit/_macros' as macros %}
+
+{% block pageTitle %}
+    {% if title is defined and title|length %}
+        <h1 id="page-heading" class="screen-title flex items-center" title="{{ title }}">{{ title }}
+            {% if isPro %}
+                <span class="accessibility-audit-pro--solid">
+                    <span aria-hidden="true">{{ 'Pro'|t('accessibility-audit') }}</span>
+                    <span class="visually-hidden">{{ 'Pro edition'|t('accessibility-audit') }}</span>
+                </span>
+            {% else %}
+                <a href="{{ cpUrl('plugin-store/accessibility-audit') }}"
+                   class="accessibility-audit-standard--outlined"
+                   title="{{ 'Upgrade to Pro'|t('accessibility-audit') }}">
+                
+                    <span class="accessibility-audit-standard__swap" aria-hidden="true">
+                        <span class="accessibility-audit-standard__now">{{ 'Standard'|t('accessibility-audit') }}</span>
+                        <span class="accessibility-audit-standard__pro">{{ 'Go Pro'|t('accessibility-audit') }}</span>
+                    </span>
+                    <span class="visually-hidden">{{ 'Standard edition. Upgrade to Pro.'|t('accessibility-audit') }}</span></a>
+            {% endif %}</h1>
+    {% endif %}
+    
+{% endblock %}
+
+{% block actionButton %}
+<div class="accessibility-audit-toolbar">
+    {% if not isPro %}
+        {% set overLimit = scannedElementCount >= scanLimit %}
+      
+        <a href="{{ cpUrl('plugin-store/accessibility-audit') }}"
+           class="accessibility-audit-usage-badge{% if overLimit %} accessibility-audit-usage-badge--full{% endif %}"
+           title="{{ 'Standard edition scans up to {n} pages. Upgrade to Pro for unlimited scanning.'|t('accessibility-audit', {n: scanLimit}) }}">
+            {% if isMultiSite %}
+                {{ '{used}/{limit} pages scanned across all sites'|t('accessibility-audit', {used: scannedElementCount, limit: scanLimit}) }}
+            {% else %}
+                {{ '{used}/{limit} pages scanned'|t('accessibility-audit', {used: scannedElementCount, limit: scanLimit}) }}
+            {% endif %}
+            <span class="accessibility-audit-usage-badge__pro" aria-hidden="true">{{ 'Go Pro'|t('accessibility-audit') }}</span>
+            <span class="visually-hidden">{{ 'Upgrade to Pro'|t('accessibility-audit') }}</span>
+        </a>
+    {% endif %}
+    <button class="btn submit" data-accessibility-audit-scan-all data-site-id="{{ siteId }}" aria-live="polite">
+        {{ 'Scan All Pages'|t('accessibility-audit') }}
+    </button>
+    <a href="{{ actionUrl('accessibility-audit/audit/export', {siteId: siteId}) }}" class="btn">
+        {{ 'Export CSV'|t('accessibility-audit') }}
+    </a>
+</div>
+{% endblock %}
+
+{% block main %}
+{% if summary.scannedCount == 0 %}
+
+    <div class="pane">
+    <div class="accessibility-audit-zilch">
+        <div class="accessibility-audit-zilch__icon" aria-hidden="true">
+            {{ svg(craft.app.plugins.getPluginIconSvg('accessibility-audit'), sanitize=true) }}
+        </div>
+
+        <h2 class="accessibility-audit-zilch__title">{{ 'No scans yet'|t('accessibility-audit') }}</h2>
+        
+        <p class="accessibility-audit-zilch__lede">
+            {% if isMultiSite %}
+                {{ 'Run your first audit of {site} to see its accessibility score, the issues behind it, and a WCAG conformance breakdown.'|t('accessibility-audit', {site: requestedSite.name}) }}
+            {% else %}
+                {{ 'Run your first audit to see your accessibility score, the issues behind it, and a WCAG conformance breakdown.'|t('accessibility-audit') }}
+            {% endif %}
+        </p>
+
+        <ol class="accessibility-audit-steps">
+            <li class="accessibility-audit-steps__item">
+                <span class="accessibility-audit-steps__num" aria-hidden="true">1</span>
+                <span>{{ 'Scan your pages. Every entry is rendered and checked against WCAG {level}.'|t('accessibility-audit', {level: wcagLevel}) }}</span>
+            </li>
+            <li class="accessibility-audit-steps__item">
+                <span class="accessibility-audit-steps__num" aria-hidden="true">2</span>
+                <span>{{ 'Work the issues list. Rules are ranked by the points you gain from fixing them.'|t('accessibility-audit') }}</span>
+            </li>
+            <li class="accessibility-audit-steps__item">
+                <span class="accessibility-audit-steps__num" aria-hidden="true">3</span>
+                <span>{{ 'Fix and re-scan. Anything you clear moves to Resolved so you can show the progress.'|t('accessibility-audit') }}</span>
+            </li>
+        </ol>
+
+    
+        <button class="btn submit accessibility-audit-zilch__btn"
+                data-accessibility-audit-scan-all
+                data-site-id="{{ siteId }}"
+                aria-live="polite">
+            {{ 'Scan All Pages'|t('accessibility-audit') }}
+        </button>
+
+        <p class="accessibility-audit-zilch__cli light">
+            {{ 'On a large site, run it from the command line instead:'|t('accessibility-audit') }}
+            <code>php craft accessibility-audit/audit/scan-all</code>
+        </p>
+    </div>
+    </div>
+{% else %}
+
+<div class="accessibility-audit-stack">
+
+
+{% set openTotal = summary.errorCount + summary.warningCount + summary.noticeCount %}
+{% set scoreBand = macros.scoreClass(summary.avgScore) %}
+{% set scoreFillMap = {good: 'pass', fair: 'warn', poor: 'error'} %}
+
+
+{% set levelRank = {'A': 1, 'AA': 2, 'AAA': 3} %}
+{% set targetRank = levelRank[wcagLevel] ?? 2 %}
+
+<div class="accessibility-audit-kpi">
+
+    <div class="pane accessibility-audit-kpi__cell">
+        <span class="accessibility-audit-col-label">{{ 'Score'|t('accessibility-audit') }}</span>
+        <span class="accessibility-audit-baseline">
+            <span class="accessibility-audit-stat accessibility-audit-stat-value--{{ scoreBand }}">{{ summary.avgScore }}</span>
+            <span class="accessibility-audit-kpi__unit">/100</span>
+        </span>
+        <div class="accessibility-audit-progress accessibility-audit-progress--flush"><div class="accessibility-audit-progress__fill accessibility-audit-progress__fill--{{ scoreFillMap[scoreBand] }}" style="width:{{ summary.avgScore }}%"></div></div>
+        {% if targetScore > 0 %}
+            <span class="accessibility-audit-kpi__sub">
+                {% if summary.avgScore >= targetScore %}
+                    {{ 'target {n} met'|t('accessibility-audit', {n: targetScore}) }}
+                {% else %}
+                    {{ '{gap} to target {n}'|t('accessibility-audit', {gap: targetScore - summary.avgScore, n: targetScore}) }}
+                {% endif %}
+            </span>
+        {% endif %}
+    </div>
+    
+    {% for row in [
+        { label: 'Level A',   code: 'A',   score: summary.avgScoreA,   failing: summary.failingCriteriaA },
+        { label: 'Level AA',  code: 'AA',  score: summary.avgScoreAA,  failing: summary.failingCriteriaAA },
+        { label: 'Level AAA', code: 'AAA', score: summary.avgScoreAAA, failing: summary.failingCriteriaAAA },
+    ] %}
+        {% if (levelRank[row.code] ?? 1) <= targetRank %}
+            {% set isTarget = row.code == wcagLevel %}
+            {% set band = macros.scoreClass(row.score) %}
+            <div class="pane accessibility-audit-kpi__cell{% if isTarget %} accessibility-audit-kpi__cell--target{% endif %}">
+                <span class="accessibility-audit-col-label">
+                    {{ row.label }}
+                    {% if isTarget %}<span class="accessibility-audit-kpi__badge">{{ 'Target'|t('accessibility-audit') }}</span>{% endif %}
+                </span>
+                <span class="accessibility-audit-baseline">
+                    <span class="accessibility-audit-stat accessibility-audit-stat-value--{{ band }}">{{ row.score }}</span>
+                    <span class="accessibility-audit-kpi__unit">%</span>
+                </span>
+                <div class="accessibility-audit-progress accessibility-audit-progress--flush"><div class="accessibility-audit-progress__fill accessibility-audit-progress__fill--{{ scoreFillMap[band] }}" style="width:{{ row.score }}%"></div></div>
+                <span class="accessibility-audit-kpi__sub">
+                    {{ '{n} criteria failing'|t('accessibility-audit', {n: row.failing}) }}
+                </span>
+            </div>
+        {% endif %}
+    {% endfor %}
+    
+    <div class="pane accessibility-audit-kpi__cell">
+        <span class="accessibility-audit-col-label">{{ 'Open issues'|t('accessibility-audit') }}</span>
+        <span class="accessibility-audit-baseline">
+            <span class="accessibility-audit-stat accessibility-audit-stat--ink">{{ openTotal }}</span>
+        </span>
+        {% if openTotal > 0 %}
+        <div class="accessibility-audit-dist" role="presentation">
+            <div class="accessibility-audit-dist__seg--error"   style="width:{{ (summary.errorCount / openTotal * 100)|round(2) }}%"></div>
+            <div class="accessibility-audit-dist__seg--warning" style="width:{{ (summary.warningCount / openTotal * 100)|round(2) }}%"></div>
+            <div class="accessibility-audit-dist__seg--notice"  style="width:{{ (summary.noticeCount / openTotal * 100)|round(2) }}%"></div>
+        </div>
+        {% endif %}
+        <span class="accessibility-audit-kpi__sub accessibility-audit-kpi__sub--counts">
+            <span><strong class="accessibility-audit-kpi__ct--error">{{ summary.errorCount }}</strong> {{ 'errors'|t('accessibility-audit') }}</span>
+            <span><strong class="accessibility-audit-kpi__ct--warning">{{ summary.warningCount }}</strong> {{ 'warnings'|t('accessibility-audit') }}</span>
+            <span><strong class="accessibility-audit-kpi__ct--notice">{{ summary.noticeCount }}</strong> {{ 'notices'|t('accessibility-audit') }}</span>
+        </span>
+    </div>
+
+</div>
+
+{% if en301549 ?? false %}
+    <p class="light accessibility-audit-en-note">
+        {%- if targetRank >= 2 -%}
+            {{ 'Targeting Level AA, so this also covers EN 301 549 clause 9, the web part of the European standard.'|t('accessibility-audit') }}
+        {%- else -%}
+            {{ 'EN 301 549 needs Level AA. You are targeting Level A, so this will not cover it.'|t('accessibility-audit') }}
+        {%- endif -%}
+    </p>
+{% endif %}
+
+
+    {% if scoreHistory|length > 1 %}
+        <div class="pane accessibility-audit-score-history">
+            <span class="accessibility-audit-col-label">{{ 'Score history'|t('accessibility-audit') }}</span>
+            <div id="accessibility-audit-score-history-chart" style="margin-top:10px"></div>
+
+            {% js %}
+            (() => {
+                const history = {{ scoreHistory|json_encode|raw }};
+                const target = {{ targetScore }};
+                const chartEl = document.getElementById('accessibility-audit-score-history-chart');
+                if (!chartEl || !history || history.length < 2) { return; }
+
+                const H = 200;
+                const padL = 34, padR = 16, padT = 12;
+                const n = history.length;
+                const fmtDate = (s) => { const p = String(s).split('-'); return p[2] + '/' + p[1]; };
+
+              
+                let tbl = '<table class="visually-hidden"><caption>'
+                    + Craft.t('accessibility-audit', 'Accessibility score by date') + '</caption><thead><tr><th>'
+                    + Craft.t('accessibility-audit', 'Date') + '</th><th>'
+                    + Craft.t('accessibility-audit', 'Score') + '</th></tr></thead><tbody>';
+                history.forEach((d) => {
+                    tbl += '<tr><td>' + Craft.escapeHtml(String(d.day)) + '</td><td>' + (Number(d.avgScore) || 0) + '</td></tr>';
+                });
+                tbl += '</tbody></table>';
+
+                
+                const draw = () => {
+                    const W = Math.max(320, Math.round(chartEl.clientWidth) || 760);
+                    const plotW = W - padL - padR, plotH = H - padT - 26;
+
+                    const x = (i) => padL + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+                    const y = (v) => padT + plotH - (Math.max(0, Math.min(100, v)) / 100) * plotH;
+                    const pts = history.map((d, i) => x(i) + ',' + y(Number(d.avgScore) || 0)).join(' ');
+
+                    const svg = ['<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="' + Craft.t('accessibility-audit', 'Accessibility score over time') + '">'];
+                    for (let g = 0; g <= 4; g++) {
+                        const gy = padT + (g / 4) * plotH;
+                        svg.push('<line x1="' + padL + '" y1="' + gy + '" x2="' + (W - padR) + '" y2="' + gy + '" stroke="var(--border-hairline)" stroke-width="1"/>');
+                        svg.push('<text x="' + (padL - 6) + '" y="' + (gy + 3) + '" text-anchor="end" font-size="9" fill="var(--medium-text-color)">' + Math.round(100 * (1 - g / 4)) + '</text>');
+                    }
+                    [0, Math.floor((n - 1) / 2), n - 1].forEach((i) => {
+                        svg.push('<text x="' + x(i) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="9" fill="var(--medium-text-color)">' + fmtDate(history[i].day) + '</text>');
+                    });
+                    if (target > 0) {
+                        const ty = y(target);
+                        svg.push('<line x1="' + padL + '" y1="' + ty + '" x2="' + (W - padR) + '" y2="' + ty + '" stroke="var(--aa-pass)" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.75"/>');
+                        svg.push('<text x="' + (W - padR) + '" y="' + (ty - 4) + '" text-anchor="end" font-size="9" fill="var(--aa-pass)">' + Craft.t('accessibility-audit', 'Target {n}', { n: target }) + '</text>');
+                    }
+                    const areaPts = padL + ',' + (padT + plotH) + ' ' + pts + ' ' + (W - padR) + ',' + (padT + plotH);
+                    svg.push('<polygon points="' + areaPts + '" fill="var(--link-color)" opacity="0.06"/>');
+                    svg.push('<polyline points="' + pts + '" fill="none" stroke="var(--link-color)" stroke-width="2"/>');
+                    history.forEach((d, i) => {
+                        svg.push('<circle cx="' + x(i) + '" cy="' + y(Number(d.avgScore) || 0) + '" r="2.5" fill="var(--link-color)"/>');
+                    });
+                    svg.push('</svg>');
+
+                    chartEl.innerHTML = svg.join('') + tbl;
+                };
+
+               
+                let queued = false;
+                const ro = new ResizeObserver(() => {
+                    if (queued) { return; }
+                    queued = true;
+                    requestAnimationFrame(() => { queued = false; draw(); });
+                });
+                ro.observe(chartEl);
+            })();
+            {% endjs %}
+        </div>
+    {% endif %}
+
+
+    {% if assetStats %}
+        {% if assetStats.withIssues == 0 %}
+            <div class="accessibility-audit-callout accessibility-audit-callout--success">
+                <span style="color:var(--aa-pass);font-size:15px;font-weight:800" aria-hidden="true">✓</span>
+                <span><strong>{{ 'All {n} images'|t('accessibility-audit', {n: assetStats.total}) }}</strong> {{ 'in the library have alt text.'|t('accessibility-audit') }}</span>
+            </div>
+        {% else %}
+            {% set missingCount = assetStats.byRule['asset-alt-missing'] ?? 0 %}
+            {% set filenameCount = assetStats.byRule['asset-alt-filename'] ?? 0 %}
+            {% set shortCount = assetStats.byRule['asset-alt-short'] ?? 0 %}
+            {% set parts = [] %}
+            {% if missingCount > 0 %}{% set parts = parts|merge(['{n} missing'|t('accessibility-audit', {n: missingCount})]) %}{% endif %}
+            {% if filenameCount > 0 %}{% set parts = parts|merge(['{n} filename as alt'|t('accessibility-audit', {n: filenameCount})]) %}{% endif %}
+            {% if shortCount > 0 %}{% set parts = parts|merge(['{n} very short'|t('accessibility-audit', {n: shortCount})]) %}{% endif %}
+            <div class="accessibility-audit-banner--warning">
+                <span class="accessibility-audit-banner__stat">{{ assetStats.withIssues }} / {{ assetStats.total }}</span>
+                <span>
+                    <strong>{{ 'Images need alt text attention'|t('accessibility-audit') }}</strong>
+                    {% if parts|length %} · {{ parts|join(', ') }}{% endif %}
+                    · {{ 'last scanned {date}'|t('accessibility-audit', {date: assetStats.dateScanned|date('short')}) }}
+                </span>
+                <span class="accessibility-audit-spacer"></span>
+                <a href="{{ cpUrl('accessibility-audit/assets') }}" class="go">{{ 'Review and fix'|t('accessibility-audit') }}</a>
+            </div>
+        {% endif %}
+    {% else %}
+        <div class="accessibility-audit-callout accessibility-audit-callout--notice">
+            <span>{{ 'The asset library has not been audited yet.'|t('accessibility-audit') }}</span>
+            <span class="accessibility-audit-spacer"></span>
+            <a href="{{ cpUrl('accessibility-audit/assets') }}" class="go">{{ 'Run the first scan'|t('accessibility-audit') }}</a>
+        </div>
+    {% endif %}
+
+
+    <div class="pane" style="position:relative">
+        <h2 style="margin:0">{{ 'Fix these 10 issues to improve your score'|t('accessibility-audit') }}</h2>
+        <p class="light" style="margin:2px 0 12px">
+            {% if byImpactAll|length > byImpact|length %}
+                {{ 'Top rules by points to gain · '|t('accessibility-audit', {n: byImpact|length}) }}<a href="{{ cpUrl('accessibility-audit/issues', {site: siteHandle}) }}">{{ 'all {total} rules'|t('accessibility-audit', {total: byImpactAll|length}) }}</a>
+            {% else %}
+                {{ 'Grouped by severity · sorted by points to gain'|t('accessibility-audit') }}
+            {% endif %}
+        </p>
+        {% if byImpact|length > 0 %}
+        {% include 'accessibility-audit/_includes/grouped-issues' with { rows: byImpact, allRows: byImpactAll, siteHandle: siteHandle, filterCorner: true } only %}
+        <p class="accessibility-audit-cta-right"><a class="go" href="{{ cpUrl('accessibility-audit/issues', {site: siteHandle}) }}">{{ 'View issues by page'|t('accessibility-audit') }}</a></p>
+        {% else %}
+            <p class="light">{{ 'No issues found.'|t('accessibility-audit') }}</p>
+        {% endif %}
+    </div>
+
+   
+    <div class="pane">
+        <h2 style="margin:0">{{ 'Template issues'|t('accessibility-audit') }}</h2>
+        <p class="light" style="margin:2px 0 0">{{ 'Fix once, fix everywhere'|t('accessibility-audit') }}</p>
+        {% if templateIssues|length > 0 %}
+
+        <div class="accessibility-audit-table-scroll">
+            <table class="data fullwidth" style="margin-top:12px">
+            <thead>
+                <tr>
+                    <th scope="col">{{ 'Rule'|t('accessibility-audit') }}</th>
+                    <th scope="col">{{ 'WCAG'|t('accessibility-audit') }}</th>
+                    <th scope="col">{{ 'SC'|t('accessibility-audit') }}</th>
+                    <th scope="col" class="rightalign">{{ 'Pages'|t('accessibility-audit') }}</th>
+                    <th scope="col" class="rightalign">{{ 'Count'|t('accessibility-audit') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in templateIssues %}
+                    <tr>
+                        <th scope="row">
+                            <span class="accessibility-audit-rowline" style="gap:8px">
+                                <span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--{{ row.severity }}" aria-hidden="true" title="{{ row.severity|capitalize }}"></span>
+                                <span class="visually-hidden">{{ row.severity|capitalize }}:</span>
+                                <a href="{{ url('accessibility-audit/issues/detail', {ruleId: row.ruleId, site: siteHandle}) }}">{{ row.ruleId }}</a>
+                            </span>
+                        </th>
+                        <td>{{ macros.conformanceBadge(row.wcagLevel ?? null) }}</td>
+                        <td class="code">{{ row.wcagCriterion ?? '—' }}</td>
+                        <td class="rightalign">{{ row.pageCount }}</td>
+                        <td class="rightalign">{{ row.occurrences }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        <p class="light">{{ 'These rules appear on 5+ pages, likely a template or layout issue.'|t('accessibility-audit') }}</p>
+        {{ macros.conformanceLegend() }}
+        {% else %}
+            <p class="light">{{ 'No template-level issues detected.'|t('accessibility-audit') }}</p>
+        {% endif %}
+    </div>
+
+
+{% if resolvedIssues|length > 0 %}
+<div class="pane">
+    <div style="display:flex;align-items:flex-start;gap:10px">
+        <div>
+            <h2 style="margin:0">{{ 'Resolved issues'|t('accessibility-audit') }}</h2>
+            <p class="light" style="margin:2px 0 0">{{ 'Issues fixed since the last scan'|t('accessibility-audit') }}</p>
+        </div>
+        <a href="{{ cpUrl('accessibility-audit/issues', {site: siteHandle, tab: 'resolved'}) }}" class="go" style="margin-left:auto">{{ 'View all resolved'|t('accessibility-audit') }}</a>
+    </div>
+    <div class="accessibility-audit-table-scroll">
+        <table class="data fullwidth" style="margin-top:12px">
+        <thead>
+            <tr>
+                <th scope="col">{{ 'Rule'|t('accessibility-audit') }}</th>
+                <th scope="col">{{ 'SC'|t('accessibility-audit') }}</th>
+                <th scope="col">{{ 'Resolved'|t('accessibility-audit') }}</th>
+                <th scope="col" class="rightalign">{{ 'Count'|t('accessibility-audit') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in resolvedIssues %}
+                <tr>
+                    <th scope="row">
+                        <span class="accessibility-audit-rowline" style="gap:8px">
+                            <span class="accessibility-audit-resolved-check" data-icon="check" aria-hidden="true"></span>
+                            <span class="visually-hidden">{{ 'Resolved'|t('accessibility-audit') }}:</span>
+                            {{ row.ruleId ?? row.message }}
+                        </span>
+                    </th>
+                    <td class="code">{{ row.wcagCriterion ?? '—' }}</td>
+                    <td class="light">{{ row.dateResolved ? row.dateResolved|date('d M Y') : '—' }}</td>
+                    <td class="rightalign">{{ row.count }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% endif %}
+
+</div>
+{% endif %}
+{% endblock %}

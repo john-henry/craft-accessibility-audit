@@ -1,0 +1,68 @@
+{
+  "name": "johnhenry/craft-accessibility-audit",
+  "description": "Comprehensive WCAG 2.2 accessibility auditing for Craft CMS 5",
+  "type": "craft-plugin",
+  "version": "1.0.0-beta.1",
+  "keywords": [
+    "craft",
+    "cms",
+    "craftcms",
+    "craft-plugin",
+    "accessibility",
+    "wcag",
+    "a11y",
+    "audit"
+  ],
+  "license": "proprietary",
+  "authors": [
+    {
+      "name": "John Henry",
+      "homepage": "https://johnhenry.ie"
+    }
+  ],
+  "homepage": "https://johnhenry.ie/plugins/accessibility-audit",
+  "require": {
+    "php": "^8.2 || ^8.3 || ^8.4",
+    "chrome-php/chrome": "^1.11",
+    "craftcms/cms": "^5.0"
+  },
+  "require-dev": {
+    "craftcms/ecs": "dev-main",
+    "craftcms/phpstan": "dev-main"
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true,
+  "autoload": {
+    "psr-4": {
+      "johnhenry\\accessibilityaudit\\": "src/"
+    }
+  },
+  "scripts": {
+    "phpstan": "phpstan --ansi --memory-limit=1G",
+    "check-cs": "ecs check --ansi",
+    "fix-cs": "ecs check --fix --ansi"
+  },
+  "config": {
+    "allow-plugins": {
+      "craftcms/plugin-installer": true,
+      "pestphp/pest-plugin": true,
+      "yiisoft/yii2-composer": true
+    },
+    "optimize-autoloader": true,
+    "sort-packages": true
+  },
+  "support": {
+    "docs": "https://johnhenry.ie/plugins/accessibility-audit/docs",
+    "source": "https://github.com/john-henry/craft-accessibility-audit",
+    "issues": "https://github.com/john-henry/craft-accessibility-audit/issues"
+  },
+  "extra": {
+    "name": "Accessibility Audit",
+    "handle": "accessibility-audit",
+    "developer": "John Henry",
+    "developerUrl": "https://johnhenry.ie",
+    "documentationUrl": "https://johnhenry.ie/plugins/accessibility-audit/docs/",
+    "changelogUrl": "https://github.com/john-henry/craft-accessibility-audit/blob/main/CHANGELOG.md",
+    "class": "johnhenry\\accessibilityaudit\\AccessibilityAudit"
+  }
+}

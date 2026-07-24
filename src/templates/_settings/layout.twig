@@ -1,0 +1,35 @@
+{% extends "accessibility-audit/_layouts/base" %}
+
+{% set selectedSubnavItem = "settings" %}
+{% set title = "Settings"|t('accessibility-audit') %}
+{% set segment = craft.app.request.getSegment(3) %}
+
+
+{% set sectionLabels = {
+    general: 'General'|t('accessibility-audit'),
+    scanning: 'Scanning'|t('accessibility-audit'),
+    maintenance: 'Maintenance'|t('accessibility-audit'),
+    tools: 'Tools'|t('accessibility-audit'),
+    notifications: 'Notifications'|t('accessibility-audit'),
+    support: 'Support'|t('accessibility-audit'),
+} %}
+{% set baseCrumbs = [
+    { label: 'Accessibility Audit'|t('accessibility-audit'), url: url('accessibility-audit') },
+    { label: 'Settings'|t('accessibility-audit'),    url: url('accessibility-audit/settings') },
+] %}
+{% if segment and sectionLabels[segment] is defined %}
+    {% set baseCrumbs = baseCrumbs|merge([
+        { label: sectionLabels[segment] },
+    ]) %}
+{% endif %}
+{% set crumbs = baseCrumbs|merge(crumbs ?? []) %}
+
+{% set tabs = {
+    general:       { label: sectionLabels.general,       url: url('accessibility-audit/settings/general') },
+    scanning:      { label: sectionLabels.scanning,      url: url('accessibility-audit/settings/scanning') },
+    maintenance:   { label: sectionLabels.maintenance,   url: url('accessibility-audit/settings/maintenance') },
+    tools:         { label: sectionLabels.tools,         url: url('accessibility-audit/settings/tools') },
+    notifications: { label: sectionLabels.notifications, url: url('accessibility-audit/settings/notifications') },
+    support:       { label: sectionLabels.support,       url: url('accessibility-audit/settings/support') },
+} %}
+{% set selectedTab = segment ?: 'general' %}

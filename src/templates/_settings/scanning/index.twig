@@ -1,0 +1,209 @@
+{% extends "accessibility-audit/_settings/layout" %}
+
+{% import "_includes/forms" as forms %}
+{% import 'accessibility-audit/_macros' as macros %}
+
+
+
+{% set crumbs = [] %}
+
+{% set fullPageForm = true %}
+
+{% block blockContent %}
+   
+    {{ actionInput('accessibility-audit/settings/save-scanning') }}
+    {{ redirectInput(url('accessibility-audit/settings/scanning')) }}
+
+   
+    
+    {{ forms.lightswitchField({
+        label: 'Scan on Entry Save'|t('accessibility-audit'),
+        instructions: 'Automatically queue an accessibility scan when a live entry is saved. Scans run via the Craft queue worker.'|t('accessibility-audit'),
+        id: 'scanOnSave',
+        name: 'settings[scanOnSave]',
+        on: settings.scanOnSave,
+        errors: settings.getErrors('scanOnSave'),
+        warning: config.scanOnSave is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.scanOnSave is defined,
+    }) }}
+
+    {{ forms.autosuggestField({
+        label: 'Scanner User-Agent'|t('accessibility-audit'),
+        instructions: 'Sent with every scanner request against the site: the PHP scan fetch, the readability fetch, and the headless Chrome browser pass. By default the scanner already identifies itself with a <code>CraftAccessibilityAudit</code> token on all three, so a single WAF or firewall rule can allow-list it. Set this only to send your own identity instead. You can reference an environment variable: type $ to see suggestions.'|t('accessibility-audit'),
+        id: 'scannerUserAgent',
+        name: 'settings[scannerUserAgent]',
+        value: settings.scannerUserAgent,
+        suggestEnvVars: true,
+        suggestAliases: false,
+        placeholder: 'CraftAccessibilityAudit (+https://example.com)',
+        errors: settings.getErrors('scannerUserAgent'),
+        warning: config.scannerUserAgent is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.scannerUserAgent is defined,
+    }) }}
+
+    <h3>{{ 'Scheduled Scans'|t('accessibility-audit') }}</h3>
+
+    <div class="readable">
+        <blockquote class="note">
+            <p>{{ 'Scan-on-save keeps edited pages fresh; a scheduled full-site sweep catches everything else (template changes, expired entries, pages nobody has touched). Run it from cron:'|t('accessibility-audit') }}</p>
+            <pre><code># Nightly at 2am
+0 2 * * * cd /path/to/site && php craft accessibility-audit/audit/scan-all</code></pre>
+            <p>{{ 'The Console Commands page of the plugin documentation has ready-made daily, weekly, monthly, and custom-day examples, plus prune and asset-sweep schedules.'|t('accessibility-audit') }}</p>
+        </blockquote>
+    </div>
+
+    <hr>
+
+    <h3>{{ 'Server-side Browser Scanning'|t('accessibility-audit') }}</h3>
+
+    {% if not (isPro ?? false) %}
+        {% include 'accessibility-audit/_includes/pro-upsell' with {
+            feature: 'Server-side browser scanning'|t('accessibility-audit'),
+            text: 'Run the full axe-core browser checks (contrast, focus, touch targets) on every queued scan with headless Chrome, so the whole site gets browser coverage without an admin visiting each page. Available on the Pro edition.'|t('accessibility-audit'),
+            headingLevel: 4,
+        } only %}
+    {% else %}
+    {{ forms.autosuggestField({
+        label: 'Chrome Binary Path'|t('accessibility-audit'),
+        instructions: 'Path to a Chrome or Chromium binary on the server (e.g. /usr/bin/chromium). When set, every queued scan also runs the full axe-core browser checks in headless Chrome, covering contrast, focus, and touch targets site-wide. Leave empty to rely on the frontend overlay only. You can reference an environment variable: type $ to see suggestions.'|t('accessibility-audit'),
+        id: 'chromePath',
+        name: 'settings[chromePath]',
+        value: settings.chromePath,
+        suggestEnvVars: true,
+        suggestAliases: false,
+        placeholder: '$CHROME_PATH or /usr/bin/chromium',
+        errors: settings.getErrors('chromePath'),
+        warning: config.chromePath is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.chromePath is defined,
+    }) }}
+
+    {% if settings.chromePath %}
+        {% if headlessAvailable ?? false %}
+            <p class="light"><span aria-hidden="true">✓</span> {{ 'Chrome binary found. Queued scans will include the browser pass.'|t('accessibility-audit') }}</p>
+        {% else %}
+            <p class="warning with-icon">{{ 'No Chrome binary at that path. Queued scans will skip the browser pass until it resolves.'|t('accessibility-audit') }}</p>
+        {% endif %}
+    {% endif %}
+
+    {{ forms.lightswitchField({
+        label: 'Launch Chrome Without Sandbox'|t('accessibility-audit'),
+        instructions: 'Most containers and CI runners need this on, because Chrome\'s sandbox can\'t initialise there. If your server runs Chrome under a dedicated user with a working sandbox, turn it off for defence in depth. If browser scans fail after turning it off, the sandbox is the first thing to check in the logs.'|t('accessibility-audit'),
+        id: 'chromeNoSandbox',
+        name: 'settings[chromeNoSandbox]',
+        on: settings.chromeNoSandbox,
+        errors: settings.getErrors('chromeNoSandbox'),
+        warning: config.chromeNoSandbox is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.chromeNoSandbox is defined,
+    }) }}
+    {% endif %}
+
+    <hr>
+    
+    {% set uriCols = {
+        enabled: { type: 'lightswitch', heading: 'On'|t('accessibility-audit'), thin: true },
+    } %}
+    {% if craft.app.isMultiSite %}
+        {% set siteOptions = [{ value: '', label: 'All sites'|t('accessibility-audit') }] %}
+        {% for s in craft.app.sites.getAllSites() %}
+            {% set siteOptions = siteOptions|merge([{ value: s.id, label: s.name }]) %}
+        {% endfor %}
+        {% set uriCols = uriCols|merge({
+            siteId: { type: 'select', heading: 'Site'|t('accessibility-audit'), options: siteOptions, thin: true },
+        }) %}
+    {% endif %}
+    {% set uriCols = uriCols|merge({
+        uriPattern: {
+            type: 'singleline',
+            heading: 'URI Pattern'|t('accessibility-audit'),
+            placeholder: 'Leave blank to match the homepage'|t('accessibility-audit'),
+            code: true,
+        },
+    }) %}
+
+    {{ forms.editableTableField({
+        label: 'Excluded URI Patterns'|t('accessibility-audit'),
+        instructions: 'Pages whose URI matches one of these regular expressions are excluded from every scan (PHP, browser pass, and overlay). Example: <code>^checkout</code>, <code>print$</code>, <code>^admin/</code>.'|t('accessibility-audit'),
+        warning: config.excludedUriPatterns is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        id: 'excludedUriPatterns',
+        name: 'settings[excludedUriPatterns]',
+        cols: uriCols,
+        rows: settings.excludedUriPatterns,
+        addRowLabel: 'Add a URI pattern'|t('accessibility-audit'),
+        allowAdd: not (config.excludedUriPatterns is defined),
+        allowDelete: not (config.excludedUriPatterns is defined),
+        allowReorder: not (config.excludedUriPatterns is defined),
+        static: config.excludedUriPatterns is defined,
+    }) }}
+    
+
+    
+
+    {% set elementTypeChoices = [] %}
+    {% for class, label in elementTypeOptions %}
+        {% set elementTypeChoices = elementTypeChoices|merge([{ label: label, value: class }]) %}
+    {% endfor %}
+
+    {% if elementTypeChoices|length %}
+        {{ forms.checkboxSelectField({
+            label: 'Scanned Element Types'|t('accessibility-audit'),
+            instructions: 'Tick the element types the content scanner should cover. Native Craft types (entries, categories) and first-party ones like Commerce products are on by default; a third-party plugin\'s custom element stays off until you tick it here. Unticking a type drops its stored pages and issues from every report.'|t('accessibility-audit'),
+            warning: config.scannedElementTypes is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+            id: 'scannedElementTypes',
+            name: 'settings[scannedElementTypes]',
+            options: elementTypeChoices,
+            values: scannedElementTypes,
+            disabled: config.scannedElementTypes is defined,
+        }) }}
+    {% endif %}
+
+    <hr>
+
+    {% set volumeOptions = [] %}
+    {% for volume in craft.app.volumes.getAllVolumes() %}
+        {% set volumeOptions = volumeOptions|merge([{ label: volume.name, value: volume.uid }]) %}
+    {% endfor %}
+
+    {% if volumeOptions|length %}
+        {{ forms.checkboxSelectField({
+            label: 'Excluded Volumes'|t('accessibility-audit'),
+            instructions: 'Tick any volume whose images you don\'t want in the alt-text audit: avatars, generated thumbnails, system files, anything that isn\'t public content needing alt text. Their images are left out of the Assets page, its counts, and the Asset alt text panel on the dashboard.'|t('accessibility-audit'),
+            warning: config.excludedVolumes is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+            id: 'excludedVolumes',
+            name: 'settings[excludedVolumes]',
+            options: volumeOptions,
+            values: settings.excludedVolumes,
+            disabled: config.excludedVolumes is defined,
+        }) }}
+    {% else %}
+        <p class="light">{{ 'No asset volumes exist yet.'|t('accessibility-audit') }}</p>
+    {% endif %}
+
+    <hr>
+    
+    
+    {{ forms.textareaField({
+        label: 'Ignored Rule IDs'|t('accessibility-audit'),
+        instructions: 'One rule ID per line. Matching issues will be excluded from all scans. Example rule IDs: img-alt, skip-link, meta-description'|t('accessibility-audit'),
+        id: 'ignoreRules',
+        name: 'settings[ignoreRules]',
+        value: settings.ignoreRules|join('\n'),
+        rows: 6,
+        errors: settings.getErrors('ignoreRules'),
+    }) }}
+    
+    <div class="readable">
+        <blockquote class="note">
+            <p>{{ 'Full list of rule IDs:'|t('accessibility-audit') }}
+                <code>img-alt</code>, <code>img-alt-filename</code>, <code>heading-order</code>,
+                <code>empty-heading</code>, <code>multiple-h1</code>, <code>link-name</code>,
+                <code>link-generic</code>, <code>link-new-window</code>, <code>button-name</code>,
+                <code>form-label</code>, <code>select-label</code>, <code>table-header</code>,
+                <code>html-lang</code>, <code>page-title</code>, <code>skip-link</code>,
+                <code>landmark-main</code>, <code>landmark-regions</code>, <code>iframe-title</code>,
+                <code>video-captions</code>, <code>autoplay</code>, <code>duplicate-id</code>,
+                <code>meta-description</code>, <code>aria-hidden-focus</code>, <code>list-structure</code>,
+                <code>input-type</code>
+            </p>
+        </blockquote>
+    </div>
+{% endblock %}

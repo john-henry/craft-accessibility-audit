@@ -1,0 +1,30 @@
+{% import 'accessibility-audit/_macros' as macros %}
+{% set scoreClass = macros.scoreClass(summary.avgScore) %}
+
+<div class="accessibility-audit-widget-score">
+    <h3 class="visually-hidden">{{ 'Average accessibility score'|t('accessibility-audit') }}</h3>
+    <div class="accessibility-audit-score-display accessibility-audit-score-display--{{ scoreClass }} accessibility-audit-justify-center">
+        <span class="accessibility-audit-score-display__number">{{ summary.avgScore }}</span>
+        <span class="accessibility-audit-score-display__label">/100</span>
+    </div>
+    <p class="light accessibility-audit-note--md accessibility-audit-widget-caption">{{ 'avg. accessibility score'|t('accessibility-audit') }}</p>
+</div>
+
+{% if summary.scannedCount > 0 %}
+<div class="accessibility-audit-counts accessibility-audit-justify-center mt-s">
+    {% if summary.errorCount > 0 %}
+        <span class="accessibility-audit-count accessibility-audit-count--error">{{ summary.errorCount }} {{ 'errors'|t('accessibility-audit') }}</span>
+    {% endif %}
+    {% if summary.warningCount > 0 %}
+        <span class="accessibility-audit-count accessibility-audit-count--warning">{{ summary.warningCount }} {{ 'warnings'|t('accessibility-audit') }}</span>
+    {% endif %}
+</div>
+<p class="light accessibility-audit-note accessibility-audit-widget-link accessibility-audit-cta-right">
+    <a class="go" href="{{ cpUrl('accessibility-audit') }}">{{ 'View full report'|t('accessibility-audit') }}</a>
+</p>
+{% else %}
+<p class="light accessibility-audit-note--md accessibility-audit-center">
+    {{ 'No pages scanned yet.'|t('accessibility-audit') }}
+    <a class="go" href="{{ cpUrl('accessibility-audit') }}">{{ 'Run audit'|t('accessibility-audit') }}</a>
+</p>
+{% endif %}

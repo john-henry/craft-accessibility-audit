@@ -1,0 +1,50 @@
+{% set headline = headline ?? null %}
+{% set checklist = checklist ?? null %}
+{% set headingLevel = headingLevel ?? 2 %}
+
+{% if headline is not null and checklist is not null %}
+    {% set storeUrl = cpUrl('plugin-store/accessibility-audit') %}
+    <div class="accessibility-audit-upsell">
+        <div class="accessibility-audit-upsell__body">
+            <span class="accessibility-audit-rowline" style="gap:10px">
+                <span class="accessibility-audit-pro--solid">
+                    <span aria-hidden="true">{{ 'Pro'|t('accessibility-audit') }}</span>
+                    <span class="visually-hidden">{{ 'Pro edition'|t('accessibility-audit') }}</span>
+                </span>
+                <h{{ headingLevel }} class="accessibility-audit-upsell__headline">{{ headline }}</h{{ headingLevel }}>
+            </span>
+            <p class="accessibility-audit-help" style="font-size:13px;line-height:1.6">{{ description }}</p>
+            <div class="accessibility-audit-upsell__features">
+                {% for item in checklist %}
+                    <span class="accessibility-audit-feature">{{ item }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="accessibility-audit-upsell__cta">
+            <a href="{{ storeUrl }}"
+               class="accessibility-audit-btn accessibility-audit-btn--primary"
+               style="white-space:nowrap;font-size:13.5px;padding:11px 22px"
+               aria-label="{{ 'Upgrade {feature} to the Pro edition'|t('accessibility-audit', { feature: feature }) }}">
+                {{ 'Upgrade to Pro'|t('accessibility-audit') }}
+            </a>
+            <span class="accessibility-audit-meta" style="font-size:11.5px">{{ 'via the Plugin Store'|t('accessibility-audit') }}</span>
+        </div>
+    </div>
+{% else %}
+    {% set inline = inline ?? false %}
+    {% set text = text ?? 'Upgrade to the Pro edition to unlock this feature.'|t('accessibility-audit') %}
+
+    <div class="accessibility-audit-pro-lock{{ inline ? ' accessibility-audit-pro-lock--inline' }}">
+        <span class="accessibility-audit-task__icon accessibility-audit-task__icon--locked cp-icon{{ inline ? ' small' }}" aria-hidden="true">{{ iconSvg('lock') }}</span>
+        <div class="accessibility-audit-task__body" style="gap:4px">
+            <span class="accessibility-audit-rowline" style="gap:8px">
+                <span class="accessibility-audit-pro--solid">
+                    <span aria-hidden="true">{{ 'Pro'|t('accessibility-audit') }}</span>
+                    <span class="visually-hidden">{{ 'Pro edition'|t('accessibility-audit') }}</span>
+                </span>
+                <h{{ headingLevel }} class="accessibility-audit-task__title" style="margin:0">{{ '{feature} is a Pro feature'|t('accessibility-audit', { feature: feature }) }}</h{{ headingLevel }}>
+            </span>
+            <p class="accessibility-audit-help">{{ text }}</p>
+        </div>
+    </div>
+{% endif %}

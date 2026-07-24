@@ -1,0 +1,231 @@
+{% extends '_layouts/cp' %}
+
+{% set title = 'Potential Issues'|t('accessibility-audit') %}
+{% set selectedSubnavItem = 'potential' %}
+{% set crumbs = [
+    { label: 'Accessibility Audit'|t('accessibility-audit'), url: cpUrl('accessibility-audit') },
+    { label: title },
+] %}
+
+{% if sites|length > 1 %}
+    {% set crumbs = [{
+        id: 'site-crumb',
+        icon: 'world',
+        label: requestedSite.name|t('site'),
+        menu: { items: siteMenuItems(sites, requestedSite), label: 'Select site'|t('app') },
+    }]|merge(crumbs ?? []) %}
+{% endif %}
+
+
+{% import 'accessibility-audit/_macros' as macros %}
+
+{% set tabs = {
+    issues: {
+        label: 'Potential Issues'|t('accessibility-audit') ~ (potentialRules|length ? ' (' ~ potentialRules|length ~ ')' : ''),
+        url: url('accessibility-audit/potential', { site: siteHandle, tab: 'issues' }),
+    },
+    pages: {
+        label: 'Pages with Potential Issues'|t('accessibility-audit') ~ (pages.total ? ' (' ~ pages.total ~ ')' : ''),
+        url: url('accessibility-audit/potential', { site: siteHandle, tab: 'pages' }),
+    },
+    dismissed: {
+        label: 'Dismissed'|t('accessibility-audit') ~ (dismissedTotal ? ' (' ~ dismissedTotal ~ ')' : ''),
+        url: url('accessibility-audit/potential', { site: siteHandle, tab: 'dismissed' }),
+    },
+} %}
+{% set selectedTab = activeTab %}
+
+{% block content %}
+<div>
+
+{% set potentialEmpty = (activeTab == 'issues' and potentialRules|length == 0)
+    or (activeTab == 'pages' and pages.total == 0) %}
+{% if activeTab != 'dismissed' and not potentialEmpty %}
+    <p class="light readable mb-l">{{ 'Potential issues cannot be automatically confirmed as failures: they require human review. Each check is phrased as a question to guide your decision. These don\'t count against your accessibility score until you confirm them.'|t('accessibility-audit') }}</p>
+{% endif %}
+
+{% if activeTab == 'issues' %}
+
+    {% if potentialRules|length == 0 %}
+        <div class="zilch">
+            <p>{{ 'Run a scan to surface the checks that need a human eye before they can be called a pass or a fail.'|t('accessibility-audit') }}</p>
+        </div>
+    {% else %}
+    {% do view.registerAssetBundle('craft\\web\\assets\\admintable\\AdminTableAsset') %}
+
+    <div class="accessibility-audit-table-inflow">
+        <div id="accessibility-audit-potential-table"></div>
+    </div>
+
+    {% js %}
+    (() => {
+       
+        const RESP = {
+            content:     ['content',   Craft.t('accessibility-audit', 'Content writing')],
+            design:      ['design',    Craft.t('accessibility-audit', 'Visual design')],
+            development: ['dev',       Craft.t('accessibility-audit', 'Development')],
+            technical:   ['technical', Craft.t('accessibility-audit', 'Technical')],
+        };
+
+        const columns = [
+            { name: 'question', title: Craft.t('accessibility-audit', 'Potential issue'), callback: (p) => p
+                ? '<a href="' + p.url + '">' + Craft.escapeHtml(p.title) + '</a>' : '' },
+            { name: 'conformance', title: Craft.t('accessibility-audit', 'Conformance'), callback: (v) => v
+                ? '<span class="accessibility-audit-level accessibility-audit-level--' + v.toLowerCase() + '">' + Craft.escapeHtml(v) + '</span>'
+                : '<span class="accessibility-audit-level accessibility-audit-level--bp">BP</span>' },
+            { name: 'sc', title: Craft.t('accessibility-audit', 'SC'), callback: (v) => '<span class="code">' + Craft.escapeHtml(v || '—') + '</span>' },
+            { name: 'responsibility', title: Craft.t('accessibility-audit', 'Responsibility'), callback: (v) => {
+                const r = RESP[v];
+                return r ? '<span class="token accessibility-audit-owner--' + r[0] + '">' + Craft.escapeHtml(r[1]) + '</span>' : '<span class="light">—</span>';
+            } },
+            { name: 'elementType', title: Craft.t('accessibility-audit', 'Element type'), callback: (v) => v
+                ? '<span class="token">' + Craft.escapeHtml(v) + '</span>' : '<span class="light">—</span>' },
+            { name: 'count', title: Craft.t('accessibility-audit', 'Count'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
+            { name: 'pages', title: Craft.t('accessibility-audit', 'Pages'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
+        ];
+
+        
+        AccessibilityAuditTable.create({
+            container: '#accessibility-audit-potential-table',
+            endpoint: 'accessibility-audit/dashboard/potential-table',
+            siteId: {{ siteId }},
+            columns: columns,
+            checkboxes: false,
+            search: false,
+            bulkRescan: false,
+        });
+    })();
+    {% endjs %}
+
+    {{ macros.conformanceLegend() }}
+    {% endif %}
+
+{% elseif activeTab == 'pages' %}
+
+    {% do view.registerAssetBundle('craft\\web\\assets\\admintable\\AdminTableAsset') %}
+
+    <div id="accessibility-audit-pp-table"></div>
+
+    {% js %}
+    (() => {
+        const siteId = {{ siteId }};
+
+        const pageCell = (p) => {
+            if (!p) { return ''; }
+            const title = '<span class="accessibility-audit-page-name">' + Craft.escapeHtml(p.title) + '</span>';
+            const urlLine = p.url
+                ? '<div class="light code" style="font-size:11px;margin-top:2px">' + Craft.escapeHtml(p.url) + '</div>'
+                : '';
+            return title + urlLine;
+        };
+        
+        const reportCell = (v) => v
+            ? '<a class="btn small accessibility-audit-rowbtn" data-icon="view" href="' + v + '" target="_blank" rel="noopener" title="' + Craft.t('accessibility-audit', 'View report') + '">'
+                + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'View report') + '</span>'
+                + '<span class="visually-hidden"> (' + Craft.t('accessibility-audit', 'opens in new tab') + ')</span></a>'
+            : '';
+
+        const rescanCell = (value) => value
+            ? '<button class="btn small accessibility-audit-rowbtn" data-icon="refresh" title="' + Craft.t('accessibility-audit', 'Re-scan') + '" data-accessibility-audit-scan-entry="' + value + '" data-site-id="' + siteId + '" aria-live="polite">'
+                + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'Re-scan') + '</span></button>'
+            : '';
+
+        const columns = [
+            { name: 'page', title: Craft.t('accessibility-audit', 'Page'), callback: pageCell, sortField: true },
+            { name: 'issues', title: Craft.t('accessibility-audit', 'Issues'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
+            { name: 'count', title: Craft.t('accessibility-audit', 'Count'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
+            { name: 'lastScanned', title: Craft.t('accessibility-audit', 'Last scanned'), sortField: true },
+            { name: 'report', title: '', callback: reportCell },
+            { name: 'rescan', title: '', callback: rescanCell },
+        ];
+
+        AccessibilityAuditTable.create({
+            container: '#accessibility-audit-pp-table',
+            endpoint: 'accessibility-audit/dashboard/potential-pages-table',
+            siteId: siteId,
+            columns: columns,
+            emptyMessage: Craft.t('accessibility-audit', 'No pages with potential issues found.'),
+            exportUrl: '{{ actionUrl('accessibility-audit/dashboard/potential-pages-export', {siteId: siteId}) }}',
+        });
+    })();
+    {% endjs %}
+
+
+
+{% elseif activeTab == 'dismissed' %}
+
+    <p class="light readable mb-l">
+        {{ 'Everything marked "not an issue", across the whole site. The per-page report can undo a single one, but only on the page it was made; this is where you check what has been waved through, or take a batch back after a check turns out to have been over-firing.'|t('accessibility-audit') }}
+    </p>
+
+    {% do view.registerAssetBundle('craft\\web\\assets\\admintable\\AdminTableAsset') %}
+
+    <div id="accessibility-audit-dismissed-table"></div>
+
+    {% js %}
+    (() => {
+        const siteId = {{ siteId }};
+        const canRestore = {{ canRunScans ? 'true' : 'false' }};
+
+        const pageCell = (p) => p
+            ? '<a href="' + p.inspectUrl + '">' + Craft.escapeHtml(p.title) + '</a>'
+            : '';
+
+        
+        const questionCell = (q) => {
+            if (!q) { return ''; }
+            const question = q.text ? '<div>' + Craft.escapeHtml(q.text) + '</div>' : '';
+            const context = q.context
+                ? '<div class="light code" style="font-size:11px;margin-top:2px">' + Craft.escapeHtml(q.context) + '</div>'
+                : '';
+            return question + context;
+        };
+
+        
+        const restoreCell = (v) => {
+            if (!v || !canRestore) { return ''; }
+            return '<button class="btn small" data-accessibility-audit-restore'
+                + ' data-element-id="' + v.elementId + '"'
+                + ' data-rule-id="' + Craft.escapeHtml(v.ruleId) + '"'
+                + ' data-context="' + Craft.escapeHtml(v.context) + '"'
+                + ' data-site-id="' + v.siteId + '">'
+                + Craft.t('accessibility-audit', 'Restore') + '</button>';
+        };
+
+        
+        const dismissedByCell = (v) => {
+            if (!v) { return ''; }
+            const date = v.date
+                ? '<div class="light" style="font-size:11px">' + Craft.escapeHtml(v.date) + '</div>'
+                : '';
+            return Craft.escapeHtml(v.name) + date;
+        };
+
+        const columns = [
+            { name: 'page', title: Craft.t('accessibility-audit', 'Page'), callback: pageCell, sortField: true },
+            { name: 'rule', title: Craft.t('accessibility-audit', 'Check'), sortField: true },
+            { name: 'question', title: Craft.t('accessibility-audit', 'What was dismissed'), callback: questionCell },
+            { name: 'dismissedBy', title: Craft.t('accessibility-audit', 'Dismissed by'), callback: dismissedByCell },
+            { name: 'restore', title: '', callback: restoreCell },
+        ];
+
+        AccessibilityAuditTable.create({
+            container: '#accessibility-audit-dismissed-table',
+            endpoint: 'accessibility-audit/dashboard/dismissed-table',
+            siteId: siteId,
+            columns: columns,
+            checkboxes: canRestore,
+            bulkActions: canRestore ? [{
+                label: Craft.t('accessibility-audit', 'Restore selected'),
+                action: 'accessibility-audit/audit/restore-verdicts',
+                icon: 'refresh',
+            }] : [],
+            emptyMessage: Craft.t('accessibility-audit', 'Nothing has been dismissed yet.'),
+        });
+    })();
+    {% endjs %}
+
+{% endif %}
+
+</div>
+{% endblock %}

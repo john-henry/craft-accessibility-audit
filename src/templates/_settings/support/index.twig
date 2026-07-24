@@ -1,0 +1,57 @@
+{% extends "accessibility-audit/_settings/layout" %}
+
+{% set crumbs = [] %}
+{% block blockContent %}
+
+    
+    <div class="readable mb-l">
+        <blockquote class="note warning">
+            <p>{{ 'This is an unofficial, community-created plugin. It implements its own interpretation of WCAG 2.2 and bundles axe-core for front-end scanning; it is not officially affiliated with the W3C, Deque Systems, or ITI (VPAT®).'|t('accessibility-audit') }}</p>
+        </blockquote>
+    </div>
+    
+    <h3>{{ 'Getting help'|t('accessibility-audit') }}</h3>
+    <p>{{ 'The documentation covers most questions. For anything it does not (installation, configuration, scanning errors, or false positives) contact the plugin author directly.'|t('accessibility-audit') }}</p>
+
+    <table class="data fullwidth">
+        <tbody>
+        <tr>
+            <th scope="row">{{ 'Documentation'|t('accessibility-audit') }}</th>
+            <td><a href="https://johnhenry.ie/plugins/accessibility-audit/docs" target="_blank" rel="noopener">johnhenry.ie/plugins/accessibility-audit/docs</a></td>
+        </tr>
+        <tr>
+            <th scope="row">{{ 'Email'|t('accessibility-audit') }}</th>
+            <td><a href="mailto:info@johnhenry.ie">info@johnhenry.ie</a></td>
+        </tr>
+        <tr>
+            <th scope="row">{{ 'Bug reports'|t('accessibility-audit') }}</th>
+            <td><a href="https://github.com/john-henry/craft-accessibility-audit/issues" target="_blank" rel="noopener">github.com/john-henry/craft-accessibility-audit/issues</a></td>
+        </tr>
+        <tr>
+            <th scope="row">{{ 'Developer'|t('accessibility-audit') }}</th>
+            <td><a href="https://johnhenry.ie" target="_blank" rel="noopener">johnhenry.ie</a></td>
+        </tr>
+        </tbody>
+    </table>
+
+    <h3>{{ 'Related resources'|t('accessibility-audit') }}</h3>
+    <p>{{ 'For questions about WCAG criteria or axe-core rule behaviour, these are the primary references this plugin is built against.'|t('accessibility-audit') }}</p>
+
+    <table class="data fullwidth">
+        <tbody>
+        <tr>
+            <th scope="row">{{ 'WCAG 2.2 specification'|t('accessibility-audit') }}</th>
+            <td><a href="https://www.w3.org/TR/WCAG22/" target="_blank" rel="noopener">w3.org/TR/WCAG22</a></td>
+        </tr>
+        <tr>
+            <th scope="row">{{ 'axe-core rules'|t('accessibility-audit') }}</th>
+            <td><a href="https://dequeuniversity.com/rules/axe/" target="_blank" rel="noopener">dequeuniversity.com/rules/axe</a></td>
+        </tr>
+        <tr>
+            <th scope="row">{{ 'WebAIM Contrast Checker'|t('accessibility-audit') }}</th>
+            <td><a href="https://webaim.org/resources/contrastchecker/" target="_blank" rel="noopener">webaim.org/resources/contrastchecker</a></td>
+        </tr>
+        </tbody>
+    </table>
+
+{% endblock %}

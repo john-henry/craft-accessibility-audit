@@ -1,0 +1,108 @@
+{% macro configWarning(setting) -%}
+    {{ "This is being overridden by the `{setting}` config setting."|t('accessibility-audit', {setting: setting})|markdown(inlineOnly=true) }}
+{%- endmacro %}
+
+
+{% macro navItem(label, key, currentFilter, count, color) %}
+    <li>
+        <a href="{{ key ? url('accessibility-audit/issues', { status: key }) : url('accessibility-audit/issues') }}"
+           class="{{ (not key and not currentFilter) or currentFilter == key ? 'sel' }}">
+            {% if color %}<span class="status {{ color }}" aria-hidden="true"></span>{% endif %}
+            <span class="label">{{ label }}</span>
+            {% if count > 0 %}
+                <span class="badge">{{ count }}</span>
+            {% endif %}
+        </a>
+    </li>
+{% endmacro %}
+
+
+{% macro severityDot(severity) -%}
+    {%- set label = severity|capitalize -%}
+    <span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--{{ severity }} accessibility-audit-sevdot" aria-hidden="true" title="{{ label }}"></span>
+    <span class="visually-hidden">{{ label }}:</span>
+{%- endmacro %}
+
+
+{% macro conformanceBadge(wcagLevel) -%}
+    {%- if wcagLevel -%}
+        <span class="accessibility-audit-level accessibility-audit-level--{{ wcagLevel|lower }}">{{ wcagLevel }}</span>
+    {%- else -%}
+        <span class="accessibility-audit-level accessibility-audit-level--bp">BP</span>
+    {%- endif -%}
+{%- endmacro %}
+
+
+{% macro conformanceLegend() -%}
+    {% set targetLevel = craft.app.plugins.getPlugin('accessibility-audit').settings.wcagLevel|default('AA')|upper %}
+    {% set levelRank = {'A': 1, 'AA': 2, 'AAA': 3} %}
+    {% set targetRank = levelRank[targetLevel] ?? 2 %}
+    <p class="accessibility-audit-help accessibility-audit-legend-row">
+        <span class="accessibility-audit-rowline" style="gap:6px">
+            {{- _self.conformanceBadge('A') -}}
+            {%- if targetRank >= 2 %}{{ _self.conformanceBadge('AA') }}{% endif -%}
+            {%- if targetRank >= 3 %}{{ _self.conformanceBadge('AAA') }}{% endif %}
+            {{ 'WCAG conformance level'|t('accessibility-audit') }}
+        </span>
+        <span class="accessibility-audit-rowline" style="gap:6px">
+            {{ _self.conformanceBadge(null) }}
+            {{ 'Best practice (no formal WCAG criterion)'|t('accessibility-audit') }}
+        </span>
+    </p>
+{%- endmacro %}
+
+{% macro difficulty(difficulty) -%}
+    {%- if difficulty is not null -%}
+        <span class="accessibility-audit-difficulty accessibility-audit-difficulty--{{ difficulty }}">
+            <span class="accessibility-audit-difficulty__dots">
+                <span class="accessibility-audit-difficulty-dot{% if difficulty in ['beginner','intermediate','advanced'] %} filled{% endif %}"></span>
+                <span class="accessibility-audit-difficulty-dot{% if difficulty in ['intermediate','advanced'] %} filled{% endif %}"></span>
+                <span class="accessibility-audit-difficulty-dot{% if difficulty == 'advanced' %} filled{% endif %}"></span>
+            </span>
+            {{ difficulty|capitalize }}
+        </span>
+    {%- else -%}—{%- endif -%}
+{%- endmacro %}
+
+
+{% macro responsibility(responsibility) -%}
+    {%- if responsibility is not null -%}
+        {%- set ownerMod = responsibility == 'content' ? 'content'
+            : (responsibility == 'design' ? 'design'
+            : (responsibility == 'development' ? 'dev' : 'technical')) -%}
+        <span class="token accessibility-audit-owner--{{ ownerMod }}">
+            {{- responsibility == 'content' ? 'Content writing'|t('accessibility-audit')
+              : responsibility == 'design' ? 'Visual design'|t('accessibility-audit')
+              : responsibility == 'development' ? 'Development'|t('accessibility-audit')
+              : 'Technical'|t('accessibility-audit') -}}
+        </span>
+    {%- else -%}—{%- endif -%}
+{%- endmacro %}
+
+{% macro passFailBadge(pass, passLabel, failLabel) -%}
+    {%- if pass -%}
+        {{- craft.a11y.icon('pass') -}}
+        {{- ' ' ~ (passLabel ?? 'Pass'|t('accessibility-audit')) -}}
+    {%- else -%}
+        {{- craft.a11y.icon('fail') -}}
+        {{- ' ' ~ (failLabel ?? 'Fail'|t('accessibility-audit')) -}}
+    {%- endif -%}
+{%- endmacro %}
+
+
+{% macro scoreClass(score) -%}
+    {{- score >= 80 ? 'good' : (score >= 50 ? 'fair' : 'poor') -}}
+{%- endmacro %}
+
+
+{% macro severityCounts(errorCount, warningCount, noticeCount, compact = false) -%}
+    {%- if errorCount > 0 -%}
+        <span class="accessibility-audit-count accessibility-audit-count--error">{{ compact ? errorCount : "{n, plural, =1{# error} other{# errors}}"|t('accessibility-audit', {n: errorCount}) }}</span>
+    {%- endif -%}
+    {%- if warningCount > 0 -%}
+        <span class="accessibility-audit-count accessibility-audit-count--warning">{{ compact ? warningCount : "{n, plural, =1{# warning} other{# warnings}}"|t('accessibility-audit', {n: warningCount}) }}</span>
+    {%- endif -%}
+    {%- if noticeCount > 0 -%}
+        <span class="accessibility-audit-count accessibility-audit-count--notice">{{ compact ? noticeCount : "{n, plural, =1{# notice} other{# notices}}"|t('accessibility-audit', {n: noticeCount}) }}</span>
+    {%- endif -%}
+{%- endmacro %}

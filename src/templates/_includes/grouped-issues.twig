@@ -1,0 +1,82 @@
+{% import 'accessibility-audit/_macros' as macros %}
+
+{% set categories = rows|map(r => r.elementType ?? '')|filter(c => c != '')|unique|sort %}
+{% set filterCorner = filterCorner ?? false %}
+{% if categories|length > 1 %}
+<div class="btngroup accessibility-audit-filter-chips{% if filterCorner %} accessibility-audit-filter-corner{% endif %}" role="group" aria-label="{{ 'Filter by element type'|t('accessibility-audit') }}"{% if not filterCorner %} style="margin-bottom:14px"{% endif %}>
+    <button type="button" class="btn active" data-filter="all" aria-pressed="true">{{ 'All'|t('accessibility-audit') }}</button>
+    {% for cat in categories %}
+        <button type="button" class="btn" data-filter="{{ cat|e }}" aria-pressed="false">{{ cat|e }}</button>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% set severityGroups = [
+    { key: 'error',   label: 'Errors'|t('accessibility-audit') },
+    { key: 'warning', label: 'Warnings'|t('accessibility-audit') },
+    { key: 'notice',  label: 'Notices'|t('accessibility-audit') },
+] %}
+<div class="accessibility-audit-table-scroll">
+    <table class="data fullwidth accessibility-audit-grouped-table">
+    <thead>
+        <tr>
+            <th scope="col">{{ 'Issue'|t('accessibility-audit') }}</th>
+            <th scope="col">{{ 'WCAG'|t('accessibility-audit') }}</th>
+            <th scope="col">{{ 'SC'|t('accessibility-audit') }}</th>
+            <th scope="col">{{ 'Difficulty'|t('accessibility-audit') }}</th>
+            <th scope="col">{{ 'Owner'|t('accessibility-audit') }}</th>
+            <th scope="col" class="rightalign">{{ 'Count'|t('accessibility-audit') }}</th>
+            <th scope="col" class="rightalign">{{ 'Points'|t('accessibility-audit') }}</th>
+        </tr>
+    </thead>
+    {% for group in severityGroups %}
+    {% set groupRows = rows|filter(r => (r.severity ?? '') == group.key) %}
+    {% if groupRows|length > 0 %}
+    <tbody data-severity="{{ group.key }}">
+        {% for row in groupRows|sort((a, b) => a.pointsToGain < b.pointsToGain ? 1 : (a.pointsToGain > b.pointsToGain ? -1 : 0)) %}
+        {% set diff = row.difficulty ?? null %}
+        {% set resp = row.responsibility ?? null %}
+        <tr data-category="{{ row.elementType ?? '' }}">
+            <th scope="row">
+                <span class="accessibility-audit-rowline" style="gap:8px">
+                    <span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--{{ group.key }}" aria-hidden="true" title="{{ group.label }}"></span>
+                    <span class="visually-hidden">{{ group.label }}:</span>
+                    <a href="{{ url('accessibility-audit/issues/detail', {ruleId: row.ruleId, site: siteHandle}) }}">{{ row.ruleId }}</a>
+                    {% if row.elementType is defined and row.elementType %}
+                        <span class="token">{{ row.elementType }}</span>
+                    {% endif %}
+                </span>
+            </th>
+            <td>{{ macros.conformanceBadge(row.wcagLevel ?? null) }}</td>
+            <td class="code">{{ row.wcagCriterion ?? '—' }}</td>
+            <td>
+                {%- if diff -%}
+                    <span class="accessibility-audit-dots">
+                        <span class="accessibility-audit-dot {{ diff == 'beginner' ? 'accessibility-audit-dot--green' : 'accessibility-audit-dot--amber' }}"></span>
+                        <span class="accessibility-audit-dot {{ diff in ['intermediate','advanced'] ? 'accessibility-audit-dot--amber' }}"></span>
+                        <span class="accessibility-audit-dot {{ diff == 'advanced' ? 'accessibility-audit-dot--amber' }}"></span>
+                        {{ diff|capitalize }}
+                    </span>
+                {%- else -%}<span class="light">—</span>{%- endif -%}
+            </td>
+            <td>
+                {%- if resp -%}
+                    {%- set ownerMod = resp == 'content' ? 'content' : (resp == 'design' ? 'design' : (resp == 'development' ? 'dev' : 'technical')) -%}
+                    <span class="token accessibility-audit-owner--{{ ownerMod }}">
+                        {{- resp == 'content' ? 'Content'|t('accessibility-audit')
+                          : resp == 'design' ? 'Design'|t('accessibility-audit')
+                          : resp == 'development' ? 'Development'|t('accessibility-audit')
+                          : 'Technical'|t('accessibility-audit') -}}
+                    </span>
+                {%- else -%}<span class="light">—</span>{%- endif -%}
+            </td>
+            <td class="rightalign">{{ row.occurrences }}</td>
+            <td class="rightalign"><span class="accessibility-audit-delta">+{{ row.pointsToGain|number_format(2) }}</span></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+    {% endif %}
+    {% endfor %}
+</table>
+</div>
+{{ macros.conformanceLegend() }}

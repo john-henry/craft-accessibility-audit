@@ -1,0 +1,128 @@
+:root {
+  /* ---- Brand ---------------------------------------------------------- */
+  --aa-brand-start: #f2540a;
+  --aa-brand-end: #d71f14;
+  --aa-brand-gradient: linear-gradient(135deg, var(--aa-brand-start), var(--aa-brand-end));
+  --aa-link: #8c371e; /* 6.9:1 on white — AA + AAA */
+  --aa-link-hover: #6e2a17;
+
+  /* ---- Warm neutrals --------------------------------------------------- */
+  --aa-ink: #24201c; /* dark surfaces only (dark buttons, code/subnav bg); text uses native --text-color */
+  --aa-text-body: var(--text-color); /* body / help copy (native CP text) */
+  --aa-text-secondary: var(--medium-text-color); /* secondary text, meta (native) */
+  --aa-text-faint: #8a8178; /* faint labels; also used as a border colour, so kept as a literal */
+
+  /* ---- Surfaces & borders ---------------------------------------------- */
+  --aa-surface: #fff; /* page + cards (Craft CP is white) */
+  --aa-surface-tint: #fbfaf7; /* card headers/footers, expanded rows */
+  --aa-surface-chrome: #f6f3ef; /* chips, quiet buttons, inputs at rest */
+  --aa-surface-highlight: #fffdf6; /* row being edited / needs attention */
+
+  /* Borders map to Craft's own UI border tokens rather than the plugin's warm
+     brand neutrals, so the control panel reads as native: --medium-hairline-color
+     is Craft's stronger control border, --hairline-color its standard divider. */
+  --aa-border-control: var(--medium-hairline-color); /* inputs, secondary buttons */
+  --aa-border-card: var(--hairline-color);
+  --aa-border-section: var(--hairline-color); /* header/footer dividers */
+  --aa-border-row: var(--hairline-color); /* table row dividers */
+
+  /* ---- Severity: error -------------------------------------------------- */
+  --aa-error: #b3261e; /* solid: chips, white text on it */
+  --aa-error-deep: #7a2620; /* text on error-bg */
+  --aa-error-bg: #fbeae8;
+  --aa-error-border: #efc7c2;
+
+  /* ---- Severity: warning ------------------------------------------------ */
+  --aa-warning: #9a6403; /* solid chip */
+  --aa-warning-deep: #6e4e10; /* text on warning-bg */
+  --aa-warning-strong: #8a5b00; /* mono numerals / emphasized text on warning-bg */
+  --aa-warning-bg: #fff3db;
+  --aa-warning-border: #f0dbae;
+  --aa-warning-edge: #b37400; /* flag-header left edge (differs from chip) */
+
+  /* Severity dots and fills. Brighter than --aa-warning on purpose: that one is
+     a chip colour, darkened so white text on it stays legible, and it reads
+     muddy as a bare dot. Nothing using this carries text, so it is free to be
+     the colour amber actually wants to be. Error and notice need no equivalent:
+     their chip colours already read well as markers. */
+  --aa-warning-marker: #e8930c;
+
+  /* ---- Severity: notice (needs human review) ---------------------------- */
+  --aa-notice: #3672d6; /* solid: badges, ? marker */
+  --aa-notice-deep: #2c4468; /* text on notice-bg */
+  --aa-notice-strong: #1258b8; /* links / numerals on notice-bg or white */
+  --aa-notice-bg: #eaf1fb;
+  --aa-notice-border: #b9cfee;
+  --aa-notice-edge: #3672d6;
+
+  /* ---- Severity: pass / success ----------------------------------------- */
+  --aa-pass: #1e7a3c;
+  --aa-pass-deep: #2e5b3c;
+  --aa-pass-bg: #e7f4eb;
+  --aa-pass-edge: #1e7a3c;
+
+  /* ---- Misc chips -------------------------------------------------------- */
+  --aa-owner-design: #4a3fa3; /* Design chip (purple) */
+  --aa-owner-design-bg: #edecf8;
+  --aa-owner-dev: #155e75; /* Development chip (teal) */
+  --aa-owner-dev-bg: #e7f3f6;
+  --aa-owner-content: #1f6b3a; /* Content chip (green) */
+  --aa-owner-content-bg: #e9f4ec;
+  --aa-owner-technical: #52606d; /* Technical chip (grey) */
+  --aa-owner-technical-bg: #eceff3;
+
+  /* ---- Typography --------------------------------------------------------
+     UI face matches Craft; mono is data-only: scores, counts, SC numbers,
+     hex, code, URLs. Never prose. */
+  --aa-font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --aa-text-card-heading: 700 14px/1.3 var(--aa-font-ui);
+  --aa-text-column-label: 700 10px/1.3 var(--aa-font-ui); /* +0.07em, caps */
+  --aa-stat-numeral:
+    600 42px/1 ui-monospace, sfmono-regular, menlo, consolas, monospace; /* 27px small stat */
+
+  --aa-data: 500 12px/1.4 ui-monospace, sfmono-regular, menlo, consolas, monospace;
+
+  /* ---- Geometry ----------------------------------------------------------
+     Flag header: bg = severity-bg, border-left 4px solid severity-edge,
+     chip = white 11px/800 caps on severity solid, radius 4. */
+  --aa-radius-card: 10px;
+  --aa-radius-control: 7px; /* buttons, inputs, selects */
+  --aa-radius-small: 6px; /* small buttons, score chips */
+  --aa-radius-chip: 4px; /* label chips, WCAG level, PRO */
+  --aa-flag-edge-width: 4px;
+  --aa-pad-row: 11px 20px;
+  --aa-gap-page: 16px;
+
+  /* ---- Focus ring (all focusable controls) ------------------------------- */
+  --aa-focus-border: 1px solid var(--medium-hairline-color);
+  --aa-focus-halo: var(--focus-ring);
+
+  /* ---- Legacy variable bridge --------------------------------------------
+     Maps the old cp-old.css custom variable names onto the design-system
+     tokens so the rules relocated out of cp-old.css (JS-coupled + shared CP
+     surfaces, class names preserved) resolve without per-rule edits. */
+  --accessibility-audit-good: var(--aa-pass);
+  --accessibility-audit-fair: var(--aa-warning-strong);
+  --accessibility-audit-poor: var(--aa-error);
+  --accessibility-audit-warn: var(--aa-warning);
+  --accessibility-audit-warn-text: var(--aa-warning-deep);
+  --accessibility-audit-warn-text-deep: var(--aa-warning-deep);
+  --accessibility-audit-warn-bg: var(--aa-warning-bg);
+  --accessibility-audit-warn-bg-soft: var(--aa-warning-bg);
+  --accessibility-audit-warn-border: var(--aa-warning-border);
+  --accessibility-audit-sev-error: var(--aa-error);
+  --accessibility-audit-sev-warning: var(--aa-warning-marker);
+  --accessibility-audit-sev-notice: var(--aa-notice);
+
+  /* highlight = the "active/selected issue" accent (rose in the original); maps
+     onto the error/red family so the active row + its highlight badge read as
+     the same signal used in the preview iframe. */
+  --accessibility-audit-highlight: var(--aa-error);
+  --accessibility-audit-highlight-bg: var(--aa-error-bg);
+  --accessibility-audit-highlight-border: var(--aa-error-border);
+  --accessibility-audit-code-fg: var(--text-color);
+  --accessibility-audit-ai: var(--aa-notice-strong);
+  --accessibility-audit-code-bg: var(--aa-surface-chrome);
+  --accessibility-audit-code-border: var(--aa-border-card);
+  --accessibility-audit-mono-fg: var(--text-color);
+}

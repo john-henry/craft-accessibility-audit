@@ -1,0 +1,322 @@
+{% extends '_layouts/cp' %}
+
+{% import 'accessibility-audit/_macros' as macros %}
+
+{% set title = 'Issues'|t('accessibility-audit') %}
+{% set selectedSubnavItem = 'issues' %}
+{% set crumbs = [
+    { label: 'Accessibility Audit'|t('accessibility-audit'), url: cpUrl('accessibility-audit') },
+    { label: title, url: cpUrl('accessibility-audit/issues') },
+] %}
+
+
+{% if sites|length > 1 %}
+    {% set crumbs = [{
+        id: 'site-crumb',
+        icon: 'world',
+        label: requestedSite.name|t('site'),
+        menu: { items: siteMenuItems(sites, requestedSite), label: 'Select site'|t('app') },
+    }]|merge(crumbs ?? []) %}
+{% endif %}
+
+
+{% set tabs = {
+    issues: {
+        label: 'Issues'|t('accessibility-audit') ~ (byRule|length ? ' (' ~ byRule|length ~ ')' : ''),
+        url: url('accessibility-audit/issues', { site: siteHandle, tab: 'issues' }),
+    },
+    pages: {
+        label: 'Pages with Issues'|t('accessibility-audit') ~ (result.total ? ' (' ~ result.total ~ ')' : ''),
+        url: url('accessibility-audit/issues', { site: siteHandle, tab: 'pages' }),
+    },
+    resolved: {
+        label: 'Resolved'|t('accessibility-audit') ~ (resolvedByRule|length ? ' (' ~ resolvedByRule|length ~ ')' : ''),
+        url: url('accessibility-audit/issues', { site: siteHandle, tab: 'resolved' }),
+    },
+} %}
+{% set selectedTab = activeTab %}
+
+{% block content %}
+<div>
+
+
+{% if activeTab == 'issues' %}
+
+    {% if byRule|length == 0 %}
+        <div class="zilch">
+        
+            <p>{{ 'Run a scan to check every page against WCAG and list what needs fixing here.'|t('accessibility-audit') }}</p>
+           
+        </div>
+    {% else %}
+  
+    <div class="mt-m">
+        {% include 'accessibility-audit/_includes/grouped-issues' with { rows: byRule, siteHandle: siteHandle } only %}
+    </div>
+    {% endif %}
+
+
+{% elseif activeTab == 'pages' %}
+
+
+    {% do view.registerAssetBundle('craft\\web\\assets\\admintable\\AdminTableAsset') %}
+
+ 
+    <div id="accessibility-audit-sp-table"></div>
+
+    {% js %}
+    (() => {
+        const siteId = {{ siteId }};
+
+        const expandBtn = (p) => '<button type="button" class="accessibility-audit-expand-btn accessibility-audit-vt-expand"'
+            + ' data-scan-id="' + p.scanId + '" data-site-id="' + siteId + '" aria-expanded="false"'
+            + ' aria-label="' + Craft.t('accessibility-audit', 'Show issues on this page') + '">'
+            + '<span class="accessibility-audit-expand-icon" data-icon="downangle" aria-hidden="true"></span></button>';
+        const pageCell = (p) => {
+            if (!p) { return ''; }
+            // The title is the page it names, not a link — the row's own action
+            // is an explicit "View report" so nothing pretends to be the live
+            // page. (The old title link wore an external-link arrow but opened
+            // the internal report, which read as "go to the live site".)
+            const title = '<span class="accessibility-audit-page-name">' + Craft.escapeHtml(p.title) + '</span>';
+            const urlLine = p.url
+                ? '<div class="light code" style="font-size:11px;margin-top:2px">' + Craft.escapeHtml(p.url) + '</div>'
+                : '';
+            // Caret in its own flex column so it centres against the whole
+            // title + URL block, rather than sitting on the title's line.
+            return '<span class="accessibility-audit-page-cell">' + expandBtn(p)
+                + '<span class="accessibility-audit-page-cell__text">' + title + urlLine + '</span></span>';
+        };
+        // Navigation, so a link styled as a button (not a <button>), with the
+        // 'view' glyph and label mirroring the Re-scan action button. Opens the
+        // Page Report in a new tab, keeping the filtered list in place.
+        const reportCell = (v) => v
+            ? '<a class="btn small accessibility-audit-rowbtn" data-icon="view" href="' + v + '" target="_blank" rel="noopener" title="' + Craft.t('accessibility-audit', 'View report') + '">'
+                + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'View report') + '</span>'
+                + '<span class="visually-hidden"> (' + Craft.t('accessibility-audit', 'opens in new tab') + ')</span></a>'
+            : '';
+
+        const scoreCell = (value) => {
+            const band = value >= 80 ? 'high' : (value >= 50 ? 'mid' : 'low');
+            return '<span class="accessibility-audit-score accessibility-audit-score--' + band + '">' + value + '</span>';
+        };
+        const issuesCell = (v) => {
+            if (!v || (!v.errors && !v.warnings && !v.notices)) { return '<span class="light">—</span>'; }
+            // Severity is colour-only in the dot, so each count carries a
+            // visually-hidden label (e.g. "5 errors") for screen readers.
+            const dot = (mod, n, label) => '<span class="accessibility-audit-legend__item">'
+                + '<span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--' + mod + '" aria-hidden="true"></span>'
+                + '<strong>' + n + '</strong> <span class="visually-hidden">' + label + '</span></span>';
+            return '<span class="accessibility-audit-legend" style="gap:11px">'
+                + dot('error', v.errors, Craft.t('accessibility-audit', 'errors'))
+                + dot('warning', v.warnings, Craft.t('accessibility-audit', 'warnings'))
+                + dot('notice', v.notices, Craft.t('accessibility-audit', 'notices')) + '</span>';
+        };
+        const rescanCell = (value) => value
+            ? '<button class="btn small accessibility-audit-rowbtn" data-icon="refresh" title="' + Craft.t('accessibility-audit', 'Re-scan') + '" data-accessibility-audit-scan-entry="' + value + '" data-site-id="' + siteId + '" aria-live="polite">'
+                + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'Re-scan') + '</span></button>'
+            : '';
+
+        const columns = [
+            { name: 'page', title: Craft.t('accessibility-audit', 'Page'), callback: pageCell, sortField: true },
+            { name: 'score', title: Craft.t('accessibility-audit', 'Score'), callback: scoreCell, sortField: true },
+            { name: 'issues', title: Craft.t('accessibility-audit', 'Issues'), callback: issuesCell, sortField: true },
+            { name: 'lastScanned', title: Craft.t('accessibility-audit', 'Last scanned'), sortField: true },
+            { name: 'report', title: '', callback: reportCell },
+            { name: 'rescan', title: '', callback: rescanCell },
+        ];
+
+        // The expand rows are ours, not Vue's: purge them on every (re)load so
+        // Vue only ever manages its own rows (see bindVueTableExpand in cp.js).
+        function purgeDetailRows() {
+            document.querySelectorAll('#accessibility-audit-sp-table .accessibility-audit-vt-detail')
+                .forEach((el) => el.remove());
+        }
+
+        AccessibilityAuditTable.create({
+            container: '#accessibility-audit-sp-table',
+            endpoint: 'accessibility-audit/dashboard/scanned-pages-table',
+            siteId: siteId,
+            columns: columns,
+            emptyMessage: Craft.t('accessibility-audit', 'No scanned pages yet.'),
+            onLoaded: purgeDetailRows,
+            exportUrl: '{{ actionUrl('accessibility-audit/dashboard/scanned-pages-export', {siteId: siteId}) }}',
+        });
+    })();
+    {% endjs %}
+
+
+{% else %}
+
+ 
+    {% do view.registerAssetBundle('craft\\web\\assets\\admintable\\AdminTableAsset') %}
+
+
+    <div class="accessibility-audit-table-inflow">
+        <div id="accessibility-audit-resolved-table"></div>
+    </div>
+
+    {% js %}
+    (() => {
+        const siteId = {{ siteId }};
+
+        // Responsibility key -> [owner modifier, label], matching the responsibility macro.
+        const RESP = {
+            content:     ['content',   Craft.t('accessibility-audit', 'Content writing')],
+            design:      ['design',    Craft.t('accessibility-audit', 'Visual design')],
+            development: ['dev',       Craft.t('accessibility-audit', 'Development')],
+            technical:   ['technical', Craft.t('accessibility-audit', 'Technical')],
+        };
+
+        const ruleCell = (r) => {
+            if (!r) { return ''; }
+            const label = r.severity ? r.severity.charAt(0).toUpperCase() + r.severity.slice(1) : '';
+            const dot = '<span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--' + r.severity + '" aria-hidden="true" title="' + label + '"></span>'
+                + '<span class="visually-hidden">' + label + ':</span>';
+            const link = '<a href="' + r.detailUrl + '">' + Craft.escapeHtml(r.ruleId) + '</a>';
+            const type = r.elementType ? ' <span class="token">' + Craft.escapeHtml(r.elementType) + '</span>' : '';
+            return '<span class="accessibility-audit-rowline" style="gap:8px">' + dot + link + type + '</span>';
+        };
+
+        const columns = [
+            { name: 'rule', title: Craft.t('accessibility-audit', 'Resolved issue'), callback: ruleCell, sortField: true },
+            { name: 'wcagLevel', title: Craft.t('accessibility-audit', 'WCAG'), callback: (v) => v
+                ? '<span class="accessibility-audit-level accessibility-audit-level--' + v.toLowerCase() + '">' + Craft.escapeHtml(v) + '</span>'
+                : '<span class="accessibility-audit-level accessibility-audit-level--bp">BP</span>' },
+            { name: 'sc', title: Craft.t('accessibility-audit', 'SC'), callback: (v) => '<span class="code">' + Craft.escapeHtml(v || '—') + '</span>' },
+            { name: 'owner', title: Craft.t('accessibility-audit', 'Owner'), callback: (v) => {
+                const r = RESP[v];
+                return r ? '<span class="token accessibility-audit-owner--' + r[0] + '">' + Craft.escapeHtml(r[1]) + '</span>' : '<span class="light">—</span>';
+            } },
+            { name: 'occurrences', title: Craft.t('accessibility-audit', 'Occurrences'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
+            { name: 'points', title: Craft.t('accessibility-audit', 'Points gained'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign', callback: (v) => '<span class="accessibility-audit-delta">+' + Craft.escapeHtml(v) + '</span>' },
+            { name: 'resolved', title: Craft.t('accessibility-audit', 'Resolved'), sortField: true },
+        ];
+
+        // Read-only: nothing to select, nothing to re-scan, nothing to export.
+        AccessibilityAuditTable.create({
+            container: '#accessibility-audit-resolved-table',
+            endpoint: 'accessibility-audit/dashboard/resolved-table',
+            siteId: siteId,
+            columns: columns,
+            checkboxes: false,
+            search: false,
+            bulkRescan: false,
+            emptyMessage: Craft.t('accessibility-audit', 'No resolved issues yet. Fixed issues appear here after the next scan.'),
+        });
+    })();
+    {% endjs %}
+
+ 
+    {% if resolvedByRule|length > 0 %}
+    {{ macros.conformanceLegend() }}
+
+   
+    <div class="pane" style="margin-top:18px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+            <h2 style="margin:0">{{ 'Remediation over time'|t('accessibility-audit') }}</h2>
+            <span class="light">{{ 'Issues resolved, cumulative'|t('accessibility-audit') }}</span>
+            <span class="btngroup" id="accessibility-audit-rtrend-range" role="group" aria-label="{{ 'Trend date range'|t('accessibility-audit') }}" style="margin-left:auto">
+                {% for r in [{d: 30, l: '30 days'}, {d: 90, l: '90 days'}, {d: 180, l: '6 months'}] %}
+                    <button type="button" class="btn small{{ resolvedTrendRange == r.d ? ' active' }}" data-range="{{ r.d }}" aria-pressed="{{ resolvedTrendRange == r.d ? 'true' : 'false' }}">{{ r.l|t('accessibility-audit') }}</button>
+                {% endfor %}
+            </span>
+        </div>
+
+        <div id="accessibility-audit-rtrend-chart"></div>
+     
+        <p id="accessibility-audit-rtrend-status" role="status" aria-live="polite" class="visually-hidden"></p>
+        <p class="light" id="accessibility-audit-rtrend-empty" hidden>{{ 'Not enough resolution history yet to chart. Resolve issues over time to build one.'|t('accessibility-audit') }}</p>
+
+        {% js %}
+        (() => {
+            const siteId = {{ siteId }};
+            const chartEl = document.getElementById('accessibility-audit-rtrend-chart');
+            const emptyEl = document.getElementById('accessibility-audit-rtrend-empty');
+            const rangeGroup = document.getElementById('accessibility-audit-rtrend-range');
+            const statusEl = document.getElementById('accessibility-audit-rtrend-status');
+
+            function renderResolvedTrend(trend) {
+                if (!trend || trend.length < 2) {
+                    chartEl.innerHTML = '';
+                    emptyEl.hidden = false;
+                    return;
+                }
+                emptyEl.hidden = true;
+
+                
+                let running = 0;
+                const cum = trend.map((d) => { running += d.resolved; return { day: d.day, total: running }; });
+
+                const W = Math.max(320, chartEl.clientWidth || 760), H = 220;
+                const padL = 42, padR = 16, padT = 12;
+                const plotW = W - padL - padR, plotH = H - padT - 26;
+                const n = cum.length;
+                const maxV = Math.max(1, cum[n - 1].total) * 1.1;
+
+                const x = (i) => padL + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+                const y = (v) => padT + plotH - (v / maxV) * plotH;
+                const pts = cum.map((d, i) => x(i) + ',' + y(d.total)).join(' ');
+                const areaPts = padL + ',' + (padT + plotH) + ' ' + pts + ' ' + (W - padR) + ',' + (padT + plotH);
+                const fmtDate = (s) => { const p = s.split('-'); return p[2] + '/' + p[1]; };
+
+                const svg = ['<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="' + Craft.t('accessibility-audit', 'Issues resolved over time, cumulative') + '">'];
+                for (let g = 0; g <= 4; g++) {
+                    const gy = padT + (g / 4) * plotH;
+                    svg.push('<line x1="' + padL + '" y1="' + gy + '" x2="' + (W - padR) + '" y2="' + gy + '" stroke="var(--border-hairline)" stroke-width="1"/>');
+                    svg.push('<text x="' + (padL - 6) + '" y="' + (gy + 3) + '" text-anchor="end" font-size="9" fill="var(--medium-text-color)">' + Math.round(maxV * (1 - g / 4)) + '</text>');
+                }
+                [0, Math.floor((n - 1) / 2), n - 1].forEach((i) => {
+                    svg.push('<text x="' + x(i) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="9" fill="var(--medium-text-color)">' + fmtDate(cum[i].day) + '</text>');
+                });
+                svg.push('<polygon points="' + areaPts + '" fill="var(--text-color)" opacity="0.06"/>');
+                svg.push('<polyline points="' + pts + '" fill="none" stroke="var(--text-color)" stroke-width="2"/>');
+                cum.forEach((d, i) => {
+                    svg.push('<circle cx="' + x(i) + '" cy="' + y(d.total) + '" r="2.5" fill="var(--text-color)"/>');
+                });
+                svg.push('</svg>');
+
+                // Screen-reader equivalent of the chart: the running total by date.
+                let tbl = '<table class="visually-hidden"><caption>'
+                    + Craft.t('accessibility-audit', 'Cumulative resolved issues by date') + '</caption><thead><tr><th>'
+                    + Craft.t('accessibility-audit', 'Date') + '</th><th>'
+                    + Craft.t('accessibility-audit', 'Resolved (running total)') + '</th></tr></thead><tbody>';
+                cum.forEach((d) => {
+                    tbl += '<tr><td>' + Craft.escapeHtml(String(d.day)) + '</td><td>' + d.total + '</td></tr>';
+                });
+                tbl += '</tbody></table>';
+
+                chartEl.innerHTML = svg.join('') + tbl;
+            }
+
+            renderResolvedTrend({{ resolvedTrend|json_encode|raw }});
+
+           
+            rangeGroup.addEventListener('click', async (e) => {
+                const btn = e.target.closest('button[data-range]');
+                if (!btn) { return; }
+                rangeGroup.querySelectorAll('button').forEach((b) => {
+                    const on = b === btn;
+                    b.classList.toggle('active', on);
+                    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+                });
+                try {
+                    const resp = await Craft.sendActionRequest('GET', 'accessibility-audit/dashboard/resolved-trend', {
+                        params: { siteId: siteId, range: btn.dataset.range },
+                    });
+                    renderResolvedTrend(resp.data.trend);
+                    if (statusEl) { statusEl.textContent = Craft.t('accessibility-audit', 'Chart updated.'); }
+                } catch (err) {
+                    Craft.cp.displayError(Craft.t('accessibility-audit', 'Could not load the trend for that range.'));
+                }
+            });
+        })();
+        {% endjs %}
+    </div>
+    {% endif %}
+
+{% endif %}
+
+</div>
+
+{% endblock %}

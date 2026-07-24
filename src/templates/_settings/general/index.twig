@@ -1,0 +1,149 @@
+{% extends "accessibility-audit/_settings/layout" %}
+
+{% import "_includes/forms" as forms %}
+{% import 'accessibility-audit/_macros' as macros %}
+
+{% set crumbs = [] %}
+
+{% set fullPageForm = true %}
+
+{% block blockContent %}
+
+    {{ actionInput('accessibility-audit/settings/save-general') }}
+    {{ redirectInput(url('accessibility-audit/settings/general')) }}
+    
+    
+    {{ forms.selectField({
+        label: 'Target WCAG Level'|t('accessibility-audit'),
+        instructions: 'The conformance level to report against. AA is required by most accessibility regulations (EU, UK, US).'|t('accessibility-audit'),
+        id: 'wcagLevel',
+        name: 'settings[wcagLevel]',
+        options: [
+            { value: 'A',   label: 'WCAG 2.2 Level A (minimum)' },
+            { value: 'AA',  label: 'WCAG 2.2 Level AA (recommended)' },
+            { value: 'AAA', label: 'WCAG 2.2 Level AAA (enhanced)' },
+        ],
+        value: settings.wcagLevel,
+        errors: settings.getErrors('wcagLevel'),
+        warning: config.wcagLevel is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.wcagLevel is defined,
+    }) }}
+
+    {{ forms.lightswitchField({
+        label: 'EN 301 549'|t('accessibility-audit'),
+        instructions: 'Include EN 301 549 rules in the frontend axe-core overlay. EN 301 549 is the European accessibility standard required by the EU Web Accessibility Directive and the European Accessibility Act (EAA). It largely maps to WCAG 2.1 AA but adds a handful of additional criteria.'|t('accessibility-audit'),
+        id: 'en301549',
+        name: 'settings[en301549]',
+        on: settings.en301549,
+        errors: settings.getErrors('en301549'),
+        warning: config.en301549 is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.en301549 is defined,
+    }) }}
+    
+    <hr>
+    
+    
+    {{ forms.textField({
+        label: 'Site Target Score'|t('accessibility-audit'),
+        instructions: 'Set a target score (0–100) to track progress on the dashboard. 0 disables the target.'|t('accessibility-audit'),
+        id: 'targetScore',
+        name: 'settings[targetScore]',
+        value: settings.targetScore,
+        type: 'number',
+        min: 0,
+        max: 100,
+        size: 5,
+        errors: settings.getErrors('targetScore'),
+    }) }}
+
+    <hr>
+    
+    
+    {{ forms.lightswitchField({
+        label: 'Enable axe-core Frontend Overlay'|t('accessibility-audit'),
+        instructions: 'Inject a floating axe-core panel on the live site for logged-in administrators. Allows in-browser scanning for colour contrast, focus order, and ARIA state issues.'|t('accessibility-audit'),
+        id: 'frontendAxe',
+        name: 'settings[frontendAxe]',
+        on: settings.frontendAxe,
+        errors: settings.getErrors('frontendAxe'),
+        warning: config.frontendAxe is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.frontendAxe is defined,
+    }) }}
+
+    {{ forms.selectField({
+        label: 'Overlay Position'|t('accessibility-audit'),
+        instructions: 'Which corner of the screen the overlay panel and its badge dock to.'|t('accessibility-audit'),
+        id: 'overlayPosition',
+        name: 'settings[overlayPosition]',
+        options: [
+            { value: 'bottom-right', label: 'Bottom right'|t('accessibility-audit') },
+            { value: 'bottom-left',  label: 'Bottom left'|t('accessibility-audit') },
+            { value: 'top-right',    label: 'Top right'|t('accessibility-audit') },
+            { value: 'top-left',     label: 'Top left'|t('accessibility-audit') },
+        ],
+        value: settings.overlayPosition,
+        errors: settings.getErrors('overlayPosition'),
+        warning: config.overlayPosition is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.overlayPosition is defined,
+    }) }}
+
+    {{ forms.lightswitchField({
+        label: 'Collapse to Badge When Idle'|t('accessibility-audit'),
+        instructions: 'Keep the overlay collapsed to a small badge showing the issue count, expanding to the full panel only when clicked. When off, the panel opens automatically once a scan finds issues.'|t('accessibility-audit'),
+        id: 'overlayCollapseWhenIdle',
+        name: 'settings[overlayCollapseWhenIdle]',
+        on: settings.overlayCollapseWhenIdle,
+        errors: settings.getErrors('overlayCollapseWhenIdle'),
+        warning: config.overlayCollapseWhenIdle is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.overlayCollapseWhenIdle is defined,
+    }) }}
+
+    {{ forms.textField({
+        label: 'Idle Collapse Delay'|t('accessibility-audit'),
+        instructions: 'Seconds of inactivity before the overlay collapses back to its badge. Only applies when “Collapse to Badge When Idle” is on.'|t('accessibility-audit'),
+        id: 'overlayIdleSeconds',
+        name: 'settings[overlayIdleSeconds]',
+        value: settings.overlayIdleSeconds,
+        type: 'number',
+        min: 3,
+        max: 600,
+        size: 5,
+        errors: settings.getErrors('overlayIdleSeconds'),
+        warning: config.overlayIdleSeconds is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.overlayIdleSeconds is defined,
+    }) }}
+
+    <hr>
+
+    {% if isPro %}
+       
+
+        {{ forms.autosuggestField({
+            label: 'VPAT Export Template'|t('accessibility-audit'),
+            instructions: 'Path to a site template that renders the VPAT export in place of the built-in document, e.g. `_vpat/export`. It receives the same `report` variable the built-in export gets. Leave empty to use the built-in print-ready document. If the template can\'t be found, the built-in document is used.'|t('accessibility-audit'),
+            id: 'vpatExportTemplate',
+            name: 'settings[vpatExportTemplate]',
+            suggestions: craft.cp.getTemplateSuggestions(),
+            value: settings.vpatExportTemplate,
+            errors: settings.getErrors('vpatExportTemplate'),
+            warning: config.vpatExportTemplate is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+            disabled: config.vpatExportTemplate is defined,
+        }) }}
+    {% endif %}
+
+    
+
+    {{ forms.autosuggestField({
+        label: 'Accessibility Statement Template'|t('accessibility-audit'),
+        instructions: 'Path to a site template that **replaces** the built-in statement markup, e.g. `_statement/render`. It receives the same `statement` variable and should output the statement itself. This is not the page you publish the statement on: a template that calls `craft.a11y.accessibilityStatementHtml()` would render itself forever, so that is ignored. Leave empty to use the built-in markup.'|t('accessibility-audit'),
+        id: 'statementTemplate',
+        name: 'settings[statementTemplate]',
+        suggestions: craft.cp.getTemplateSuggestions(),
+        value: settings.statementTemplate,
+        errors: settings.getErrors('statementTemplate'),
+        warning: config.statementTemplate is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.statementTemplate is defined,
+    }) }}
+
+    
+{% endblock %}
