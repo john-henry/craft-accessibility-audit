@@ -1,0 +1,145 @@
+
+{% set meta = statement.meta %}
+{% set isMandated = statement.profile in ['eu', 'uk'] %}
+{% set statusText = {
+    'fullyCompliant': 'fully compliant',
+    'partiallyCompliant': 'partially compliant',
+    'nonCompliant': 'not compliant',
+} %}
+
+<div class="accessibility-statement">
+
+    <h1>Accessibility statement</h1>
+
+    {% if meta.commitmentOverride %}
+        <p>{{ meta.commitmentOverride|nl2br }}</p>
+    {% else %}
+        <p>
+            {{ meta.productName ?: 'This organisation' }} is committed to making this website accessible,
+            {%- if statement.legislation %} in accordance with {{ statement.legislation }}{% endif -%}
+            .
+        </p>
+        {% if meta.productDescription %}
+            <p>{{ meta.productDescription }}</p>
+        {% endif %}
+    {% endif %}
+
+    <h2>Compliance status</h2>
+
+    <p>
+        This website is <strong>{{ statusText[statement.status] ?? statement.status }}</strong>
+        with {{ statement.standard }}
+        {%- if statement.status == 'partiallyCompliant' %}, because of the exceptions listed below{% endif -%}
+        .
+    </p>
+
+    {% set nonCompliance = statement.exclusions.nonCompliance ?? [] %}
+    {% set burden = statement.exclusions.disproportionateBurden ?? [] %}
+    {% set outOfScope = statement.exclusions.outOfScope ?? [] %}
+
+    {% if nonCompliance|length or burden|length or outOfScope|length %}
+        <h2>Non-accessible content</h2>
+
+        {% if nonCompliance|length %}
+            {% if isMandated %}<h3>Non-compliance with the accessibility regulations</h3>{% endif %}
+            <ul>
+                {% for entry in nonCompliance %}
+                    <li>
+                        {{ entry.content }}
+                        {%- if entry.criterion %} (WCAG {{ entry.criterion }}){% endif -%}
+                        {%- if entry.reason %}. {{ entry.reason }}{% endif -%}
+                        {%- if entry.plannedDate %} We expect to fix this by {{ entry.plannedDate|date('j F Y') }}.{% endif -%}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+
+        {% if burden|length %}
+            <h3>Disproportionate burden</h3>
+            <ul>
+                {% for entry in burden %}
+                    <li>
+                        {{ entry.content }}
+                        {%- if entry.criterion %} (WCAG {{ entry.criterion }}){% endif -%}
+                        {%- if entry.reason %}. {{ entry.reason }}{% endif -%}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+
+        {% if outOfScope|length %}
+            <h3>Content not within the scope of the accessibility regulations</h3>
+            <ul>
+                {% for entry in outOfScope %}
+                    <li>
+                        {{ entry.content }}
+                        {%- if entry.reason %}. {{ entry.reason }}{% endif -%}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    {% endif %}
+
+    <h2>Feedback and contact information</h2>
+
+    <p>
+        If you find an accessibility problem on this site, or you need content in a different format,
+        get in touch{% if meta.contactName %} with {{ meta.contactName }}{% endif %}:
+    </p>
+
+    <ul>
+        {% if meta.contactEmail %}
+            <li>Email: <a href="mailto:{{ meta.contactEmail }}">{{ meta.contactEmail }}</a></li>
+        {% endif %}
+        {% if meta.contactPhone %}
+            <li>Phone: {{ meta.contactPhone }}</li>
+        {% endif %}
+    </ul>
+
+    {% if meta.feedbackResponseTime %}
+        <p>We aim to respond {{ meta.feedbackResponseTime }}.</p>
+    {% endif %}
+
+    {% if meta.enforcementBody %}
+        <h2>Enforcement procedure</h2>
+        <p>
+            If you are not happy with how we respond to your complaint, contact
+            {% if meta.enforcementUrl %}
+                <a href="{{ meta.enforcementUrl }}">{{ meta.enforcementBody }}</a>.
+            {% else %}
+                {{ meta.enforcementBody }}.
+            {% endif %}
+        </p>
+        {% if meta.enforcementNotes %}
+            <p>{{ meta.enforcementNotes|nl2br }}</p>
+        {% endif %}
+    {% endif %}
+
+    <h2>Preparation of this statement</h2>
+
+    <p>
+        {% if meta.statementDate %}
+            This statement was prepared on {{ meta.statementDate|date('j F Y') }}.
+        {% endif %}
+        {% if meta.preparationMethod == 'thirdParty' and meta.preparedBy %}
+            The website was evaluated by {{ meta.preparedBy }}.
+        {% else %}
+            The website was assessed by {{ meta.productName ?: 'this organisation' }}, using a
+            combination of automated testing and manual review.
+        {% endif %}
+    </p>
+
+    {% if meta.evalMethods|length %}
+        <p>The evaluation used:</p>
+        <ul>
+            {% for method in meta.evalMethods %}
+                <li>{{ method }}</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+    {% if meta.reviewDate %}
+        <p>This statement was last reviewed on {{ meta.reviewDate|date('j F Y') }}.</p>
+    {% endif %}
+
+</div>

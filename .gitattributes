@@ -5,7 +5,6 @@
 /phpstan.neon export-ignore
 /tests/ export-ignore
 /docs/ export-ignore
-/public/ export-ignore
 /promo.md export-ignore
 /RELEASE-CHECKLIST.md export-ignore
 

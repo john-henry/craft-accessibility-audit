@@ -1,5 +1,10 @@
 # Release Notes for Accessibility Audit
 
+## 1.0.6-beta.1 - 2026-07-27
+
+### Fixed
+- The accessibility statement preview and the published statement failed with a template loading error, because the built-in statement template was missing from the release package.
+
 ## 1.0.5-beta.1 - 2026-07-27
 
 ### Fixed
