@@ -149,7 +149,9 @@
             '  position:relative!important;z-index:9998!important;',
             '  animation:accessibility-audit-blink .7s ease-in-out 4!important;',
             '}',
-            '[data-accessibility-audit-hl="first"]{background-color:rgba(225,29,72,.05)!important;}',
+            /* Never paint a background on highlighted elements: the highlight
+               must not alter the element's own rendering, and the contrast
+               pass samples whatever is rendered. Outline and blink only. */
             /* Static outline only for users who asked for less motion */
             '@media (prefers-reduced-motion: reduce){',
             '  [data-accessibility-audit-hl]{animation:none!important;}',
@@ -1105,7 +1107,16 @@
     /* Collect per-element contrast violations (capped at 150 to avoid huge POST) */
     function collectContrastOccurrences(doc) {
         if (!doc || !doc.body) return null;
-        return AccessibilityAuditShared.collectContrastFailures(doc, { limit: 150, htmlLength: 200 });
+        return AccessibilityAuditShared.collectContrastFailures(doc, {
+            limit: 150,
+            htmlLength: 200,
+            /* Skip anything this tool injected or is currently decorating:
+               highlight badges carry their own text, and a highlighted
+               element's rendering is ours, not the page's. */
+            skipEl: function (el) {
+                return !!(el.closest && el.closest('[data-accessibility-audit-hl], .accessibility-audit-hl-badge'));
+            },
+        });
     }
 
     /* Human-readable explanation of why the background colour is indeterminate */
@@ -1268,6 +1279,28 @@
         renderExpandPanel(expandBody, issueObj, _currentOccurrences || []);
     }
 
+    /* Resolves once every stylesheet link has applied (a link's `sheet` is
+       null until fetched and parsed). The iframe's load event only covers
+       stylesheets present in the HTML; one injected by the page's own JS
+       lands after load, and sampling before it applies reads UA defaults.
+       Capped at ~3s so a broken stylesheet reference cannot stall the pass. */
+    function stylesheetsSettled(doc) {
+        return new Promise(function (resolve) {
+            var tries = 0;
+            (function check() {
+                var pending = false;
+                try {
+                    var links = doc.querySelectorAll('link[rel="stylesheet"]');
+                    for (var i = 0; i < links.length; i++) {
+                        if (!links[i].disabled && !links[i].sheet) { pending = true; break; }
+                    }
+                } catch (_) {}
+                if (!pending || tries++ >= 10) { resolve(); return; }
+                setTimeout(check, 300);
+            })();
+        });
+    }
+
     async function autoStoreContrastResults() {
         /* Snapshot the viewport up front: the layout being measured belongs to
            it, and a mid-await switch must not mislabel the results. */
@@ -1275,6 +1308,8 @@
         if (_contrastStored[viewport]) return;
         var doc = iframeDoc();
         if (!doc) return; /* cross-origin: skip silently */
+
+        await stylesheetsSettled(doc);
 
         /* Always collect needs-review items: needed for the expand panel regardless of
            whether we need to POST violations to the server. */
@@ -1377,6 +1412,9 @@
                before the DOM is representative, and sampling earlier than the
                other engines is exactly what makes results flip between them. */
             await new Promise(function (resolve) { setTimeout(resolve, 2000); });
+
+            /* axe computes styles too, so it needs the same stylesheet guard. */
+            await stylesheetsSettled(doc);
 
             var sharedCfg = window.AccessibilityAudit || {};
             var results = await win.axe.run(doc, {
