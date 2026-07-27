@@ -648,12 +648,16 @@ class AuditService extends Component
                         ? sprintf('Contrast %s:1 (need %s) · Text %s on %s', round((float)$ratio, 2), $expected ?? '4.5:1', $fg, $bg)
                         : ($violation['description'] ?? 'Insufficient colour contrast');
 
+                    $target = $node['target'][0] ?? null;
                     $context = Json::encode([
                         'html' => substr($node['html'] ?? '', 0, 300),
                         'fg' => $fg,
                         'bg' => $bg,
                         'ratio' => $ratio,
                         'expected' => $expected,
+                        // axe's own target selector for the node, so the report
+                        // can highlight the exact element.
+                        'selector' => is_string($target) ? substr($target, 0, 300) : '',
                     ]);
 
                     $this->insertIssue($scanId, $scan['elementId'], $scan['elementType'], $scan['siteId'], IssueModel::make(
@@ -2571,7 +2575,7 @@ class AuditService extends Component
      * for this scan, so desktop and mobile buckets union instead of
      * overwriting each other.
      *
-     * @param array<array-key, array{fg: string, bg: string, ratio: float|null, expected: string|null, html: string|null}> $occurrences
+     * @param array<array-key, array{fg: string, bg: string, ratio: float|null, expected: string|null, html: string|null, selector?: string|null}> $occurrences
      * @throws Exception
      * @throws \Exception
      */
@@ -2619,6 +2623,9 @@ class AuditService extends Component
                 'bg' => $bg,
                 'ratio' => $ratio,
                 'expected' => $expected,
+                // The failing element's CSS path, computed in the browser where
+                // the DOM is live, so the report can highlight the exact element.
+                'selector' => substr(trim((string)($occ['selector'] ?? '')), 0, 300),
             ]);
 
             $this->insertIssue($scanId, $scan['elementId'], $scan['elementType'], $scan['siteId'], IssueModel::make(

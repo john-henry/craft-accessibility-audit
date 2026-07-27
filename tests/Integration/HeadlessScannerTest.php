@@ -115,7 +115,19 @@ describe('HeadlessScanner::scanUrl', function() {
         AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
         headlessSetChromePath('/usr/bin/chromium');
 
-        $violations = AccessibilityAudit::getInstance()->headless->scanUrl('https://craft-5-boilerplate.ddev.site/');
+        // scanUrl only relaxes TLS verification (self-signed dev certs) when
+        // devMode is on. This test covers the scan pipeline, not the TLS
+        // policy, and must pass against the DDEV cert even when the local
+        // environment is switched to production mode, so force it in-memory.
+        $general = Craft::$app->getConfig()->getGeneral();
+        $previousDevMode = $general->devMode;
+        $general->devMode = true;
+
+        try {
+            $violations = AccessibilityAudit::getInstance()->headless->scanUrl('https://craft-5-boilerplate.ddev.site/');
+        } finally {
+            $general->devMode = $previousDevMode;
+        }
 
         expect($violations)->toBeArray();
 

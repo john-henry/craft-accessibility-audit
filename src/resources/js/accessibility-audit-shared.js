@@ -100,6 +100,29 @@
        htmlLength: outerHTML snippet cap per failure (default 200)
        skipEl: optional fn(el), true to exclude an element (e.g. the
                overlay's own panel) */
+  /* A short, stable-enough CSS path for a failing element (same shape as the
+     page report's needs-review paths): nearest id wins, else up to three
+     tag.class segments. Stored with each failure so the report can highlight
+     the exact element instead of guessing from its colours. */
+  function cssPath(el, doc) {
+    var parts = [];
+    var cur = el;
+    while (cur && cur.nodeType === 1 && cur !== doc.body) {
+      var part = cur.tagName.toLowerCase();
+      if (cur.id) {
+        parts.unshift('#' + cur.id);
+        break;
+      }
+      if (cur.className && typeof cur.className === 'string') {
+        var cls = cur.className.trim().split(/\s+/).filter(Boolean).slice(0, 2);
+        if (cls.length) part += '.' + cls.join('.');
+      }
+      parts.unshift(part);
+      cur = cur.parentElement;
+    }
+    return parts.slice(-3).join(' > ');
+  }
+
   function collectContrastFailures(doc, opts) {
     opts = opts || {};
     var limit = opts.limit || 150;
@@ -145,6 +168,7 @@
           ratio: ratio,
           expected: isLarge ? '3:1' : '4.5:1',
           html: el.outerHTML ? el.outerHTML.slice(0, htmlLength) : '',
+          selector: cssPath(el, doc),
         });
       });
     } catch (_) { /* collection must never break the caller's render */ }
@@ -172,6 +196,7 @@
     lum: lum,
     wcagRatio: wcagRatio,
     effectiveBg: effectiveBg,
+    cssPath: cssPath,
     collectContrastFailures: collectContrastFailures,
     escHtml: escHtml,
     scoreClass: scoreClass,

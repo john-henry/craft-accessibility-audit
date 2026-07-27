@@ -995,6 +995,15 @@ class AccessibilityAudit extends BasePlugin
                     return;
                 }
 
+                // The overlay is per-admin markup carrying this session's CSRF
+                // token. A full-page cache that stores this render would serve
+                // both to every visitor, so mark the response uncacheable and,
+                // when Blitz is installed, keep this render out of its cache.
+                Craft::$app->getResponse()->setNoCacheHeaders();
+                if (class_exists(\putyourlightson\blitz\Blitz::class)) {
+                    \putyourlightson\blitz\Blitz::$plugin->generateCache->options->cachingEnabled = false;
+                }
+
                 $view = Craft::$app->getView();
                 $view->registerAssetBundle(FrontendAxeAsset::class);
 
