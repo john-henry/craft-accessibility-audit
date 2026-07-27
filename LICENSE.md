@@ -1,77 +1,17 @@
-# Commercial Software License
+Copyright © John Henry Donovan.
 
-**Accessibility Audit for Craft CMS**
-Copyright © 2026 John Henry Donovan. All rights reserved.
+Permission is hereby granted to any person obtaining a copy of this software (the “Software”) to use, copy, modify, merge, publish and/or distribute copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
----
+Don’t plagiarize. The above copyright notice and this license shall be included in all copies or substantial portions of the Software.
 
-## Grant of License
+Don’t use the same license on more than one project. Each licensed copy of the Software shall be actively installed in no more than one production environment at a time.
 
-Subject to the terms of this License and the payment of the applicable license fee,
-John Henry Donovan ("Licensor") grants you ("Licensee") a non-exclusive,
-non-transferable, limited license to:
+Don’t mess with the licensing features. Software features related to licensing shall not be altered or circumvented in any way, including (but not limited to) license validation, payment prompts, feature restrictions, and update eligibility.
 
-1. Install and use the software on **one (1) Craft CMS installation** per license purchased.
-2. Use the software solely for your own internal business purposes or to build and
-   operate a website on behalf of a single client per license.
+Pay up. Payment shall be made immediately upon receipt of any notice, prompt, reminder, or other message indicating that a payment is owed.
 
-## Permitted Uses
+Follow the law. All use of the Software shall not violate any applicable law or regulation, nor infringe the rights of any other person or entity.
 
-- Install and run the plugin on the licensed Craft CMS installation.
-- Make a single backup copy for disaster-recovery purposes.
-- Access and view the plugin source code for the purpose of debugging or
-  customising behaviour on your licensed installation.
+Failure to comply with the foregoing conditions will automatically and immediately result in termination of the permission granted hereby. This license does not include any right to receive updates to the Software or technical support. Licensees bear all risk related to the quality and performance of the Software and any modifications made or obtained to it, including liability for actual and consequential harm, such as loss or corruption of data, and any necessary service, repair, or correction.
 
-## Restrictions
-
-You may **not**:
-
-- Use a single license on more than one Craft CMS installation or domain.
-- Redistribute, sublicense, rent, lease, or sell the software or any derivative work.
-- Remove or alter any copyright, trademark, or attribution notices.
-- Publish modified versions of the plugin for distribution to third parties.
-- Use the software to build a competing product or service.
-
-## Ownership
-
-The software, including all intellectual property rights, remains the exclusive
-property of John Henry Donovan. This License does not transfer any ownership rights.
-
-## Third-Party Components
-
-This software incorporates third-party components. See `NOTICE.md` for details of
-applicable third-party licenses.
-
-## Disclaimer of Warranties
-
-THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
-INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
-
-WCAG conformance results produced by this plugin are informational only. They do
-not constitute a legal accessibility audit and do not guarantee compliance with
-any applicable law or regulation.
-
-## Limitation of Liability
-
-IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL,
-EXEMPLARY, OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OF OR INABILITY TO USE
-THE SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
-
-THE LICENSOR'S TOTAL CUMULATIVE LIABILITY SHALL NOT EXCEED THE LICENSE FEE PAID
-FOR THE SOFTWARE IN THE TWELVE MONTHS PRECEDING THE CLAIM.
-
-## Termination
-
-This License is effective until terminated. It will terminate automatically if you
-fail to comply with any term. Upon termination you must destroy all copies of the
-software in your possession.
-
-## Governing Law
-
-This License shall be governed by the laws of the Republic of Ireland, without
-regard to conflict of law principles.
-
----
-
-For licensing enquiries: hello@johnhenry.ie
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, INCLUDING SPECIAL, INCIDENTAL AND CONSEQUENTIAL DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
