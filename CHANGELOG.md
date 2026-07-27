@@ -1,5 +1,10 @@
 # Release Notes for Accessibility Audit
 
+## 1.0.5-beta.1 - 2026-07-27
+
+### Fixed
+- On the accessibility statement, the Add an entry button and the scan-suggestion chips only saved the statement without adding the entry when the non-accessible content list was still empty.
+
 ## 1.0.4-beta.1 - 2026-07-27
 
 ### Changed

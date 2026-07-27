@@ -260,3 +260,44 @@ describe('StatementController editions', function() {
             ->toBe('Acme Council');
     });
 });
+
+// ---------------------------------------------------------------------------
+// The add buttons submit the whole form. With no entries yet the form posts no
+// `entries` key at all, and that state must still append the new row rather
+// than just saving: the first entry is always added from exactly this state.
+// ---------------------------------------------------------------------------
+
+describe('StatementController add buttons on an empty list', function() {
+    beforeEach(function() {
+        $this->actingAs(UserFactory::factory()->admin(true)->create());
+        resetStatementRecord(Craft::$app->getSites()->getPrimarySite()->id);
+    });
+
+    it('adds a blank entry when Add an entry is pressed with no entries yet', function() {
+        $siteId = Craft::$app->getSites()->getPrimarySite()->id;
+
+        $this->post('actions/accessibility-audit/statement/save-meta', [
+            'siteId' => $siteId,
+            'productName' => 'Acme Council',
+            'addEntry' => '1',
+        ]);
+
+        expect(AccessibilityAudit::getInstance()->statement->getRecord($siteId)['exclusions'])
+            ->toHaveCount(1);
+    });
+
+    it('adds a pre-filled entry when a suggestion chip is pressed with no entries yet', function() {
+        $siteId = Craft::$app->getSites()->getPrimarySite()->id;
+
+        $this->post('actions/accessibility-audit/statement/save-meta', [
+            'siteId' => $siteId,
+            'productName' => 'Acme Council',
+            'addSuggestion' => '1.4.3',
+        ]);
+
+        $stored = AccessibilityAudit::getInstance()->statement->getRecord($siteId)['exclusions'];
+
+        expect($stored)->toHaveCount(1)
+            ->and($stored[0]['criterion'])->toBe('1.4.3');
+    });
+});

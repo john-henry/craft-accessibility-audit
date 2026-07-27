@@ -244,8 +244,18 @@ class StatementController extends Controller
         $rows = $this->request->getBodyParam('entries');
 
         if (!is_array($rows)) {
-            // No entries key at all: leave the stored list alone, don't clear it.
-            return $this->request->getBodyParam('addEntry') === null ? null : [];
+            // No entries key at all: leave the stored list alone, don't clear
+            // it. Unless an add button was pressed, in which case fall through
+            // with an empty list so the append logic below runs; the first
+            // entry is added from exactly this state.
+            if (
+                $this->request->getBodyParam('addEntry') === null
+                && $this->request->getBodyParam('addSuggestion') === null
+            ) {
+                return null;
+            }
+
+            $rows = [];
         }
 
         $rows = array_values($rows);
