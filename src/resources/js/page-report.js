@@ -299,6 +299,12 @@
                 '<span class="accessibility-audit-pr-swatch-type">Background</span>' +
                 '<code class="accessibility-audit-pr-swatch-hex">' + escHtml(data.bg || '') + '</code>' +
             '</div>';
+        /* The failing element's markup, so the card identifies WHICH element
+           carries these colours: a same-on-same pair is invisible on the page,
+           making the snippet the only human-readable pointer. */
+        var snippet = data.html
+            ? '<code class="accessibility-audit-pr-occ-ctx" title="' + escHtml(data.html) + '">' + escHtml(data.html) + '</code>'
+            : '';
         return '<div class="accessibility-audit-pr-swatch-pair">' +
             preview +
             '<div class="accessibility-audit-pr-swatch-details">' +
@@ -306,6 +312,7 @@
                     '<span class="accessibility-audit-pr-contrast-req-inline"> · need ' + escHtml(data.expected || '4.5:1') + '</span>' +
                 '</div>' +
                 swatches +
+                snippet +
             '</div>' +
         '</div>';
     }
@@ -523,10 +530,18 @@
     function findElementByContext(doc, contextHtml) {
         if (!contextHtml || !doc) return null;
 
-        /* Contrast issues store JSON: extract the inner html field */
+        /* Contrast issues store JSON: a stored CSS selector locates the exact
+           element (colour pairs alone can't), and the inner html field feeds
+           the attribute matchers below as a fallback. */
         var html = contextHtml;
         try {
             var cd = JSON.parse(contextHtml);
+            if (cd && cd.selector) {
+                try {
+                    var bySelector = doc.querySelector(cd.selector);
+                    if (bySelector) return bySelector;
+                } catch (_) {}
+            }
             if (cd && cd.html) html = cd.html;
         } catch (_) {}
 
@@ -582,7 +597,20 @@
             } catch (_) {}
         }
 
-        /* 6. Text content match (last resort) */
+        /* 6. Unique tag+class match: icon spans and styled boxes (contrast
+           findings especially) often carry no id, href, name, or text, only
+           classes. Trusted only when exactly one element matches, so an
+           ambiguous class can never frame the wrong element. */
+        if (el.classList && el.classList.length) {
+            try {
+                var classSel = tag;
+                el.classList.forEach(function (cls) { classSel += '.' + CSS.escape(cls); });
+                var byClass = doc.querySelectorAll(classSel);
+                if (byClass.length === 1) return byClass[0];
+            } catch (_) {}
+        }
+
+        /* 7. Text content match (last resort) */
         var text = el.textContent.trim();
         if (text) {
             var candidates = doc.querySelectorAll(tag);
@@ -617,6 +645,21 @@
         var found = [];
         occurrences.forEach(function (occ) {
             if (!occ.context) return;
+
+            /* An attribute-fragment context (the PHP duplicate-id rule stores
+               `id="…"`) is not markup an element can be parsed from. It names
+               every element carrying that id, and for a duplicate that is
+               exactly the point: highlight them all. */
+            var idFrag = occ.context.match(/^id="([^"]+)"$/);
+            if (idFrag) {
+                try {
+                    Array.prototype.forEach.call(
+                        doc.querySelectorAll('[id=' + JSON.stringify(idFrag[1]) + ']'),
+                        function (el) { if (found.indexOf(el) === -1) found.push(el); }
+                    );
+                } catch (_) {}
+                return;
+            }
 
             var el = findElementByContext(doc, occ.context);
             if (el) {
