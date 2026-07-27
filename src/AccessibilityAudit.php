@@ -19,6 +19,7 @@ use craft\events\RegisterUrlRulesEvent;
 use craft\events\RegisterUserPermissionsEvent;
 use craft\helpers\App;
 use craft\helpers\Cp;
+use craft\helpers\ElementHelper;
 use craft\helpers\Json;
 use craft\helpers\UrlHelper;
 use craft\log\MonologTarget;
@@ -1156,7 +1157,20 @@ class AccessibilityAudit extends BasePlugin
                     return;
                 }
 
-                if (property_exists($element, 'draftId') && $element->draftId) {
+                // Drafts AND revisions: every manual save creates a revision
+                // whose EVENT_AFTER_PROPAGATE also fires, with the same URL and
+                // its own element id. Scanning it would queue a duplicate
+                // browser check per save and store scans against revision ids.
+                if (ElementHelper::isDraftOrRevision($element)) {
+                    return;
+                }
+
+                // Programmatic bulk resaves (the resave commands, migrations,
+                // a plugin touching every entry) would queue a scan per element:
+                // a full sweep nobody asked for, plus a browser check per page.
+                // Content edited by a person still scans; use Scan All for a
+                // deliberate sweep after site-wide changes.
+                if ($element->resaving) {
                     return;
                 }
 

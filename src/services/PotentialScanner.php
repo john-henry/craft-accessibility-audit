@@ -84,7 +84,7 @@ class PotentialScanner extends Component
                 message: 'Is this image alt text too long? Consider using aria-describedby for descriptions over 150 characters.',
                 wcagCriterion: '1.1.1',
                 wcagLevel: 'A',
-                context: substr($node->getAttribute('alt'), 0, 100) . '…',
+                context: mb_substr($node->getAttribute('alt'), 0, 100) . '…',
                 helpUrl: null,
                 source: 'php',
             );
@@ -219,7 +219,7 @@ class PotentialScanner extends Component
                     message: 'Is this link text meaningful? Raw URLs as link text are hard to understand for screen reader users.',
                     wcagCriterion: '2.4.4',
                     wcagLevel: 'A',
-                    context: substr($text, 0, 100),
+                    context: mb_substr($text, 0, 100),
                     helpUrl: null,
                     source: 'php',
                 );
@@ -338,6 +338,9 @@ class PotentialScanner extends Component
         $doc = new DOMDocument();
         $doc->appendChild($doc->importNode($node, true));
         $html = trim($doc->saveHTML());
-        return strlen($html) > $maxLen ? substr($html, 0, $maxLen) . '…' : $html;
+        // mb_, not byte functions: a byte cut can split a multibyte character,
+        // and the invalid sequence would abort the issue INSERT on strict-mode
+        // MySQL, taking the whole scan transaction with it.
+        return mb_strlen($html) > $maxLen ? mb_substr($html, 0, $maxLen) . '…' : $html;
     }
 }

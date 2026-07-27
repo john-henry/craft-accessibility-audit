@@ -1,5 +1,14 @@
 # Release Notes for Accessibility Audit
 
+## 1.0.4-beta.1 - 2026-07-27
+
+### Changed
+- Programmatic bulk resaves (the resave commands, migrations) no longer queue a scan per element. Use Scan All for a deliberate site-wide sweep.
+
+### Fixed
+- A scan could fail entirely on a page whose alt text or markup contained multibyte characters (curly quotes, accents, emoji) near a truncation point, stalling a site-wide scan with a database error. Truncation is now multibyte-safe, and issue text is sanitised before storage so one bad string can never fail a scan.
+- Saving an entry queued duplicate scans and browser checks for the same URL, because the entry's revision was scanned alongside it. Revisions are no longer scanned.
+
 ## 1.0.3-beta.1 - 2026-07-27
 
 ### Fixed

@@ -650,14 +650,14 @@ class AuditService extends Component
 
                     $target = $node['target'][0] ?? null;
                     $context = Json::encode([
-                        'html' => substr($node['html'] ?? '', 0, 300),
+                        'html' => mb_substr($node['html'] ?? '', 0, 300),
                         'fg' => $fg,
                         'bg' => $bg,
                         'ratio' => $ratio,
                         'expected' => $expected,
                         // axe's own target selector for the node, so the report
                         // can highlight the exact element.
-                        'selector' => is_string($target) ? substr($target, 0, 300) : '',
+                        'selector' => is_string($target) ? mb_substr($target, 0, 300) : '',
                     ]);
 
                     $this->insertIssue($scanId, $scan['elementId'], $scan['elementType'], $scan['siteId'], IssueModel::make(
@@ -682,7 +682,7 @@ class AuditService extends Component
                 message: $violation['description'] ?? $violation['help'] ?? 'Accessibility issue detected by axe-core.',
                 wcagCriterion: $wcag['criterion'] ?? null,
                 wcagLevel: $wcag['level'] ?? null,
-                context: !empty($nodes[0]['html']) ? substr($nodes[0]['html'], 0, 200) : null,
+                context: !empty($nodes[0]['html']) ? mb_substr($nodes[0]['html'], 0, 200) : null,
                 helpUrl: $violation['helpUrl'] ?? null,
                 source: 'axe',
                 viewport: $viewport,
@@ -2152,8 +2152,8 @@ class AuditService extends Component
             'wcagCriterion' => $issue->wcagCriterion,
             'wcagLevel' => $issue->wcagLevel,
             'severity' => $issue->severity,
-            'message' => $issue->message,
-            'context' => $issue->context,
+            'message' => $this->scrubUtf8($issue->message),
+            'context' => $this->scrubUtf8($issue->context),
             'helpUrl' => $issue->helpUrl,
             'source' => $issue->source,
             'viewport' => $issue->viewport,
@@ -2164,6 +2164,28 @@ class AuditService extends Component
             'dateUpdated' => Db::prepareDateForDb(new DateTime()),
             'uid' => StringHelper::UUID(),
         ])->execute();
+    }
+
+    /**
+     * Returns the value as valid UTF-8, replacing any invalid byte sequence.
+     *
+     * Issue text is sliced out of arbitrary page content, and strict-mode
+     * MySQL rejects a row containing an invalid sequence, which aborts the
+     * whole scan transaction. Scrubbing at this final chokepoint means no
+     * upstream truncation slip can ever fail a scan again.
+     *
+     * @param string|null $value The message or context text.
+     * @return string|null
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function scrubUtf8(?string $value): ?string
+    {
+        if ($value === null || mb_check_encoding($value, 'UTF-8')) {
+            return $value;
+        }
+
+        return mb_convert_encoding($value, 'UTF-8', 'UTF-8');
     }
 
     /** Look up when this rule was first seen on this element: preserves the original date across re-scans.
@@ -2607,7 +2629,7 @@ class AuditService extends Component
             $bg = trim((string)$occ['bg']);
             $ratio = isset($occ['ratio']) ? round((float)$occ['ratio'], 2) : null;
             $expected = trim((string)($occ['expected'] ?? '4.5:1'));
-            $html = substr(trim((string)($occ['html'] ?? '')), 0, 300);
+            $html = mb_substr(trim((string)($occ['html'] ?? '')), 0, 300);
 
             if ($fg === '' || $bg === '') {
                 continue;
@@ -2625,7 +2647,7 @@ class AuditService extends Component
                 'expected' => $expected,
                 // The failing element's CSS path, computed in the browser where
                 // the DOM is live, so the report can highlight the exact element.
-                'selector' => substr(trim((string)($occ['selector'] ?? '')), 0, 300),
+                'selector' => mb_substr(trim((string)($occ['selector'] ?? '')), 0, 300),
             ]);
 
             $this->insertIssue($scanId, $scan['elementId'], $scan['elementType'], $scan['siteId'], IssueModel::make(
