@@ -91,3 +91,83 @@ describe('SettingsController ignoreRules parsing', function() {
             ->toBe(['img-alt', 'link-name', 'color-contrast']);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Browser scanning is Pro-only, including saving its settings
+// ---------------------------------------------------------------------------
+
+describe('SettingsController browser scanning gating', function() {
+    // A site under test may already have an endpoint or binary configured, so
+    // these assert against whatever is stored rather than against empty.
+    beforeEach(function() {
+        $settings = AccessibilityAudit::getInstance()->getSettings();
+
+        $this->storedChrome = [
+            'path' => $settings->chromePath,
+            'endpoint' => $settings->chromeWsEndpoint,
+            'noSandbox' => $settings->chromeNoSandbox,
+        ];
+    });
+
+    // These settings live in-memory for the run, so put them back rather than
+    // leaking a test's Chrome endpoint into another test's expectations.
+    afterEach(function() {
+        $settings = AccessibilityAudit::getInstance()->getSettings();
+        $settings->chromePath = $this->storedChrome['path'];
+        $settings->chromeWsEndpoint = $this->storedChrome['endpoint'];
+        $settings->chromeNoSandbox = $this->storedChrome['noSandbox'];
+    });
+
+    it('ignores a posted Chrome endpoint on Standard', function() {
+        AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_STANDARD;
+
+        saveSettings(['chromeWsEndpoint' => 'wss://sneaky.example.com/?token=x']);
+
+        expect(AccessibilityAudit::getInstance()->getSettings()->chromeWsEndpoint)
+            ->toBe($this->storedChrome['endpoint']);
+    });
+
+    it('ignores a posted Chrome binary path on Standard', function() {
+        AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_STANDARD;
+
+        saveSettings(['chromePath' => '/usr/bin/chromium']);
+
+        expect(AccessibilityAudit::getInstance()->getSettings()->chromePath)
+            ->toBe($this->storedChrome['path']);
+    });
+
+    it('ignores a posted sandbox toggle on Standard', function() {
+        AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_STANDARD;
+
+        saveSettings(['chromeNoSandbox' => $this->storedChrome['noSandbox'] ? '' : '1']);
+
+        expect(AccessibilityAudit::getInstance()->getSettings()->chromeNoSandbox)
+            ->toBe($this->storedChrome['noSandbox']);
+    });
+
+    it('leaves a stored endpoint intact when Standard saves the page', function() {
+        // The downgrade case: a site that loses Pro must not have its endpoint
+        // wiped by an admin saving settings, since the licence may come back.
+        AccessibilityAudit::getInstance()->getSettings()->chromeWsEndpoint = 'wss://kept.example.com/?token=x';
+        AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_STANDARD;
+
+        saveSettings([]);
+
+        expect(AccessibilityAudit::getInstance()->getSettings()->chromeWsEndpoint)
+            ->toBe('wss://kept.example.com/?token=x');
+    });
+
+    it('lets Pro set both the endpoint and the binary path', function() {
+        AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
+
+        saveSettings([
+            'chromeWsEndpoint' => 'wss://browserless.example.com/?token=x',
+            'chromePath' => '/usr/bin/chromium',
+        ]);
+
+        $settings = AccessibilityAudit::getInstance()->getSettings();
+
+        expect($settings->chromeWsEndpoint)->toBe('wss://browserless.example.com/?token=x')
+            ->and($settings->chromePath)->toBe('/usr/bin/chromium');
+    });
+});

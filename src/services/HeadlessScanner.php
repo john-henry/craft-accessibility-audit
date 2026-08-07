@@ -9,9 +9,13 @@ namespace johnhenry\accessibilityaudit\services;
 use Craft;
 use craft\helpers\App;
 use craft\helpers\Json;
+use HeadlessChromium\Browser;
 use HeadlessChromium\BrowserFactory;
+use HeadlessChromium\Communication\Connection;
+use HeadlessChromium\Communication\Socket\Wrench as WrenchSocket;
 use HeadlessChromium\Page;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\helpers\RemoteChromeClient;
 use Throwable;
 use yii\base\Component;
 use yii\base\InvalidConfigException;
@@ -24,9 +28,11 @@ use yii\base\InvalidConfigException;
  * a full browser pass, so contrast, focus, and target-size findings stay
  * complete and fresh across the whole site.
  *
- * Requires a Chrome/Chromium binary on the server, pointed at by the
- * `chromePath` setting, and the Pro edition. When either is missing the
- * scanner reports unavailable and the pipeline falls back to overlay-only
+ * Needs the Pro edition and a browser to drive, which can come from either of
+ * two places: a Chrome/Chromium binary on the server (`chromePath`), or an
+ * already-running Chrome reached over a WebSocket (`chromeWsEndpoint`), which
+ * covers hosts that can't install a binary at all. When neither is configured
+ * the scanner reports unavailable and the pipeline falls back to overlay-only
  * axe coverage.
  *
  * @author JohnHenry <info@johnhenry.ie>
@@ -56,6 +62,13 @@ class HeadlessScanner extends Component
     private const PAGE_TIMEOUT_MS = 60000;
 
     /**
+     * @var string Origin sent on the WebSocket opening handshake to a remote
+     * browser. The DevTools protocol ignores it, but the handshake is invalid
+     * without one.
+     */
+    private const HANDSHAKE_ORIGIN = 'http://localhost';
+
+    /**
      * @var int Nodes stored per violation. Bounds the payload on pathological
      * pages (a broken template can fail one rule thousands of times). Public
      * because the Inspect preview's client-side axe pass must slim its payload
@@ -82,8 +95,13 @@ class HeadlessScanner extends Component
     // =========================================================================
 
     /**
-     * Whether server-side browser scanning can run: Pro edition, a configured
-     * Chrome binary that exists on disk, and the bundled axe-core source.
+     * Whether server-side browser scanning can run: the Pro edition plus a
+     * browser to drive, either a remote endpoint or a local binary that exists
+     * on disk.
+     *
+     * A remote endpoint is taken at face value: reachability can't be proven
+     * without opening a socket, and this is called on every settings render.
+     * An unreachable endpoint surfaces as a logged scan failure instead.
      *
      * @return bool
      * @author JohnHenry <info@johnhenry.ie>
@@ -95,6 +113,10 @@ class HeadlessScanner extends Component
             return false;
         }
 
+        if ($this->chromeWsEndpoint() !== '') {
+            return true;
+        }
+
         $chromePath = $this->chromePath();
 
         return $chromePath !== '' && file_exists($chromePath);
@@ -103,15 +125,19 @@ class HeadlessScanner extends Component
     /**
      * Runs a full axe-core pass against the given URL in headless Chrome.
      *
-     * Returns violations in the exact shape the frontend overlay posts, so the
+     * Returns findings in the exact shape the frontend overlay posts, so the
      * results feed the same storage pipeline (`AuditService::storeAxeIssues`)
      * with the same cross-engine dedup and score recalculation. Returns null
      * on any failure (logged internally): a broken browser pass must never
      * fail the PHP scan it accompanies.
      *
+     * The `incomplete` bucket carries only contrast results, the nodes axe
+     * could measure neither way, which are stored as needs-review items rather
+     * than counted against the score.
+     *
      * @param string $url The absolute URL to scan.
      * @param string $viewport The viewport bucket to render at (a VIEWPORTS key).
-     * @return array|null The axe violations, or null on failure.
+     * @return array{violations: array, incomplete: array}|null The axe findings, or null on failure.
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
      */
@@ -127,35 +153,72 @@ class HeadlessScanner extends Component
         }
 
         $browser = null;
+        $page = null;
+        $endpoint = $this->chromeWsEndpoint();
+        $isRemote = $endpoint !== '';
 
         try {
             $settings = AccessibilityAudit::getInstance()->getSettings();
+            $size = self::VIEWPORTS[$viewport] ?? self::VIEWPORTS[AuditService::VIEWPORT_DESKTOP];
 
-            $factory = new BrowserFactory($this->chromePath());
-            $browserOptions = [
-                'headless' => true,
-                // Most containers and CI runners have no usable Chrome sandbox,
-                // so this defaults on; hosts with a working sandbox can turn it
-                // off in settings for defence in depth.
-                'noSandbox' => (bool)$settings->chromeNoSandbox,
-                // Same TLS policy as the PHP fetch (AuditService::_verifyTls):
-                // self-signed certs pass in dev/ephemeral environments and are
-                // verified everywhere else, so Chrome doesn't stop at its own
-                // interstitial and audit that screen instead of the site.
-                'ignoreCertificateErrors' => App::isEphemeral() || Craft::$app->getConfig()->getGeneral()->devMode,
-                'keepAlive' => false,
-                'startupTimeout' => 30,
-                'windowSize' => self::VIEWPORTS[$viewport] ?? self::VIEWPORTS[AuditService::VIEWPORT_DESKTOP],
-            ];
+            if ($isRemote) {
+                // Connecting to a browser someone else launched, so none of the
+                // launch flags below are ours to set: sandboxing and certificate
+                // policy belong to whoever runs the endpoint. Viewport and User-
+                // Agent are applied per page instead, just after this.
+                //
+                // Assembled here rather than via BrowserFactory::connectToBrowser(),
+                // which cannot complete a handshake against a remote server.
+                // See RemoteChromeClient.
+                $connection = new Connection(
+                    new WrenchSocket(new RemoteChromeClient($endpoint, self::HANDSHAKE_ORIGIN)),
+                    null,
+                    self::PAGE_TIMEOUT_MS,
+                );
+
+                if (!$connection->connect()) {
+                    Craft::warning(
+                        "HeadlessScanner: could not connect to the remote Chrome endpoint for {$url}. " .
+                        'Check the endpoint is reachable from the machine running the queue.',
+                        'accessibility-audit',
+                    );
+
+                    return null;
+                }
+
+                $browser = new Browser($connection);
+            } else {
+                $factory = new BrowserFactory($this->chromePath());
+                $browser = $factory->createBrowser([
+                    'headless' => true,
+                    // Most containers and CI runners have no usable Chrome sandbox,
+                    // so this defaults on; hosts with a working sandbox can turn it
+                    // off in settings for defence in depth.
+                    'noSandbox' => (bool)$settings->chromeNoSandbox,
+                    // Same TLS policy as the PHP fetch (AuditService::_verifyTls):
+                    // self-signed certs pass in dev/ephemeral environments and are
+                    // verified everywhere else, so Chrome doesn't stop at its own
+                    // interstitial and audit that screen instead of the site.
+                    'ignoreCertificateErrors' => App::isEphemeral() || Craft::$app->getConfig()->getGeneral()->devMode,
+                    'keepAlive' => false,
+                    'startupTimeout' => 30,
+                    'windowSize' => $size,
+                ]);
+            }
+
+            $page = $browser->createPage();
+
+            // Both applied per page rather than as launch options, because
+            // connectToBrowser() accepts neither and would drop them silently.
+            // The viewport override is what makes the mobile pass genuinely
+            // mobile, so a remote browser must not skip it.
+            $page->setViewport($size[0], $size[1])->await(self::PAGE_TIMEOUT_MS);
 
             // The browser pass identifies itself too, so one WAF rule allow-lists
             // it alongside the HTTP fetches. Default keeps a realistic Chrome UA
             // with the token appended; an admin override replaces it wholesale.
-            $browserOptions['userAgent'] = $settings->getBrowserUserAgent();
+            $page->setUserAgent($settings->getBrowserUserAgent())->await(self::PAGE_TIMEOUT_MS);
 
-            $browser = $factory->createBrowser($browserOptions);
-
-            $page = $browser->createPage();
             $page->navigate($url)->waitForNavigation(Page::LOAD, self::PAGE_TIMEOUT_MS);
 
             // Chrome serves its own interstitial from chrome-error://chromewebdata
@@ -188,13 +251,24 @@ class HeadlessScanner extends Component
                 return null;
             }
 
-            return $decoded['violations'];
+            return [
+                'violations' => $decoded['violations'],
+                'incomplete' => is_array($decoded['incomplete'] ?? null) ? $decoded['incomplete'] : [],
+            ];
         } catch (Throwable $e) {
             Craft::error("HeadlessScanner: scan of {$url} failed: " . $e->getMessage(), 'accessibility-audit');
             return null;
         } finally {
             try {
-                $browser?->close();
+                if ($isRemote) {
+                    // Browser::close() sends Browser.close, which would shut the
+                    // remote Chrome down under every other client sharing it.
+                    // Drop this page and hang up instead.
+                    $page?->close();
+                    $browser?->getConnection()->disconnect();
+                } else {
+                    $browser?->close();
+                }
             } catch (Throwable) {
                 // Chrome already gone: nothing to clean up.
             }
@@ -214,6 +288,38 @@ class HeadlessScanner extends Component
         $settings = AccessibilityAudit::getInstance()->getSettings();
 
         return trim(App::parseEnv($settings->chromePath ?? ''));
+    }
+
+    /**
+     * The resolved WebSocket URI of a remote Chrome from settings (env-var
+     * references supported), or an empty string when unset. When set it takes
+     * precedence over the local binary.
+     *
+     * The URI is normalised to carry a path, because the WebSocket client
+     * rejects one without ('wss://host?token=…' throws "Invalid path"), and
+     * that pathless form is exactly what browserless and similar services hand
+     * out. Fixing it here beats every admin having to notice a missing slash.
+     *
+     * @return string
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    public function chromeWsEndpoint(): string
+    {
+        $settings = AccessibilityAudit::getInstance()->getSettings();
+        $uri = trim(App::parseEnv($settings->chromeWsEndpoint ?? ''));
+
+        if ($uri === '' || (string)parse_url($uri, PHP_URL_PATH) !== '') {
+            return $uri;
+        }
+
+        $queryPosition = strpos($uri, '?');
+
+        if ($queryPosition === false) {
+            return $uri . '/';
+        }
+
+        return substr($uri, 0, $queryPosition) . '/' . substr($uri, $queryPosition);
     }
 
     // Private Methods
@@ -243,7 +349,8 @@ class HeadlessScanner extends Component
 
     /**
      * Builds the in-page script that runs axe with the same tag list as the
-     * frontend overlay and returns a slimmed, JSON-encoded violations payload.
+     * frontend overlay and returns a slimmed, JSON-encoded payload of both the
+     * violations and the undecided contrast results.
      *
      * @return string
      * @throws InvalidConfigException
@@ -255,30 +362,37 @@ class HeadlessScanner extends Component
         $maxHtml = self::MAX_NODE_HTML_LENGTH;
 
         // Slim each node to what storeAxeIssues() consumes: the html snippet,
-        // the selector target, and the contrast data on any[0].
+        // the selector target, and the contrast data on any[0]. Incomplete
+        // results are filtered to contrast, the only rule whose "can't tell"
+        // answer is worth a person's time (see _storeContrastNeedsReview).
         return <<<JS
             axe.run(document, {
                 runOnly: { type: 'tag', values: {$tagsJson} },
-                resultTypes: ['violations'],
+                resultTypes: ['violations', 'incomplete'],
             }).then(function(r) {
+                var slim = function(v) {
+                    return {
+                        id: v.id,
+                        impact: v.impact,
+                        tags: v.tags,
+                        description: v.description,
+                        help: v.help,
+                        helpUrl: v.helpUrl,
+                        nodes: v.nodes.slice(0, {$maxNodes}).map(function(n) {
+                            return {
+                                html: (n.html || '').slice(0, {$maxHtml}),
+                                target: n.target,
+                                any: (n.any && n.any[0]) ? [{ data: n.any[0].data }] : [],
+                            };
+                        }),
+                    };
+                };
+
                 return JSON.stringify({
-                    violations: r.violations.map(function(v) {
-                        return {
-                            id: v.id,
-                            impact: v.impact,
-                            tags: v.tags,
-                            description: v.description,
-                            help: v.help,
-                            helpUrl: v.helpUrl,
-                            nodes: v.nodes.slice(0, {$maxNodes}).map(function(n) {
-                                return {
-                                    html: (n.html || '').slice(0, {$maxHtml}),
-                                    target: n.target,
-                                    any: (n.any && n.any[0]) ? [{ data: n.any[0].data }] : [],
-                                };
-                            }),
-                        };
-                    }),
+                    violations: r.violations.map(slim),
+                    incomplete: (r.incomplete || []).filter(function(v) {
+                        return v.id === 'color-contrast';
+                    }).map(slim),
                 });
             })
             JS;

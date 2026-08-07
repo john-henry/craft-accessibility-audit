@@ -14,7 +14,7 @@ A full WCAG 2.2 accessibility audit, built right into the Craft control panel. I
 - **25+ WCAG 2.2 rules** – the PHP scanner checks images, links, forms, headings, colour usage, tables, and more
 - **axe-core overlay** – runs on the live site for admins, catching contrast, focus visibility, and target size issues that only show up once the page is actually rendered
 - **Server-side browser scanning** – point it at a Chrome binary and every queued scan runs the full axe checks at desktop and mobile widths, so nobody has to visit a page for it to be tested properly
-- **Potential issues** – 8 checks that need a human review, phrased as questions (e.g. "Is this image alt text descriptive enough?"). Answer once and the answer sticks through re-scans
+- **Potential issues** – 9 checks that need a human review, phrased as questions (e.g. "Is this image alt text descriptive enough?"), including contrast that axe-core couldn't measure because the text sits over an image. Answer once and the answer sticks through re-scans
 - **Any element type** – entries, categories, Craft Commerce products, and any custom element with a public URL
 - **Queue-based background scanning** and **scan on save**, so reports keep themselves up to date
 - **Score and history** – a site-wide score tracked over time, issues grouped by rule with difficulty and responsibility metadata, and a list of every affected page
@@ -29,7 +29,7 @@ A full WCAG 2.2 accessibility audit, built right into the Craft control panel. I
 - **Email and Slack alerts** when a new error lands or a score drops
 - **CI/CD endpoint** so a build pipeline can gate a deploy on your accessibility score
 
-Some of the above is Pro only. See [Editions]([https://johnhenry.ie/plugins/accessibility-audit/docs/guide/editions](https://johnhenry.ie/plugins/accessibility-audit/docs/getting-started/editions)) for the split.
+Some of the above is Pro only. See [Editions]([https://johnhenry.ie/plugins/accessibility-audit/docs/getting-started/editions](https://johnhenry.ie/plugins/accessibility-audit/docs/getting-started/editions)) for the split.
 
 
 ## Documentation

@@ -15,11 +15,105 @@
 
   /* ── Colour parsing ──────────────────────────────────────────────────── */
 
+  /* Colours reach here in whatever syntax the stylesheet used, and a contrast
+     ratio needs sRGB channels. Canvas does the conversion in two stages below,
+     so no colour-space maths lives here.
+
+     A colour this cannot read is worse than useless: an unreadable background
+     makes an element look transparent, so the walk climbs to a coloured
+     ancestor and measures the text against that, and an unreadable foreground
+     drops the element from the results entirely. Tailwind 4 ships its whole
+     palette in oklch, so on those sites that is most colours on the page. */
+  var _colorCtx;
+  var _colorCache = {};
+
+  function colorCtx() {
+    if (_colorCtx === undefined) {
+      try {
+        var canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+        if (canvas) {
+          canvas.width = 1;
+          canvas.height = 1;
+        }
+        _colorCtx = canvas && canvas.getContext ? canvas.getContext('2d', { willReadFrequently: true }) : null;
+      } catch (e) {
+        _colorCtx = null;
+      }
+    }
+    return _colorCtx;
+  }
+
+  /* Stage one: round-trip through fillStyle, which rewrites the syntaxes canvas
+     can express in sRGB ("rgb(196 26 16)" and "hsl(...)" come back "#c41a10").
+     Returns null when the browser rejected the value: a rejected assignment
+     leaves fillStyle at whatever it held, so two different sentinels tell a
+     real colour from a bad one. */
+  function normaliseColor(css) {
+    var ctx = colorCtx();
+    if (!ctx) return null;
+
+    try {
+      ctx.fillStyle = '#000000';
+      ctx.fillStyle = css;
+      var first = ctx.fillStyle;
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = css;
+
+      return first === ctx.fillStyle ? first : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /* Stage two, for colours the browser keeps in a space of their own. Canvas
+     accepts oklch and returns it verbatim, so the round-trip above cannot read
+     it; painting a pixel and sampling it gets sRGB channels out. Slightly lossy
+     on partial alpha, which rounds through the un-premultiply. */
+  function paintToRgb(css) {
+    var ctx = colorCtx();
+    if (!ctx) return null;
+
+    try {
+      ctx.clearRect(0, 0, 1, 1);
+      ctx.fillStyle = css;
+      ctx.fillRect(0, 0, 1, 1);
+      var d = ctx.getImageData(0, 0, 1, 1).data;
+
+      return { r: d[0], g: d[1], b: d[2], a: d[3] / 255 };
+    } catch (e) {
+      return null;
+    }
+  }
+
   function parseRgb(css) {
     if (!css) return null;
-    var m = css.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/);
-    if (!m) return null;
-    return { r: +m[1], g: +m[2], b: +m[3], a: m[4] !== undefined ? +m[4] : 1 };
+    if (_colorCache[css] !== undefined) return _colorCache[css];
+
+    var parsed = null;
+    var m = css.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)/);
+
+    if (m) {
+      parsed = { r: +m[1], g: +m[2], b: +m[3], a: m[4] !== undefined ? +m[4] : 1 };
+    } else {
+      var normalised = normaliseColor(css);
+
+      if (normalised) {
+        var hex = normalised.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i);
+
+        if (hex) {
+          parsed = { r: parseInt(hex[1], 16), g: parseInt(hex[2], 16), b: parseInt(hex[3], 16), a: 1 };
+        } else if (normalised !== css) {
+          parsed = parseRgb(normalised);
+        } else {
+          /* A valid colour the browser kept in its own space, such as oklch. */
+          parsed = paintToRgb(css);
+        }
+      }
+    }
+
+    _colorCache[css] = parsed;
+    return parsed;
   }
 
   function rgbToHex(r, g, b) {

@@ -106,10 +106,22 @@ class SettingsModel extends Model
     public string $chromePath = '';
 
     /**
+     * @var string WebSocket URI of an already-running Chrome to connect to for
+     * server-side axe scans, e.g. 'ws://chrome:3000' or a browserless endpoint
+     * carrying a token. Takes precedence over [[chromePath]], and is the only
+     * option on hosts that can't install a binary (Craft Cloud and other
+     * ephemeral platforms). Supports environment variable references, which is
+     * how a tokenised endpoint should be stored. Empty falls back to the local
+     * binary.
+     */
+    public string $chromeWsEndpoint = '';
+
+    /**
      * @var bool Whether headless Chrome launches with --no-sandbox. Required
      * in most containers and CI runners, where Chrome's sandbox can't
      * initialise; hosts running a dedicated user with a working sandbox can
-     * turn it off for defence in depth.
+     * turn it off for defence in depth. Only applies when launching a local
+     * binary: a remote browser is launched by whoever runs it.
      */
     public bool $chromeNoSandbox = true;
 
@@ -394,7 +406,7 @@ class SettingsModel extends Model
             [['excludedUriPatterns'], 'safe'],
             [['excludedVolumes'], 'each', 'rule' => ['string']],
             [['scannedElementTypes'], 'each', 'rule' => ['string'], 'skipOnEmpty' => true],
-            [['altTextField', 'anthropicApiKey', 'altTextContext', 'altTextLanguage', 'chromePath', 'vpatExportTemplate'], 'string'],
+            [['altTextField', 'anthropicApiKey', 'altTextContext', 'altTextLanguage', 'chromePath', 'chromeWsEndpoint', 'vpatExportTemplate'], 'string'],
             [['statementTemplate'], 'string'],
             [['notifyEmailRecipients', 'notifySlackWebhookUrl', 'ciApiToken', 'scannerUserAgent'], 'string'],
         ];
@@ -413,6 +425,7 @@ class SettingsModel extends Model
             'overlayPosition' => 'Overlay Position',
             'overlayIdleSeconds' => 'Idle Collapse Delay (seconds)',
             'chromePath' => 'Chrome Binary Path',
+            'chromeWsEndpoint' => 'Remote Chrome Endpoint',
             'chromeNoSandbox' => 'Launch Chrome Without Sandbox',
             'scannerUserAgent' => 'Scanner User-Agent',
             'ignoreRules' => 'Ignored Rules',

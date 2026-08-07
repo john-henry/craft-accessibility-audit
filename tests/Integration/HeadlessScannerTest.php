@@ -12,9 +12,16 @@ function headlessSetChromePath(string $path): void
     AccessibilityAudit::getInstance()->getSettings()->chromePath = $path;
 }
 
-// The setting is in-memory only; make sure no test leaks it into the next.
+/** Sets the in-memory chromeWsEndpoint setting for the current test. */
+function headlessSetWsEndpoint(string $uri): void
+{
+    AccessibilityAudit::getInstance()->getSettings()->chromeWsEndpoint = $uri;
+}
+
+// The settings are in-memory only; make sure no test leaks them into the next.
 afterEach(function() {
     headlessSetChromePath('');
+    headlessSetWsEndpoint('');
 });
 
 // ---------------------------------------------------------------------------
@@ -50,6 +57,76 @@ describe('HeadlessScanner::isAvailable', function() {
         headlessSetChromePath('/bin/sh');
 
         expect(AccessibilityAudit::getInstance()->headless->isAvailable())->toBeTrue();
+    });
+
+    it('is available on Pro with only a remote endpoint and no local binary', function() {
+        AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
+        headlessSetChromePath('');
+        headlessSetWsEndpoint('ws://chrome:3000');
+
+        expect(AccessibilityAudit::getInstance()->headless->isAvailable())->toBeTrue();
+    });
+
+    it('is unavailable on the Standard edition even with a remote endpoint', function() {
+        AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_STANDARD;
+        headlessSetWsEndpoint('ws://chrome:3000');
+
+        expect(AccessibilityAudit::getInstance()->headless->isAvailable())->toBeFalse();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Endpoint resolution
+// ---------------------------------------------------------------------------
+
+describe('HeadlessScanner::chromeWsEndpoint', function() {
+    it('is empty when unset', function() {
+        headlessSetWsEndpoint('');
+
+        expect(AccessibilityAudit::getInstance()->headless->chromeWsEndpoint())->toBe('');
+    });
+
+    it('trims surrounding whitespace so a pasted URI still connects', function() {
+        headlessSetWsEndpoint("  ws://chrome:3000\n");
+
+        expect(AccessibilityAudit::getInstance()->headless->chromeWsEndpoint())->toBe('ws://chrome:3000/');
+    });
+
+    it('resolves an environment variable reference, which is how a tokenised endpoint is stored', function() {
+        putenv('AA_TEST_WS_ENDPOINT=ws://chrome:3000/?token=secret');
+        $_ENV['AA_TEST_WS_ENDPOINT'] = 'ws://chrome:3000/?token=secret';
+        headlessSetWsEndpoint('$AA_TEST_WS_ENDPOINT');
+
+        try {
+            expect(AccessibilityAudit::getInstance()->headless->chromeWsEndpoint())
+                ->toBe('ws://chrome:3000/?token=secret');
+        } finally {
+            putenv('AA_TEST_WS_ENDPOINT');
+            unset($_ENV['AA_TEST_WS_ENDPOINT']);
+        }
+    });
+
+    // The WebSocket client rejects a pathless URI outright ("Invalid path"),
+    // and a pathless URI is exactly what browserless hands out, so the endpoint
+    // has to grow a root path before it ever reaches the socket.
+    it('adds a root path to a bare host, which is the form hosted services give you', function() {
+        headlessSetWsEndpoint('wss://production-lon.browserless.io?token=secret');
+
+        expect(AccessibilityAudit::getInstance()->headless->chromeWsEndpoint())
+            ->toBe('wss://production-lon.browserless.io/?token=secret');
+    });
+
+    it('adds a root path when there is no query string either', function() {
+        headlessSetWsEndpoint('ws://chrome:3000');
+
+        expect(AccessibilityAudit::getInstance()->headless->chromeWsEndpoint())->toBe('ws://chrome:3000/');
+    });
+
+    it('leaves a URI that already carries a path alone', function() {
+        headlessSetWsEndpoint('wss://host/chromium?token=secret');
+
+        expect(AccessibilityAudit::getInstance()->headless->chromeWsEndpoint())
+            ->toBe('wss://host/chromium?token=secret');
     });
 });
 
@@ -124,17 +201,48 @@ describe('HeadlessScanner::scanUrl', function() {
         $general->devMode = true;
 
         try {
-            $violations = AccessibilityAudit::getInstance()->headless->scanUrl('https://craft-5-boilerplate.ddev.site/');
+            $findings = AccessibilityAudit::getInstance()->headless->scanUrl('https://craft-5-boilerplate.ddev.site/');
         } finally {
             $general->devMode = $previousDevMode;
         }
 
-        expect($violations)->toBeArray();
+        expect($findings)->toBeArray()
+            ->toHaveKeys(['violations', 'incomplete'])
+            ->and($findings['violations'])->toBeArray()
+            ->and($findings['incomplete'])->toBeArray();
 
-        // Every violation must arrive in the overlay payload shape that
+        // Both buckets must arrive in the overlay payload shape that
         // storeAxeIssues() consumes.
-        foreach ($violations as $violation) {
-            expect($violation)->toHaveKeys(['id', 'impact', 'tags', 'description', 'help', 'helpUrl', 'nodes']);
+        foreach ([...$findings['violations'], ...$findings['incomplete']] as $result) {
+            expect($result)->toHaveKeys(['id', 'impact', 'tags', 'description', 'help', 'helpUrl', 'nodes']);
+        }
+
+        // Only contrast is carried over from the incomplete bucket: every other
+        // rule's "can't tell" answer is dropped in the page, not here.
+        foreach ($findings['incomplete'] as $result) {
+            expect($result['id'])->toBe('color-contrast');
         }
     })->skip(fn() => !file_exists('/usr/bin/chromium'), 'chromium is not installed in this environment');
+
+    it('uses the remote endpoint even when a working local binary is also configured', function() {
+        // Precedence is documented in the setting's own instructions, so pin it
+        // by behaviour: with an unreachable endpoint and a perfectly good binary
+        // alongside it, a fall back to the binary would return findings.
+        AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
+        headlessSetChromePath('/usr/bin/chromium');
+        headlessSetWsEndpoint('ws://127.0.0.1:1/devtools/browser/nope');
+
+        expect(AccessibilityAudit::getInstance()->headless->scanUrl('https://example.com/'))->toBeNull();
+    })->skip(fn() => !file_exists('/usr/bin/chromium'), 'chromium is not installed in this environment');
+
+    it('returns null instead of throwing when the remote endpoint is unreachable', function() {
+        // isAvailable() takes an endpoint on trust, so an unreachable one has to
+        // fail inside scanUrl. A broken browser pass must never fail the PHP
+        // scan it accompanies.
+        AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
+        headlessSetChromePath('');
+        headlessSetWsEndpoint('ws://127.0.0.1:1/devtools/browser/nope');
+
+        expect(AccessibilityAudit::getInstance()->headless->scanUrl('https://example.com/'))->toBeNull();
+    });
 });

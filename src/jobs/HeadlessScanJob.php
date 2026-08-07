@@ -80,13 +80,18 @@ class HeadlessScanJob extends BaseJob
         // PHP scan results and the other viewport's findings stand on their
         // own, and carried-forward overlay data is untouched.
         foreach (array_keys(HeadlessScanner::VIEWPORTS) as $viewport) {
-            $violations = $plugin->headless->scanUrl($this->url, $viewport);
+            $findings = $plugin->headless->scanUrl($this->url, $viewport);
 
-            if ($violations === null) {
+            if ($findings === null) {
                 continue;
             }
 
-            $plugin->audit->storeAxeIssues($this->scanId, $violations, $viewport);
+            $plugin->audit->storeAxeIssues(
+                $this->scanId,
+                $findings['violations'],
+                $viewport,
+                $findings['incomplete'],
+            );
             Craft::info("Headless axe scan ({$viewport}) stored for scan {$this->scanId}", 'accessibility-audit');
         }
     }

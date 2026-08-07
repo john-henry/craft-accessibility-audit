@@ -580,3 +580,126 @@ describe('AuditService::storeAxeIssues level score recalculation', function() {
             ->and((int)$scores['scoreAAA'])->toBe(100);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Undecided contrast stored as needs review
+// ---------------------------------------------------------------------------
+
+/** An axe color-contrast result from the incomplete bucket. */
+function axeTestIncompleteContrast(array $dataOverrides = [], string $html = '<p class="over-img">Hello</p>'): array
+{
+    return [
+        'id' => 'color-contrast',
+        'impact' => 'serious',
+        'tags' => ['cat.color', 'wcag2aa', 'wcag143'],
+        'description' => 'Ensure the contrast between foreground and background colors meets WCAG 2 AA thresholds',
+        'help' => 'Elements must meet minimum color contrast ratio thresholds',
+        'helpUrl' => 'https://dequeuniversity.com/rules/axe/4.9/color-contrast',
+        'nodes' => [
+            [
+                'html' => $html,
+                'target' => ['.over-img'],
+                'any' => [['data' => array_merge([
+                    'contrastRatio' => 0,
+                    'fontSize' => '12.0pt (16px)',
+                    'fontWeight' => 'normal',
+                    'messageKey' => 'bgOverlap',
+                    'expectedContrastRatio' => '4.5:1',
+                ], $dataOverrides)]],
+            ],
+        ],
+    ];
+}
+
+/** Rows stored for the needs-review contrast rule on a scan. */
+function axeTestContrastReviewRows(int $scanId): array
+{
+    return (new \craft\db\Query())
+        ->select(['ruleId', 'severity', 'message', 'context', 'wcagCriterion', 'wcagLevel', 'viewport', 'source'])
+        ->from('{{%accessibilityaudit_issues}}')
+        ->where(['scanId' => $scanId, 'ruleId' => AuditService::RULE_POTENTIAL_CONTRAST])
+        ->all();
+}
+
+describe('AuditService::storeAxeIssues undecided contrast', function() {
+    it('stores an incomplete contrast node as a needs-review notice', function() {
+        $scanId = axeTestScanId(axeTestElementId());
+
+        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [], AuditService::VIEWPORT_DESKTOP, [
+            axeTestIncompleteContrast(),
+        ]);
+
+        $rows = axeTestContrastReviewRows($scanId);
+
+        expect($rows)->toHaveCount(1)
+            ->and($rows[0]['severity'])->toBe('notice')
+            ->and($rows[0]['wcagCriterion'])->toBe('1.4.3')
+            ->and($rows[0]['wcagLevel'])->toBe('AA')
+            ->and($rows[0]['source'])->toBe('axe')
+            // Bare markup, not JSON: the report prints it and matches the
+            // element by it, and the verdict is keyed to its hash.
+            ->and($rows[0]['context'])->toBe('<p class="over-img">Hello</p>')
+            ->and($rows[0]['message'])->toContain('another element sits over it');
+    });
+
+    it('keeps an undecided contrast node out of the score, unlike a real violation', function() {
+        $scanId = axeTestScanId(axeTestElementId());
+
+        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [], AuditService::VIEWPORT_DESKTOP, [
+            axeTestIncompleteContrast(),
+        ]);
+
+        $scores = axeTestScanScores($scanId);
+
+        expect((int)$scores['score'])->toBe(100)
+            ->and((int)$scores['scoreAA'])->toBe(100);
+    });
+
+    it('phrases the question from the reason axe gave', function() {
+        $scanId = axeTestScanId(axeTestElementId());
+
+        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [], AuditService::VIEWPORT_DESKTOP, [
+            axeTestIncompleteContrast(['messageKey' => 'bgImage']),
+        ]);
+
+        expect(axeTestContrastReviewRows($scanId)[0]['message'])->toContain('it sits on a background image');
+    });
+
+    it('ignores incomplete results for every rule other than contrast', function() {
+        $scanId = axeTestScanId(axeTestElementId());
+
+        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [], AuditService::VIEWPORT_DESKTOP, [
+            array_merge(axeTestIncompleteContrast(), ['id' => 'aria-hidden-focus']),
+            array_merge(axeTestIncompleteContrast(), ['id' => 'nested-interactive']),
+        ]);
+
+        expect(axeTestContrastReviewRows($scanId))->toBeEmpty();
+    });
+
+    it('replaces only its own viewport bucket on a re-scan', function() {
+        $scanId = axeTestScanId(axeTestElementId());
+        $audit = AccessibilityAudit::getInstance()->audit;
+
+        $audit->storeAxeIssues($scanId, [], AuditService::VIEWPORT_DESKTOP, [axeTestIncompleteContrast()]);
+        $audit->storeAxeIssues($scanId, [], AuditService::VIEWPORT_MOBILE, [
+            axeTestIncompleteContrast([], '<p class="narrow">Hi</p>'),
+        ]);
+
+        $rows = axeTestContrastReviewRows($scanId);
+        $byViewport = array_column($rows, 'context', 'viewport');
+
+        expect($rows)->toHaveCount(2)
+            ->and($byViewport[AuditService::VIEWPORT_DESKTOP])->toBe('<p class="over-img">Hello</p>')
+            ->and($byViewport[AuditService::VIEWPORT_MOBILE])->toBe('<p class="narrow">Hi</p>');
+    });
+
+    it('drops a node with no markup, since the report matches elements by it', function() {
+        $scanId = axeTestScanId(axeTestElementId());
+
+        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [], AuditService::VIEWPORT_DESKTOP, [
+            axeTestIncompleteContrast([], ''),
+        ]);
+
+        expect(axeTestContrastReviewRows($scanId))->toBeEmpty();
+    });
+});

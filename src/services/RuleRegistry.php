@@ -63,6 +63,7 @@ class RuleRegistry
         'potential:possible-heading' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Headings', 'abilities' => ['cognition']],
         'potential:table-layout' => ['difficulty' => 'intermediate', 'responsibility' => 'development', 'elementType' => 'Tables',   'abilities' => ['cognition']],
         'potential:video-audio-desc' => ['difficulty' => 'intermediate', 'responsibility' => 'content',     'elementType' => 'Media',    'abilities' => ['vision']],
+        'potential:contrast-unmeasurable' => ['difficulty' => 'intermediate', 'responsibility' => 'design',      'elementType' => 'Text',     'abilities' => ['vision']],
 
         // axe-core rules (common ones)
         'color-contrast' => ['difficulty' => 'intermediate', 'responsibility' => 'design',      'elementType' => 'Text',           'abilities' => ['vision']],
