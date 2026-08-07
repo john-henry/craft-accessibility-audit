@@ -232,7 +232,7 @@
           /* Once stored, the server recalculates the scan's score across ALL
              sources (PHP scanner + axe). Repaint with that authoritative
              combined state so the overlay never disagrees with the CP. */
-          storeResults(results.violations).then((resp) => {
+          storeResults(results.violations, results.incomplete).then((resp) => {
             if (resp && resp.scan) {
               if (resp.scanId) scanId = resp.scanId;
               hydrateFromServer(resp.scan, { keepPasses: true });
@@ -509,7 +509,33 @@
   // ─── Store violations via AJAX ────────────────────────────────────────────
   /* Returns the store response ({success, scanId, scan}) so the caller can
      repaint with the server's recalculated combined score, or null on failure. */
-  async function storeResults(violations) {
+  /* Contrast is the only incomplete rule worth storing: axe returns "can't
+     tell" when it cannot resolve what sits behind the text, which a person can
+     settle by looking. Other rules' incomplete results aren't answerable that
+     way, so they're dropped here rather than filling the needs-review list.
+     Slimmed to the same payload shape the headless pass posts. */
+  function contrastIncomplete(incomplete) {
+    const maxNodes = cfg.axeMaxNodes || 50;
+    const maxHtml  = cfg.axeMaxHtmlLength || 300;
+
+    return (incomplete || [])
+      .filter((v) => v.id === 'color-contrast')
+      .map((v) => ({
+        id: v.id,
+        impact: v.impact,
+        tags: v.tags,
+        description: v.description,
+        help: v.help,
+        helpUrl: v.helpUrl,
+        nodes: v.nodes.slice(0, maxNodes).map((n) => ({
+          html: (n.html || '').slice(0, maxHtml),
+          target: n.target,
+          any: (n.any && n.any[0]) ? [{ data: n.any[0].data }] : [],
+        })),
+      }));
+  }
+
+  async function storeResults(violations, incomplete) {
     if (!canAutoScan) return null;
     try {
       const fd = new FormData();
@@ -523,6 +549,8 @@
          bucket instead of overwriting the desktop findings. */
       fd.append('viewportWidth', String(window.innerWidth || 0));
       fd.append('violations',  JSON.stringify(violations));
+      /* Contrast nodes axe couldn't measure, stored as needs-review items. */
+      fd.append('incomplete',  JSON.stringify(contrastIncomplete(incomplete)));
       const res = await fetch(storeUrl, { method: 'POST', body: fd, headers: { 'Accept': 'application/json' } });
       return res.ok ? await res.json() : null;
     } catch (_) {

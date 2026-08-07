@@ -2,7 +2,7 @@
   "name": "johnhenry/craft-accessibility-audit",
   "description": "Comprehensive WCAG 2.2 accessibility auditing for Craft CMS 5",
   "type": "craft-plugin",
-  "version": "1.0.6-beta.1",
+  "version": "1.0.7-beta.1",
   "keywords": [
     "craft",
     "cms",
@@ -23,7 +23,7 @@
   "homepage": "https://johnhenry.ie/plugins/accessibility-audit",
   "require": {
     "php": "^8.2 || ^8.3 || ^8.4",
-    "chrome-php/chrome": "^1.11",
+    "chrome-php/chrome": "^1.16",
     "craftcms/cms": "^5.0"
   },
   "require-dev": {

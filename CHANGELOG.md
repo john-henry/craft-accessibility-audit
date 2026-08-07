@@ -1,5 +1,17 @@
 # Release Notes for Accessibility Audit
 
+## 1.0.7-beta.1 - 2026-08-07
+
+### Added
+- You can now point the scanner at a Chrome running somewhere else instead of installing one on your own server. Set **Settings → Scanning → Remote Chrome Endpoint** to a browserless account, a container of your own, or anything else speaking the DevTools protocol, and the browser pass runs there. This is the only way to get server-side browser scanning on hosts where you cannot install a binary, Craft Cloud among them. Store the URI in an environment variable if it carries a token.
+- Contrast that axe-core could not measure now lands under **Needs review** instead of being thrown away. axe hands a node back undecided when it cannot work out what is actually behind the text, which happens when another element sits over it, or the text is on an image or a gradient. Those results used to vanish, so a page could look clean on contrast while the hardest parts of it had never really been checked. They now arrive as a question, with the reason axe gave and the ratio the text needs, and they stay out of your score until you confirm one.
+
+### Changed
+- `storeAxeIssues()` takes a fourth argument, the undecided results from axe, defaulting to an empty array. Existing calls keep working unchanged.
+
+### Fixed
+- On sites using modern CSS colour syntax, which means any site built with Tailwind 4, the contrast check misread colours it could not parse. A button with its own white background could be reported as failing against the section colour behind it, and text whose colour could not be read was skipped altogether, so genuine failures went unreported. Colours are now read in any syntax the browser understands, `oklch` included.
+
 ## 1.0.6-beta.1 - 2026-07-27
 
 ### Fixed

@@ -1306,6 +1306,7 @@ class DashboardController extends Controller
             'potential:possible-heading' => Craft::t('accessibility-audit', 'Should this bold paragraph be a heading?'),
             'potential:table-layout' => Craft::t('accessibility-audit', 'Is this a data table or a layout table?'),
             'potential:video-audio-desc' => Craft::t('accessibility-audit', 'Does this video need an audio description?'),
+            'potential:contrast-unmeasurable' => Craft::t('accessibility-audit', 'Does this text have enough contrast against what is behind it?'),
             default => str_replace('potential:', '', $ruleId),
         };
     }

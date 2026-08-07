@@ -58,6 +58,9 @@
         'accesskey':             '[accesskey]',
         /* axe-core rules */
         'color-contrast':        'p, h1, h2, h3, h4, h5, h6, a, li, td, th, label, span, div',
+        /* Contrast axe couldn't measure, stored as a needs-review item. Same
+           candidate elements as color-contrast, since it is the same rule. */
+        'potential:contrast-unmeasurable': 'p, h1, h2, h3, h4, h5, h6, a, li, td, th, label, span, div',
         'label':                 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]), select, textarea',
         'link-name':             'a[href]',
         'document-title':        'title',
@@ -1419,7 +1422,7 @@
             var sharedCfg = window.AccessibilityAudit || {};
             var results = await win.axe.run(doc, {
                 runOnly: { type: 'tag', values: sharedCfg.axeTags || ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'] },
-                resultTypes: ['violations'],
+                resultTypes: ['violations', 'incomplete'],
             });
 
             /* Slim to the payload shape storeAxeIssues() consumes; the caps
@@ -1427,7 +1430,7 @@
                the two passes can't drift apart. */
             var maxNodes = sharedCfg.axeMaxNodes || 50;
             var maxHtml = sharedCfg.axeMaxHtmlLength || 300;
-            var violations = results.violations.map(function (v) {
+            var slim = function (v) {
                 return {
                     id: v.id,
                     impact: v.impact,
@@ -1443,7 +1446,15 @@
                         };
                     }),
                 };
-            });
+            };
+
+            var violations = results.violations.map(slim);
+            /* Contrast is the only incomplete rule stored, as a needs-review
+               item: axe returns "can't tell" when it cannot resolve what sits
+               behind the text, and a person can settle that by looking. */
+            var incomplete = (results.incomplete || []).filter(function (v) {
+                return v.id === 'color-contrast';
+            }).map(slim);
 
             var csrfName  = (window.Craft && Craft.csrfTokenName)  || 'CRAFT_CSRF_TOKEN';
             var csrfValue = (window.Craft && Craft.csrfTokenValue) || '';
@@ -1455,6 +1466,7 @@
             fd.append('siteId',      String(CFG.siteId));
             fd.append('viewport',    viewport);
             fd.append('violations',  JSON.stringify(violations));
+            fd.append('incomplete',  JSON.stringify(incomplete));
 
             var res  = await fetch(CFG.storeAxeUrl, { method: 'POST', body: fd, credentials: 'same-origin' });
             var data = await res.json();

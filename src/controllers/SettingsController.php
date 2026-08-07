@@ -382,8 +382,16 @@ class SettingsController extends Controller
         $settings->overlayCollapseWhenIdle = (bool)   $this->request->getBodyParam('settings[overlayCollapseWhenIdle]', $settings->overlayCollapseWhenIdle);
         $settings->overlayPosition = (string) $this->request->getBodyParam('settings[overlayPosition]', $settings->overlayPosition);
         $settings->overlayIdleSeconds = (int)    $this->request->getBodyParam('settings[overlayIdleSeconds]', $settings->overlayIdleSeconds);
-        $settings->chromePath = (string) $this->request->getBodyParam('settings[chromePath]', $settings->chromePath);
-        $settings->chromeNoSandbox = (bool)   $this->request->getBodyParam('settings[chromeNoSandbox]', $settings->chromeNoSandbox);
+        // Server-side browser scanning is a Pro feature, and its settings aren't
+        // rendered on Standard, so leave the stored values alone there rather
+        // than reading whatever was posted. Skipping the read matters on a
+        // downgrade: saving this page on Standard must not wipe the endpoint or
+        // binary path a licence might get back.
+        if ($plugin->isPro()) {
+            $settings->chromePath = (string) $this->request->getBodyParam('settings[chromePath]', $settings->chromePath);
+            $settings->chromeWsEndpoint = (string) $this->request->getBodyParam('settings[chromeWsEndpoint]', $settings->chromeWsEndpoint);
+            $settings->chromeNoSandbox = (bool)   $this->request->getBodyParam('settings[chromeNoSandbox]', $settings->chromeNoSandbox);
+        }
         $settings->scannerUserAgent = (string) $this->request->getBodyParam('settings[scannerUserAgent]', $settings->scannerUserAgent);
         $settings->en301549 = (bool)   $this->request->getBodyParam('settings[en301549]',        $settings->en301549);
         $settings->vpatExportTemplate = (string) $this->request->getBodyParam('settings[vpatExportTemplate]', $settings->vpatExportTemplate);
