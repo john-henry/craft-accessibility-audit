@@ -72,10 +72,19 @@ return [
     // visiting each page. Empty disables it. Prefer an env var reference.
     // 'chromePath' => '$CHROME_PATH',
 
+    // WebSocket URI of an already-running Chrome to connect to instead of
+    // launching a local binary (Pro). Point it at a browserless container, a
+    // Chrome sidecar, or any endpoint speaking the DevTools protocol. This is
+    // the only option on hosts that can't install a binary, such as Craft
+    // Cloud. Takes precedence over chromePath. If the URI carries a token,
+    // keep it in an env var rather than here.
+    // 'chromeWsEndpoint' => '$CHROME_WS_ENDPOINT',
+
     // Whether headless Chrome launches with --no-sandbox. Most containers and
     // CI runners need this on (the default), because Chrome's sandbox can't
     // initialise there. Turn it off on hosts with a working sandbox for
-    // defence in depth.
+    // defence in depth. Ignored when connecting to a remote endpoint, where
+    // launch flags belong to whoever runs the browser.
     // 'chromeNoSandbox' => true,
 
     // User-Agent header sent by the scanner's HTTP fetches and browser passes,

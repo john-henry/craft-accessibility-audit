@@ -75,6 +75,13 @@ class AuditService extends Component
      * the same failure are mapped; axe-only rules (target-size, color-contrast,
      * landmark-unique, …) always store.
      */
+    /**
+     * @var string Rule id for a contrast node axe could not measure. Public
+     * because the rule registry and the report UI both key off it, and a bare
+     * literal in three places drifts silently.
+     */
+    public const RULE_POTENTIAL_CONTRAST = 'potential:contrast-unmeasurable';
+
     private const AXE_EQUIVALENT_PHP_RULES = [
         'image-alt' => 'img-alt',
         'heading-order' => 'heading-order',
@@ -590,8 +597,12 @@ class AuditService extends Component
      * @throws Exception
      * @throws \Exception
      */
-    public function storeAxeIssues(int $scanId, array $axeViolations, string $viewport = self::VIEWPORT_DESKTOP): void
-    {
+    public function storeAxeIssues(
+        int $scanId,
+        array $axeViolations,
+        string $viewport = self::VIEWPORT_DESKTOP,
+        array $axeIncomplete = [],
+    ): void {
         $scan = (new Query())
             ->select(['elementId', 'elementType', 'siteId'])
             ->from('{{%accessibilityaudit_scans}}')
@@ -688,6 +699,8 @@ class AuditService extends Component
                 viewport: $viewport,
             ));
         }
+
+        $this->_storeContrastNeedsReview($scanId, $scan, $axeIncomplete, $viewport);
 
         $this->recalculateScanScore($scanId);
     }
@@ -2672,6 +2685,86 @@ class AuditService extends Component
     }
 
     /** Map an axe rule ID to our internal ruleId (some get a first-class ID, rest get axe: prefix). */
+    /**
+     * Stores axe's undecided contrast results as needs-review items.
+     *
+     * axe returns a node as "incomplete" when it can compute neither a pass nor
+     * a failure, which for contrast means it couldn't resolve what is actually
+     * behind the text: an overlapping element, a background image, a gradient.
+     * A person can settle those by looking, so they go in as `potential:` rows,
+     * sitting in the needs-review bucket and staying out of the score until
+     * someone confirms one.
+     *
+     * Only contrast is taken from the incomplete set. axe returns incomplete
+     * liberally across other rules, and most of those aren't answerable by
+     * looking at the page.
+     *
+     * @param int $scanId The scan being written to.
+     * @param array $scan The scan's element/site row.
+     * @param array $axeIncomplete axe's incomplete results, in the violation payload shape.
+     * @param string $viewport The viewport bucket these results belong to.
+     * @return void
+     */
+    private function _storeContrastNeedsReview(int $scanId, array $scan, array $axeIncomplete, string $viewport): void
+    {
+        foreach ($axeIncomplete as $result) {
+            if (($result['id'] ?? '') !== 'color-contrast') {
+                continue;
+            }
+
+            $wcag = $this->extractWcagFromAxe($result);
+
+            foreach ($result['nodes'] ?? [] as $node) {
+                $html = mb_substr($node['html'] ?? '', 0, 300);
+
+                if ($html === '') {
+                    continue;
+                }
+
+                $this->insertIssue($scanId, $scan['elementId'], $scan['elementType'], $scan['siteId'], IssueModel::make(
+                    ruleId: self::RULE_POTENTIAL_CONTRAST,
+                    severity: 'notice',
+                    message: $this->_contrastNeedsReviewMessage($node['any'][0]['data'] ?? []),
+                    wcagCriterion: $wcag['criterion'] ?? '1.4.3',
+                    wcagLevel: $wcag['level'] ?? 'AA',
+                    // Bare markup, like every other potential issue. The report
+                    // prints the context as-is, matches the element by it for
+                    // "Show on page", and keys the verdict to its hash, so all
+                    // three depend on this staying markup.
+                    context: $html,
+                    helpUrl: $result['helpUrl'] ?? null,
+                    source: 'axe',
+                    viewport: $viewport,
+                ));
+            }
+        }
+    }
+
+    /**
+     * Builds the question shown against an undecided contrast node, phrased by
+     * whichever reason axe gave for not being able to measure it.
+     *
+     * @param array $data The node's contrast check data.
+     * @return string
+     */
+    private function _contrastNeedsReviewMessage(array $data): string
+    {
+        $size = isset($data['fontSize']) ? " The text is {$data['fontSize']}." : '';
+        $needs = $data['expectedContrastRatio'] ?? '4.5:1';
+
+        $reason = match ($data['messageKey'] ?? '') {
+            'bgOverlap' => 'another element sits over it',
+            'bgImage' => 'it sits on a background image',
+            'bgGradient' => 'it sits on a gradient',
+            'imgNode' => 'it sits on an image',
+            'pseudoContent' => 'a CSS pseudo-element covers it',
+            default => 'the background could not be worked out',
+        };
+
+        return "Does this text have enough contrast? It could not be measured automatically because {$reason}."
+            . " Check it against what is actually behind it, which needs {$needs}.{$size}";
+    }
+
     private function _axeRuleId(string $axeId): string
     {
         static $firstClass = ['color-contrast', 'color-contrast-enhanced'];

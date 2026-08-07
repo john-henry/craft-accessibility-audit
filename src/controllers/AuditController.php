@@ -193,6 +193,11 @@ class AuditController extends Controller
         $rawViolations = $this->request->getBodyParam('violations', []);
         $decodedViolations = is_array($rawViolations) ? $rawViolations : Json::decodeIfJson($rawViolations);
         $violations = is_array($decodedViolations) ? $decodedViolations : [];
+        // Contrast nodes axe couldn't measure, posted the same way. Optional:
+        // an older cached overlay script posts violations alone and still works.
+        $rawIncomplete = $this->request->getBodyParam('incomplete', []);
+        $decodedIncomplete = is_array($rawIncomplete) ? $rawIncomplete : Json::decodeIfJson($rawIncomplete);
+        $incomplete = is_array($decodedIncomplete) ? $decodedIncomplete : [];
         $elementId = (int) $this->request->getBodyParam('elementId', 0);
         $elementType = (string) $this->request->getBodyParam('elementType', '');
         $siteId = (int) ($this->request->getBodyParam('siteId') ?: Craft::$app->getSites()->getPrimarySite()->id);
@@ -217,7 +222,7 @@ class AuditController extends Controller
         // authoritative combined score rather than its own axe-only estimate.
         $summary = null;
         if ($scanId > 0) {
-            $audit->storeAxeIssues($scanId, $violations, $this->_resolveViewport());
+            $audit->storeAxeIssues($scanId, $violations, $this->_resolveViewport(), $incomplete);
             $scan = $audit->getScanSummary($scanId);
             if ($scan !== null) {
                 $summary = [

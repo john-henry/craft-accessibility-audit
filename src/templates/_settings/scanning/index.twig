@@ -77,7 +77,7 @@
         disabled: config.chromePath is defined,
     }) }}
 
-    {% if settings.chromePath %}
+    {% if settings.chromePath and not settings.chromeWsEndpoint %}
         {% if headlessAvailable ?? false %}
             <p class="light"><span aria-hidden="true">✓</span> {{ 'Chrome binary found. Queued scans will include the browser pass.'|t('accessibility-audit') }}</p>
         {% else %}
@@ -85,9 +85,27 @@
         {% endif %}
     {% endif %}
 
+    {{ forms.autosuggestField({
+        label: 'Remote Chrome Endpoint'|t('accessibility-audit'),
+        instructions: 'Connect to a Chrome that is already running somewhere else, instead of launching one here. Point this at a browserless container, a Chrome sidecar, or any endpoint speaking the DevTools protocol. This is the only way to run browser scans on hosts where you cannot install a binary, such as Craft Cloud. When set, it is used instead of the binary path above. If the URI carries a token, store it in an environment variable: type $ to see suggestions.'|t('accessibility-audit'),
+        id: 'chromeWsEndpoint',
+        name: 'settings[chromeWsEndpoint]',
+        value: settings.chromeWsEndpoint,
+        suggestEnvVars: true,
+        suggestAliases: false,
+        placeholder: '$CHROME_WS_ENDPOINT or wss://host?token=…',
+        errors: settings.getErrors('chromeWsEndpoint'),
+        warning: config.chromeWsEndpoint is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.chromeWsEndpoint is defined,
+    }) }}
+
+    {% if settings.chromeWsEndpoint %}
+        <p class="light">{{ 'Queued scans will connect to this endpoint. The binary path above is ignored while it is set, and the browser is never checked until a scan actually runs, so watch the logs after the next one.'|t('accessibility-audit') }}</p>
+    {% endif %}
+
     {{ forms.lightswitchField({
         label: 'Launch Chrome Without Sandbox'|t('accessibility-audit'),
-        instructions: 'Most containers and CI runners need this on, because Chrome\'s sandbox can\'t initialise there. If your server runs Chrome under a dedicated user with a working sandbox, turn it off for defence in depth. If browser scans fail after turning it off, the sandbox is the first thing to check in the logs.'|t('accessibility-audit'),
+        instructions: 'Most containers and CI runners need this on, because Chrome\'s sandbox can\'t initialise there. If your server runs Chrome under a dedicated user with a working sandbox, turn it off for defence in depth. If browser scans fail after turning it off, the sandbox is the first thing to check in the logs. This has no effect on a remote endpoint, where launch flags belong to whoever runs the browser.'|t('accessibility-audit'),
         id: 'chromeNoSandbox',
         name: 'settings[chromeNoSandbox]',
         on: settings.chromeNoSandbox,
