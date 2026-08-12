@@ -203,6 +203,13 @@ class HeadlessScanner extends Component
                     'keepAlive' => false,
                     'startupTimeout' => 30,
                     'windowSize' => $size,
+                    'customFlags' => [
+                        // Chrome renders into /dev/shm, which containers and
+                        // starved queue workers often cap far below what a page
+                        // render needs; this moves shared memory to /tmp so the
+                        // browser doesn't crash mid-scan when it fills.
+                        '--disable-dev-shm-usage',
+                    ],
                 ]);
             }
 

@@ -1,5 +1,10 @@
 # Release Notes for Accessibility Audit
 
+## 1.0.8-beta.1 - 2026-08-12
+
+### Fixed
+- Server-side browser scans could crash partway through a page on servers with limited shared memory, a common setup on containers and managed VPS hosting. Chrome is now told to keep its working memory out of the shared memory area, so those scans complete instead of dying quietly.
+
 ## 1.0.7-beta.1 - 2026-08-07
 
 ### Added
