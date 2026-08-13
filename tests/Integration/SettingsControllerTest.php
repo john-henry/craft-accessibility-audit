@@ -106,6 +106,7 @@ describe('SettingsController browser scanning gating', function() {
             'path' => $settings->chromePath,
             'endpoint' => $settings->chromeWsEndpoint,
             'noSandbox' => $settings->chromeNoSandbox,
+            'settleMs' => $settings->browserSettleMs,
         ];
     });
 
@@ -116,6 +117,7 @@ describe('SettingsController browser scanning gating', function() {
         $settings->chromePath = $this->storedChrome['path'];
         $settings->chromeWsEndpoint = $this->storedChrome['endpoint'];
         $settings->chromeNoSandbox = $this->storedChrome['noSandbox'];
+        $settings->browserSettleMs = $this->storedChrome['settleMs'];
     });
 
     it('ignores a posted Chrome endpoint on Standard', function() {
@@ -169,5 +171,22 @@ describe('SettingsController browser scanning gating', function() {
 
         expect($settings->chromeWsEndpoint)->toBe('wss://browserless.example.com/?token=x')
             ->and($settings->chromePath)->toBe('/usr/bin/chromium');
+    });
+
+    it('ignores a posted settle time on Standard', function() {
+        AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_STANDARD;
+
+        saveSettings(['browserSettleMs' => (string) ($this->storedChrome['settleMs'] + 500)]);
+
+        expect(AccessibilityAudit::getInstance()->getSettings()->browserSettleMs)
+            ->toBe($this->storedChrome['settleMs']);
+    });
+
+    it('lets Pro tune the settle time', function() {
+        AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
+
+        saveSettings(['browserSettleMs' => '500']);
+
+        expect(AccessibilityAudit::getInstance()->getSettings()->browserSettleMs)->toBe(500);
     });
 });

@@ -391,6 +391,7 @@ class SettingsController extends Controller
             $settings->chromePath = (string) $this->request->getBodyParam('settings[chromePath]', $settings->chromePath);
             $settings->chromeWsEndpoint = (string) $this->request->getBodyParam('settings[chromeWsEndpoint]', $settings->chromeWsEndpoint);
             $settings->chromeNoSandbox = (bool)   $this->request->getBodyParam('settings[chromeNoSandbox]', $settings->chromeNoSandbox);
+            $settings->browserSettleMs = (int)    $this->request->getBodyParam('settings[browserSettleMs]', $settings->browserSettleMs);
         }
         $settings->scannerUserAgent = (string) $this->request->getBodyParam('settings[scannerUserAgent]', $settings->scannerUserAgent);
         $settings->en301549 = (bool)   $this->request->getBodyParam('settings[en301549]',        $settings->en301549);

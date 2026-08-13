@@ -212,14 +212,22 @@ describe('AssetScanner volume-scoped clear and stats', function() {
         $before = $assets->getStoredAssetStats();
         expect($before['withIssues'])->toBe(2);
 
+        // The dev database may hold real images in this volume beyond the one
+        // the test inserted, so measure what the exclusion should remove from
+        // the denominator rather than assuming the volume held exactly one.
+        $excludedImages = (int)(new Query())
+            ->from('{{%assets}}')
+            ->where(['kind' => Asset::KIND_IMAGE, 'volumeId' => (int)$volumes[0]->id])
+            ->count();
+
         AccessibilityAudit::getInstance()->getSettings()->excludedVolumes = [$volumes[0]->uid];
 
         $stats = $assets->getStoredAssetStats();
         expect($stats['withIssues'])->toBe(1)
             ->and($stats['byRule'])->toEqual(['asset-alt-missing' => 1])
-            // The total is the audited library, so the excluded volume's image
-            // leaves the denominator too, not just the issue counts.
-            ->and($stats['total'])->toBe($before['total'] - 1);
+            // The total is the audited library, so the excluded volume's images
+            // leave the denominator too, not just the issue counts.
+            ->and($stats['total'])->toBe($before['total'] - $excludedImages);
     });
 });
 

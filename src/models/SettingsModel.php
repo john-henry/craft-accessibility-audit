@@ -10,6 +10,7 @@ use craft\base\Model;
 use craft\helpers\App;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\helpers\ScannableElementTypes;
+use johnhenry\accessibilityaudit\services\HeadlessScanner;
 
 /**
  * Stores the plugin's settings.
@@ -124,6 +125,14 @@ class SettingsModel extends Model
      * binary: a remote browser is launched by whoever runs it.
      */
     public bool $chromeNoSandbox = true;
+
+    /**
+     * @var int Milliseconds the headless browser pass waits after a page has
+     * loaded before running the axe checks, so late-rendering JavaScript can
+     * finish. Paid once per viewport pass, so on large sites it is one of the
+     * biggest levers on total scan time. 0 skips the wait entirely.
+     */
+    public int $browserSettleMs = 2000;
 
     /**
      * @var string Overrides the User-Agent for every scanner request against
@@ -398,6 +407,7 @@ class SettingsModel extends Model
             [['resolvedRetention'], 'in', 'range' => [self::RESOLVED_RETENTION_WITH_SCANS, self::RESOLVED_RETENTION_KEEP_DAYS, self::RESOLVED_RETENTION_FOREVER]],
             [['overlayPosition'], 'in', 'range' => ['bottom-right', 'bottom-left', 'top-right', 'top-left']],
             [['overlayIdleSeconds'], 'integer', 'min' => 3, 'max' => 600],
+            [['browserSettleMs'], 'integer', 'min' => 0, 'max' => HeadlessScanner::MAX_SETTLE_MS],
             [['notifyEmailEnabled', 'notifySlackEnabled', 'notifyOnNewError', 'notifyOnScoreDrop'], 'boolean'],
             [['retainDays'], 'integer', 'min' => 0],
             [['targetScore'], 'integer', 'min' => 0, 'max' => 100],
@@ -427,6 +437,7 @@ class SettingsModel extends Model
             'chromePath' => 'Chrome Binary Path',
             'chromeWsEndpoint' => 'Remote Chrome Endpoint',
             'chromeNoSandbox' => 'Launch Chrome Without Sandbox',
+            'browserSettleMs' => 'Browser Settle Time (ms)',
             'scannerUserAgent' => 'Scanner User-Agent',
             'ignoreRules' => 'Ignored Rules',
             'excludedUriPatterns' => 'Excluded URI Patterns',

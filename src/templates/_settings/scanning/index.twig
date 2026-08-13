@@ -113,6 +113,22 @@
         warning: config.chromeNoSandbox is defined ? 'Overridden by config file.'|t('accessibility-audit'),
         disabled: config.chromeNoSandbox is defined,
     }) }}
+
+    {{ forms.textField({
+        label: 'Browser Settle Time (ms)'|t('accessibility-audit'),
+        instructions: 'How long each browser pass waits after the page loads before running the checks, in milliseconds, so late-rendering JavaScript can finish. The wait is paid on every pass (twice per page, desktop and mobile), so on a large site it is one of the biggest levers on total scan time. Plenty of sites are fine at 500. Set 0 to skip the wait entirely; raise it if client-rendered content is being missed.'|t('accessibility-audit'),
+        id: 'browserSettleMs',
+        name: 'settings[browserSettleMs]',
+        value: settings.browserSettleMs,
+        type: 'number',
+        min: 0,
+        max: 15000,
+        step: 100,
+        size: 6,
+        errors: settings.getErrors('browserSettleMs'),
+        warning: config.browserSettleMs is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.browserSettleMs is defined,
+    }) }}
     {% endif %}
 
     <hr>

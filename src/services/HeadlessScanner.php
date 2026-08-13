@@ -62,6 +62,15 @@ class HeadlessScanner extends Component
     private const PAGE_TIMEOUT_MS = 60000;
 
     /**
+     * @var int Upper bound on the configurable render-settle wait, in
+     * milliseconds. Shared with the settings model's validation rule, and
+     * enforced again at scan time because config-file overrides bypass model
+     * validation entirely. Keeps a stray value from eating most of
+     * PAGE_TIMEOUT_MS before axe even runs.
+     */
+    public const MAX_SETTLE_MS = 15000;
+
+    /**
      * @var string Origin sent on the WebSocket opening handshake to a remote
      * browser. The DevTools protocol ignores it, but the handshake is invalid
      * without one.
@@ -135,6 +144,10 @@ class HeadlessScanner extends Component
      * could measure neither way, which are stored as needs-review items rather
      * than counted against the score.
      *
+     * Single-viewport convenience over [[scanUrlViewports()]]. Anything
+     * scanning more than one viewport for the same URL must call that instead,
+     * so the passes share one browser.
+     *
      * @param string $url The absolute URL to scan.
      * @param string $viewport The viewport bucket to render at (a VIEWPORTS key).
      * @return array{violations: array, incomplete: array}|null The axe findings, or null on failure.
@@ -143,143 +156,70 @@ class HeadlessScanner extends Component
      */
     public function scanUrl(string $url, string $viewport = AuditService::VIEWPORT_DESKTOP): ?array
     {
-        if (!$this->isAvailable()) {
-            return null;
+        return $this->scanUrlViewports($url, [$viewport])[$viewport] ?? null;
+    }
+
+    /**
+     * Runs axe-core passes against the given URL at several viewports, sharing
+     * one browser across all of them.
+     *
+     * The browser (local launch or remote connection) is acquired once and
+     * reused for every viewport, halving Chrome cold starts compared to one
+     * `scanUrl()` call per viewport. On multi-thousand-page sites that launch
+     * cost dominates the whole scan, so batch callers (HeadlessScanJob) must
+     * come through here rather than looping `scanUrl()`.
+     *
+     * Each viewport renders in its own fresh tab, so a failed pass (logged
+     * internally) yields null for that key only: the other viewports' findings
+     * stand on their own. A browser that can't be acquired at all yields null
+     * for every key.
+     *
+     * @param string $url The absolute URL to scan.
+     * @param string[] $viewports The viewport buckets to render at (VIEWPORTS keys).
+     * @return array<string, array{violations: array, incomplete: array}|null> Findings keyed by viewport, null per failed pass.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    public function scanUrlViewports(string $url, array $viewports): array
+    {
+        $results = array_fill_keys($viewports, null);
+
+        if ($viewports === [] || !$this->isAvailable()) {
+            return $results;
         }
 
         $axeSource = $this->_loadAxeSource();
         if ($axeSource === null) {
-            return null;
+            return $results;
         }
 
-        $browser = null;
-        $page = null;
-        $endpoint = $this->chromeWsEndpoint();
-        $isRemote = $endpoint !== '';
+        $isRemote = $this->chromeWsEndpoint() !== '';
+        $browser = $this->_acquireBrowser($url);
+
+        if ($browser === null) {
+            return $results;
+        }
 
         try {
-            $settings = AccessibilityAudit::getInstance()->getSettings();
-            $size = self::VIEWPORTS[$viewport] ?? self::VIEWPORTS[AuditService::VIEWPORT_DESKTOP];
-
-            if ($isRemote) {
-                // Connecting to a browser someone else launched, so none of the
-                // launch flags below are ours to set: sandboxing and certificate
-                // policy belong to whoever runs the endpoint. Viewport and User-
-                // Agent are applied per page instead, just after this.
-                //
-                // Assembled here rather than via BrowserFactory::connectToBrowser(),
-                // which cannot complete a handshake against a remote server.
-                // See RemoteChromeClient.
-                $connection = new Connection(
-                    new WrenchSocket(new RemoteChromeClient($endpoint, self::HANDSHAKE_ORIGIN)),
-                    null,
-                    self::PAGE_TIMEOUT_MS,
-                );
-
-                if (!$connection->connect()) {
-                    Craft::warning(
-                        "HeadlessScanner: could not connect to the remote Chrome endpoint for {$url}. " .
-                        'Check the endpoint is reachable from the machine running the queue.',
-                        'accessibility-audit',
-                    );
-
-                    return null;
-                }
-
-                $browser = new Browser($connection);
-            } else {
-                $factory = new BrowserFactory($this->chromePath());
-                $browser = $factory->createBrowser([
-                    'headless' => true,
-                    // Most containers and CI runners have no usable Chrome sandbox,
-                    // so this defaults on; hosts with a working sandbox can turn it
-                    // off in settings for defence in depth.
-                    'noSandbox' => (bool)$settings->chromeNoSandbox,
-                    // Same TLS policy as the PHP fetch (AuditService::_verifyTls):
-                    // self-signed certs pass in dev/ephemeral environments and are
-                    // verified everywhere else, so Chrome doesn't stop at its own
-                    // interstitial and audit that screen instead of the site.
-                    'ignoreCertificateErrors' => App::isEphemeral() || Craft::$app->getConfig()->getGeneral()->devMode,
-                    'keepAlive' => false,
-                    'startupTimeout' => 30,
-                    'windowSize' => $size,
-                    'customFlags' => [
-                        // Chrome renders into /dev/shm, which containers and
-                        // starved queue workers often cap far below what a page
-                        // render needs; this moves shared memory to /tmp so the
-                        // browser doesn't crash mid-scan when it fills.
-                        '--disable-dev-shm-usage',
-                    ],
-                ]);
+            foreach ($viewports as $viewport) {
+                $results[$viewport] = $this->_runViewportPass($browser, $url, $viewport, $axeSource);
             }
-
-            $page = $browser->createPage();
-
-            // Both applied per page rather than as launch options, because
-            // connectToBrowser() accepts neither and would drop them silently.
-            // The viewport override is what makes the mobile pass genuinely
-            // mobile, so a remote browser must not skip it.
-            $page->setViewport($size[0], $size[1])->await(self::PAGE_TIMEOUT_MS);
-
-            // The browser pass identifies itself too, so one WAF rule allow-lists
-            // it alongside the HTTP fetches. Default keeps a realistic Chrome UA
-            // with the token appended; an admin override replaces it wholesale.
-            $page->setUserAgent($settings->getBrowserUserAgent())->await(self::PAGE_TIMEOUT_MS);
-
-            $page->navigate($url)->waitForNavigation(Page::LOAD, self::PAGE_TIMEOUT_MS);
-
-            // Chrome serves its own interstitial from chrome-error://chromewebdata
-            // when navigation fails (bad cert, DNS, refused connection), and axe
-            // would audit that screen instead. Certificate errors are ignored
-            // above for local dev; this catches the rest, including an expired
-            // certificate in production.
-            $landed = (string) $page->evaluate('document.location.href')->getReturnValue(self::PAGE_TIMEOUT_MS);
-
-            if (str_starts_with($landed, 'chrome-error://')) {
-                Craft::warning(
-                    "HeadlessScanner: {$url} did not load in Chrome (navigation failed, often a certificate " .
-                    'or connection problem). Skipping rather than scanning the browser error page.',
-                    'accessibility-audit',
-                );
-
-                return null;
-            }
-
-            // Give late-rendering JS the same settle time the overlay allows.
-            usleep(2000000);
-
-            $page->evaluate($axeSource)->waitForResponse(self::PAGE_TIMEOUT_MS);
-
-            $result = $page->evaluate($this->_axeRunScript())->getReturnValue(self::PAGE_TIMEOUT_MS);
-            $decoded = is_string($result) ? Json::decodeIfJson($result) : null;
-
-            if (!is_array($decoded) || !isset($decoded['violations']) || !is_array($decoded['violations'])) {
-                Craft::warning("HeadlessScanner: unexpected axe result for {$url}", 'accessibility-audit');
-                return null;
-            }
-
-            return [
-                'violations' => $decoded['violations'],
-                'incomplete' => is_array($decoded['incomplete'] ?? null) ? $decoded['incomplete'] : [],
-            ];
-        } catch (Throwable $e) {
-            Craft::error("HeadlessScanner: scan of {$url} failed: " . $e->getMessage(), 'accessibility-audit');
-            return null;
         } finally {
             try {
                 if ($isRemote) {
                     // Browser::close() sends Browser.close, which would shut the
                     // remote Chrome down under every other client sharing it.
-                    // Drop this page and hang up instead.
-                    $page?->close();
-                    $browser?->getConnection()->disconnect();
+                    // Hang up instead; the per-pass tabs are already closed.
+                    $browser->getConnection()->disconnect();
                 } else {
-                    $browser?->close();
+                    $browser->close();
                 }
             } catch (Throwable) {
                 // Chrome already gone: nothing to clean up.
             }
         }
+
+        return $results;
     }
 
     /**
@@ -331,6 +271,172 @@ class HeadlessScanner extends Component
 
     // Private Methods
     // =========================================================================
+
+    /**
+     * Acquires a browser to scan with: a connection to the remote endpoint
+     * when one is configured, otherwise a freshly launched local binary.
+     * Returns null on any failure (logged internally).
+     *
+     * The local launch uses the desktop window size regardless of which
+     * viewports will run: every pass sets its real viewport per page anyway
+     * (see _runViewportPass), and per-page is the only way a remote browser
+     * can be sized at all.
+     *
+     * @param string $url The URL being scanned, for log context only.
+     * @return Browser|null
+     */
+    private function _acquireBrowser(string $url): ?Browser
+    {
+        $endpoint = $this->chromeWsEndpoint();
+
+        try {
+            if ($endpoint !== '') {
+                // Connecting to a browser someone else launched, so none of the
+                // launch flags below are ours to set: sandboxing and certificate
+                // policy belong to whoever runs the endpoint.
+                //
+                // Assembled here rather than via BrowserFactory::connectToBrowser(),
+                // which cannot complete a handshake against a remote server.
+                // See RemoteChromeClient.
+                $connection = new Connection(
+                    new WrenchSocket(new RemoteChromeClient($endpoint, self::HANDSHAKE_ORIGIN)),
+                    null,
+                    self::PAGE_TIMEOUT_MS,
+                );
+
+                if (!$connection->connect()) {
+                    Craft::warning(
+                        "HeadlessScanner: could not connect to the remote Chrome endpoint for {$url}. " .
+                        'Check the endpoint is reachable from the machine running the queue.',
+                        'accessibility-audit',
+                    );
+
+                    return null;
+                }
+
+                return new Browser($connection);
+            }
+
+            $settings = AccessibilityAudit::getInstance()->getSettings();
+            $factory = new BrowserFactory($this->chromePath());
+
+            return $factory->createBrowser([
+                'headless' => true,
+                // Most containers and CI runners have no usable Chrome sandbox,
+                // so this defaults on; hosts with a working sandbox can turn it
+                // off in settings for defence in depth.
+                'noSandbox' => (bool)$settings->chromeNoSandbox,
+                // Same TLS policy as the PHP fetch (AuditService::_verifyTls):
+                // self-signed certs pass in dev/ephemeral environments and are
+                // verified everywhere else, so Chrome doesn't stop at its own
+                // interstitial and audit that screen instead of the site.
+                'ignoreCertificateErrors' => App::isEphemeral() || Craft::$app->getConfig()->getGeneral()->devMode,
+                'keepAlive' => false,
+                'startupTimeout' => 30,
+                'windowSize' => self::VIEWPORTS[AuditService::VIEWPORT_DESKTOP],
+                'customFlags' => [
+                    // Chrome renders into /dev/shm, which containers and
+                    // starved queue workers often cap far below what a page
+                    // render needs; this moves shared memory to /tmp so the
+                    // browser doesn't crash mid-scan when it fills.
+                    '--disable-dev-shm-usage',
+                ],
+            ]);
+        } catch (Throwable $e) {
+            Craft::error("HeadlessScanner: could not start a browser for {$url}: " . $e->getMessage(), 'accessibility-audit');
+
+            return null;
+        }
+    }
+
+    /**
+     * Renders the URL at one viewport in a fresh tab on an already-acquired
+     * browser and runs the axe pass there. Returns null on any failure (logged
+     * internally); the tab is closed either way so passes never pile pages
+     * onto a shared browser.
+     *
+     * @param Browser $browser The browser to open the tab on.
+     * @param string $url The absolute URL to scan.
+     * @param string $viewport The viewport bucket to render at (a VIEWPORTS key).
+     * @param string $axeSource The axe-core source to inject.
+     * @return array{violations: array, incomplete: array}|null
+     */
+    private function _runViewportPass(Browser $browser, string $url, string $viewport, string $axeSource): ?array
+    {
+        $page = null;
+
+        try {
+            $settings = AccessibilityAudit::getInstance()->getSettings();
+            $size = self::VIEWPORTS[$viewport] ?? self::VIEWPORTS[AuditService::VIEWPORT_DESKTOP];
+
+            $page = $browser->createPage();
+
+            // Both applied per page rather than as launch options, because a
+            // remote browser accepts neither at connect time. The viewport
+            // override is also what makes each pass on the shared browser
+            // genuinely desktop or mobile.
+            $page->setViewport($size[0], $size[1])->await(self::PAGE_TIMEOUT_MS);
+
+            // The browser pass identifies itself too, so one WAF rule allow-lists
+            // it alongside the HTTP fetches. Default keeps a realistic Chrome UA
+            // with the token appended; an admin override replaces it wholesale.
+            $page->setUserAgent($settings->getBrowserUserAgent())->await(self::PAGE_TIMEOUT_MS);
+
+            $page->navigate($url)->waitForNavigation(Page::LOAD, self::PAGE_TIMEOUT_MS);
+
+            // Chrome serves its own interstitial from chrome-error://chromewebdata
+            // when navigation fails (bad cert, DNS, refused connection), and axe
+            // would audit that screen instead. Certificate errors are ignored
+            // at launch for local dev; this catches the rest, including an
+            // expired certificate in production.
+            $landed = (string) $page->evaluate('document.location.href')->getReturnValue(self::PAGE_TIMEOUT_MS);
+
+            if (str_starts_with($landed, 'chrome-error://')) {
+                Craft::warning(
+                    "HeadlessScanner: {$url} did not load in Chrome (navigation failed, often a certificate " .
+                    'or connection problem). Skipping rather than scanning the browser error page.',
+                    'accessibility-audit',
+                );
+
+                return null;
+            }
+
+            // Give late-rendering JS time to settle before axe runs. Paid on
+            // every pass, so it dominates large scans; the admin-tuned setting
+            // is clamped here as well as in validation because config-file
+            // overrides skip the model rules.
+            $settleMs = min(max($settings->browserSettleMs, 0), self::MAX_SETTLE_MS);
+
+            if ($settleMs > 0) {
+                usleep($settleMs * 1000);
+            }
+
+            $page->evaluate($axeSource)->waitForResponse(self::PAGE_TIMEOUT_MS);
+
+            $result = $page->evaluate($this->_axeRunScript())->getReturnValue(self::PAGE_TIMEOUT_MS);
+            $decoded = is_string($result) ? Json::decodeIfJson($result) : null;
+
+            if (!is_array($decoded) || !isset($decoded['violations']) || !is_array($decoded['violations'])) {
+                Craft::warning("HeadlessScanner: unexpected axe result for {$url}", 'accessibility-audit');
+                return null;
+            }
+
+            return [
+                'violations' => $decoded['violations'],
+                'incomplete' => is_array($decoded['incomplete'] ?? null) ? $decoded['incomplete'] : [],
+            ];
+        } catch (Throwable $e) {
+            Craft::error("HeadlessScanner: {$viewport} scan of {$url} failed: " . $e->getMessage(), 'accessibility-audit');
+
+            return null;
+        } finally {
+            try {
+                $page?->close();
+            } catch (Throwable) {
+                // Page already gone with its browser: nothing to clean up.
+            }
+        }
+    }
 
     /**
      * Reads the bundled axe-core source, memoized per request.

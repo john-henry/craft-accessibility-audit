@@ -17,8 +17,9 @@ use yii\db\Exception;
  * Runs server-side axe-core browser passes against one page and stores the
  * findings on its scan record.
  *
- * The page is rendered once per viewport bucket (desktop and mobile), each
- * pass stored into its own bucket, so mobile-only failures (target size,
+ * The page is rendered once per viewport bucket (desktop and mobile) on a
+ * single shared browser, each pass stored into its own bucket, so mobile-only
+ * failures (target size,
  * breakpoint-dependent contrast and landmarks) are caught without an admin
  * ever visiting the page on a phone. Queued after a successful PHP scan when
  * headless Chrome is configured (Pro). Results feed
@@ -75,13 +76,15 @@ class HeadlessScanJob extends BaseJob
             return;
         }
 
-        // One pass per viewport bucket, each replacing only its own bucket.
-        // A failed pass (null, already logged) skips just that viewport: the
-        // PHP scan results and the other viewport's findings stand on their
-        // own, and carried-forward overlay data is untouched.
-        foreach (array_keys(HeadlessScanner::VIEWPORTS) as $viewport) {
-            $findings = $plugin->headless->scanUrl($this->url, $viewport);
+        // One pass per viewport bucket on a single shared browser (launching
+        // Chrome per viewport doubles the cost of large scans), each pass
+        // replacing only its own bucket. A failed pass (null, already logged)
+        // skips just that viewport: the PHP scan results and the other
+        // viewport's findings stand on their own, and carried-forward overlay
+        // data is untouched.
+        $results = $plugin->headless->scanUrlViewports($this->url, array_keys(HeadlessScanner::VIEWPORTS));
 
+        foreach ($results as $viewport => $findings) {
             if ($findings === null) {
                 continue;
             }
