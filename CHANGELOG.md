@@ -1,5 +1,16 @@
 # Release Notes for Accessibility Audit
 
+## 1.0.9-beta.1 - 2026-08-13
+
+### Added
+- A new **Browser Settle Time** setting under **Settings → Scanning** controls how long the browser pass waits after a page loads before running its checks, so late-rendering JavaScript can finish. It has always waited 2 seconds, and that is still the default, but the wait is paid on every pass, so on a big site it adds up to hours. Plenty of sites are fine at 500 milliseconds, and you can set 0 to skip the wait entirely.
+
+### Changed
+- The browser pass now renders the desktop and mobile checks for a page in one Chrome session instead of starting a fresh one for each. On a site with thousands of pages that halves the browser starts, which takes a serious chunk off the total scan time. Nothing changes in the results themselves.
+
+### Fixed
+- On large sites, a queued site-wide scan could quietly miss some pages and scan others twice, because the database was free to hand the pages back in a different order for each batch. The sweep now works through pages in a fixed order, so every page is scanned exactly once.
+
 ## 1.0.8-beta.1 - 2026-08-12
 
 ### Fixed

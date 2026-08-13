@@ -487,7 +487,12 @@ class AuditService extends Component
             // Cover only the configured element types. The resolved list never
             // includes Asset (handled by the alt-text audit), so this replaces
             // the old blanket Asset exclusion. An empty list scans nothing.
-            ->andWhere(['e.type' => AccessibilityAudit::getInstance()->getSettings()->resolvedScannedElementTypes()]);
+            ->andWhere(['e.type' => AccessibilityAudit::getInstance()->getSettings()->resolvedScannedElementTypes()])
+            // Deterministic order is load-bearing for the batched queue job:
+            // QueryBatcher pages with LIMIT/OFFSET, and without a total order
+            // the database may return rows in a different order per page,
+            // silently skipping some elements and scanning others twice.
+            ->orderBy(['es.elementId' => SORT_ASC]);
     }
 
     /** @return array{scanId: int, score: int, issues: IssueModel[], limitReached?: bool} */
