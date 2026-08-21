@@ -639,7 +639,6 @@ class AccessibilityAudit extends BasePlugin
             UrlManager::EVENT_REGISTER_CP_URL_RULES,
             function(RegisterUrlRulesEvent $e) {
                 $e->rules = array_merge([
-                    'settings/plugins/accessibility-audit' => 'accessibility-audit/settings/edit',
                     'accessibility-audit' => 'accessibility-audit/dashboard/index',
                     'accessibility-audit/issues' => 'accessibility-audit/dashboard/issues',
                     'accessibility-audit/issues/detail' => 'accessibility-audit/dashboard/issue-detail',

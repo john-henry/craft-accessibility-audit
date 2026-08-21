@@ -1,5 +1,10 @@
 # Release Notes for Accessibility Audit
 
+## 1.0.10-beta.1 - 2026-08-21
+
+### Fixed
+- The Accessibility Audit link on **Settings → Plugins** gave a 404 instead of opening the plugin settings. The settings pages themselves were always fine, and reachable through the plugin's own sidebar, but the standard route in from the Settings page was broken. It now lands you on the settings like any other plugin. ([#1](https://github.com/john-henry/craft-accessibility-audit/issues/1))
+
 ## 1.0.9-beta.1 - 2026-08-13
 
 ### Added
