@@ -985,6 +985,27 @@
         return out;
     }
 
+    /* Alt-text questions store the alt itself, which no text matcher can
+       reach: images have no text content. Match the attribute instead; a
+       trailing ellipsis means the stored copy was truncated, so compare as
+       a prefix. */
+    function matchByAlt(doc, ctx) {
+        var needle = (ctx || '').trim();
+        var prefix = needle.slice(-1) === '…';
+        if (prefix) needle = needle.slice(0, -1).trim();
+        if (!needle) return [];
+
+        var out = [];
+        try {
+            doc.querySelectorAll('[alt]').forEach(function (el) {
+                var alt = (el.getAttribute('alt') || '').trim();
+                if (prefix ? alt.indexOf(needle) === 0 : alt === needle) out.push(el);
+            });
+        } catch (_) {}
+
+        return out;
+    }
+
     /* Finds elements by their text, for contexts that are not markup: the
        potential checks store a plain string rather than HTML (a paragraph's
        own text, or a link's text wrapped in quotes), which findElementByContext
@@ -1059,6 +1080,9 @@
             }
         } else if (ctx) {
             found = matchByText(doc, selector, ctx);
+            if (found.length === 0) {
+                found = matchByAlt(doc, ctx);
+            }
         }
 
         if (found.length === 0) {
@@ -2055,7 +2079,7 @@
             if (!card) { return; }
 
             var viaButton = e.target.closest('[data-highlight]');
-            if (!viaButton && e.target.closest('button')) { return; }
+            if (!viaButton && e.target.closest('button, label, input')) { return; }
 
             highlightPotential(card.dataset.ruleId, card.dataset.context || '');
         });
@@ -2106,6 +2130,84 @@
                     }
                 });
         });
+
+        /* Bulk dismissal: one judgment repeated fifty times deserves one
+           click. Selection is per card; the ruling posts as one request and
+           the reload paints the server-rendered counts, same as a single
+           ruling does. */
+        var bulkBar = document.getElementById('accessibility-audit-pr-bulk-bar');
+        var bulkEndpoint = (window.AccessibilityAudit || {}).setVerdictsBulkUrl;
+        if (bulkBar && bulkEndpoint) {
+            var bulkAll = document.getElementById('accessibility-audit-pr-bulk-all');
+            var bulkBtn = document.getElementById('accessibility-audit-pr-bulk-dismiss');
+            var bulkStatus = document.getElementById('accessibility-audit-pr-bulk-status');
+
+            function bulkPicks() {
+                return Array.prototype.slice.call(wrap.querySelectorAll('[data-bulk-pick]:checked'));
+            }
+
+            function refreshBulk() {
+                var count = bulkPicks().length;
+                bulkBtn.disabled = count === 0;
+                bulkBtn.textContent = count > 0
+                    ? Craft.t('accessibility-audit', 'Dismiss selected') + ' (' + count + ')'
+                    : Craft.t('accessibility-audit', 'Dismiss selected');
+            }
+
+            wrap.addEventListener('change', function (e) {
+                if (!e.target.matches('[data-bulk-pick]')) return;
+                refreshBulk();
+            });
+
+            bulkAll.addEventListener('change', function () {
+                wrap.querySelectorAll('[data-bulk-pick]').forEach(function (box) {
+                    box.checked = bulkAll.checked;
+                });
+                refreshBulk();
+            });
+
+            bulkBtn.addEventListener('click', function () {
+                var picked = bulkPicks();
+                if (!picked.length) return;
+
+                var items = picked.map(function (box) {
+                    var card = box.closest('[data-accessibility-audit-review]');
+                    return card ? { ruleId: card.dataset.ruleId || '', context: card.dataset.context || '' } : null;
+                }).filter(Boolean);
+
+                bulkBtn.disabled = true;
+                if (bulkStatus) { bulkStatus.textContent = Craft.t('accessibility-audit', 'Saving…'); }
+
+                var token = csrf();
+                var body = new FormData();
+                body.append(token.name, token.value);
+                body.append('elementId', CFG.elementId);
+                body.append('siteId', CFG.siteId);
+                body.append('verdict', 'dismissed');
+                body.append('items', JSON.stringify(items));
+
+                fetch(bulkEndpoint, {
+                    method: 'POST',
+                    body: body,
+                    headers: { 'Accept': 'application/json' },
+                    credentials: 'same-origin',
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (!data || !data.success) {
+                            throw new Error((data && data.error) || 'failed');
+                        }
+                        window.location.reload();
+                    })
+                    .catch(function () {
+                        bulkBtn.disabled = false;
+                        if (bulkStatus) { bulkStatus.textContent = ''; }
+                        if (window.Craft && Craft.cp) {
+                            Craft.cp.displayError(Craft.t('accessibility-audit', 'Could not save that. Try again.'));
+                        }
+                    });
+            });
+        }
     })();
 
 })();

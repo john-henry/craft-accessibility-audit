@@ -3218,12 +3218,41 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
    shortcut for the "Show on page" button, so it stays a hover hint rather
    than pretending to be a control. */
 .accessibility-audit-pr-review {
+  position: relative;
   background: var(--aa-surface-tint);
   border: 1px solid var(--aa-border-section);
   border-radius: var(--aa-radius-small, 4px);
   padding: 8px 10px;
   margin-bottom: 6px;
   cursor: pointer;
+}
+
+/* Bulk dismissal: the selection bar above the queue, and a pick box on the
+   top-right corner of each card. */
+.accessibility-audit-pr-bulk {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.accessibility-audit-pr-bulk__all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.accessibility-audit-pr-review__pick {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.accessibility-audit-pr-review:has(.accessibility-audit-pr-review__pick) .accessibility-audit-pr-review__ctx,
+.accessibility-audit-pr-review:has(.accessibility-audit-pr-review__pick) .accessibility-audit-pr-review__msg {
+  padding-right: 26px;
 }
 
 .accessibility-audit-pr-review:last-child {
@@ -3277,24 +3306,32 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   color: var(--aa-text-secondary);
 }
 
-/* Confirming marks the site down, so it is a quiet text action rather than a
-   button competing with the common answer next to it. It stays a real button
-   for keyboard and screen-reader users; only its weight is reduced. */
+/* The two rulings carry equal visual weight, both plain buttons: dismissing
+   must never look like the primary action (the score only moves on confirm,
+   so a loud dismiss button invites clearing the queue unread). Confirm's
+   red pairing signals its consequence without promoting it. Explicit
+   background and text (the designed error pairing from the tokens, 8.5:1)
+   rather than a bare colour, because Craft derives a button tint from its
+   text colour and the derived pair is not ours to vouch for. */
 .accessibility-audit-pr-review__confirm {
-  background: none;
-  border: none;
-  padding: 2px 4px;
-  font: inherit;
-  font-size: 11px;
-  color: var(--aa-text-secondary);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-  border-radius: var(--aa-radius-small, 4px);
+  color: var(--aa-error-deep);
+  background-color: var(--aa-error-bg);
+  border: 1px solid var(--aa-error-border);
 }
 
-.accessibility-audit-pr-review__confirm:hover {
-  color: var(--aa-error);
+/* Craft's own .btn:hover outranks the base rule on rollover and swaps the
+   grey pair back in, washing the label out; every interactive state keeps
+   the error pairing instead. Hover sits between bg and border (7.4:1),
+   active on the border itself (6.4:1). */
+.accessibility-audit-pr-review__confirm:hover,
+.accessibility-audit-pr-review__confirm:focus-visible {
+  color: var(--aa-error-deep);
+  background-color: var(--aa-error-bg-hover);
+}
+
+.accessibility-audit-pr-review__confirm:active {
+  color: var(--aa-error-deep);
+  background-color: var(--aa-error-border);
 }
 
 .accessibility-audit-pr-review__confirm:focus-visible {

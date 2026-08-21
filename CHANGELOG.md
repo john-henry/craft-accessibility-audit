@@ -1,5 +1,18 @@
 # Release Notes for Accessibility Audit
 
+## 1.1.0 - 2026-08-21
+
+Out of beta. Seven beta releases and five weeks of scanning real production sites got the plugin here. There are no breaking changes and no migrations; anyone on a beta build should simply update.
+
+### Added
+- The needs-review queue on a page report now takes bulk rulings: tick the occurrences (or Select all) and **Dismiss selected** answers the lot in one go. Built for the page where one judgment repeats fifty times, a sticky-nav's links all flagged for the same unmeasurable background being the classic case.
+
+### Fixed
+- Show on page did nothing for the alt-text questions ("Is this alt text too long?"): the stored snippet is the alt text itself, which no text search can find because images have no text. The image is now matched by its alt attribute, so the button lands on it like any other finding.
+
+### Changed
+- On the needs-review cards, Not an issue is no longer a solid red button with Confirm as failure tucked beneath it as a small link. The two rulings now sit side by side with equal weight, with Confirm as failure carrying a red label for its consequence. Dismissing should never look like the main event when it is the ruling that costs nothing.
+
 ## 1.0.11-beta.1 - 2026-08-21
 
 ### Added

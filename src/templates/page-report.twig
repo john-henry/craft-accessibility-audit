@@ -186,6 +186,18 @@
                 {% else %}
                     {% if potentialCount %}
                         <p class="accessibility-audit-pr-review-intro light">{{ 'These need a human eye. They do not count against your score until you confirm one.'|t('accessibility-audit') }}</p>
+                        {% if canRunScans and potentialCount > 1 %}
+                            <div class="accessibility-audit-pr-bulk" id="accessibility-audit-pr-bulk-bar">
+                                <label class="accessibility-audit-pr-bulk__all">
+                                    <input type="checkbox" id="accessibility-audit-pr-bulk-all" class="checkbox">
+                                    <span>{{ 'Select all'|t('accessibility-audit') }}</span>
+                                </label>
+                                <button type="button" class="btn small" id="accessibility-audit-pr-bulk-dismiss" disabled>
+                                    {{ 'Dismiss selected'|t('accessibility-audit') }}
+                                </button>
+                                <span class="accessibility-audit-pr-review__status" id="accessibility-audit-pr-bulk-status" role="status" aria-live="polite"></span>
+                            </div>
+                        {% endif %}
                     {% endif %}
 
                     {% for group in potential %}
@@ -201,6 +213,12 @@
                                 <div class="accessibility-audit-pr-review" data-accessibility-audit-review
                                      data-rule-id="{{ row.ruleId }}"
                                      data-context="{{ row.context|default('') }}">
+                                    {% if canRunScans and potentialCount > 1 %}
+                                        <label class="accessibility-audit-pr-review__pick">
+                                            <input type="checkbox" class="checkbox" data-bulk-pick
+                                                   aria-label="{{ 'Select for bulk dismissal'|t('accessibility-audit') }}">
+                                        </label>
+                                    {% endif %}
                                     {% if row.context %}
                                         <p class="accessibility-audit-pr-review__ctx" title="{{ row.context }}">{{ row.context }}</p>
                                     {% elseif row.message %}
@@ -209,8 +227,8 @@
                                     <div class="accessibility-audit-pr-review__actions">
                                         <button type="button" class="btn small" data-highlight>{{ 'Show on page'|t('accessibility-audit') }}</button>
                                         {% if canRunScans %}
-                                            <button type="button" class="btn small submit" data-verdict="dismissed">{{ 'Not an issue'|t('accessibility-audit') }}</button>
-                                            <button type="button" class="accessibility-audit-pr-review__confirm" data-verdict="confirmed">{{ 'Confirm as failure'|t('accessibility-audit') }}</button>
+                                            <button type="button" class="btn small" data-verdict="dismissed">{{ 'Not an issue'|t('accessibility-audit') }}</button>
+                                            <button type="button" class="btn small accessibility-audit-pr-review__confirm" data-verdict="confirmed">{{ 'Confirm as failure'|t('accessibility-audit') }}</button>
                                             <span class="accessibility-audit-pr-review__status" role="status" aria-live="polite"></span>
                                         {% endif %}
                                     </div>
