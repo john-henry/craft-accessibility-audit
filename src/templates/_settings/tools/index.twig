@@ -6,15 +6,16 @@
 
 {% set crumbs = [] %}
 
-{% set fullPageForm = true %}
+{% set fullPageForm = not (readOnly ?? false) %}
 
 {% block blockContent %}
+    {% if readOnly %}<fieldset class="accessibility-audit-readonly" disabled>{% endif %}
   
 
     {{ actionInput('accessibility-audit/settings/save-tools') }}
     {{ redirectInput(url('accessibility-audit/settings/tools')) }}
 
-    <h3>{{ 'Alt Text'|t('accessibility-audit') }}</h3>
+    <h2>{{ 'Alt Text'|t('accessibility-audit') }}</h2>
     
     {% set assetFieldOptions = [{ value: 'alt', label: 'alt (Craft built-in)' }] %}
     {% for field in craft.app.fields.allFields %}
@@ -108,7 +109,7 @@
 
     <hr>
 
-    <h3>{{ 'CI/CD Integration'|t('accessibility-audit') }}</h3>
+    <h2>{{ 'CI/CD Integration'|t('accessibility-audit') }}</h2>
 
     {% if not (isPro ?? false) %}
         {% include 'accessibility-audit/_includes/pro-upsell' with {
@@ -143,14 +144,97 @@
         label: 'Current token'|t('accessibility-audit'),
     }, '<span class="light">' ~ tokenValue|e ~ '</span>') }}
 
-    <div class="field">
-        <button type="submit"
-                class="btn"
-                formaction="{{ actionUrl('accessibility-audit/settings/generate-ci-token') }}">
-            {{ settings.ciApiToken
-                ? 'Regenerate token'|t('accessibility-audit')
-                : 'Generate token'|t('accessibility-audit') }}
-        </button>
-    </div>
+    {% if not readOnly %}
+        <div class="field">
+            <button type="submit"
+                    class="btn"
+                    formaction="{{ actionUrl('accessibility-audit/settings/generate-ci-token') }}">
+                {{ settings.ciApiToken
+                    ? 'Regenerate token'|t('accessibility-audit')
+                    : 'Generate token'|t('accessibility-audit') }}
+            </button>
+        </div>
     {% endif %}
+    {% endif %}
+
+    <hr>
+
+    <h2>{{ 'Decoupled Frontends'|t('accessibility-audit') }}</h2>
+
+    {% if not (isPro ?? false) %}
+        {% include 'accessibility-audit/_includes/pro-upsell' with {
+            feature: 'Decoupled Frontends'|t('accessibility-audit'),
+            text: 'Run the admin overlay on a headless frontend (Next, Nuxt, Astro) with a single script tag. Available on the Pro edition.'|t('accessibility-audit'),
+            headingLevel: 4,
+        } only %}
+    {% else %}
+    <p class="light">
+        {{ 'If your site\'s frontend is not served by Craft, add {tag} to its pages and the overlay runs there too: same axe engine, same rules, results stored against the same scans. Head or footer makes no difference as long as {defer} stays on the tag. The script does nothing for regular visitors. In Craft templates (a hybrid install), use {variable} instead: it resolves this install\'s URL itself and renders nothing when the feature is off.'|t('accessibility-audit', {
+            tag: '<code>&lt;script src="' ~ (overlayScriptUrl ?? '/accessibility-audit/overlay.js')|e ~ '" defer&gt;&lt;/script&gt;</code>',
+            defer: '<code>defer</code>',
+            variable: '<code>{{ craft.a11y.overlayScriptTag() }}</code>',
+        })|raw }}
+    </p>
+    <p class="light">
+        {{ 'To activate the overlay in a browser, open the frontend through an activation link: the frontend\'s own URL with {fragment} appended, using the token below. It must be the frontend\'s domain, not this install\'s, because the browser stores the token per domain. A small notice in the corner confirms the activation took. The overlay endpoints only answer requests carrying that token.'|t('accessibility-audit', {
+            fragment: '<code>#a11y-connect=&lt;token&gt;</code>',
+        })|raw }}
+    </p>
+
+    {{ forms.lightswitchField({
+        label: 'Enable Decoupled Overlay'|t('accessibility-audit'),
+        instructions: 'Serve the overlay loader and answer its token-authenticated API calls. Independent of the Frontend Overlay toggle under General, which only controls injection on Craft-rendered pages.'|t('accessibility-audit'),
+        id: 'decoupledOverlay',
+        name: 'settings[decoupledOverlay]',
+        on: settings.decoupledOverlay,
+        errors: settings.getErrors('decoupledOverlay'),
+        warning: config.decoupledOverlay is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.decoupledOverlay is defined,
+    }) }}
+
+    {{ forms.textareaField({
+        label: 'Additional Allowed Origins'|t('accessibility-audit'),
+        instructions: 'Origins allowed to call the overlay endpoints, one per line, e.g. {example}. Every site\'s base URL origin is always allowed; add entries here for dev servers and preview deployments Craft doesn\'t know about.'|t('accessibility-audit', {
+            example: '<code>http://localhost:3000</code>',
+        }),
+        id: 'overlayAllowedOrigins',
+        name: 'settings[overlayAllowedOrigins]',
+        value: settings.overlayAllowedOrigins,
+        rows: 3,
+        errors: settings.getErrors('overlayAllowedOrigins'),
+        warning: config.overlayAllowedOrigins is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.overlayAllowedOrigins is defined,
+    }) }}
+
+    {% if newOverlayApiToken is defined and newOverlayApiToken %}
+
+        {{ forms.copytextField({
+            label: 'New overlay token'|t('accessibility-audit'),
+            instructions: 'Copy this now, it won\'t be shown in full again.'|t('accessibility-audit'),
+            id: 'new-overlay-api-token',
+            value: newOverlayApiToken,
+        }) }}
+    {% endif %}
+
+    {% set overlayTokenValue = settings.overlayApiToken
+        ? 'A token is set. It is stored hashed, so it can only be shown in full once, at generation.'|t('accessibility-audit')
+        : 'No token generated yet.'|t('accessibility-audit') %}
+
+    {{ forms.field({
+        label: 'Current overlay token'|t('accessibility-audit'),
+    }, '<span class="light">' ~ overlayTokenValue|e ~ '</span>') }}
+
+    {% if not readOnly %}
+        <div class="field">
+            <button type="submit"
+                    class="btn"
+                    formaction="{{ actionUrl('accessibility-audit/settings/generate-overlay-token') }}">
+                {{ settings.overlayApiToken
+                    ? 'Regenerate token'|t('accessibility-audit')
+                    : 'Generate token'|t('accessibility-audit') }}
+            </button>
+        </div>
+    {% endif %}
+    {% endif %}
+{% if readOnly %}</fieldset>{% endif %}
 {% endblock %}

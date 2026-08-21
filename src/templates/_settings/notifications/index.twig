@@ -6,10 +6,11 @@
 {% set crumbs = [] %}
 
 
-{% set fullPageForm = (isPro ?? false) %}
+{% set fullPageForm = (isPro ?? false) and not (readOnly ?? false) %}
 
 {% block blockContent %}
-    <h2>{{ 'Notifications'|t('accessibility-audit') }}</h2>
+    {% if readOnly %}<fieldset class="accessibility-audit-readonly" disabled>{% endif %}
+ 
 
     {% if not (isPro ?? false) %}
         {% include 'accessibility-audit/_includes/pro-upsell' with {
@@ -31,7 +32,7 @@
         {{ 'Get notified when a scan finds a new problem or when a page\'s accessibility score drops. Notifications are checked each time an element is re-scanned, comparing against its previous scan.'|t('accessibility-audit') }}
     </p>
 
-    <h3>{{ 'When to notify'|t('accessibility-audit') }}</h3>
+    <h2>{{ 'When to notify'|t('accessibility-audit') }}</h2>
 
     {{ forms.lightswitchField({
         label: 'New error found'|t('accessibility-audit'),
@@ -66,7 +67,7 @@
 
     <hr>
 
-    <h3>{{ 'Email'|t('accessibility-audit') }}</h3>
+    <h2>{{ 'Email'|t('accessibility-audit') }}</h2>
 
     {{ forms.lightswitchField({
         label: 'Send email notifications'|t('accessibility-audit'),
@@ -89,7 +90,7 @@
 
     <hr>
 
-    <h3>{{ 'Slack'|t('accessibility-audit') }}</h3>
+    <h2>{{ 'Slack'|t('accessibility-audit') }}</h2>
 
     {{ forms.lightswitchField({
         label: 'Send Slack notifications'|t('accessibility-audit'),
@@ -126,10 +127,13 @@
         ],
     }) }}
 
-    <div class="field">
-        <button type="submit" class="btn" formaction="{{ actionUrl('accessibility-audit/settings/test-notification') }}" aria-describedby="testPreview-instructions">
-            {{ 'Send test notification'|t('accessibility-audit') }}
-        </button>
-    </div>
+    {% if not readOnly %}
+        <div class="field">
+            <button type="submit" class="btn" formaction="{{ actionUrl('accessibility-audit/settings/test-notification') }}" aria-describedby="testPreview-instructions">
+                {{ 'Send test notification'|t('accessibility-audit') }}
+            </button>
+        </div>
     {% endif %}
+    {% endif %}
+{% if readOnly %}</fieldset>{% endif %}
 {% endblock %}

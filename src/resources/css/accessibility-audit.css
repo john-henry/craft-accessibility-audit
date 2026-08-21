@@ -3684,3 +3684,28 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
 .menu ul.padded li a.accessibility-audit-menu-icon--refresh::before {
   content: 'refresh' / '';
 }
+
+/* ── Read-only settings (allowAdminChanges off) ─────────────────────────────
+   One fieldset[disabled] around each page natively disables every control;
+   these rules strip the fieldset's own chrome and make the JS-driven
+   controls (lightswitches, buttons, editable tables) look disabled too,
+   matching how Craft and Commerce grey their settings. */
+fieldset.accessibility-audit-readonly {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+fieldset.accessibility-audit-readonly .lightswitch,
+fieldset.accessibility-audit-readonly .btn,
+fieldset.accessibility-audit-readonly .editable {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+fieldset.accessibility-audit-readonly input,
+fieldset.accessibility-audit-readonly select,
+fieldset.accessibility-audit-readonly textarea {
+  opacity: 0.75;
+}

@@ -7,14 +7,15 @@
 
 {% set crumbs = [] %}
 
-{% set fullPageForm = true %}
+{% set fullPageForm = not (readOnly ?? false) %}
 
 {% block blockContent %}
+    {% if readOnly %}<fieldset class="accessibility-audit-readonly" disabled>{% endif %}
   
     {{ actionInput('accessibility-audit/settings/save-maintenance') }}
     {{ redirectInput(url('accessibility-audit/settings/maintenance')) }}
     
-    <h3>{{ 'Data Retention'|t('accessibility-audit') }}</h3>
+    <h2>{{ 'Data Retention'|t('accessibility-audit') }}</h2>
     
     {{ forms.textField({
         label: 'Retain Scan Results (days)'|t('accessibility-audit'),
@@ -71,4 +72,5 @@
             <pre><code>php craft accessibility-audit/audit/prune --days={{ pruneDays }}</code></pre>
         </blockquote>
     </div>
+{% if readOnly %}</fieldset>{% endif %}
 {% endblock %}

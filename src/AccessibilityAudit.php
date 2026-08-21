@@ -39,6 +39,7 @@ use johnhenry\accessibilityaudit\services\ContentScanner;
 use johnhenry\accessibilityaudit\services\HeadlessScanner;
 use johnhenry\accessibilityaudit\services\NotificationService;
 use johnhenry\accessibilityaudit\services\OrganisationService;
+use johnhenry\accessibilityaudit\services\OverlayService;
 use johnhenry\accessibilityaudit\services\PotentialScanner;
 use johnhenry\accessibilityaudit\services\ReadabilityService;
 use johnhenry\accessibilityaudit\services\ReportService;
@@ -146,6 +147,8 @@ class AccessibilityAudit extends BasePlugin
         'Generate Alt Text',
         'Generating…',
         'Grade',
+        'Highlighted, but the element is inside a collapsed menu or panel. Open it on the page to see it.',
+        "This occurrence couldn't be located in the preview. The page may have changed since the scan, or the element is added by a script that doesn't run here.",
         'Issues',
         'Issues resolved over time, cumulative',
         'Last scanned',
@@ -227,6 +230,11 @@ class AccessibilityAudit extends BasePlugin
      * @var bool Whether the plugin has a settings page in the CP.
      */
     public bool $hasCpSettings = true;
+
+    /**
+     * @inheritdoc
+     */
+    public bool $hasReadOnlyCpSettings = true;
 
     /**
      * @var bool Whether the plugin has its own section in the CP.
@@ -414,6 +422,7 @@ class AccessibilityAudit extends BasePlugin
                 'readability' => ReadabilityService::class,
                 'notifications' => NotificationService::class,
                 'verdicts' => VerdictService::class,
+                'overlay' => OverlayService::class,
             ],
         ];
     }
@@ -490,12 +499,10 @@ class AccessibilityAudit extends BasePlugin
             $subnav['statement'] = ['label' => Craft::t('accessibility-audit', 'Statement'), 'url' => 'accessibility-audit/statement' . $suffix];
             $subnav['color-tools'] = ['label' => Craft::t('accessibility-audit', 'Colour Tools'), 'url' => 'accessibility-audit/colour-tools' . $suffix];
         }
-        $editableSettings = true;
-        $general = Craft::$app->getConfig()->getGeneral();
-        if (!$general->allowAdminChanges) {
-            $editableSettings = false;
-        }
-        if ($editableSettings && $user->getIsAdmin()) {
+        // Admins keep the link even when admin changes are disabled: the
+        // settings pages render read-only there, matching Craft's own
+        // settings behaviour, rather than disappearing.
+        if ($user->getIsAdmin()) {
             $subnav['settings'] = ['label' => Craft::t('app', 'Settings'), 'url' => 'accessibility-audit/settings'];
         }
 
@@ -523,6 +530,20 @@ class AccessibilityAudit extends BasePlugin
         return Craft::$app->getResponse()->redirect(
             UrlHelper::cpUrl('accessibility-audit/settings')
         );
+    }
+
+    /**
+     * Same destination as the editable response: the settings pages detect
+     * allowAdminChanges themselves and render read-only (notice shown, save
+     * and token-generation controls withheld, mutating actions refused).
+     *
+     * @throws InvalidRouteException
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    public function getReadOnlySettingsResponse(): mixed
+    {
+        return $this->getSettingsResponse();
     }
 
     /** @throws InvalidConfigException */
@@ -602,6 +623,14 @@ class AccessibilityAudit extends BasePlugin
     {
         $component = $this->get('notifications');
         assert($component instanceof NotificationService);
+        return $component;
+    }
+
+    /** @throws InvalidConfigException */
+    public function getOverlay(): OverlayService
+    {
+        $component = $this->get('overlay');
+        assert($component instanceof OverlayService);
         return $component;
     }
 
@@ -692,6 +721,10 @@ class AccessibilityAudit extends BasePlugin
             UrlManager::EVENT_REGISTER_SITE_URL_RULES,
             function(RegisterUrlRulesEvent $e) {
                 $e->rules['accessibility-audit/ci/check'] = 'accessibility-audit/ci/check';
+                $e->rules['accessibility-audit/overlay.js'] = 'accessibility-audit/overlay/script';
+                $e->rules['accessibility-audit/overlay/resolve'] = 'accessibility-audit/overlay/resolve';
+                $e->rules['accessibility-audit/overlay/store-axe-results'] = 'accessibility-audit/overlay/store-axe-results';
+                $e->rules['accessibility-audit/overlay/page-issues'] = 'accessibility-audit/overlay/page-issues';
             }
         );
     }
@@ -825,6 +858,7 @@ class AccessibilityAudit extends BasePlugin
                         // Twig- and JS-built output cannot drift: the axe tag
                         // list and payload caps (Inspect preview pass).
                         'axeTags' => $this->getAudit()->getAxeTags(),
+                        'axeExclude' => $this->getAudit()->getAxeExclude(),
                         'axeMaxNodes' => HeadlessScanner::MAX_NODES_PER_VIOLATION,
                         'axeMaxHtmlLength' => HeadlessScanner::MAX_NODE_HTML_LENGTH,
                     ]) . ');',
@@ -1007,81 +1041,23 @@ class AccessibilityAudit extends BasePlugin
                 $view = Craft::$app->getView();
                 $view->registerAssetBundle(FrontendAxeAsset::class);
 
-                // Served from the plugin's own published copy, not a CDN, so it
-                // needs no external script-src in a site's CSP and works on
-                // air-gapped installs. Same bundled 4.9.1 as the headless
-                // scanner and Inspect preview, so all three engines match.
-                $axeSrc = Craft::$app->getAssetManager()->getPublishedUrl(
-                    '@johnhenry/accessibilityaudit/resources',
-                    true,
-                    'axe/axe.min.js',
-                );
-
-                // Resolve the Craft element for the current page so axe results
-                // can be stored against the right scan record automatically.
+                // The payload (element resolution, stored-scan hydration, the
+                // resolved axe tag list, overlay settings) is built by the
+                // shared OverlayService builder — the same one the decoupled
+                // resolve endpoint uses — so the two delivery paths can't
+                // drift. Only the session's CSRF pair is added here: it's this
+                // path's credential, where the decoupled loader appends its
+                // bearer token client-side instead.
                 $element = Craft::$app->getUrlManager()->getMatchedElement();
-                $scanId = 0;
-                $elementId = 0;
-                $elementType = '';
-                $siteId = Craft::$app->getSites()->getCurrentSite()->id;
-                $storedScan = null;
-
-                if ($element && $element->id) {
-                    $elementId = $element->id;
-                    $elementType = get_class($element);
-                    $siteId = $element->siteId;
-
-                    // Surface the latest stored scan so the overlay can hydrate
-                    // from it on load (mirroring the CP), rather than only ever
-                    // running a fresh in-browser axe scan.
-                    $latestScan = self::$plugin->audit->getLatestScan($element->id, $element->siteId);
-                    if ($latestScan) {
-                        $scanId = (int) $latestScan['id'];
-                        $storedScan = [
-                            'score' => (int) $latestScan['score'],
-                            'errorCount' => (int) $latestScan['errorCount'],
-                            'warningCount' => (int) $latestScan['warningCount'],
-                            'noticeCount' => (int) $latestScan['noticeCount'],
-                            'scannedLabel' => Craft::$app->getFormatter()->asDatetime($latestScan['dateScanned'], 'short'),
-                        ];
-                    }
-                }
-
-                $settings = self::$plugin->getSettings();
-                $reportUrl = $elementId > 0
-                    ? UrlHelper::cpUrl('accessibility-audit/page-report', ['elementId' => $elementId, 'siteId' => $siteId])
-                    : UrlHelper::cpUrl('accessibility-audit');
-
-                // Mirror this admin's "Use shapes to represent statuses" CP
-                // preference (Craft's own resolution: preference, then the
-                // accessibilityDefaults config, then off) so the overlay's
-                // colour-only severity dots also carry a shape.
-                $identity = Craft::$app->getUser()->getIdentity();
-                $a11yDefaults = Craft::$app->getConfig()->getGeneral()->accessibilityDefaults;
-                $useShapes = (bool)($identity?->getPreference('useShapes') ?? ($a11yDefaults['useShapes'] ?? false));
+                $config = $this->getOverlay()->buildConfig(
+                    $element ?: null,
+                    Craft::$app->getSites()->getCurrentSite()->id,
+                );
+                $config['csrfName'] = Craft::$app->getConfig()->getGeneral()->csrfTokenName;
+                $config['csrfValue'] = Craft::$app->getRequest()->getCsrfToken();
 
                 $view->registerJs(
-                    'window.__accessibilityAudit = ' . Json::encode([
-                        'axeSrc' => $axeSrc,
-                        'storeUrl' => UrlHelper::actionUrl('accessibility-audit/audit/store-axe-results'),
-                        'csrfName' => Craft::$app->getConfig()->getGeneral()->csrfTokenName,
-                        'csrfValue' => Craft::$app->getRequest()->getCsrfToken(),
-                        'scanId' => $scanId,
-                        'elementId' => $elementId,
-                        'elementType' => $elementType,
-                        'siteId' => $siteId,
-                        // The resolved axe tag list, not the raw settings: the
-                        // overlay scans with exactly the same tags as the
-                        // Inspect preview and the headless scanner.
-                        'axeTags' => $this->getAudit()->getAxeTags(),
-                        'collapseWhenIdle' => (bool) $settings->overlayCollapseWhenIdle,
-                        'position' => $settings->overlayPosition ?: 'bottom-right',
-                        'idleMs' => max(3, (int) $settings->overlayIdleSeconds) * 1000,
-                        'reportUrl' => $reportUrl,
-                        'storedScan' => $storedScan,
-                        'pageIssuesUrl' => UrlHelper::actionUrl('accessibility-audit/dashboard/page-issues'),
-                        'useShapes' => $useShapes,
-                    ]) . ';',
+                    'window.__accessibilityAudit = ' . Json::encode($config) . ';',
                     ViewAlias::POS_HEAD
                 );
             }

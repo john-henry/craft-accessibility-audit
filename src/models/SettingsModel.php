@@ -51,6 +51,31 @@ class SettingsModel extends Model
     public const USER_AGENT_TOKEN = 'CraftAccessibilityAudit';
 
     /**
+     * CSS selectors every scan surface skips by default: the mount points of
+     * the common consent-management platforms. Their banners are third-party
+     * UI injected at runtime — the site owner can neither fix their contrast
+     * nor keep them still between scans, so findings inside them are noise
+     * that buries the site's own issues. Merged with the admin's own
+     * [[excludedSelectors]] by [[resolvedExcludedSelectors()]].
+     *
+     * @var string[]
+     */
+    public const DEFAULT_EXCLUDED_SELECTORS = [
+        '#lanyard_root',                    // Ketch
+        '#onetrust-consent-sdk',            // OneTrust
+        '#CybotCookiebotDialog',            // Cookiebot
+        '#usercentrics-root',               // Usercentrics
+        '#didomi-host',                     // Didomi
+        '#truste-consent-track',            // TrustArc
+        '.truste_box_overlay',              // TrustArc (overlay variant)
+        '.osano-cm-window',                 // Osano
+        '#cmplz-cookiebanner-container',    // Complianz
+        '.cky-consent-container',           // CookieYes
+        '#iubenda-cs-banner',               // Iubenda
+        '#termly-code-snippet-support',     // Termly
+    ];
+
+    /**
      * The information URL appended to the default fetch User-Agent, so a host
      * admin who spots the token in their logs can look up what it is.
      */
@@ -182,6 +207,14 @@ class SettingsModel extends Model
     public array $excludedUriPatterns = [];
 
     /**
+     * @var string Extra CSS selectors excluded from every scan surface, one
+     * per line, merged with [[DEFAULT_EXCLUDED_SELECTORS]]. For page furniture
+     * whose markup the site does not control: chat widgets, embedded players,
+     * A/B testing overlays.
+     */
+    public string $excludedSelectors = '';
+
+    /**
      * @var string[] The UIDs of the asset volumes whose images are excluded
      * from the alt-text audit and its counts. Stored as volume UIDs (stable
      * across environments and project-config friendly), never ids or handles.
@@ -286,6 +319,27 @@ class SettingsModel extends Model
      */
     public ?string $ciApiToken = null;
 
+    /**
+     * @var bool Whether the overlay may be served to decoupled (headless)
+     * front ends via the token-authenticated overlay endpoints.
+     */
+    public bool $decoupledOverlay = false;
+
+    /**
+     * @var ?string SHA-256 hash of the decoupled overlay token, or null when
+     * none has been generated. Only the hash is stored (settings land in
+     * project config); the plaintext is shown once at generation.
+     */
+    public ?string $overlayApiToken = null;
+
+    /**
+     * @var string Extra origins allowed to call the overlay endpoints, one per
+     * line. The origins of every site's base URL are always allowed; this
+     * covers front ends served from origins Craft doesn't know about, such as
+     * a local dev server.
+     */
+    public string $overlayAllowedOrigins = '';
+
     // Public Methods
     // =========================================================================
 
@@ -305,6 +359,30 @@ class SettingsModel extends Model
         $chosen = $this->scannedElementTypes ?? ScannableElementTypes::native();
 
         return array_values(array_intersect($chosen, array_keys(ScannableElementTypes::all())));
+    }
+
+    /**
+     * The CSS selectors every scan surface excludes: the built-in
+     * consent-platform defaults plus the admin's own lines. All four engines
+     * (headless axe, the Inspect preview pass, the frontend overlay, and the
+     * PHP scanner) read from here so an exclusion holds everywhere at once.
+     *
+     * @return string[]
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    public function resolvedExcludedSelectors(): array
+    {
+        $selectors = self::DEFAULT_EXCLUDED_SELECTORS;
+
+        foreach (preg_split('/[\r\n]+/', $this->excludedSelectors) ?: [] as $line) {
+            $line = trim($line);
+            if ($line !== '') {
+                $selectors[] = $line;
+            }
+        }
+
+        return array_values(array_unique($selectors));
     }
 
     /**
@@ -403,7 +481,7 @@ class SettingsModel extends Model
     {
         return [
             [['wcagLevel'], 'in', 'range' => ['A', 'AA', 'AAA']],
-            [['scanOnSave', 'frontendAxe', 'overlayCollapseWhenIdle', 'autoGenerateAlt', 'en301549', 'chromeNoSandbox'], 'boolean'],
+            [['scanOnSave', 'frontendAxe', 'overlayCollapseWhenIdle', 'autoGenerateAlt', 'en301549', 'chromeNoSandbox', 'decoupledOverlay'], 'boolean'],
             [['resolvedRetention'], 'in', 'range' => [self::RESOLVED_RETENTION_WITH_SCANS, self::RESOLVED_RETENTION_KEEP_DAYS, self::RESOLVED_RETENTION_FOREVER]],
             [['overlayPosition'], 'in', 'range' => ['bottom-right', 'bottom-left', 'top-right', 'top-left']],
             [['overlayIdleSeconds'], 'integer', 'min' => 3, 'max' => 600],
@@ -419,6 +497,7 @@ class SettingsModel extends Model
             [['altTextField', 'anthropicApiKey', 'altTextContext', 'altTextLanguage', 'chromePath', 'chromeWsEndpoint', 'vpatExportTemplate'], 'string'],
             [['statementTemplate'], 'string'],
             [['notifyEmailRecipients', 'notifySlackWebhookUrl', 'ciApiToken', 'scannerUserAgent'], 'string'],
+            [['overlayApiToken', 'overlayAllowedOrigins', 'excludedSelectors'], 'string'],
         ];
     }
 
@@ -434,6 +513,8 @@ class SettingsModel extends Model
             'overlayCollapseWhenIdle' => 'Collapse to Badge When Idle',
             'overlayPosition' => 'Overlay Position',
             'overlayIdleSeconds' => 'Idle Collapse Delay (seconds)',
+            'decoupledOverlay' => 'Decoupled Frontend Overlay',
+            'overlayAllowedOrigins' => 'Additional Allowed Origins',
             'chromePath' => 'Chrome Binary Path',
             'chromeWsEndpoint' => 'Remote Chrome Endpoint',
             'chromeNoSandbox' => 'Launch Chrome Without Sandbox',
@@ -441,6 +522,7 @@ class SettingsModel extends Model
             'scannerUserAgent' => 'Scanner User-Agent',
             'ignoreRules' => 'Ignored Rules',
             'excludedUriPatterns' => 'Excluded URI Patterns',
+            'excludedSelectors' => 'Excluded Elements (CSS selectors)',
             'excludedVolumes' => 'Excluded Volumes',
             'scannedElementTypes' => 'Scanned Element Types',
             'retainDays' => 'Retain Scan Results (days)',

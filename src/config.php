@@ -108,6 +108,23 @@ return [
     // Only applies when overlayCollapseWhenIdle is on. Range 3-600.
     // 'overlayIdleSeconds' => 30,
 
+    // Extra CSS selectors excluded from every scan surface (PHP scan, browser
+    // pass, Inspect preview, overlay), one per line. The common
+    // consent-management banners are always excluded; add page furniture you
+    // don't control, such as a chat widget.
+    // 'excludedSelectors' => "#live-chat-widget\n.ab-test-overlay",
+
+    // Decoupled frontends (Pro)
+    // ---------------------------------------------------------------------
+    // Serve the overlay to headless frontends (Next, Nuxt, Astro) via the
+    // token-authenticated overlay endpoints and the overlay.js loader.
+    // 'decoupledOverlay' => false,
+
+    // Extra origins allowed to call the overlay endpoints, one per line.
+    // Every site's base URL origin is always allowed; add dev servers and
+    // preview deployments here.
+    // 'overlayAllowedOrigins' => "http://localhost:3000\nhttps://preview.example.com",
+
     // Retention
     // ---------------------------------------------------------------------
     // Days to retain scan results before auto-pruning. 0 = never prune.

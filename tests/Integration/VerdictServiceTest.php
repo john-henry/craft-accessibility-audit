@@ -204,4 +204,78 @@ describe('VerdictService', function() {
             ->and($plugin->verdicts->lookup($map, 'potential:decorative-image', '<img src="b.jpg">'))
             ->toBeNull();
     });
+
+    it('still matches a ruling made against the old 150-character context cap', function() {
+        $plugin = AccessibilityAudit::getInstance();
+        $siteId = Craft::$app->getSites()->getPrimarySite()->id;
+        $elementId = verdictElementId();
+
+        // The full snippet a post-upgrade scan stores (well past 150 chars)...
+        $longContext = '<img class="absolute inset-0 mt-0" src="https://cdn.example.com/content/uploads/Listing-rectangles/Speaking_Engagement_Listing_Graphic_With_A_Long_Name.svg" loading="lazy">';
+        // ...and the truncated form a pre-upgrade scan stored the ruling under.
+        $legacyContext = mb_substr($longContext, 0, 150) . '…';
+
+        expect(mb_strlen($longContext))->toBeGreaterThan(151);
+
+        $scanId = verdictScanId($elementId, $siteId);
+        verdictIssue($scanId, $elementId, 'potential:decorative-image', $legacyContext, 'error', $siteId);
+        $plugin->verdicts->setVerdict($siteId, $elementId, 'potential:decorative-image', $legacyContext, VerdictService::VERDICT_DISMISSED);
+
+        $map = $plugin->verdicts->mapForElement($elementId, $siteId);
+
+        // The next scan presents the longer snippet; the old ruling still holds.
+        expect($plugin->verdicts->lookup($map, 'potential:decorative-image', $longContext))
+            ->toBe(VerdictService::VERDICT_DISMISSED);
+    });
+
+    it('matches a legacy ruling at the 151-character boundary', function() {
+        $plugin = AccessibilityAudit::getInstance();
+        $siteId = Craft::$app->getSites()->getPrimarySite()->id;
+        $elementId = verdictElementId();
+
+        // Exactly 151 characters: fits the new 300 cap untouched, but the old
+        // builder truncated it to 150 plus the ellipsis — the one length where
+        // an off-by-one in the guard silently loses the ruling.
+        $longContext = '<img src="/uploads/' . str_repeat('a', 151 - 25) . '.jpg">';
+        expect(mb_strlen($longContext))->toBe(151);
+        $legacyContext = mb_substr($longContext, 0, 150) . '…';
+
+        $scanId = verdictScanId($elementId, $siteId);
+        verdictIssue($scanId, $elementId, 'potential:decorative-image', $legacyContext, 'error', $siteId);
+        $plugin->verdicts->setVerdict($siteId, $elementId, 'potential:decorative-image', $legacyContext, VerdictService::VERDICT_DISMISSED);
+
+        $map = $plugin->verdicts->mapForElement($elementId, $siteId);
+
+        expect($plugin->verdicts->lookup($map, 'potential:decorative-image', $longContext))
+            ->toBe(VerdictService::VERDICT_DISMISSED);
+    });
+
+    it('matches a ruling posted with CRLF line endings against LF-stored rows', function() {
+        $plugin = AccessibilityAudit::getInstance();
+        $siteId = Craft::$app->getSites()->getPrimarySite()->id;
+        $elementId = verdictElementId();
+
+        // Multi-line snippet as the scanner stores it (LF)...
+        $stored = "<text fill=\"rgba(0,0,0,0.1)\">\n    625 × 300\n</text>";
+        // ...and as the browser posts it back: form encoding converts \n to \r\n.
+        $posted = str_replace("\n", "\r\n", $stored);
+
+        $scanId = verdictScanId($elementId, $siteId);
+        verdictIssue($scanId, $elementId, 'potential:contrast-unmeasurable', $stored, 'error', $siteId);
+        $plugin->verdicts->setVerdict($siteId, $elementId, 'potential:contrast-unmeasurable', $posted, VerdictService::VERDICT_DISMISSED);
+
+        // The ruling must land on the stored row despite the line-ending change.
+        $verdict = (new \craft\db\Query())
+            ->select(['verdict'])
+            ->from('{{%accessibilityaudit_issues}}')
+            ->where(['scanId' => $scanId, 'ruleId' => 'potential:contrast-unmeasurable'])
+            ->scalar();
+
+        expect($verdict)->toBe(VerdictService::VERDICT_DISMISSED);
+
+        // And the render-time lookup resolves it from the stored LF context.
+        $map = $plugin->verdicts->mapForElement($elementId, $siteId);
+        expect($plugin->verdicts->lookup($map, 'potential:contrast-unmeasurable', $stored))
+            ->toBe(VerdictService::VERDICT_DISMISSED);
+    });
 });

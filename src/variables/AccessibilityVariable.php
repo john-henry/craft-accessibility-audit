@@ -98,6 +98,38 @@ class AccessibilityVariable
     }
 
     /**
+     * The decoupled overlay loader script tag, with the CMS origin resolved
+     * from the current request rather than hardcoded, so one template works
+     * across every environment.
+     * Usage: {{ craft.a11y.overlayScriptTag() }}
+     *
+     * Renders nothing on the Standard edition or when the decoupled overlay
+     * is disabled, so the tag can sit in a shared layout unconditionally.
+     * Only useful in Craft-rendered templates (a hybrid install); a decoupled
+     * frontend can't run Twig and uses the raw tag from the docs instead.
+     *
+     * @return Markup
+     * @throws InvalidConfigException
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    public function overlayScriptTag(): Markup
+    {
+        $plugin = AccessibilityAudit::getInstance();
+
+        if (!$plugin->isPro() || !$plugin->getSettings()->decoupledOverlay) {
+            return new Markup('', 'UTF-8');
+        }
+
+        $src = $plugin->getOverlay()->absoluteFromRequest('/accessibility-audit/overlay.js');
+
+        return new Markup(
+            '<script src="' . htmlspecialchars($src, ENT_QUOTES) . '" defer></script>',
+            'UTF-8',
+        );
+    }
+
+    /**
      * The axe-core tag list the browser engines scan with, derived from the
      * plugin's WCAG level and EN 301 549 settings.
      * Usage: {% set axeTags = craft.a11y.axeTags() %}

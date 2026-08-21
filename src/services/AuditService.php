@@ -146,6 +146,25 @@ class AuditService extends Component
         return $tags;
     }
 
+    /**
+     * The CSS selectors excluded from every scan surface, in axe's context
+     * shape: one selector per entry, each wrapped in its own array. All three
+     * browser engines (headless, Inspect preview, frontend overlay) read this
+     * so an exclusion holds everywhere at once; the PHP scanner applies the
+     * same list by removing matching nodes before its checks.
+     *
+     * @return string[][]
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    public function getAxeExclude(): array
+    {
+        return array_map(
+            static fn(string $selector): array => [$selector],
+            AccessibilityAudit::getInstance()->getSettings()->resolvedExcludedSelectors(),
+        );
+    }
+
     // ─── Edition limits ──────────────────────────────────────────────────────
 
     /**
@@ -695,7 +714,13 @@ class AuditService extends Component
             $this->insertIssue($scanId, $scan['elementId'], $scan['elementType'], $scan['siteId'], IssueModel::make(
                 ruleId: $ruleId,
                 severity: $this->axeImpactToSeverity($violation['impact'] ?? 'moderate'),
-                message: $violation['description'] ?? $violation['help'] ?? 'Accessibility issue detected by axe-core.',
+                // help before description: axe's `help` states the failed
+                // requirement ("<dl> elements must only directly contain…"),
+                // while `description` documents what the rule checks
+                // ("Ensures <dl> elements are structured correctly"), which
+                // reads as a question, not a finding. The overlay makes the
+                // same choice when it renders live results.
+                message: $violation['help'] ?? $violation['description'] ?? 'Accessibility issue detected by axe-core.',
                 wcagCriterion: $wcag['criterion'] ?? null,
                 wcagLevel: $wcag['level'] ?? null,
                 context: !empty($nodes[0]['html']) ? mb_substr($nodes[0]['html'], 0, 200) : null,

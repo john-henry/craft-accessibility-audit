@@ -7,9 +7,10 @@
 
 {% set crumbs = [] %}
 
-{% set fullPageForm = true %}
+{% set fullPageForm = not (readOnly ?? false) %}
 
 {% block blockContent %}
+    {% if readOnly %}<fieldset class="accessibility-audit-readonly" disabled>{% endif %}
    
     {{ actionInput('accessibility-audit/settings/save-scanning') }}
     {{ redirectInput(url('accessibility-audit/settings/scanning')) }}
@@ -41,7 +42,7 @@
         disabled: config.scannerUserAgent is defined,
     }) }}
 
-    <h3>{{ 'Scheduled Scans'|t('accessibility-audit') }}</h3>
+    <h2>{{ 'Scheduled Scans'|t('accessibility-audit') }}</h2>
 
     <div class="readable">
         <blockquote class="note">
@@ -54,7 +55,7 @@
 
     <hr>
 
-    <h3>{{ 'Server-side Browser Scanning'|t('accessibility-audit') }}</h3>
+    <h2>{{ 'Server-side Browser Scanning'|t('accessibility-audit') }}</h2>
 
     {% if not (isPro ?? false) %}
         {% include 'accessibility-audit/_includes/pro-upsell' with {
@@ -168,6 +169,21 @@
         allowReorder: not (config.excludedUriPatterns is defined),
         static: config.excludedUriPatterns is defined,
     }) }}
+
+    {{ forms.textareaField({
+        label: 'Excluded Elements (CSS selectors)'|t('accessibility-audit'),
+        instructions: 'Elements matching these selectors are skipped by every scan surface: the PHP scan, the browser pass, the Inspect preview, and the overlay. One selector per line, e.g. {example}. The common consent-management banners (OneTrust, Cookiebot, Ketch and the rest) are always excluded; add anything else on the page you do not control, such as a chat widget.'|t('accessibility-audit', {
+            example: '<code>#live-chat-widget</code>',
+        }),
+        id: 'excludedSelectors',
+        name: 'settings[excludedSelectors]',
+        value: settings.excludedSelectors,
+        rows: 3,
+        class: 'code',
+        errors: settings.getErrors('excludedSelectors'),
+        warning: config.excludedSelectors is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.excludedSelectors is defined,
+    }) }}
     
 
     
@@ -240,4 +256,5 @@
             </p>
         </blockquote>
     </div>
+{% if readOnly %}</fieldset>{% endif %}
 {% endblock %}

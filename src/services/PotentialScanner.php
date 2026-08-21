@@ -11,6 +11,7 @@ use DOMDocument;
 use DOMElement;
 use DOMNode;
 use DOMXPath;
+use johnhenry\accessibilityaudit\helpers\ExcludedElements;
 use johnhenry\accessibilityaudit\models\IssueModel;
 use yii\base\Component;
 
@@ -30,6 +31,10 @@ class PotentialScanner extends Component
         // XML encoding prologue tells libxml the source is UTF-8.
         $dom->loadHTML('<?xml encoding="UTF-8">' . $html, LIBXML_NOERROR);
         $xpath = new DOMXPath($dom);
+
+        // Same exclusions as ContentScanner and the browser engines: a
+        // consent banner must not generate potential questions either.
+        ExcludedElements::removeFrom($xpath);
 
         return array_merge(
             $this->checkShortAlt($xpath),
@@ -62,7 +67,10 @@ class PotentialScanner extends Component
                 message: 'Is this image alt text descriptive enough? It is very short, confirm it adequately describes the image.',
                 wcagCriterion: '1.1.1',
                 wcagLevel: 'A',
-                context: $this->outerHtml($node),
+                // 300, not the default cap: image snippets must keep enough
+                // of the src URL to tell sibling images on a shared upload
+                // path apart, or the report highlights the lot of them.
+                context: $this->outerHtml($node, 300),
                 helpUrl: null,
                 source: 'php',
             );
@@ -245,7 +253,8 @@ class PotentialScanner extends Component
                     message: 'Is this image purely decorative? If so, add role="presentation" or aria-hidden="true". If it conveys meaning, add descriptive alt text.',
                     wcagCriterion: '1.1.1',
                     wcagLevel: 'A',
-                    context: $this->outerHtml($node),
+                    // Same 300 cap as short-alt: see the comment there.
+                    context: $this->outerHtml($node, 300),
                     helpUrl: null,
                     source: 'php',
                 );
