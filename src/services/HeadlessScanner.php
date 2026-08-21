@@ -471,6 +471,9 @@ class HeadlessScanner extends Component
     private function _axeRunScript(): string
     {
         $tagsJson = Json::encode(AccessibilityAudit::getInstance()->getAudit()->getAxeTags());
+        // Consent banners and other excluded page furniture, in axe's context
+        // shape, so the headless pass skips exactly what the other engines skip.
+        $excludeJson = Json::encode(AccessibilityAudit::getInstance()->getAudit()->getAxeExclude());
         $maxNodes = self::MAX_NODES_PER_VIOLATION;
         $maxHtml = self::MAX_NODE_HTML_LENGTH;
 
@@ -479,7 +482,7 @@ class HeadlessScanner extends Component
         // results are filtered to contrast, the only rule whose "can't tell"
         // answer is worth a person's time (see _storeContrastNeedsReview).
         return <<<JS
-            axe.run(document, {
+            axe.run({ exclude: {$excludeJson} }, {
                 runOnly: { type: 'tag', values: {$tagsJson} },
                 resultTypes: ['violations', 'incomplete'],
             }).then(function(r) {

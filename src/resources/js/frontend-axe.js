@@ -13,6 +13,9 @@
   const storeUrl    = cfg.storeUrl    || '/accessibility-audit/store-axe-results';
   const csrfName    = cfg.csrfName    || window.csrfTokenName  || 'CRAFT_CSRF_TOKEN';
   const csrfValue   = cfg.csrfValue   || window.csrfTokenValue || '';
+  /* Decoupled front ends authenticate with a bearer token (set by the
+     overlay loader) instead of the session's CSRF pair. */
+  const token       = cfg.token       || '';
   // let: storing results can create the scan (ensureScan) and hand back its id.
   let scanId        = cfg.scanId      || 0;
   const elementId   = cfg.elementId   || 0;
@@ -21,6 +24,13 @@
   /* Resolved server-side (AuditService::getAxeTags) so the overlay scans with
      exactly the same tags as the Inspect preview and the headless scanner. */
   const axeTags     = cfg.axeTags     || ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'];
+  /* Excluded page furniture (consent banners and the like), resolved
+     server-side so all engines skip the same elements. axe context shape:
+     one selector per entry, each wrapped in its own array. */
+  const axeExclude  = cfg.axeExclude  || [];
+  /* The same list joined for Element.closest(), for the custom contrast
+     scanner which walks elements outside axe. */
+  const excludeJoined = axeExclude.map((pair) => pair[0]).join(', ');
   const collapseWhenIdle = cfg.collapseWhenIdle === true;
   const position    = cfg.position    || 'bottom-right';
   const reportUrl   = cfg.reportUrl   || '';
@@ -211,7 +221,7 @@
 
     loadAxe(() => {
       window.axe.run(
-        { include: [[document.documentElement]], exclude: [['#accessibility-audit-overlay'], ['#accessibility-audit-overlay-trigger']] },
+        { include: [[document.documentElement]], exclude: [['#accessibility-audit-overlay'], ['#accessibility-audit-overlay-trigger']].concat(axeExclude) },
         {
           runOnly: { type: 'tag', values: axeTags },
           /* violations + incomplete drive the Issues tab; passes drive the Passed tab */
@@ -362,9 +372,12 @@
     const sep = pageIssuesUrl.includes('?') ? '&' : '?';
     const url = pageIssuesUrl + sep + 'scanId=' + encodeURIComponent(scanId) + '&siteId=' + encodeURIComponent(siteId);
 
+    const hydrateHeaders = { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' };
+    if (token) hydrateHeaders['Authorization'] = 'Bearer ' + token;
+
     fetch(url, {
-      credentials: 'same-origin',
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: token ? 'omit' : 'same-origin',
+      headers: hydrateHeaders,
     })
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error('HTTP ' + res.status))))
       .then((data) => {
@@ -482,16 +495,43 @@
   function highlightElement(targets) {
     document.querySelectorAll('.accessibility-audit-hl-flash').forEach((el) => el.classList.remove('accessibility-audit-hl-flash'));
     let first = null;
+    let firstVisible = null;
     (targets || []).forEach((sel) => {
       try {
         const el = document.querySelector(sel);
         if (el && !el.closest('#accessibility-audit-overlay')) {
           el.classList.add('accessibility-audit-hl-flash');
           if (!first) first = el;
+          /* Prefer scrolling to an element still on screen: one may have
+             gone hidden since the scan (a menu that has closed). */
+          if (!firstVisible && el.getClientRects().length) firstVisible = el;
         }
       } catch (_) { /* invalid selector, skip */ }
     });
-    if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const scrollTarget = firstVisible || first;
+    if (scrollTarget) scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Everything matched is off screen: say so, or the click looks inert.
+    if (first && !firstVisible) {
+      hiddenTargetNotice();
+    }
+  }
+
+  /* Transient corner notice for a highlight that landed only on hidden
+     elements. Same visual language as the loader's activation notice. */
+  function hiddenTargetNotice() {
+    const existing = document.getElementById('accessibility-audit-hl-note');
+    if (existing) existing.remove();
+    const el = document.createElement('div');
+    el.id = 'accessibility-audit-hl-note';
+    el.setAttribute('role', 'status');
+    el.style.cssText =
+      'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:2147483647;' +
+      'max-width:340px;padding:10px 14px;border-radius:8px;' +
+      'font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;background:#1f2937;' +
+      'box-shadow:0 4px 12px rgb(0 0 0 / 25%);';
+    el.textContent = 'The highlighted element is inside a collapsed menu or panel. Open it to see the flash.';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 6000);
   }
 
   // ─── Collapsed badge ─────────────────────────────────────────────────────
@@ -502,7 +542,7 @@
         ? `<span class="accessibility-audit-trigger-dot accessibility-audit-dot--${worstSev}"></span><span class="accessibility-audit-trigger-count">${count}</span>`
         : '');
     triggerEl.setAttribute('aria-label', count > 0
-      ? `Open Accessibility Audit panel — ${count} issue${count !== 1 ? 's' : ''}`
+      ? `Open Accessibility Audit panel, ${count} issue${count !== 1 ? 's' : ''}`
       : 'Open Accessibility Audit panel');
   }
 
@@ -539,7 +579,8 @@
     if (!canAutoScan) return null;
     try {
       const fd = new FormData();
-      fd.append(csrfName,     csrfValue);
+      // Token mode carries no session; the overlay endpoints don't check CSRF.
+      if (!token) fd.append(csrfName, csrfValue);
       fd.append('scanId',      scanId);
       fd.append('elementId',   elementId);
       fd.append('elementType', elementType);
@@ -551,7 +592,14 @@
       fd.append('violations',  JSON.stringify(violations));
       /* Contrast nodes axe couldn't measure, stored as needs-review items. */
       fd.append('incomplete',  JSON.stringify(contrastIncomplete(incomplete)));
-      const res = await fetch(storeUrl, { method: 'POST', body: fd, headers: { 'Accept': 'application/json' } });
+      const storeHeaders = { 'Accept': 'application/json' };
+      if (token) storeHeaders['Authorization'] = 'Bearer ' + token;
+      const res = await fetch(storeUrl, {
+        method: 'POST',
+        body: fd,
+        credentials: token ? 'omit' : 'same-origin',
+        headers: storeHeaders,
+      });
       return res.ok ? await res.json() : null;
     } catch (_) {
       // Non-critical: the live results stay shown in the panel
@@ -568,8 +616,13 @@
     return AccessibilityAuditShared.collectContrastFailures(document, {
       limit: 50,
       htmlLength: 150,
-      /* Skip the overlay itself */
-      skipEl: function (el) { return !!el.closest('#accessibility-audit-overlay, #accessibility-audit-overlay-trigger'); },
+      /* Skip the overlay itself, and the excluded page furniture (consent
+         banners etc.) that axe is skipping too. */
+      skipEl: function (el) {
+        if (el.closest('#accessibility-audit-overlay, #accessibility-audit-overlay-trigger')) return true;
+        if (!excludeJoined) return false;
+        try { return !!el.closest(excludeJoined); } catch (_) { return false; }
+      },
     });
   }
 

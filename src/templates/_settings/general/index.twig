@@ -5,9 +5,10 @@
 
 {% set crumbs = [] %}
 
-{% set fullPageForm = true %}
+{% set fullPageForm = not (readOnly ?? false) %}
 
 {% block blockContent %}
+    {% if readOnly %}<fieldset class="accessibility-audit-readonly" disabled>{% endif %}
 
     {{ actionInput('accessibility-audit/settings/save-general') }}
     {{ redirectInput(url('accessibility-audit/settings/general')) }}
@@ -146,4 +147,5 @@
     }) }}
 
     
+{% if readOnly %}</fieldset>{% endif %}
 {% endblock %}

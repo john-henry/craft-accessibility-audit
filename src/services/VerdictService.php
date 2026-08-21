@@ -74,7 +74,12 @@ class VerdictService extends Component
      */
     public function contextHash(?string $context): string
     {
-        return sha1(trim((string)$context));
+        // Line endings are normalised before hashing: the browser's form
+        // encoding converts a multi-line context's \n to \r\n on the way up,
+        // so without this a ruling on any multi-line snippet hashed to a
+        // value no stored row could ever match: saved, matched nothing,
+        // and the question came straight back.
+        return sha1(trim(str_replace(["\r\n", "\r"], "\n", (string)$context)));
     }
 
     /**
@@ -271,7 +276,16 @@ class VerdictService extends Component
      */
     public function lookupMeta(array $map, int $elementId, string $ruleId, ?string $context): ?array
     {
-        return $map[$elementId . '|' . $ruleId . '|' . $this->contextHash($context)] ?? null;
+        $meta = $map[$elementId . '|' . $ruleId . '|' . $this->contextHash($context)] ?? null;
+        if ($meta !== null) {
+            return $meta;
+        }
+
+        $legacy = $this->_legacyContextHash($context);
+
+        return $legacy !== null
+            ? ($map[$elementId . '|' . $ruleId . '|' . $legacy] ?? null)
+            : null;
     }
 
     /**
@@ -287,6 +301,54 @@ class VerdictService extends Component
      */
     public function lookup(array $map, string $ruleId, ?string $context): ?string
     {
-        return $map[$ruleId . '|' . $this->contextHash($context)] ?? null;
+        $verdict = $map[$ruleId . '|' . $this->contextHash($context)] ?? null;
+        if ($verdict !== null) {
+            return $verdict;
+        }
+
+        $legacy = $this->_legacyContextHash($context);
+
+        return $legacy !== null
+            ? ($map[$ruleId . '|' . $legacy] ?? null)
+            : null;
+    }
+
+    // Private Methods
+    // =========================================================================
+
+    /**
+     * The hash a pre-1.0.11 scan would have stored for this context, or null
+     * when the two could not differ.
+     *
+     * Image contexts used to be capped at 150 characters; they now keep 300
+     * so the src URL survives (see PotentialScanner). A ruling made before
+     * the change is keyed on the shorter snippet, so a longer context also
+     * tries the reconstruction: the first 150 characters plus the truncation
+     * ellipsis, exactly what the old builder produced. Without this, every
+     * dismissed image question would come straight back after the upgrade.
+     *
+     * @param string|null $context The current (longer) context snippet.
+     * @return string|null The legacy hash, or null when the context is short
+     *                     enough that both builders stored it identically.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _legacyContextHash(?string $context): ?string
+    {
+        // Same line-ending normalisation as contextHash(), before measuring:
+        // the reconstruction must cut at the position the old builder did.
+        $context = trim(str_replace(["\r\n", "\r"], "\n", (string)$context));
+
+        // At 150 or under the old builder stored the identical string, so
+        // there is no second hash. From 151 up the two can differ: a 151-char
+        // snippet fit the new cap untouched, but the old builder truncated it
+        // to 150 plus the ellipsis.
+        if (mb_strlen($context) <= 150) {
+            return null;
+        }
+
+        $body = str_ends_with($context, '…') ? mb_substr($context, 0, -1) : $context;
+
+        return $this->contextHash(mb_substr($body, 0, 150) . '…');
     }
 }

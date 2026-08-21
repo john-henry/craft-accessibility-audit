@@ -44,7 +44,9 @@
         'link-text':             'a[href]',
         'link-new-window':       'a[target="_blank"]',
         'heading-order':         'h1, h2, h3, h4, h5, h6',
-        'empty-heading':         'h1:empty, h2:empty, h3:empty, h4:empty, h5:empty, h6:empty',
+        /* Broad on purpose: RULE_FILTERS narrows to headings with no visible
+           text, which :empty can't (it misses whitespace and empty spans). */
+        'empty-heading':         'h1, h2, h3, h4, h5, h6',
         'html-lang':             'html',
         'html-has-lang':         'html',
         'table-caption':         'table',
@@ -81,6 +83,7 @@
         'image-redundant-alt':   'img[alt]',
         'input-image-alt':       'input[type="image"]',
         'list':                  'ul, ol',
+        'list-structure':        'li',
         'listitem':              'li',
         'meta-viewport':         'meta[name="viewport"]',
         'nested-interactive':    'a button, button a, a input, input a, a select',
@@ -117,15 +120,83 @@
         'potential:video-audio-desc': 'video',
     };
 
+    /* Findings with no offending element to point at: something the page
+       lacks, or (the axe document-level rules) the <html> element itself.
+       selectorFor() returns null for these so no highlight runs. Exact ids
+       only: axe's own `axe:skip-link` (a real skip link pointing nowhere)
+       is a different finding with real nodes and keeps its fallback. */
+    var ABSENCE_RULES = [
+        'skip-link', 'page-title', 'meta-description', 'landmark-main', 'landmark-regions',
+        'axe:document-title', 'axe:html-has-lang', 'axe:html-lang-valid', 'axe:aria-hidden-body',
+    ];
+
     /* The selector for a rule, tolerating the axe: source prefix. Axe
        findings are stored as `axe:region` while the map above keys them by
        axe's own name (`region`). Exact key checked first, so a prefixed
        entry (the potential rules) still wins where one exists. */
     function selectorFor(ruleId) {
         if (!ruleId) return null;
+        if (ABSENCE_RULES.indexOf(ruleId) !== -1) return null;
 
         return RULE_SELECTORS[ruleId]
             || RULE_SELECTORS[ruleId.replace(/^axe:/, '')]
+            || null;
+    }
+
+    /* Predicates re-running a rule's own failure test in the preview, so
+       fallback highlighting frames genuine offenders instead of everything
+       the broad selector matches. Keyed like RULE_SELECTORS. */
+    var RULE_FILTERS = {
+        'button-name': function (el) {
+            if (visibleText(el) || el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || el.getAttribute('title')) return false;
+            var img = el.querySelector('img[alt]');
+            return !(img && img.getAttribute('alt').trim());
+        },
+        'link-name': function (el) {
+            if (visibleText(el) || el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || el.getAttribute('title')) return false;
+            var img = el.querySelector('img[alt]');
+            return !(img && img.getAttribute('alt').trim());
+        },
+        'empty-heading': function (el) {
+            return !visibleText(el);
+        },
+        /* axe's list test: a list with element children that aren't li. */
+        'list': function (el) {
+            for (var lc = 0; lc < el.children.length; lc++) {
+                if (!/^(li|script|template)$/i.test(el.children[lc].tagName)) return true;
+            }
+            return false;
+        },
+        /* axe's listitem test: an li whose parent is not a list. */
+        'listitem': function (el) {
+            var parent = el.parentElement;
+            return !!parent && !/^(ul|ol|menu)$/i.test(parent.tagName);
+        },
+        'list-structure': function (el) {
+            var parent = el.parentElement;
+            return !!parent && !/^(ul|ol|menu)$/i.test(parent.tagName);
+        },
+        /* Approximates axe's 2.5.8 test (under 24×24 CSS px, inline links
+           exempt). axe also weighs neighbour spacing, so a near-miss can be
+           framed too. */
+        'target-size': function (el) {
+            var rect = el.getBoundingClientRect();
+            if (!rect.width || !rect.height) return false;
+            if (rect.width >= 24 && rect.height >= 24) return false;
+            if (el.tagName.toLowerCase() === 'a') {
+                try {
+                    if (el.ownerDocument.defaultView.getComputedStyle(el).display === 'inline') return false;
+                } catch (_) {}
+            }
+            return true;
+        },
+    };
+
+    function filterFor(ruleId) {
+        if (!ruleId) return null;
+
+        return RULE_FILTERS[ruleId]
+            || RULE_FILTERS[ruleId.replace(/^axe:/, '')]
             || null;
     }
 
@@ -197,6 +268,12 @@
         try { elements = doc.querySelectorAll(selector); }
         catch (e) { console.warn('[a11y] bad selector:', selector, e); return; }
 
+        /* A rule with a failure predicate narrows to genuine offenders. */
+        var ruleFilter = filterFor(ruleId);
+        if (ruleFilter) {
+            elements = Array.prototype.filter.call(elements, ruleFilter);
+        }
+
         var count = 0;
         elements.forEach(function (el, i) {
             el.setAttribute('data-accessibility-audit-hl', i === 0 ? 'first' : 'other');
@@ -219,12 +296,16 @@
     }
 
     function showCrossOriginNotice() {
+        showHighlightNote("(can't highlight, different domain)");
+    }
+
+    function showHighlightNote(text) {
         var active = document.querySelector('.accessibility-audit-pr-issue-row--active');
         if (!active) return;
         if (!active.querySelector('.accessibility-audit-pr-hl-note')) {
             var note = document.createElement('span');
             note.className = 'accessibility-audit-pr-hl-note';
-            note.textContent = "(can't highlight, different domain)";
+            note.textContent = text;
             active.appendChild(note);
         }
     }
@@ -232,7 +313,9 @@
     /* Rules whose finding is about the page as a whole, not a specific element
        (e.g. "this page has no skip link"), so they always produce exactly one
        occurrence with no per-element context. The expand panel shows their
-       message instead of the "1 occurrence" heading; highlighting still runs. */
+       message instead of the "1 occurrence" heading. Highlighting only runs
+       for multiple-h1 (the extra h1s are the offenders); the rest are
+       ABSENCE_RULES above, where selectorFor() returns null. */
     var PAGE_LEVEL_RULES = ['meta-description', 'skip-link', 'multiple-h1', 'page-title', 'landmark-main', 'landmark-regions'];
 
     function isPageLevelRule(ruleId) {
@@ -483,6 +566,7 @@
         });
         ensureLazyLoaded(el);
         el.setAttribute('data-accessibility-audit-hl', 'first');
+        noticeIfAllHidden([el], doc);
         scrollToEl(el);
         el.style.animation = 'none';
         el.offsetHeight; // reflow
@@ -528,6 +612,26 @@
         }
     }
 
+    /* Whether the element renders nowhere on the page right now: inside a
+       collapsed menu, a closed accordion, a display:none panel. */
+    function hiddenInPage(el, doc) {
+        if (!el.getClientRects || !el.getClientRects().length) return true;
+        try { return doc.defaultView.getComputedStyle(el).visibility === 'hidden'; }
+        catch (_) { return false; }
+    }
+
+    /* Says so when EVERY matched element is hidden (a mixed set still shows
+       something); the highlight stays applied for when the menu opens. */
+    function noticeIfAllHidden(found, doc) {
+        if (!found.length) return;
+        for (var i = 0; i < found.length; i++) {
+            if (!hiddenInPage(found[i], doc)) return;
+        }
+        if (window.Craft && Craft.cp && Craft.cp.displayNotice) {
+            Craft.cp.displayNotice(Craft.t('accessibility-audit', 'Highlighted, but the element is inside a collapsed menu or panel. Open it on the page to see it.'));
+        }
+    }
+
     /* ── Context-based element matching ────────────────────────────── */
 
     /* Given stored context HTML (or JSON-wrapped contrast context), find the
@@ -556,9 +660,39 @@
            detached div with innerHTML would begin fetching/executing. */
         var parsed = new DOMParser().parseFromString(html, 'text/html');
         var el = parsed.body.firstElementChild;
+
+        /* The length cap often cuts inside the opening tag, and the HTML
+           parser's EOF-in-tag rule drops the whole token, leaving nothing to
+           match on even though complete attributes survived. Close the tag
+           (and a dangling attribute value, when the quote count says the cut
+           fell inside one) and parse again. */
+        var repaired = html;
+        if (!el && repaired.charAt(0) === '<') {
+            if (repaired.slice(-1) === '…') repaired = repaired.slice(0, -1);
+            if (repaired.indexOf('>') === -1) {
+                repaired += ((repaired.match(/"/g) || []).length % 2 === 1) ? '">' : '>';
+                parsed = new DOMParser().parseFromString(repaired, 'text/html');
+                el = parsed.body.firstElementChild;
+            }
+        }
+
+        /* Table-scoped tags (td, tr, …) are dropped outright by the in-body
+           parser: re-parse inside a table scaffold and descend to the tag. */
+        if (!el) {
+            var tableTag = /^<\s*(td|th|tr|tbody|thead|tfoot|caption|col|colgroup)\b/i.exec(repaired);
+            if (tableTag) {
+                parsed = new DOMParser().parseFromString('<table>' + repaired + '</table>', 'text/html');
+                el = parsed.body.querySelector(tableTag[1].toLowerCase());
+            }
+        }
         if (!el) return null;
 
         var tag = el.tagName.toLowerCase();
+
+        /* Document-level nodes (axe reports <html> for document-title and
+           the lang rules): boxing the whole page marks nothing out, so these
+           resolve to no element rather than to everything. */
+        if (tag === 'html' || tag === 'body') return null;
 
         /* 1. Exact id match */
         if (el.id) {
@@ -566,40 +700,92 @@
             if (byId && byId.tagName.toLowerCase() === tag) return byId;
         }
 
+        /* Attributes can be shared (a nav link and a CTA with the same href),
+           so among candidates the one also matching the stored element's
+           classes and text wins; a lone candidate is trusted as-is. */
+        var wantClass = (el.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean).sort().join(' ');
+        var wantText = el.textContent.trim();
+        /* A stored text preview is capped with a trailing ellipsis, so a
+           capped want means prefix comparison, not equality. */
+        function textMatchesWant(candText) {
+            if (!wantText) return false;
+            if (wantText.slice(-1) === '…') return candText.indexOf(wantText.slice(0, -1)) === 0;
+            return candText === wantText;
+        }
+        function pickCandidate(cands) {
+            if (!cands.length) return null;
+            if (cands.length === 1) return cands[0];
+            var best = cands[0];
+            var bestScore = -1;
+            for (var c = 0; c < cands.length; c++) {
+                var score = 0;
+                var candClass = (cands[c].getAttribute('class') || '').trim().split(/\s+/).filter(Boolean).sort().join(' ');
+                if (wantClass && candClass === wantClass) score += 4;
+                if (textMatchesWant(cands[c].textContent.trim())) score += 2;
+                /* Visibility as the tiebreak: an equally good hidden twin
+                   (a cloned slide, an off-state menu) loses to one on screen. */
+                if (!hiddenInPage(cands[c], doc)) score += 1;
+                if (score > bestScore) { bestScore = score; best = cands[c]; }
+            }
+            return best;
+        }
+        function attrCandidates(attrSelector) {
+            var out = [];
+            try {
+                doc.querySelectorAll(attrSelector).forEach(function (cand) { out.push(cand); });
+            } catch (_) {}
+            return out;
+        }
+
         /* 2. href match (links) */
         var href = el.getAttribute('href');
         if (href) {
             var links = doc.querySelectorAll(tag + '[href]');
+            var hrefCands = [];
             for (var i = 0; i < links.length; i++) {
-                if (links[i].getAttribute('href') === href) return links[i];
+                if (links[i].getAttribute('href') === href) hrefCands.push(links[i]);
             }
+            var byHref = pickCandidate(hrefCands);
+            if (byHref) return byHref;
         }
 
         /* 3. src match (images, iframes) */
         var src = el.getAttribute('src');
         if (src) {
-            try {
-                var bySrc = doc.querySelector(tag + '[src=' + JSON.stringify(src) + ']');
-                if (bySrc) return bySrc;
-            } catch (_) {}
+            var bySrc = pickCandidate(attrCandidates(tag + '[src=' + JSON.stringify(src) + ']'));
+            if (bySrc) return bySrc;
         }
 
         /* 4. name match (form elements) */
         var name = el.getAttribute('name');
         if (name) {
-            try {
-                var byName = doc.querySelector(tag + '[name=' + JSON.stringify(name) + ']');
-                if (byName) return byName;
-            } catch (_) {}
+            var byName = pickCandidate(attrCandidates(tag + '[name=' + JSON.stringify(name) + ']'));
+            if (byName) return byName;
         }
 
         /* 5. aria-label match */
         var ariaLabel = el.getAttribute('aria-label');
         if (ariaLabel) {
-            try {
-                var byAria = doc.querySelector(tag + '[aria-label=' + JSON.stringify(ariaLabel) + ']');
-                if (byAria) return byAria;
-            } catch (_) {}
+            var byAria = pickCandidate(attrCandidates(tag + '[aria-label=' + JSON.stringify(ariaLabel) + ']'));
+            if (byAria) return byAria;
+        }
+
+        /* 5b. Any remaining attributes, compounded: data-* hooks identify
+           elements with no id, text, or distinctive class. Names CSS can't
+           select on (Alpine's @click, :class) are skipped; a miss falls
+           through to the class and text steps. */
+        if (el.attributes && el.attributes.length) {
+            var attrSel = tag;
+            for (var ai = 0; ai < el.attributes.length; ai++) {
+                var at = el.attributes[ai];
+                if (at.name === 'class' || at.name === 'style' || !at.value) continue;
+                if (!/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(at.name)) continue;
+                attrSel += '[' + at.name + '=' + JSON.stringify(at.value) + ']';
+            }
+            if (attrSel !== tag) {
+                var byAttrs = pickCandidate(attrCandidates(attrSel));
+                if (byAttrs) return byAttrs;
+            }
         }
 
         /* 6. Unique tag+class match: icon spans and styled boxes (contrast
@@ -615,13 +801,18 @@
             } catch (_) {}
         }
 
-        /* 7. Text content match (last resort) */
-        var text = el.textContent.trim();
-        if (text) {
+        /* 7. Text content match (last resort); a visible instance beats a
+           hidden one, since the same text can render more than once. */
+        if (wantText) {
             var candidates = doc.querySelectorAll(tag);
+            var textMatches = [];
             for (var j = 0; j < candidates.length; j++) {
-                if (candidates[j].textContent.trim() === text) return candidates[j];
+                if (textMatchesWant(candidates[j].textContent.trim())) textMatches.push(candidates[j]);
             }
+            for (var v = 0; v < textMatches.length; v++) {
+                if (!hiddenInPage(textMatches[v], doc)) return textMatches[v];
+            }
+            if (textMatches.length) return textMatches[0];
         }
 
         return null;
@@ -678,15 +869,33 @@
             matchByText(doc, activeSelector, occ.context).forEach(function (match) {
                 if (found.indexOf(match) === -1) found.push(match);
             });
+
+            /* Markup with a truncated URL (a long image src): same prefix
+               fallback the potential path uses. */
+            if (occ.context.charAt(0) === '<') {
+                matchByUrlPrefix(doc, activeSelector, occ.context).forEach(function (match) {
+                    if (found.indexOf(match) === -1) found.push(match);
+                });
+            }
         });
 
         if (found.length === 0) {
-            /* No context matches, fall back to broad selector so something is shown */
-            var row = document.querySelector('.accessibility-audit-pr-issue-row--active');
-            if (row) {
-                var selector = selectorFor(row.dataset.ruleId);
-                if (selector) highlightInIframe(row.dataset.ruleId, selector);
+            /* A rule's failure predicate can still locate genuine offenders
+               when the context itself was too anonymous to match. */
+            var flt = filterFor(ruleId);
+            var broadSel = selectorFor(ruleId);
+            if (flt && broadSel) {
+                try {
+                    found = Array.prototype.filter.call(doc.querySelectorAll(broadSel), flt);
+                } catch (_) {}
             }
+        }
+
+        if (found.length === 0) {
+            /* Nothing locatable (script-injected element, or a state the
+               preview isn't in): say so rather than box the broad selector. */
+            clearHighlights(doc);
+            showHighlightNote("(can't highlight, not in the preview)");
             return;
         }
 
@@ -705,6 +914,8 @@
         });
 
         if (paneContent && paneContent.hidden) switchToView('content');
+
+        noticeIfAllHidden(found, doc);
 
         var firstFound = found[0];
         scrollToEl(firstFound);
@@ -754,6 +965,21 @@
             });
         } catch (e) {
             return [];
+        }
+
+        /* A truncated URL prefix can match sibling images on a shared upload
+           path; the class attribute survives truncation and tells them apart.
+           Narrow only when it matches something, else the prefix set stands. */
+        if (out.length > 1) {
+            var cls = ctx.match(/class="([^"]*)"/);
+            if (cls) {
+                var want = cls[1].trim().split(/\s+/).filter(Boolean).sort().join(' ');
+                var narrowed = out.filter(function (el) {
+                    var candCls = (el.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean).sort().join(' ');
+                    return candCls === want;
+                });
+                if (narrowed.length) out = narrowed;
+            }
         }
 
         return out;
@@ -815,6 +1041,15 @@
             var el = findElementByContext(doc, ctx);
             if (el) {
                 found.push(el);
+                /* Box identical-text siblings too (a hero title repeated on a
+                   listing card), so whichever copy the scan recorded, the one
+                   on screen is among the boxed. */
+                var twinText = el.textContent.trim();
+                if (twinText) {
+                    matchByText(doc, el.tagName.toLowerCase(), twinText).forEach(function (twin) {
+                        if (found.indexOf(twin) === -1) found.push(twin);
+                    });
+                }
             } else {
                 /* Context is length-capped, so a long URL may be cut off
                    mid-attribute, and a lazy-loaded image keeps its real URL
@@ -827,7 +1062,21 @@
         }
 
         if (found.length === 0) {
-            highlightInIframe(ruleId, selector);
+            /* A rule with a failure predicate can still locate genuine
+               offenders by re-testing the candidates. */
+            var flt = filterFor(ruleId);
+            if (flt) {
+                try { found = Array.prototype.filter.call(doc.querySelectorAll(selector), flt); } catch (_) {}
+            }
+        }
+
+        if (found.length === 0) {
+            /* No identifying signal survived in the snippet, or the element
+               is gone: say so rather than box the broad selector. */
+            clearHighlights(doc);
+            if (window.Craft && Craft.cp && Craft.cp.displayNotice) {
+                Craft.cp.displayNotice(Craft.t('accessibility-audit', "This occurrence couldn't be located in the preview. The page may have changed since the scan, or the element is added by a script that doesn't run here."));
+            }
             return;
         }
 
@@ -847,10 +1096,17 @@
 
         if (paneContent && paneContent.hidden) switchToView('content');
 
+        noticeIfAllHidden(found, doc);
+
         /* Scroll now for responsiveness, then again once a just-loaded image
            has real dimensions: until it does, the target sits at the wrong
-           offset and the page lands in the wrong place. */
+           offset and the page lands in the wrong place. Scroll to the first
+           VISIBLE match: travelling to a hidden twin looks like nothing
+           happened. */
         var first = found[0];
+        for (var fv = 0; fv < found.length; fv++) {
+            if (!hiddenInPage(found[fv], doc)) { first = found[fv]; break; }
+        }
         scrollToEl(first);
         if (first.tagName.toLowerCase() === 'img' && first.complete === false) {
             first.addEventListener('load', function () { scrollToEl(first); }, { once: true });
@@ -1108,6 +1364,20 @@
     var _rgbToHex = AccessibilityAuditShared.rgbToHex;
 
     /* Collect per-element contrast violations (capped at 150 to avoid huge POST) */
+    /* Excluded page furniture (consent banners and the like), resolved
+       server-side and shared with every engine. Joined for Element.closest();
+       empty string when nothing is excluded. */
+    function excludedJoined() {
+        var pairs = (window.AccessibilityAudit || {}).axeExclude || [];
+        return pairs.map(function (pair) { return pair[0]; }).join(', ');
+    }
+
+    function inExcluded(el) {
+        var joined = excludedJoined();
+        if (!joined || !el.closest) return false;
+        try { return !!el.closest(joined); } catch (_) { return false; }
+    }
+
     function collectContrastOccurrences(doc) {
         if (!doc || !doc.body) return null;
         return AccessibilityAuditShared.collectContrastFailures(doc, {
@@ -1115,9 +1385,11 @@
             htmlLength: 200,
             /* Skip anything this tool injected or is currently decorating:
                highlight badges carry their own text, and a highlighted
-               element's rendering is ours, not the page's. */
+               element's rendering is ours, not the page's. Excluded page
+               furniture is skipped too, matching the axe pass. */
             skipEl: function (el) {
-                return !!(el.closest && el.closest('[data-accessibility-audit-hl], .accessibility-audit-hl-badge'));
+                if (el.closest && el.closest('[data-accessibility-audit-hl], .accessibility-audit-hl-badge')) return true;
+                return inExcluded(el);
             },
         });
     }
@@ -1233,6 +1505,10 @@
 
         parents.forEach(function (el) {
             if (results.length >= 50) return;
+            /* Excluded page furniture: same skip as the axe pass and the
+               definite-contrast collector, or the needs-review list fills up
+               with consent-banner text nobody can act on. */
+            if (inExcluded(el)) return;
             var style = doc.defaultView.getComputedStyle(el);
             if (style.display === 'none' || style.visibility === 'hidden') return;
             if (!el.offsetWidth && !el.offsetHeight) return;
@@ -1420,7 +1696,12 @@
             await stylesheetsSettled(doc);
 
             var sharedCfg = window.AccessibilityAudit || {};
-            var results = await win.axe.run(doc, {
+            /* Same exclusions as the headless pass and the overlay, in axe's
+               context shape, so a consent banner can't fail one engine and
+               pass another. An empty exclude leaves the context as the whole
+               iframe document. */
+            var axeContext = { exclude: sharedCfg.axeExclude || [] };
+            var results = await win.axe.run(axeContext, {
                 runOnly: { type: 'tag', values: sharedCfg.axeTags || ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'] },
                 resultTypes: ['violations', 'incomplete'],
             });

@@ -431,3 +431,56 @@
     animation: none;
   }
 }
+
+/* ── Site-style isolation ──────────────────────────────────────────────────
+   The overlay lives in the host page's DOM, so the site's own element rules
+   (h2 { font-family: … }, heading ornaments, a global letter-spacing) land
+   on it: inheritance from the panel root loses to any matching site rule.
+   Shadow DOM isn't an option (the highlight and scan logic need the page's
+   real DOM and styles), so every descendant is pinned with ID-scoped rules,
+   which outrank the element and class selectors a theme realistically uses.
+   Only properties uniform across the widget are pinned here; the exceptions
+   are re-asserted just below with higher specificity. */
+#accessibility-audit-overlay,
+#accessibility-audit-overlay *,
+#accessibility-audit-overlay-trigger,
+#accessibility-audit-overlay-trigger * {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: normal;
+  text-transform: none;
+  text-shadow: none;
+  box-sizing: border-box;
+  float: none;
+}
+
+/* Site heading styling (borders, backgrounds, oversized margins) must not
+   reach the panel title. */
+#accessibility-audit-overlay :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+
+/* Paragraph rhythm from the site (line-height, bottom margins) stays out of
+   the hint/status copy. */
+#accessibility-audit-overlay p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+/* Decorative ::before/::after content that themes attach to headings and
+   links. The widget renders no pseudo-element content of its own, so all of
+   it is switched off wholesale. */
+#accessibility-audit-overlay *::before,
+#accessibility-audit-overlay *::after,
+#accessibility-audit-overlay-trigger *::before,
+#accessibility-audit-overlay-trigger *::after {
+  content: none;
+}
+
+/* The two tracking exceptions the pinning above flattens. */
+#accessibility-audit-overlay .accessibility-audit-hdr-badge,
+#accessibility-audit-overlay-trigger .accessibility-audit-trigger-label {
+  letter-spacing: 0.08em;
+}

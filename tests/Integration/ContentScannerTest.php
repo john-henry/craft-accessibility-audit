@@ -138,6 +138,8 @@ $elementRuleCases = [
     // duplicate-id (4.1.1)
     'duplicate-id fires on repeated ids' => ['duplicate-id', '<p id="dup">One</p><span id="dup">Two</span>', true],
     'duplicate-id allows unique ids' => ['duplicate-id', '<p id="one">One</p><span id="two">Two</span>', false],
+    'duplicate-id ignores empty ids (nothing can reference them)' => ['duplicate-id', '<p id="">One</p><span id="">Two</span>', false],
+    'duplicate-id ignores whitespace-only ids' => ['duplicate-id', '<p id=" ">One</p><span id=" ">Two</span>', false],
 
     // aria-hidden-focus (4.1.2)
     'aria-hidden-focus fires on a focusable child' => ['aria-hidden-focus', '<div aria-hidden="true"><button>Save</button></div>', true],

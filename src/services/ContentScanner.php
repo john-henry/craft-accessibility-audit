@@ -9,6 +9,7 @@ namespace johnhenry\accessibilityaudit\services;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
+use johnhenry\accessibilityaudit\helpers\ExcludedElements;
 use johnhenry\accessibilityaudit\models\IssueModel;
 use yii\base\Component;
 
@@ -37,6 +38,11 @@ class ContentScanner extends Component
         libxml_clear_errors();
 
         $xpath = new DOMXPath($dom);
+
+        // Excluded page furniture (consent banners, chat widgets) comes out
+        // of the DOM before any check runs, mirroring the browser engines'
+        // axe exclude context, so no engine reports what another skips.
+        ExcludedElements::removeFrom($xpath);
 
         $checks = [
             'img-alt' => fn() => $this->checkImgAlt($dom, $xpath),
@@ -567,6 +573,13 @@ class ContentScanner extends Component
         foreach ($xpath->query('//*[@id]') as $el) {
             /** @var DOMElement $el */
             $id = $el->getAttribute('id');
+            // An empty id="" can't be referenced by anything (labels,
+            // aria-labelledby, fragment links all need a value), so two of
+            // them collide with nothing and are no duplicate. Sloppy markup,
+            // but not an accessibility failure.
+            if (trim($id) === '') {
+                continue;
+            }
             if (isset($ids[$id])) {
                 $duplicates[$id] = true;
             } else {
@@ -701,7 +714,18 @@ class ContentScanner extends Component
         }
         $tag .= '>';
 
-        // Limit to opening tag for readability
+        // A short text preview rides along on every context: it names the
+        // element for a human (dozens of orphaned `<li>`s once rendered as
+        // identical bare tags) and gives the preview's context matcher a
+        // text signal. The matcher treats a trailing ellipsis as a prefix.
+        $text = trim((string)preg_replace('/\s+/u', ' ', $el->textContent));
+        if ($text !== '') {
+            if (mb_strlen($text) > 60) {
+                $text = mb_substr($text, 0, 60) . '…';
+            }
+            $tag .= htmlspecialchars($text) . '</' . $el->nodeName . '>';
+        }
+
         return mb_substr($tag, 0, 200);
     }
 }

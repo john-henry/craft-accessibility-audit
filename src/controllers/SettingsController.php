@@ -57,7 +57,9 @@ class SettingsController extends Controller
      */
     public function actionEditGeneral(): Response
     {
-        $this->requireAdmin();
+        // View only: no admin-changes requirement, so settings stay readable
+        // (read-only) on installs where allowAdminChanges is off.
+        $this->requireAdmin(false);
 
         $plugin = AccessibilityAudit::getInstance();
         $settings = $plugin->getSettings();
@@ -67,6 +69,7 @@ class SettingsController extends Controller
             'settings' => $settings,
             'config' => Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'),
             'isPro' => $plugin->isPro(),
+            'readOnly' => !Craft::$app->getConfig()->getGeneral()->allowAdminChanges,
         ]);
     }
 
@@ -75,7 +78,9 @@ class SettingsController extends Controller
      */
     public function actionEditScanning(): Response
     {
-        $this->requireAdmin();
+        // View only: no admin-changes requirement, so settings stay readable
+        // (read-only) on installs where allowAdminChanges is off.
+        $this->requireAdmin(false);
 
         $plugin = AccessibilityAudit::getInstance();
         $settings = $plugin->getSettings();
@@ -85,6 +90,7 @@ class SettingsController extends Controller
             'settings' => $settings,
             'config' => Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'),
             'isPro' => $plugin->isPro(),
+            'readOnly' => !Craft::$app->getConfig()->getGeneral()->allowAdminChanges,
             'headlessAvailable' => $plugin->headless->isAvailable(),
             'elementTypeOptions' => ScannableElementTypes::all(),
             'scannedElementTypes' => $settings->resolvedScannedElementTypes(),
@@ -96,7 +102,9 @@ class SettingsController extends Controller
      */
     public function actionEditMaintenance(): Response
     {
-        $this->requireAdmin();
+        // View only: no admin-changes requirement, so settings stay readable
+        // (read-only) on installs where allowAdminChanges is off.
+        $this->requireAdmin(false);
 
         $plugin = AccessibilityAudit::getInstance();
         $settings = $plugin->getSettings();
@@ -106,6 +114,7 @@ class SettingsController extends Controller
             'settings' => $settings,
             'config' => Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'),
             'isPro' => $plugin->isPro(),
+            'readOnly' => !Craft::$app->getConfig()->getGeneral()->allowAdminChanges,
             'retentionCap' => AuditService::STANDARD_RETENTION_CAP,
         ]);
     }
@@ -116,7 +125,9 @@ class SettingsController extends Controller
      */
     public function actionEditTools(): Response
     {
-        $this->requireAdmin();
+        // View only: no admin-changes requirement, so settings stay readable
+        // (read-only) on installs where allowAdminChanges is off.
+        $this->requireAdmin(false);
 
         $plugin = AccessibilityAudit::getInstance();
         $settings = $plugin->getSettings();
@@ -126,11 +137,19 @@ class SettingsController extends Controller
             'settings' => $settings,
             'config' => Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'),
             'isPro' => $plugin->isPro(),
+            'readOnly' => !Craft::$app->getConfig()->getGeneral()->allowAdminChanges,
             // Set once by actionGenerateCiToken() and read here so the full
             // token can be shown with a copy button right on the page,
             // instead of buried in a growl notice with no way to copy it
             // before it disappears.
             'newCiApiToken' => Craft::$app->getSession()->getFlash('newCiApiToken'),
+            // Same show-once flow for the decoupled overlay token, set by
+            // actionGenerateOverlayToken().
+            'newOverlayApiToken' => Craft::$app->getSession()->getFlash('newOverlayApiToken'),
+            // Built from the CP request's own host, not siteUrl(): on a
+            // decoupled install the site's base URL points at the frontend,
+            // but the loader is served by Craft.
+            'overlayScriptUrl' => Craft::$app->getRequest()->getHostInfo() . '/accessibility-audit/overlay.js',
         ]);
     }
 
@@ -139,7 +158,9 @@ class SettingsController extends Controller
      */
     public function actionEditNotifications(): Response
     {
-        $this->requireAdmin();
+        // View only: no admin-changes requirement, so settings stay readable
+        // (read-only) on installs where allowAdminChanges is off.
+        $this->requireAdmin(false);
 
         $plugin = AccessibilityAudit::getInstance();
         $settings = $plugin->getSettings();
@@ -149,6 +170,7 @@ class SettingsController extends Controller
             'settings' => $settings,
             'config' => Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'),
             'isPro' => $plugin->isPro(),
+            'readOnly' => !Craft::$app->getConfig()->getGeneral()->allowAdminChanges,
         ]);
     }
 
@@ -229,7 +251,7 @@ class SettingsController extends Controller
     public function actionGenerateCiToken(): Response
     {
         $this->requirePostRequest();
-        $this->requireAdmin();
+        $this->requireAdmin(requireAdminChanges: true);
 
         if (($refusal = $this->requireProJson('CI/CD integration')) !== null) {
             return $refusal;
@@ -264,6 +286,47 @@ class SettingsController extends Controller
     }
 
     /**
+     * Generates a fresh decoupled overlay token, saves it, and redirects back
+     * so it can be shown to the admin once. Same show-once flow as
+     * actionGenerateCiToken(): only the SHA-256 hash is persisted (settings
+     * land in project config), the plaintext goes in a flash var read by
+     * actionEditTools().
+     *
+     * @throws MissingComponentException
+     * @throws ForbiddenHttpException
+     * @throws BadRequestHttpException
+     * @throws MethodNotAllowedHttpException
+     * @throws \Exception
+     */
+    public function actionGenerateOverlayToken(): Response
+    {
+        $this->requirePostRequest();
+        $this->requireAdmin(requireAdminChanges: true);
+
+        if (($refusal = $this->requireProJson('Decoupled frontend overlay')) !== null) {
+            return $refusal;
+        }
+
+        $plugin = AccessibilityAudit::getInstance();
+        $settings = $plugin->getSettings();
+
+        $token = StringHelper::UUID();
+        $settings->overlayApiToken = hash('sha256', $token);
+
+        if (!Craft::$app->getPlugins()->savePluginSettings($plugin, $settings->toArray())) {
+            Craft::$app->getSession()->setError(Craft::t('app', 'Could not save plugin settings.'));
+            return $this->redirectToPostedUrl();
+        }
+
+        Craft::$app->getSession()->setFlash('newOverlayApiToken', $token);
+        Craft::$app->getSession()->setNotice(Craft::t(
+            'accessibility-audit',
+            'A new overlay token was generated. Copy it now, it won\'t be shown in full again.'
+        ));
+        return $this->redirectToPostedUrl();
+    }
+
+    /**
      * Sends a test message through whichever notification channels are
      * currently ticked on the submitted form, without requiring the settings
      * to be saved first: the values come straight off the request, applied
@@ -290,7 +353,9 @@ class SettingsController extends Controller
     public function actionTestNotification(): Response
     {
         $this->requirePostRequest();
-        $this->requireAdmin();
+        // Sends a test message from the posted values without persisting
+        // anything, so no admin-changes requirement.
+        $this->requireAdmin(false);
 
         if (($refusal = $this->requireProJson('Notifications')) !== null) {
             return $refusal;
@@ -371,7 +436,7 @@ class SettingsController extends Controller
     private function _saveSettings(): Response
     {
         $this->requirePostRequest();
-        $this->requireAdmin();
+        $this->requireAdmin(requireAdminChanges: true);
 
         $plugin = AccessibilityAudit::getInstance();
         $settings = $plugin->getSettings();
@@ -393,7 +458,15 @@ class SettingsController extends Controller
             $settings->chromeNoSandbox = (bool)   $this->request->getBodyParam('settings[chromeNoSandbox]', $settings->chromeNoSandbox);
             $settings->browserSettleMs = (int)    $this->request->getBodyParam('settings[browserSettleMs]', $settings->browserSettleMs);
         }
+        // The decoupled overlay is Pro-only and its fields aren't rendered on
+        // Standard, so leave the stored values alone there (same downgrade
+        // reasoning as the Chrome settings above).
+        if ($plugin->isPro()) {
+            $settings->decoupledOverlay = (bool)   $this->request->getBodyParam('settings[decoupledOverlay]', $settings->decoupledOverlay);
+            $settings->overlayAllowedOrigins = (string) $this->request->getBodyParam('settings[overlayAllowedOrigins]', $settings->overlayAllowedOrigins);
+        }
         $settings->scannerUserAgent = (string) $this->request->getBodyParam('settings[scannerUserAgent]', $settings->scannerUserAgent);
+        $settings->excludedSelectors = (string) $this->request->getBodyParam('settings[excludedSelectors]', $settings->excludedSelectors);
         $settings->en301549 = (bool)   $this->request->getBodyParam('settings[en301549]',        $settings->en301549);
         $settings->vpatExportTemplate = (string) $this->request->getBodyParam('settings[vpatExportTemplate]', $settings->vpatExportTemplate);
         $settings->statementTemplate = (string) $this->request->getBodyParam('settings[statementTemplate]', $settings->statementTemplate);
@@ -524,6 +597,8 @@ class SettingsController extends Controller
 
     public function actionSupport(): Response
     {
+        $this->requireAdmin(false);
+
         return $this->renderTemplate('accessibility-audit/_settings/support');
     }
 
