@@ -411,6 +411,77 @@ class AuditController extends Controller
     }
 
     /**
+     * Records the same ruling on a set of potential issues at once.
+     *
+     * Exists for the page whose review queue is one judgment repeated: fifty
+     * sticky-nav links flagged for the same unmeasurable background deserve
+     * one decision and one click, not fifty page reloads. Takes rule and
+     * context pairs rather than issue ids because that is what the review
+     * cards carry, and it is the pair a ruling is keyed to.
+     *
+     * Same gates as the single action: runScans (an editorial act, not a
+     * read), potential rules only, and a verdict from the known set. Clearing
+     * in bulk is what actionRestoreVerdicts() is for, so an empty verdict is
+     * refused here.
+     *
+     * @return Response
+     * @throws ForbiddenHttpException
+     * @throws BadRequestHttpException
+     * @throws Exception
+     * @throws MethodNotAllowedHttpException
+     * @throws SiteNotFoundException
+     * @throws \Exception
+     */
+    public function actionSetVerdictsBulk(): Response
+    {
+        $this->requirePostRequest();
+        $this->requirePermission('accessibility-audit:runScans');
+
+        $elementId = (int) $this->request->getBodyParam('elementId', 0);
+        $siteId = (int) ($this->request->getBodyParam('siteId') ?: Craft::$app->getSites()->getPrimarySite()->id);
+
+        if (($refusal = $this->_requireAllowedSite($siteId)) !== null) {
+            return $refusal;
+        }
+
+        $verdict = trim((string) $this->request->getBodyParam('verdict', ''));
+        if ($elementId === 0 || !in_array($verdict, VerdictService::VERDICTS, true)) {
+            return $this->asJson([
+                'success' => false,
+                'error' => Craft::t('accessibility-audit', 'Unknown verdict.'),
+            ]);
+        }
+
+        // Same decode-and-guard as the store endpoints: decodeIfJson() hands
+        // back the original string for invalid JSON, so is_array() is the check.
+        $raw = $this->request->getBodyParam('items', '[]');
+        $decoded = is_array($raw) ? $raw : Json::decodeIfJson($raw);
+        $items = is_array($decoded) ? $decoded : [];
+
+        $verdicts = AccessibilityAudit::getInstance()->verdicts;
+        $applied = 0;
+
+        foreach ($items as $item) {
+            $ruleId = trim((string) ($item['ruleId'] ?? ''));
+            if (!str_starts_with($ruleId, 'potential:')) {
+                continue;
+            }
+
+            $context = $item['context'] ?? null;
+            $verdicts->setVerdict(
+                $siteId,
+                $elementId,
+                $ruleId,
+                is_string($context) ? $context : null,
+                $verdict,
+            );
+            $applied++;
+        }
+
+        return $this->asJson(['success' => true, 'applied' => $applied]);
+    }
+
+    /**
      * GET /accessibility-audit/export
      * Downloads CSV report.
      *

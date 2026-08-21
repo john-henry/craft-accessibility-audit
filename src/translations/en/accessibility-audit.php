@@ -836,6 +836,11 @@ return [
     'Statement' => 'Statement',
     'Manage the accessibility statement' => 'Manage the accessibility statement',
 
+    // Bulk review dismissal (1.0.12)
+    'Dismiss selected' => 'Dismiss selected',
+    'Select all' => 'Select all',
+    'Select for bulk dismissal' => 'Select for bulk dismissal',
+
     // Decoupled frontend overlay + excluded elements (1.0.11)
     'No URL provided.' => 'No URL provided.',
     'The decoupled frontend overlay is not enabled.' => 'The decoupled frontend overlay is not enabled.',

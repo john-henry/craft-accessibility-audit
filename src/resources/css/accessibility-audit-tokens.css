@@ -30,6 +30,7 @@
   --aa-error: #b3261e; /* solid: chips, white text on it */
   --aa-error-deep: #7a2620; /* text on error-bg */
   --aa-error-bg: #fbeae8;
+  --aa-error-bg-hover: #f5d8d5; /* midway to the border; 7.4:1 under error-deep */
   --aa-error-border: #efc7c2;
 
   /* ---- Severity: warning ------------------------------------------------ */
