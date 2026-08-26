@@ -39,9 +39,13 @@
   // Mirrors the admin's "Use shapes to represent statuses" CP preference: when
   // on, the overlay's colour-only severity dots also take a shape (frontend-axe.css).
   const useShapes   = cfg.useShapes === true;
+  /* False inside Craft's preview pane. The preview renders a draft, which the
+     rest of the plugin does not scan, so findings are shown but never posted. */
+  const storeResults = cfg.storeResults !== false;
 
-  // Auto-scan only when the page has a known element to attach results to
-  const canAutoScan = (scanId > 0 || elementId > 0);
+  // Auto-scan only when the page has a known element to attach results to,
+  // or when there is nothing to attach to but the scan is still worth running.
+  const canAutoScan = (scanId > 0 || elementId > 0 || !storeResults);
 
   // Module-level refs set during buildPanel
   let panelEl   = null;
@@ -65,10 +69,15 @@
   // panel. Stores the full snapshot (score, issues, passes, label), not just
   // a timestamp, so results survive a page reload.
   function saveSnapshot(snap) {
+    /* Not in a preview: a draft's findings share the canonical pathname, so
+       caching them would restore draft results onto the published page. The
+       draft also changes between reloads, which a cached snapshot would hide. */
+    if (!storeResults) return;
     try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), snap: snap })); } catch (_) {}
   }
 
   function readSnapshot() {
+    if (!storeResults) return null;
     try {
       const raw = sessionStorage.getItem(CACHE_KEY);
       if (!raw) return null;
@@ -164,7 +173,7 @@
         <p class="accessibility-audit-hint">Click "Re-scan" to analyse this page for WCAG issues.</p>
       </div>
       <div id="accessibility-audit-overlay-footer">
-        <span class="accessibility-audit-scanned" data-scanned></span>
+        <span class="accessibility-audit-scanned" data-scanned>${storeResults ? '' : 'Preview: results are not saved'}</span>
         ${reportUrl ? `<a class="accessibility-audit-report-link" href="${esc(reportUrl)}" target="_blank" rel="noopener">Open full report ↗</a>` : ''}
       </div>`;
     document.body.appendChild(panelEl);
@@ -242,7 +251,7 @@
           /* Once stored, the server recalculates the scan's score across ALL
              sources (PHP scanner + axe). Repaint with that authoritative
              combined state so the overlay never disagrees with the CP. */
-          storeResults(results.violations, results.incomplete).then((resp) => {
+          postResults(results.violations, results.incomplete).then((resp) => {
             if (resp && resp.scan) {
               if (resp.scanId) scanId = resp.scanId;
               hydrateFromServer(resp.scan, { keepPasses: true });
@@ -318,7 +327,11 @@
     const label = panelEl.querySelector('.accessibility-audit-score__label');
     if (label) label.textContent = estimated ? '/100 est.' : '/100';
     const scanned = panelEl.querySelector('[data-scanned]');
-    if (scanned) scanned.textContent = scannedLabel ? 'Scanned ' + scannedLabel : '';
+    if (scanned) {
+      scanned.textContent = storeResults
+        ? (scannedLabel ? 'Scanned ' + scannedLabel : '')
+        : 'Preview: results are not saved';
+    }
   }
 
   /* Apply a results snapshot (fresh scan, restored sessionStorage, or the
@@ -575,8 +588,8 @@
       }));
   }
 
-  async function storeResults(violations, incomplete) {
-    if (!canAutoScan) return null;
+  async function postResults(violations, incomplete) {
+    if (!storeResults || !canAutoScan) return null;
     try {
       const fd = new FormData();
       // Token mode carries no session; the overlay endpoints don't check CSRF.

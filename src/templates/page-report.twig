@@ -29,7 +29,11 @@
 {% block actionButton %}
 <div class="flex gap-s">
     {% if element %}
-        <a href="{{ element.cpEditUrl }}" class="btn">{{ 'Edit element'|t('accessibility-audit') }}</a>
+        <a href="{{ element.cpEditUrl }}" target="_blank" rel="noopener" class="btn">
+            <span class="cp-icon small" aria-hidden="true">{{ iconSvg('arrow-up-right-from-square') }}</span>
+            {{ 'Edit element'|t('accessibility-audit') }}
+            <span class="visually-hidden">({{ 'opens in new tab'|t('accessibility-audit') }})</span>
+        </a>
         {% if pageUrl %}
             <a href="{{ pageUrl }}" target="_blank" rel="noopener" class="btn">
                 <span class="cp-icon small" aria-hidden="true">{{ iconSvg('arrow-up-right-from-square') }}</span>

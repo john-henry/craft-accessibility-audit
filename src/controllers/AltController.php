@@ -13,6 +13,8 @@ use craft\helpers\App;
 use craft\web\Controller;
 use GuzzleHttp\Exception\ClientException;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\helpers\AltTextPrompt;
+use johnhenry\accessibilityaudit\helpers\VisionImage;
 use JsonException;
 use Throwable;
 use yii\base\InvalidConfigException;
@@ -110,11 +112,7 @@ class AltController extends Controller
             return $this->asJson(['success' => false, 'error' => Craft::t('accessibility-audit', 'Could not read asset. Ensure the asset has a public URL or a supported filesystem.')]);
         }
 
-        $language = trim($settings->altTextLanguage ?? 'English') ?: 'English';
-        $prompt = 'Write concise, descriptive alt text for this image. Return only the alt text: no quotes, no explanation, no trailing period. Maximum 125 characters. Respond in ' . $language . '.';
-        if (!empty($settings->altTextContext)) {
-            $prompt = 'Site context: ' . $settings->altTextContext . "\n\n" . $prompt;
-        }
+        $prompt = AltTextPrompt::build($asset, $settings);
 
         try {
             $client = Craft::createGuzzleClient();
@@ -396,6 +394,13 @@ class AltController extends Controller
      */
     private function resolveImageSource(Asset $asset): ?array
     {
+        // Tier 0: oversized images are scaled down first. Must precede the
+        // URL tier, which would hand over the full-size original.
+        $downscaled = VisionImage::downscaledSource($asset);
+        if ($downscaled !== null) {
+            return $downscaled;
+        }
+
         $url = $asset->getUrl();
         $mime = $asset->getMimeType() ?: 'image/jpeg';
 

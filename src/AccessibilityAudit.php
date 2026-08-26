@@ -31,6 +31,7 @@ use craft\web\UrlManager;
 use craft\web\View;
 use johnhenry\accessibilityaudit\assets\AccessibilityAuditAsset;
 use johnhenry\accessibilityaudit\assets\FrontendAxeAsset;
+use johnhenry\accessibilityaudit\helpers\ScannableElementTypes;
 use johnhenry\accessibilityaudit\jobs\GenerateAltTextJob;
 use johnhenry\accessibilityaudit\models\SettingsModel;
 use johnhenry\accessibilityaudit\services\AssetScanner;
@@ -920,72 +921,97 @@ class AccessibilityAudit extends BasePlugin
      */
     private function registerElementSidebarPanel(): void
     {
-        Event::on(Element::class, Element::EVENT_DEFINE_SIDEBAR_HTML,
-            function(DefineHtmlEvent $e) {
-                /** @var Element $element */
-                $element = $e->sender;
+        $handler = static function(DefineHtmlEvent $e) {
+            /** @var Element $element */
+            $element = $e->sender;
 
-                // Registered on Element, not Entry: the scanner covers anything
-                // with a public URL (categories, Commerce products, etc), so the
-                // guards below mirror AuditService::getUrlElementsQuery() to keep
-                // the panel in sync with what actually gets scanned. Assets are
-                // excluded too: they're binary files with their own alt-text panel.
-                if ($element instanceof Asset || !$element->id || !$element->getUrl()) {
-                    return;
-                }
-
-                // A draft or revision is not what gets scanned, and its panel
-                // would report the canonical element's findings as its own.
-                if (
-                    (property_exists($element, 'draftId') && $element->draftId) ||
-                    (property_exists($element, 'revisionId') && $element->revisionId)
-                ) {
-                    return;
-                }
-
-                // An element type left out of the scan set gets no panel, in
-                // step with getUrlElementsQuery() and isElementExcluded(): its
-                // Re-scan button would only ever report "excluded".
-                if (!in_array($element::class, self::$plugin->getSettings()->resolvedScannedElementTypes(), true)) {
-                    return;
-                }
-
-                $plugin = self::$plugin;
-                $view = Craft::$app->getView();
-
-                // Load the panel's CSS/JS regardless of the permission-gated
-                // global CP asset registration, mirroring the field.
-                $view->registerAssetBundle(AccessibilityAuditAsset::class);
-
-                $scan = $plugin->audit->getLatestScan($element->id, $element->siteId);
-                // Grouped by rule, not one row per occurrence, so repeated
-                // findings collapse into a count instead of filling the panel.
-                // Same query the page report's issue list uses.
-                $issues = $scan ? $plugin->audit->getIssuesGroupedByScan((int) $scan['id']) : [];
-                $hasApiKey = trim(App::parseEnv($plugin->getSettings()->anthropicApiKey ?? '')) !== '';
-                $readabilityPro = $plugin->isPro();
-
-                $readabilityResult = null;
-                if ($readabilityPro) {
-                    $readabilityResult = $plugin->readability->getResults(1, $element->id, $element->siteId)[0] ?? null;
-                    // The early return above guarantees a public URL, so the
-                    // URL-keyed fallback needs no further guard.
-                    if (!$readabilityResult) {
-                        $readabilityResult = $plugin->readability->getResults(limit: 1, url: $element->getUrl())[0] ?? null;
-                    }
-                }
-
-                $e->html .= $view->renderTemplate('accessibility-audit/_sidebar/accessibility-panel', [
-                    'element' => $element,
-                    'scan' => $scan,
-                    'issues' => $issues,
-                    'hasApiKey' => $hasApiKey,
-                    'showReadabilityTab' => true,
-                    'readabilityPro' => $readabilityPro,
-                    'readabilityResult' => $readabilityResult,
-                ]);
+            // Registered on the concrete types and on Element both, so most
+            // types are offered the same event twice. Its own markup is the memo.
+            if (str_contains($e->html, 'accessibility-audit-panel')) {
+                return;
             }
-        );
+
+            // The scanner covers anything with a public URL (categories,
+            // Commerce products, etc), so the guards below mirror
+            // AuditService::getUrlElementsQuery() to keep the panel in step
+            // with what actually gets scanned. Assets are excluded too:
+            // they're binary files with their own alt-text panel.
+            if ($element instanceof Asset || !$element->id || !$element->getUrl()) {
+                return;
+            }
+
+            // A draft or revision is not what gets scanned, and its panel
+            // would report the canonical element's findings as its own.
+            if (
+                (property_exists($element, 'draftId') && $element->draftId) ||
+                (property_exists($element, 'revisionId') && $element->revisionId)
+            ) {
+                return;
+            }
+
+            // An element type left out of the scan set gets no panel, in
+            // step with getUrlElementsQuery() and isElementExcluded(): its
+            // Re-scan button would only ever report "excluded".
+            if (!in_array($element::class, self::$plugin->getSettings()->resolvedScannedElementTypes(), true)) {
+                return;
+            }
+
+            $plugin = self::$plugin;
+            $view = Craft::$app->getView();
+
+            // Load the panel's CSS/JS regardless of the permission-gated
+            // global CP asset registration, mirroring the field.
+            $view->registerAssetBundle(AccessibilityAuditAsset::class);
+
+            $scan = $plugin->audit->getLatestScan($element->id, $element->siteId);
+            // Grouped by rule, not one row per occurrence, so repeated
+            // findings collapse into a count instead of filling the panel.
+            // Same query the page report's issue list uses.
+            $issues = $scan ? $plugin->audit->getIssuesGroupedByScan((int) $scan['id']) : [];
+            $hasApiKey = trim(App::parseEnv($plugin->getSettings()->anthropicApiKey ?? '')) !== '';
+            $readabilityPro = $plugin->isPro();
+
+            $readabilityResult = null;
+            if ($readabilityPro) {
+                $readabilityResult = $plugin->readability->getResults(1, $element->id, $element->siteId)[0] ?? null;
+                // The early return above guarantees a public URL, so the
+                // URL-keyed fallback needs no further guard.
+                if (!$readabilityResult) {
+                    $readabilityResult = $plugin->readability->getResults(limit: 1, url: $element->getUrl())[0] ?? null;
+                }
+            }
+
+            $e->html .= $view->renderTemplate('accessibility-audit/_sidebar/accessibility-panel', [
+                'element' => $element,
+                'scan' => $scan,
+                'issues' => $issues,
+                'hasApiKey' => $hasApiKey,
+                'showReadabilityTab' => true,
+                'readabilityPro' => $readabilityPro,
+                'readabilityResult' => $readabilityResult,
+            ]);
+        };
+
+        // Registered on every scannable element type as well as on the base
+        // Element, each prepended to its handler queue, so the panel sits
+        // above the informational panels other plugins add (SEOmatic's among
+        // them) but never above Craft's own status and meta, which are in the
+        // event's html before any listener runs. The concrete registrations
+        // are what win that slot: Yii fires a concrete class's handlers before
+        // its parents', and the other plugins hook the concrete classes, so a
+        // handler only on Element runs after them whatever order it registered
+        // in. The base registration stays as the net for a type registered by
+        // a plugin this one cannot see, and the markup check above keeps the
+        // pair from drawing the panel twice. Deferred to onInit so the element
+        // type registry is complete when it is read.
+        Craft::$app->onInit(static function() use ($handler): void {
+            $classes = array_keys(ScannableElementTypes::all());
+            $classes[] = Element::class;
+
+            foreach ($classes as $class) {
+                Event::on($class, Element::EVENT_DEFINE_SIDEBAR_HTML, $handler, append: false);
+            }
+        });
     }
 
     /**

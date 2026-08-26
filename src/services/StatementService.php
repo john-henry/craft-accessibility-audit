@@ -430,6 +430,11 @@ class StatementService extends Component
      * than what gets published.
      *
      * @param int $siteId The site to render.
+     * @param array<string, mixed> $options Presentation options. `headingLevel`
+     *        (1 to 6, default 1) sets the level the statement's own title
+     *        renders at, with its subheadings stepping down from there, so the
+     *        statement can be dropped into a page that already has a heading
+     *        above it. `title` replaces the title text.
      * @return string The statement markup.
      * @throws LoaderError
      * @throws RuntimeError
@@ -437,7 +442,7 @@ class StatementService extends Component
      * @throws \yii\base\Exception
      * @throws \Exception
      */
-    public function render(int $siteId): string
+    public function render(int $siteId, array $options = []): string
     {
         $statement = $this->getFullStatement($siteId);
         $view = Craft::$app->getView();
@@ -454,11 +459,20 @@ class StatementService extends Component
                 'call craft.a11y.accessibilityStatementHtml().',
                 'accessibility-audit',
             );
-        } elseif ($template !== '' && $view->doesTemplateExist($template, View::TEMPLATE_MODE_SITE)) {
+        }
+
+        $headingLevel = (int)($options['headingLevel'] ?? 1);
+        $vars = [
+            'statement' => $statement,
+            'headingLevel' => max(1, min(6, $headingLevel)),
+            'title' => (string)($options['title'] ?? Craft::t('accessibility-audit', 'Accessibility statement')),
+        ];
+
+        if (!$this->_rendering && $template !== '' && $view->doesTemplateExist($template, View::TEMPLATE_MODE_SITE)) {
             $this->_rendering = true;
 
             try {
-                return $view->renderTemplate($template, ['statement' => $statement], View::TEMPLATE_MODE_SITE);
+                return $view->renderTemplate($template, $vars, View::TEMPLATE_MODE_SITE);
             } finally {
                 $this->_rendering = false;
             }
@@ -477,7 +491,7 @@ class StatementService extends Component
         // a site template root.
         return $view->renderTemplate(
             'accessibility-audit/statement-render',
-            ['statement' => $statement],
+            $vars,
             View::TEMPLATE_MODE_SITE,
         );
     }

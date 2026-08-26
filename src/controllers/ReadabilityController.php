@@ -87,6 +87,7 @@ class ReadabilityController extends Controller
             'stats' => $service->getStats($siteId),
             'results' => $service->getResults(elementId: $elementId, siteId: $siteId),
             'filteredElementId' => $elementId,
+            'prefillUrl' => $this->_elementUrl($elementId, $siteId),
             'siteId' => $siteId,
             'siteHandle' => $siteHandle,
             'sites' => $sites,
@@ -244,6 +245,30 @@ class ReadabilityController extends Controller
      * @return int The remaining wait time in seconds, or 0 when permitted.
      * @throws ForbiddenHttpException If no user is logged in.
      */
+    /**
+     * The public URL of the element the page was opened for, used to prefill
+     * the analyse field so arriving from an element's sidebar does not mean
+     * pasting the URL back in by hand.
+     *
+     * @param int|null $elementId The element the page was opened for.
+     * @param int $siteId The site being viewed.
+     * @return string|null The element's URL, or null if there isn't one.
+     */
+    private function _elementUrl(?int $elementId, int $siteId): ?string
+    {
+        if ($elementId === null) {
+            return null;
+        }
+
+        $element = Craft::$app->getElements()->getElementById($elementId, null, $siteId);
+
+        if ($element === null || !Craft::$app->getElements()->canView($element)) {
+            return null;
+        }
+
+        return $element->getUrl();
+    }
+
     private function _rateLimitWait(): int
     {
         $userId = Craft::$app->getUser()->getId();

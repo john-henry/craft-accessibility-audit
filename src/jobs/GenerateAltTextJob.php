@@ -15,6 +15,8 @@ use craft\helpers\App;
 use craft\queue\BaseJob;
 use GuzzleHttp\Exception\ClientException;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\helpers\AltTextPrompt;
+use johnhenry\accessibilityaudit\helpers\VisionImage;
 use Throwable;
 use yii\base\InvalidConfigException;
 
@@ -74,23 +76,7 @@ class GenerateAltTextJob extends BaseJob
             return;
         }
 
-        $language = trim($settings->altTextLanguage ?? 'English') ?: 'English';
-        $prompt = 'Write concise, descriptive alt text for this image. Return only the alt text: no quotes, no explanation, no trailing period. Maximum 125 characters. Respond in ' . $language . '.';
-
-        // Feed the asset's own metadata in as context. Alt text is better when
-        // the model can draw on more than the pixels: the filename and title
-        // often carry the subject or intent the image alone does not make plain.
-        // Framed as context so the model describes the picture, not the metadata.
-        $meta = 'Filename: ' . $asset->filename;
-        $assetTitle = trim((string) $asset->title);
-        if ($assetTitle !== '') {
-            $meta .= "\nTitle: " . $assetTitle;
-        }
-        $prompt = "Context for the image (do not repeat it verbatim):\n" . $meta . "\n\n" . $prompt;
-
-        if (!empty($settings->altTextContext)) {
-            $prompt = 'Site context: ' . $settings->altTextContext . "\n\n" . $prompt;
-        }
+        $prompt = AltTextPrompt::build($asset, $settings);
 
         try {
             $client = Craft::createGuzzleClient();
@@ -240,6 +226,13 @@ class GenerateAltTextJob extends BaseJob
      */
     private function resolveImageSource(Asset $asset): ?array
     {
+        // Oversized images are scaled down first. Must precede the URL tier,
+        // which would hand over the full-size original.
+        $downscaled = VisionImage::downscaledSource($asset);
+        if ($downscaled !== null) {
+            return $downscaled;
+        }
+
         $url = $asset->getUrl();
         $mime = $asset->getMimeType() ?: 'image/jpeg';
 

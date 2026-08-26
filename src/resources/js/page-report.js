@@ -153,9 +153,19 @@
             return !(img && img.getAttribute('alt').trim());
         },
         'link-name': function (el) {
-            if (visibleText(el) || el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || el.getAttribute('title')) return false;
-            var img = el.querySelector('img[alt]');
-            return !(img && img.getAttribute('alt').trim());
+            return !accessibleName(el);
+        },
+        'link-text': function (el) {
+            return GENERIC_LINK_TEXTS.indexOf(accessibleName(el).toLowerCase()) !== -1;
+        },
+        'link-generic': function (el) {
+            return GENERIC_LINK_TEXTS.indexOf(accessibleName(el).toLowerCase()) !== -1;
+        },
+        /* Mirrors ContentScanner::checkLinkNewWindow. */
+        'link-new-window': function (el) {
+            var label = ((el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || '')).toLowerCase();
+            return !(label.indexOf('new') !== -1 || label.indexOf('opens') !== -1 ||
+                     label.indexOf('window') !== -1 || label.indexOf('tab') !== -1);
         },
         'empty-heading': function (el) {
             return !visibleText(el);
@@ -1044,6 +1054,42 @@
 
         return clone.textContent.trim();
     }
+
+    /* An element's accessible name, resolved in accessible-name order:
+       aria-labelledby, aria-label, content, title. Mirrors
+       ContentScanner::_accessibleName so the filters agree with the scanner. */
+    function accessibleName(el) {
+        var labelledBy = (el.getAttribute('aria-labelledby') || '').trim();
+        if (labelledBy) {
+            var referenced = labelledBy.split(/\s+/).map(function (id) {
+                var ref = el.ownerDocument.getElementById(id);
+                return ref ? visibleText(ref) : '';
+            }).filter(Boolean).join(' ').trim();
+            if (referenced) return referenced;
+        }
+
+        var label = (el.getAttribute('aria-label') || '').trim();
+        if (label) return label;
+
+        var text = visibleText(el);
+        if (text) return text;
+
+        var img = el.querySelector('img[alt], area[alt]');
+        var alt = img ? img.getAttribute('alt').trim() : '';
+        if (alt) return alt;
+
+        var svgTitle = el.querySelector('svg > title');
+        if (svgTitle && svgTitle.textContent.trim()) return svgTitle.textContent.trim();
+
+        return (el.getAttribute('title') || '').trim();
+    }
+
+    /* Mirrors ContentScanner::GENERIC_LINK_TEXTS. */
+    var GENERIC_LINK_TEXTS = [
+        'click here', 'click', 'here', 'read more', 'more', 'learn more',
+        'this', 'link', 'details', 'info', 'information', 'go', 'continue',
+        'next', 'previous', 'page', 'article', 'post', 'open', 'view',
+    ];
 
     /* Highlights the exact element(s) a potential issue asks about: the broad
        rule selector answers nothing here (e.g. `a[href]` lights up every

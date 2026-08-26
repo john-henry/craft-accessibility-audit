@@ -545,6 +545,23 @@ class AuditService extends Component
             return 0;
         }
 
+        // A draft or revision never gets a scan of its own. The overlay runs
+        // inside Craft's preview pane, where the matched element is whatever
+        // is being previewed, so without this a preview scan would file
+        // against a provisional draft: invisible on the canonical element's
+        // report, and orphaned the moment the draft is published or dropped.
+        // Checked here rather than in the overlay alone, since the client
+        // sends the element id and cannot be the only thing enforcing it.
+        $isDerivative = (new Query())
+            ->from('{{%elements}}')
+            ->where(['id' => $elementId])
+            ->andWhere(['not', ['draftId' => null, 'revisionId' => null]])
+            ->exists();
+
+        if ($isDerivative) {
+            return 0;
+        }
+
         // Block the axe/contrast overlay from writing a scan for an excluded
         // page. The element is only loaded when patterns exist, to avoid an
         // extra query on the common (none) path.

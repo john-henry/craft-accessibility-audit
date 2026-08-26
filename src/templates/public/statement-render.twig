@@ -1,3 +1,8 @@
+{% set headingLevel = max(1, min(6, headingLevel|default(1))) %}
+{% set titleTag = 'h' ~ headingLevel %}
+{% set sectionTag = 'h' ~ min(headingLevel + 1, 6) %}
+{% set subSectionTag = 'h' ~ min(headingLevel + 2, 6) %}
+{% set statementTitle = title|default('Accessibility statement') %}
 
 {% set meta = statement.meta %}
 {% set isMandated = statement.profile in ['eu', 'uk'] %}
@@ -9,7 +14,7 @@
 
 <div class="accessibility-statement">
 
-    <h1>Accessibility statement</h1>
+    <{{ titleTag }}>{{ statementTitle }}</{{ titleTag }}>
 
     {% if meta.commitmentOverride %}
         <p>{{ meta.commitmentOverride|nl2br }}</p>
@@ -24,7 +29,7 @@
         {% endif %}
     {% endif %}
 
-    <h2>Compliance status</h2>
+    <{{ sectionTag }}>Compliance status</{{ sectionTag }}>
 
     <p>
         This website is <strong>{{ statusText[statement.status] ?? statement.status }}</strong>
@@ -38,10 +43,10 @@
     {% set outOfScope = statement.exclusions.outOfScope ?? [] %}
 
     {% if nonCompliance|length or burden|length or outOfScope|length %}
-        <h2>Non-accessible content</h2>
+        <{{ sectionTag }}>Non-accessible content</{{ sectionTag }}>
 
         {% if nonCompliance|length %}
-            {% if isMandated %}<h3>Non-compliance with the accessibility regulations</h3>{% endif %}
+            {% if isMandated %}<{{ subSectionTag }}>Non-compliance with the accessibility regulations</{{ subSectionTag }}>{% endif %}
             <ul>
                 {% for entry in nonCompliance %}
                     <li>
@@ -55,7 +60,7 @@
         {% endif %}
 
         {% if burden|length %}
-            <h3>Disproportionate burden</h3>
+            <{{ subSectionTag }}>Disproportionate burden</{{ subSectionTag }}>
             <ul>
                 {% for entry in burden %}
                     <li>
@@ -68,7 +73,7 @@
         {% endif %}
 
         {% if outOfScope|length %}
-            <h3>Content not within the scope of the accessibility regulations</h3>
+            <{{ subSectionTag }}>Content not within the scope of the accessibility regulations</{{ subSectionTag }}>
             <ul>
                 {% for entry in outOfScope %}
                     <li>
@@ -80,7 +85,7 @@
         {% endif %}
     {% endif %}
 
-    <h2>Feedback and contact information</h2>
+    <{{ sectionTag }}>Feedback and contact information</{{ sectionTag }}>
 
     <p>
         If you find an accessibility problem on this site, or you need content in a different format,
@@ -101,7 +106,7 @@
     {% endif %}
 
     {% if meta.enforcementBody %}
-        <h2>Enforcement procedure</h2>
+        <{{ sectionTag }}>Enforcement procedure</{{ sectionTag }}>
         <p>
             If you are not happy with how we respond to your complaint, contact
             {% if meta.enforcementUrl %}
@@ -115,7 +120,7 @@
         {% endif %}
     {% endif %}
 
-    <h2>Preparation of this statement</h2>
+    <{{ sectionTag }}>Preparation of this statement</{{ sectionTag }}>
 
     <p>
         {% if meta.statementDate %}

@@ -219,7 +219,21 @@ class AccessibilityVariable
      * inherits the surrounding page; point the Statement Template setting at
      * your own template to replace it entirely.
      *
+     * The statement's own title renders as an `h1` by default. Where it is
+     * dropped into a page that already has one, pass a `headingLevel` so it
+     * nests under the page's heading instead of competing with it; the
+     * subheadings step down from whatever level you set. `title` replaces the
+     * title text:
+     *
+     * ```twig
+     * {{ craft.a11y.accessibilityStatementHtml(null, {
+     *     headingLevel: 2,
+     *     title: 'How accessible this site is',
+     * }) }}
+     * ```
+     *
      * @param int|null $siteId The site, or null for the current one.
+     * @param array<string, mixed> $options `headingLevel` (1 to 6) and `title`.
      * @return Markup|null
      * @throws LoaderError
      * @throws RuntimeError
@@ -227,7 +241,7 @@ class AccessibilityVariable
      * @throws \yii\base\Exception
      * @throws \Exception
      */
-    public function accessibilityStatementHtml(?int $siteId = null): ?Markup
+    public function accessibilityStatementHtml(?int $siteId = null, array $options = []): ?Markup
     {
         $statement = $this->accessibilityStatement($siteId);
 
@@ -238,6 +252,6 @@ class AccessibilityVariable
         $plugin = AccessibilityAudit::getInstance();
         $resolved = $plugin->resolveSiteId($siteId ?? Craft::$app->getSites()->getCurrentSite()->id);
 
-        return new Markup($plugin->statement->render($resolved), Craft::$app->charset);
+        return new Markup($plugin->statement->render($resolved, $options), Craft::$app->charset);
     }
 }

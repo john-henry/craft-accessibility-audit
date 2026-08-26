@@ -982,11 +982,12 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
 
 /* ---- Entry sidebar panel (Access panel, like the SEO preview) ---- */
 
-/* Full-bleed to the sidebar edges, matching Craft's own .meta panels (which
-   negative-margin past the details pane's 24px padding). */
+/* Full-bleed to the sidebar edges, matching Craft's own .meta panels. Craft
+   sizes that padding responsively, so the bleed tracks --neg-padding. */
 .accessibility-audit-panel {
   overflow: hidden;
-  margin: 0 -24px;
+  margin-block: 0;
+  margin-inline: var(--neg-padding, -24px);
 }
 
 /* .accessibility-audit-panel__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 12px 18px 0; }
