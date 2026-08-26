@@ -126,6 +126,8 @@ class AccessibilityAudit extends BasePlugin
         'Conformance',
         'Chart updated.',
         'Check',
+        'Checking desktop…',
+        'Checking mobile…',
         'Content writing',
         'Could not load the trend for that range.',
         'Could not queue the scan.',

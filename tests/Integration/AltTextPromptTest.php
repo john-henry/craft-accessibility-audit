@@ -86,3 +86,58 @@ it('is the only place either generation path builds a prompt', function() {
             ->not->toContain('Write concise, descriptive alt text');
     }
 });
+
+it('spots alt text that ran past the length it was asked for', function() {
+    expect(AltTextPrompt::exceedsLimit(str_repeat('a', AltTextPrompt::MAX_LENGTH + 1)))->toBeTrue()
+        ->and(AltTextPrompt::exceedsLimit(str_repeat('a', AltTextPrompt::MAX_LENGTH)))->toBeFalse();
+});
+
+it('names the overshoot when asking again', function() {
+    $long = str_repeat('word ', 40);
+    $retry = AltTextPrompt::retryPrompt('BASE PROMPT', $long);
+
+    expect($retry)
+        ->toStartWith('BASE PROMPT')
+        ->toContain((string)mb_strlen(trim($long)))
+        ->toContain('over the ' . AltTextPrompt::MAX_LENGTH . ' character limit');
+});
+
+it('trims back to the cap on a word boundary', function() {
+    $trimmed = AltTextPrompt::trimToLimit(str_repeat('alpha ', 40));
+
+    expect(mb_strlen($trimmed))->toBeLessThanOrEqual(AltTextPrompt::MAX_LENGTH)
+        ->and($trimmed)->toEndWith('alpha')
+        ->and(AltTextPrompt::exceedsLimit($trimmed))->toBeFalse();
+});
+
+it('leaves alt text within the cap untouched', function() {
+    expect(AltTextPrompt::trimToLimit('A short, honest description.'))->toBe('A short, honest description.');
+});
+
+it('still cuts a single word longer than the cap', function() {
+    // No boundary to cut on, so the hard cut has to stand rather than
+    // returning an empty string.
+    $trimmed = AltTextPrompt::trimToLimit(str_repeat('x', AltTextPrompt::MAX_LENGTH + 50));
+
+    expect($trimmed)->not->toBe('')
+        ->and(mb_strlen($trimmed))->toBeLessThanOrEqual(AltTextPrompt::MAX_LENGTH);
+});
+
+it('leaves no trailing punctuation after a trim', function() {
+    expect(AltTextPrompt::trimToLimit(str_repeat('beta, ', 40)))->not->toEndWith(',');
+});
+
+it('has both generation paths retry before they trim', function() {
+    // A trim on its own loses meaning; the retry is what usually saves it.
+    foreach ([
+        dirname(__DIR__, 2) . '/src/controllers/AltController.php',
+        dirname(__DIR__, 2) . '/src/jobs/GenerateAltTextJob.php',
+    ] as $path) {
+        $source = file_get_contents($path);
+
+        expect($source)
+            ->toContain('AltTextPrompt::exceedsLimit(')
+            ->toContain('AltTextPrompt::retryPrompt(')
+            ->toContain('AltTextPrompt::trimToLimit(');
+    }
+});

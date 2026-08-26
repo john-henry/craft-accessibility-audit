@@ -1108,3 +1108,12 @@ mark.accessibility-audit-html-hl--active {
 .accessibility-audit-pr-score-counts {
   margin-left: auto;
 }
+
+/* Sweep note beside the viewport toggle, shown while a re-scan measures the
+   width you are not looking at. */
+.accessibility-audit-pr-sweep-note {
+  align-self: center;
+  font-size: 12px;
+  color: var(--light-text-color, #7f8b96);
+  white-space: nowrap;
+}

@@ -713,8 +713,20 @@
         /* Attributes can be shared (a nav link and a CTA with the same href),
            so among candidates the one also matching the stored element's
            classes and text wins; a lone candidate is trusted as-is. */
-        var wantClass = (el.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean).sort().join(' ');
+        /* A capped context ends in an ellipsis, and whatever attribute the cut
+           landed in survives only as a prefix. Compared for equality those
+           attributes match nothing, which drops the good evidence and leaves
+           the candidates to be told apart by document order. */
+        var truncated = html.slice(-1) === '…';
+        var wantClassRaw = (el.getAttribute('class') || '').trim();
+        var wantClass = wantClassRaw.split(/\s+/).filter(Boolean).sort().join(' ');
         var wantText = el.textContent.trim();
+        function classMatchesWant(candClassRaw) {
+            if (!wantClassRaw) return false;
+            var cand = (candClassRaw || '').trim();
+            if (truncated) return cand.indexOf(wantClassRaw) === 0;
+            return cand.split(/\s+/).filter(Boolean).sort().join(' ') === wantClass;
+        }
         /* A stored text preview is capped with a trailing ellipsis, so a
            capped want means prefix comparison, not equality. */
         function textMatchesWant(candText) {
@@ -727,16 +739,23 @@
             if (cands.length === 1) return cands[0];
             var best = cands[0];
             var bestScore = -1;
+            var bestTies = 0;
             for (var c = 0; c < cands.length; c++) {
                 var score = 0;
-                var candClass = (cands[c].getAttribute('class') || '').trim().split(/\s+/).filter(Boolean).sort().join(' ');
-                if (wantClass && candClass === wantClass) score += 4;
+                if (classMatchesWant(cands[c].getAttribute('class'))) score += 4;
                 if (textMatchesWant(cands[c].textContent.trim())) score += 2;
                 /* Visibility as the tiebreak: an equally good hidden twin
                    (a cloned slide, an off-state menu) loses to one on screen. */
                 if (!hiddenInPage(cands[c], doc)) score += 1;
-                if (score > bestScore) { bestScore = score; best = cands[c]; }
+                if (score > bestScore) { bestScore = score; best = cands[c]; bestTies = 1; }
+                else if (score === bestScore) { bestTies++; }
             }
+            /* Several candidates share an attribute and nothing else tells them
+               apart: the class and text that would have are gone, cut off by
+               the length cap. Picking the first is document order dressed up as
+               a decision, and it framed the wrong link often enough to report.
+               Better to say it cannot be placed than to point at the wrong one. */
+            if (bestTies > 1 && bestScore <= 1) return null;
             return best;
         }
         function attrCandidates(attrSelector) {
@@ -754,6 +773,13 @@
             var hrefCands = [];
             for (var i = 0; i < links.length; i++) {
                 if (links[i].getAttribute('href') === href) hrefCands.push(links[i]);
+            }
+            /* The cut can land inside the href itself, leaving a value no link
+               equals. What survived is still a prefix worth matching on. */
+            if (!hrefCands.length && truncated) {
+                for (var ip = 0; ip < links.length; ip++) {
+                    if ((links[ip].getAttribute('href') || '').indexOf(href) === 0) hrefCands.push(links[ip]);
+                }
             }
             var byHref = pickCandidate(hrefCands);
             if (byHref) return byHref;
@@ -1912,7 +1938,7 @@
         });
     }
 
-    function setViewport(viewport) {
+    async function setViewport(viewport) {
         if (!VIEWPORT_WIDTHS[viewport] || viewport === activeViewport) return;
         activeViewport = viewport;
         try { sessionStorage.setItem(_viewportSessionKey, viewport); } catch (_) {}
@@ -1922,8 +1948,94 @@
         /* The iframe reflows to the new width in place: run this viewport's
            browser passes against the fresh layout. Each pass is session-keyed
            per scan + viewport, so already-stored buckets don't re-run. */
-        autoStoreContrastResults();
-        autoRunAxeInIframe();
+        await Promise.resolve(autoStoreContrastResults());
+        await autoRunAxeInIframe();
+    }
+
+    /* A re-scan from this page suppresses the queued headless pass, so that the
+       preview is the only engine writing this scan. That pass covered both
+       viewports though, and the preview only ever measured the width on
+       screen, which left whichever bucket you were not looking at carrying
+       findings from the scan before. After a re-scan the preview walks both
+       widths itself and puts the view back where it started.
+
+       Driven through sessionStorage rather than a loop, because a pass that
+       changes the totals reloads the page to re-render the sidebar, which
+       would cut an in-page sweep off after the first width. Each load moves
+       the sweep on one step and it stops once both buckets are stored. */
+    var _sweepFlagKey   = 'a11y_sweep_viewports';
+    var _sweepOriginKey = 'a11y_sweep_origin_' + CFG.elementId + '_' + CFG.siteId;
+    var _sweepTriesKey  = 'a11y_sweep_tries_' + CFG.elementId + '_' + CFG.siteId;
+    var SWEEP_MAX_TRIES = 5;
+
+    /* The preview visibly jumps to the other width mid-sweep, which reads as a
+       glitch unless something says what is going on. Announced as well as
+       shown: the pane is what changes, and a reader not watching it would
+       otherwise get no word of it. */
+    function setSweepNote(viewport) {
+        var note = document.getElementById('accessibility-audit-pr-sweep-note');
+        if (!note) return;
+        note.textContent = viewport === 'mobile'
+            ? Craft.t('accessibility-audit', 'Checking mobile…')
+            : Craft.t('accessibility-audit', 'Checking desktop…');
+        note.hidden = false;
+    }
+
+    function clearSweepNote() {
+        var note = document.getElementById('accessibility-audit-pr-sweep-note');
+        if (!note) return;
+        note.textContent = '';
+        note.hidden = true;
+    }
+
+    function endViewportSweep() {
+        try {
+            sessionStorage.removeItem(_sweepFlagKey);
+            sessionStorage.removeItem(_sweepOriginKey);
+            sessionStorage.removeItem(_sweepTriesKey);
+        } catch (_) {}
+        clearSweepNote();
+    }
+
+    function resumeViewportSweep() {
+        var flag = null;
+        try { flag = sessionStorage.getItem(_sweepFlagKey); } catch (_) { return; }
+        if (!flag) return;
+
+        var origin = null;
+        try { origin = sessionStorage.getItem(_sweepOriginKey); } catch (_) {}
+        if (!origin) {
+            origin = activeViewport;
+            try { sessionStorage.setItem(_sweepOriginKey, origin); } catch (_) {}
+        }
+
+        /* A viewport whose pass cannot complete (axe failing on the page, the
+           store refused) would otherwise bounce the preview back and forth on
+           every load. Give it a few goes, then leave it be, back at the width
+           the reader was on rather than parked on the one that failed. */
+        var tries = 0;
+        try { tries = parseInt(sessionStorage.getItem(_sweepTriesKey) || '0', 10) + 1; } catch (_) {}
+        if (tries > SWEEP_MAX_TRIES) {
+            endViewportSweep();
+            if (activeViewport !== origin) setViewport(origin);
+            return;
+        }
+        try { sessionStorage.setItem(_sweepTriesKey, String(tries)); } catch (_) {}
+
+        var haveDesktop = !!sessionStorage.getItem(axeSessionKey('desktop'));
+        var haveMobile  = !!sessionStorage.getItem(axeSessionKey('mobile'));
+
+        if (haveDesktop && haveMobile) {
+            endViewportSweep();
+            if (activeViewport !== origin) setViewport(origin);
+            return;
+        }
+
+        /* Sit on whichever width has not been measured yet. When that is
+           already the one on screen its own pass runs on this load anyway. */
+        var missing = haveDesktop ? 'mobile' : 'desktop';
+        setSweepNote(missing);
+        if (activeViewport !== missing) setViewport(missing);
     }
 
     document.querySelectorAll('[data-pr-viewport]').forEach(function (btn) {
@@ -1932,6 +2044,7 @@
 
     paintViewportButtons();
     fitPreviewScale();
+    resumeViewportSweep();
     if (previewPane && typeof ResizeObserver !== 'undefined') {
         new ResizeObserver(fitPreviewScale).observe(previewPane);
     } else {

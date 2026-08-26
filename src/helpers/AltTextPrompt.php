@@ -60,6 +60,65 @@ class AltTextPrompt
     }
 
     /**
+     * Whether the model overshot the length it was asked for.
+     *
+     * Models count characters poorly, so the instruction alone does not hold
+     * the line. Left unchecked the overshoot lands in the alt field and the
+     * plugin's own review queue then asks whether it is too long, which is a
+     * daft question to be asked about text the plugin wrote itself.
+     *
+     * @param string $alt The alt text the model returned.
+     * @return bool True when it is longer than the cap.
+     */
+    public static function exceedsLimit(string $alt): bool
+    {
+        return mb_strlen(trim($alt)) > self::MAX_LENGTH;
+    }
+
+    /**
+     * The prompt for a second attempt, naming the overshoot.
+     *
+     * @param string $prompt The prompt that was used first time.
+     * @param string $alt The over-long alt text it produced.
+     * @return string The prompt to retry with.
+     */
+    public static function retryPrompt(string $prompt, string $alt): string
+    {
+        return $prompt . "\n\nYour previous answer was " . mb_strlen(trim($alt)) . ' characters, over the '
+            . self::MAX_LENGTH . ' character limit. Say the same thing in fewer words. '
+            . 'Keep what the image shows and drop the detail that matters least.';
+    }
+
+    /**
+     * Cuts over-long alt text back to the cap at a word boundary.
+     *
+     * The last resort, for when a second attempt still overshoots. Cutting on
+     * a space rather than mid-word at least leaves it readable.
+     *
+     * @param string $alt The alt text to shorten.
+     * @return string Alt text within the cap.
+     */
+    public static function trimToLimit(string $alt): string
+    {
+        $alt = trim($alt);
+
+        if (!self::exceedsLimit($alt)) {
+            return $alt;
+        }
+
+        $cut = mb_substr($alt, 0, self::MAX_LENGTH);
+        $lastSpace = mb_strrpos($cut, ' ');
+
+        // A single word longer than the cap has no boundary to cut on, so the
+        // hard cut stands rather than returning nothing.
+        if ($lastSpace !== false && $lastSpace > 0) {
+            $cut = mb_substr($cut, 0, $lastSpace);
+        }
+
+        return rtrim($cut, " \t\n\r\0\x0B,;:.");
+    }
+
+    /**
      * What is known about the asset besides its pixels.
      *
      * The filename and title often carry the subject or the intent that the

@@ -199,6 +199,14 @@
         }
 
         if (data.success) {
+          /* The queued headless pass was skipped above, and that pass is the
+             one covering both viewports. Ask the preview to sweep them itself
+             after the reload, so a re-scan means a re-scan of the page rather
+             than of whichever width happens to be on screen. */
+          if (document.getElementById('accessibility-audit-preview-iframe')) {
+            try { sessionStorage.setItem('a11y_sweep_viewports', '1'); } catch (_) {}
+          }
+
           /* Reload rather than patching the markup in place: the new scan ID has
              to be the one Twig rendered, or the contrast auto-store cycle writes
              against the previous scan. The sidebar panel deliberately does not

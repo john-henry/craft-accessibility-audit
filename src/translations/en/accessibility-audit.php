@@ -135,6 +135,8 @@ return [
     'All images now have alt text, nice work!' => 'All images now have alt text, nice work!',
     'Alt text' => 'Alt text',
     'Generate all alt text' => 'Generate all alt text',
+    'Checking desktop…' => 'Checking desktop…',
+    'Checking mobile…' => 'Checking mobile…',
     'Generating' => 'Generating',
     'Save all drafts' => 'Save all drafts',
     'Saved {count} alt texts.' => 'Saved {count} alt texts.',

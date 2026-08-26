@@ -80,27 +80,20 @@ class GenerateAltTextJob extends BaseJob
 
         try {
             $client = Craft::createGuzzleClient();
-            $response = $client->post('https://api.anthropic.com/v1/messages', [
-                'headers' => [
-                    'x-api-key' => $apiKey,
-                    'anthropic-version' => '2023-06-01',
-                    'content-type' => 'application/json',
-                ],
-                'json' => [
-                    'model' => 'claude-haiku-4-5-20251001',
-                    'max_tokens' => 150,
-                    'messages' => [[
-                        'role' => 'user',
-                        'content' => [
-                            ['type' => 'image', 'source' => $imageSource],
-                            ['type' => 'text',  'text' => $prompt],
-                        ],
-                    ]],
-                ],
-            ]);
+            $altText = $this->askClaude($client, $apiKey, $imageSource, $prompt);
 
-            $body = json_decode((string)$response->getBody(), true, 512, JSON_THROW_ON_ERROR);
-            $altText = trim($body['content'][0]['text'] ?? '');
+            // One more go when the model runs past the length it was asked for,
+            // then a trim. Storing the overshoot would only have the review
+            // queue ask whether the plugin's own alt text is too long.
+            if (AltTextPrompt::exceedsLimit($altText)) {
+                $altText = $this->askClaude(
+                    $client,
+                    $apiKey,
+                    $imageSource,
+                    AltTextPrompt::retryPrompt($prompt, $altText),
+                );
+                $altText = AltTextPrompt::trimToLimit($altText);
+            }
 
             if (!$altText) {
                 Craft::warning('A11y: GenerateAltTextJob: empty response from API for asset ' . $this->assetId, 'accessibility-audit');
@@ -291,6 +284,42 @@ class GenerateAltTextJob extends BaseJob
      * @param string $url The URL to test.
      * @return bool
      */
+    /**
+     * One alt-text request to Claude, returning the text it came back with.
+     *
+     * @param \GuzzleHttp\Client $client The HTTP client.
+     * @param string $apiKey The resolved Anthropic key.
+     * @param array<string, mixed> $imageSource The image content block source.
+     * @param string $prompt The prompt to send.
+     * @return string The alt text, empty if the response carried none.
+     * @throws \JsonException
+     */
+    private function askClaude(\GuzzleHttp\Client $client, string $apiKey, array $imageSource, string $prompt): string
+    {
+        $response = $client->post('https://api.anthropic.com/v1/messages', [
+            'headers' => [
+                'x-api-key' => $apiKey,
+                'anthropic-version' => '2023-06-01',
+                'content-type' => 'application/json',
+            ],
+            'json' => [
+                'model' => 'claude-haiku-4-5-20251001',
+                'max_tokens' => 150,
+                'messages' => [[
+                    'role' => 'user',
+                    'content' => [
+                        ['type' => 'image', 'source' => $imageSource],
+                        ['type' => 'text',  'text' => $prompt],
+                    ],
+                ]],
+            ],
+        ]);
+
+        $body = json_decode((string)$response->getBody(), true, 512, JSON_THROW_ON_ERROR);
+
+        return trim($body['content'][0]['text'] ?? '');
+    }
+
     private function isLocalUrl(string $url): bool
     {
         if (!str_starts_with($url, 'https://')) {
