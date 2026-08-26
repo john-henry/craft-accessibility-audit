@@ -1763,6 +1763,10 @@
         if (!doc || _axeRunning) return;
         if (sessionStorage.getItem(axeSessionKey(viewport))) return;
 
+        /* A pass that changes the totals reloads the page, and the sweep picks
+           itself up on the next load. One that changes nothing does not, so
+           the sweep has to be carried on from here instead. */
+        var reloading = false;
         var scanId    = CFG.scanId;
         var elementId = CFG.elementId;
         if (scanId === 0 && elementId === 0) return;
@@ -1857,6 +1861,7 @@
                     ? [data.scan.score, data.scan.errorCount, data.scan.warningCount, data.scan.noticeCount]
                     : null;
                 if (next && JSON.stringify(next) !== JSON.stringify(current)) {
+                    reloading = true;
                     window.location.reload();
                 }
             }
@@ -1868,6 +1873,11 @@
                _axeRunning guard: pick it up now so the new bucket still runs. */
             if (activeViewport !== viewport) {
                 autoRunAxeInIframe();
+            } else if (!reloading) {
+                /* Carried on after the guard is cleared, not before: the next
+                   leg starts its own pass, which this one would otherwise
+                   block itself. */
+                resumeViewportSweep();
             }
         }
     }
@@ -1966,6 +1976,7 @@
     var _sweepFlagKey   = 'a11y_sweep_viewports';
     var _sweepOriginKey = 'a11y_sweep_origin_' + CFG.elementId + '_' + CFG.siteId;
     var _sweepTriesKey  = 'a11y_sweep_tries_' + CFG.elementId + '_' + CFG.siteId;
+    var _sweepLastKey   = 'a11y_sweep_last_' + CFG.elementId + '_' + CFG.siteId;
     var SWEEP_MAX_TRIES = 5;
 
     /* The preview visibly jumps to the other width mid-sweep, which reads as a
@@ -1993,6 +2004,7 @@
             sessionStorage.removeItem(_sweepFlagKey);
             sessionStorage.removeItem(_sweepOriginKey);
             sessionStorage.removeItem(_sweepTriesKey);
+            sessionStorage.removeItem(_sweepLastKey);
         } catch (_) {}
         clearSweepNote();
     }
@@ -2034,6 +2046,19 @@
         /* Sit on whichever width has not been measured yet. When that is
            already the one on screen its own pass runs on this load anyway. */
         var missing = haveDesktop ? 'mobile' : 'desktop';
+
+        /* Coming back to the same width with its bucket still empty means that
+           leg ran and stored nothing. Nothing is gained by waiting on it a
+           second time, and leaving the note up would read as a hang. */
+        var last = null;
+        try { last = sessionStorage.getItem(_sweepLastKey); } catch (_) {}
+        if (last === missing) {
+            endViewportSweep();
+            if (activeViewport !== origin) setViewport(origin);
+            return;
+        }
+        try { sessionStorage.setItem(_sweepLastKey, missing); } catch (_) {}
+
         setSweepNote(missing);
         if (activeViewport !== missing) setViewport(missing);
     }
