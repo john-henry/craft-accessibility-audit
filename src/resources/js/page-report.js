@@ -1633,8 +1633,13 @@
     var _contrastStored = {}; /* per-viewport: run once per page load each */
     var _contrastNeedsReview = null; /* elements where bg colour is indeterminate */
 
-    function contrastSessionKey() {
-        return 'accessibility-audit-contrast-stored-' + CFG.scanId + '-' + activeViewport;
+    /* Takes the viewport rather than reading the live one: the caller snapshots
+       it before awaiting, and a switch during that await would otherwise have
+       the guard check one width's key while the results belong to another. The
+       pass then stores a second time and the same element is reported twice in
+       the one bucket. */
+    function contrastSessionKey(viewport) {
+        return 'accessibility-audit-contrast-stored-' + CFG.scanId + '-' + (viewport || activeViewport);
     }
 
     /* Inject the needs-review section into the contrast expand panel if it is currently open.
@@ -1691,7 +1696,7 @@
         _contrastNeedsReview = collectContrastNeedsReview(doc);
 
         /* Skip the server POST if we already stored violations in this browser session */
-        if (sessionStorage.getItem(contrastSessionKey())) {
+        if (sessionStorage.getItem(contrastSessionKey(viewport))) {
             _injectNeedsReviewIfOpen();
             return;
         }
@@ -1728,7 +1733,7 @@
 
             if (data.success) {
                 /* Always mark as done for this scan + viewport: prevents repeated checks on passes */
-                sessionStorage.setItem('accessibility-audit-contrast-stored-' + CFG.scanId + '-' + viewport, String(data.stored || 0));
+                sessionStorage.setItem(contrastSessionKey(viewport), String(data.stored || 0));
                 if (data.stored > 0) {
                     /* Reload so the Twig-rendered sidebar reflects the new issues */
                     window.location.reload();

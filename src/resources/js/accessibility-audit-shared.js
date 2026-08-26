@@ -198,23 +198,65 @@
      page report's needs-review paths): nearest id wins, else up to three
      tag.class segments. Stored with each failure so the report can highlight
      the exact element instead of guessing from its colours. */
+  /* A selector that resolves to the one element it was built from.
+   *
+   * Tag and classes alone do not manage that: a list of tags, a row of nav
+   * links, any repeated component gives every item an identical path. Stored
+   * against a finding that path is worse than useless, because the report
+   * shows one occurrence per element and every one of them then highlights
+   * whichever matched first. So each step carries its position among matching
+   * siblings, and the path is only shortened as far as it stays unique. */
   function cssPath(el, doc) {
+    var esc = (window.CSS && CSS.escape) ? CSS.escape : function (s) { return s; };
     var parts = [];
     var cur = el;
+
     while (cur && cur.nodeType === 1 && cur !== doc.body) {
       var part = cur.tagName.toLowerCase();
+
       if (cur.id) {
-        parts.unshift('#' + cur.id);
+        parts.unshift('#' + esc(cur.id));
         break;
       }
+
       if (cur.className && typeof cur.className === 'string') {
         var cls = cur.className.trim().split(/\s+/).filter(Boolean).slice(0, 2);
-        if (cls.length) part += '.' + cls.join('.');
+        if (cls.length) part += '.' + cls.map(esc).join('.');
       }
+
+      var parent = cur.parentElement;
+      if (parent) {
+        var same = 0;
+        var nth = 0;
+        for (var i = 0; i < parent.children.length; i++) {
+          if (parent.children[i].tagName === cur.tagName) {
+            same++;
+            if (parent.children[i] === cur) nth = same;
+          }
+        }
+        if (same > 1 && nth > 0) part += ':nth-of-type(' + nth + ')';
+      }
+
       parts.unshift(part);
       cur = cur.parentElement;
     }
-    return parts.slice(-3).join(' > ');
+
+    if (!parts.length) return '';
+
+    /* Shortest tail that still picks out this element and nothing else. The
+       old three-level cap is kept as the floor, so paths do not get longer
+       than they were unless being unique demands it. */
+    for (var take = Math.min(3, parts.length); take <= parts.length; take++) {
+      var candidate = parts.slice(-take).join(' > ');
+      try {
+        var found = doc.querySelectorAll(candidate);
+        if (found.length === 1 && found[0] === el) return candidate;
+      } catch (_) {
+        break;
+      }
+    }
+
+    return parts.join(' > ');
   }
 
   function collectContrastFailures(doc, opts) {
