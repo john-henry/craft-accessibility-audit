@@ -754,13 +754,20 @@ class AssetScanner extends Component
             ->from('{{%accessibilityaudit_asset_flags}}')
             ->where(['isDecorative' => true]);
 
+        // Joined to elements for the soft-delete flag: Craft trashes assets
+        // rather than removing the row, so counting the assets table alone
+        // counts images nobody can see or fix. The listing is an element query
+        // and leaves them out, which left the chip claiming a missing alt the
+        // page below it then reported as nothing to do.
         $query = (new Query())
-            ->from('{{%assets}}')
-            ->where(['kind' => Asset::KIND_IMAGE])
-            ->andWhere(['or', ['alt' => null], ['alt' => '']])
-            ->andWhere(['not', ['id' => $decorativeIds]]);
-        // Images in an excluded volume are left out of the issue count.
-        $excludedVolumes = $this->_excludedVolumeCondition();
+            ->from(['a' => '{{%assets}}'])
+            ->innerJoin(['e' => '{{%elements}}'], '[[e.id]] = [[a.id]]')
+            ->where(['a.kind' => Asset::KIND_IMAGE, 'e.dateDeleted' => null])
+            ->andWhere(['or', ['a.alt' => null], ['a.alt' => '']])
+            ->andWhere(['not', ['a.id' => $decorativeIds]]);
+        // Images in an excluded volume are left out of the issue count. The
+        // column is qualified now that elements is joined alongside.
+        $excludedVolumes = $this->_excludedVolumeCondition('a.volumeId');
         if ($excludedVolumes !== null) {
             $query->andWhere($excludedVolumes);
         }

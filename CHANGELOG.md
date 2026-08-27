@@ -1,12 +1,13 @@
 # Release Notes for Accessibility Audit
 
-## 1.1.1 - 2026-08-26
+## 1.2.0 - 2026-08-27
 
 ### Added
 - The accessibility statement can now be dropped into a page that already has a heading of its own. Pass a heading level and the statement titles itself at that level, with its own subheadings stepping down from there, so you are not left with two competing h1s on the one page. You can change the title text the same way: `craft.a11y.accessibilityStatementHtml(null, { headingLevel: 2, title: 'How accessible this site is' })`. Left alone, it renders exactly as it always did.
 - A **Save all drafts** button on the Assets page. Generating all the alt text left you clicking Save on every row one after another, which on a full page of images is a lot of clicking for something you have already reviewed. The button appears beside Generate all as soon as there is a draft waiting, shows how many, saves them one after another, and reports back once at the end rather than a notice per image. It picks up anything you have typed by hand as well, not just what the AI drafted, and skips any row you have left empty. ([#6](https://github.com/john-henry/craft-accessibility-audit/issues/6))
 
 ### Fixed
+- The Assets page could report a missing alt text it then refused to show you. An image in the trash still counted towards the missing-alt figure, while the list below it correctly left trashed images out, so the chip said one and the page said none. Trashed images no longer count.
 - Contrast findings recorded against unstyled pages by the bug below are cleared out on update, and the scores they dragged down are worked out again. A genuine failure is untouched, and would come back on the next scan in any case.
 - AI alt text now works on very large images. Anything past 8000 pixels on a side was refused outright by the API, so print-resolution scans and untouched camera originals never got alt text at all. Large images are scaled down before they are sent, which fixes the refusal and cuts the upload, and costs you nothing in quality: anything bigger was being scaled down at the far end anyway. ([#3](https://github.com/john-henry/craft-accessibility-audit/issues/3))
 - A link carrying an aria-label was still being judged on the text you can see inside it. A button reading "View" with an aria-label of "Full recipe at ohmydish.com (opens in new tab)" got reported for vague link text, when the label spells the destination out plainly and is what a screen reader announces. Links are now judged on the name that is actually announced. The same pass taught the scanner to read a name from an SVG title or an aria-labelledby reference, so links named that way are no longer reported as having no name at all. ([#7](https://github.com/john-henry/craft-accessibility-audit/issues/7))
