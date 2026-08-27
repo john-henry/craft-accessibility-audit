@@ -320,12 +320,11 @@ class VerdictService extends Component
      * The hash a pre-1.0.11 scan would have stored for this context, or null
      * when the two could not differ.
      *
-     * Image contexts used to be capped at 150 characters; they now keep 300
-     * so the src URL survives (see PotentialScanner). A ruling made before
-     * the change is keyed on the shorter snippet, so a longer context also
-     * tries the reconstruction: the first 150 characters plus the truncation
-     * ellipsis, exactly what the old builder produced. Without this, every
-     * dismissed image question would come straight back after the upgrade.
+     * Image contexts were capped at 150 characters before 1.0.11 and keep 300
+     * now, so the src URL survives (see PotentialScanner). Rulings stored
+     * against the shorter snippet are still keyed on it, so a longer context
+     * also tries the reconstruction: the first 150 characters plus the
+     * truncation ellipsis. Without it every dismissed image question returns.
      *
      * @param string|null $context The current (longer) context snippet.
      * @return string|null The legacy hash, or null when the context is short
@@ -336,13 +335,12 @@ class VerdictService extends Component
     private function _legacyContextHash(?string $context): ?string
     {
         // Same line-ending normalisation as contextHash(), before measuring:
-        // the reconstruction must cut at the position the old builder did.
+        // the reconstruction must cut at the same position.
         $context = trim(str_replace(["\r\n", "\r"], "\n", (string)$context));
 
-        // At 150 or under the old builder stored the identical string, so
-        // there is no second hash. From 151 up the two can differ: a 151-char
-        // snippet fit the new cap untouched, but the old builder truncated it
-        // to 150 plus the ellipsis.
+        // At 150 or under both forms are identical, so there is no second
+        // hash. From 151 up they differ: the shorter form cut at 150 plus the
+        // ellipsis where the current one keeps the snippet whole.
         if (mb_strlen($context) <= 150) {
             return null;
         }

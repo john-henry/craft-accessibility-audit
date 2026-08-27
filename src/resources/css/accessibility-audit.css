@@ -2028,8 +2028,7 @@ body.use-shapes .accessibility-audit-pr-dot--error {
   color: var(--text-color);
 }
 
-/* Focus ring only while the field is actually focused (it was a static class
-   before, so the foreground hex box always looked focused). */
+/* Focus ring only while the field is actually focused. */
 .accessibility-audit-hexbox:focus-visible {
   border: var(--aa-focus-border);
   box-shadow: var(--aa-focus-halo);

@@ -504,8 +504,8 @@ class AuditService extends Component
             ->andWhere(['not', ['es.uri' => null]])
             ->andWhere(['<>', 'es.uri', ''])
             // Cover only the configured element types. The resolved list never
-            // includes Asset (handled by the alt-text audit), so this replaces
-            // the old blanket Asset exclusion. An empty list scans nothing.
+            // includes Asset (handled by the alt-text audit). An empty list
+            // scans nothing.
             ->andWhere(['e.type' => AccessibilityAudit::getInstance()->getSettings()->resolvedScannedElementTypes()])
             // Deterministic order is load-bearing for the batched queue job:
             // QueryBatcher pages with LIMIT/OFFSET, and without a total order

@@ -817,10 +817,10 @@ class AccessibilityAudit extends BasePlugin
      *
      * Only `src/templates/public` is registered, never the whole template
      * directory: the CP templates have no business being renderable on the
-     * site. This exists because the published accessibility statement is
-     * rendered into a site page, and a control-panel template cannot be
-     * rendered from a site request (switching template mode mid-request wedges
-     * the worker rather than erroring, which is a miserable thing to debug).
+     * site. The published accessibility statement renders into a site page,
+     * and a control-panel template cannot be rendered from a site request:
+     * switching template mode mid-request wedges the worker rather than
+     * erroring.
      *
      * @return void
      */
