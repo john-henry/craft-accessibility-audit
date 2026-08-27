@@ -35,6 +35,14 @@ class AssetScanner extends Component
      */
     public const LIVE_COUNT_LIMIT = 2000;
 
+    /**
+     * @var array<int, true>|null Every decorative asset id, keyed by id and
+     *                             loaded once per request.
+     *                             Front-end templates ask per image, so a query
+     *                             each would be one per image on the page.
+     */
+    private ?array $_decorativeIds = null;
+
     /** @return IssueModel[] */
     public function scanAsset(Asset $asset): array
     {
@@ -393,11 +401,30 @@ class AssetScanner extends Component
             return false;
         }
 
-        return (bool) (new Query())
-            ->select(['isDecorative'])
-            ->from('{{%accessibilityaudit_asset_flags}}')
-            ->where(['assetId' => $assetId, 'isDecorative' => true])
-            ->exists();
+        return isset($this->allDecorativeIds()[$assetId]);
+    }
+
+    /**
+     * Every decorative asset id, keyed by id, loaded once per request.
+     *
+     * @return array<int, true> Decorative asset ids as keys.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function allDecorativeIds(): array
+    {
+        if ($this->_decorativeIds === null) {
+            $this->_decorativeIds = array_fill_keys(
+                array_map('intval', (new Query())
+                    ->select(['assetId'])
+                    ->from('{{%accessibilityaudit_asset_flags}}')
+                    ->where(['isDecorative' => true])
+                    ->column()),
+                true,
+            );
+        }
+
+        return $this->_decorativeIds;
     }
 
     /**
@@ -423,6 +450,24 @@ class AssetScanner extends Component
             'isDecorative' => $decorative,
             'dateUpdated' => Db::prepareDateForDb(new DateTime()),
         ])->execute();
+
+        $this->forgetDecorative();
+    }
+
+    /**
+     * Drops the memoised decorative set, so the next lookup reads the table.
+     *
+     * A web request builds the service fresh, so this is only needed where the
+     * process outlives a single unit of work: a long-running queue worker, a
+     * console command, a test suite between cases.
+     *
+     * @return void
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function forgetDecorative(): void
+    {
+        $this->_decorativeIds = null;
     }
 
     /**
