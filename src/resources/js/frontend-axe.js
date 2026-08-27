@@ -624,7 +624,8 @@
 
   function collectContrastFailures() {
     if (!window.AccessibilityAuditShared) return [];
-    return AccessibilityAuditShared.collectContrastFailures(document, {
+
+    const opts = {
       limit: 50,
       htmlLength: 150,
       /* Skip the overlay itself, and the excluded page furniture (consent
@@ -634,7 +635,12 @@
         if (!excludeJoined) return false;
         try { return !!el.closest(excludeJoined); } catch (_) { return false; }
       },
-    });
+    };
+
+    /* Resting state, then hover, focus and selection, which no engine reading
+       the rendered page can see. */
+    return AccessibilityAuditShared.collectContrastFailures(document, opts)
+      .concat(AccessibilityAuditShared.collectStateContrastFailures(document, opts));
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────

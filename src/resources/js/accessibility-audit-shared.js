@@ -275,19 +275,9 @@
       parents.forEach(function (el) {
         if (results.length >= limit) return;
         if (opts.skipEl && opts.skipEl(el)) return;
+        if (!isPaintedText(el, win)) return;
+
         var style = win.getComputedStyle(el);
-        if (style.display === 'none' || style.visibility === 'hidden') return;
-        if (!el.offsetWidth && !el.offsetHeight) return;
-        /* Skip aria-hidden subtrees: axe-core ignores these for contrast too,
-           since screen readers don't read them. Fully transparent subtrees go
-           the same way: hover-revealed text is not in the state being measured,
-           and its background is whatever it will eventually appear over. */
-        var cur = el;
-        while (cur && cur.nodeType === 1) {
-          if (cur.getAttribute('aria-hidden') === 'true') return;
-          if (parseFloat(win.getComputedStyle(cur).opacity) === 0) return;
-          cur = cur.parentElement;
-        }
         var fg = parseRgb(style.color);
         if (!fg) return;
         var bg = effectiveBg(el, doc);
@@ -308,6 +298,232 @@
       });
     } catch (_) { /* collection must never break the caller's render */ }
     return results;
+  }
+
+  /* ── Contrast in states the page is not currently in ──────────────────── */
+
+  /* Hover, focus and selection colours never appear in a resting page, so no
+     engine that reads the rendered DOM can see them: axe measures what is on
+     screen, and what is on screen is the resting state. The declarations are
+     in the stylesheet all the same, so they are read from there and measured
+     against the background the element actually sits on.
+
+     Deliberately conservative. A rule whose colours cannot be resolved to
+     actual values (a var() this pass cannot evaluate, a shorthand it does not
+     read) is skipped whole rather than measured half-known: a state failure
+     the reader cannot reproduce is worse than one not reported, because they
+     cannot even check it by hovering. */
+
+  var STATE_PATTERNS = [
+    { key: 'hover', re: /:hover\b/ },
+    { key: 'focus', re: /:focus(?:-visible|-within)?\b/ },
+    { key: 'selection', re: /::selection\b/ },
+  ];
+
+  /* Walks every style rule in the document, descending into @media, @supports
+     and @layer blocks. Tailwind 4 puts the whole framework inside layers, so a
+     pass that only reads top-level rules sees nothing on a modern site. */
+  function eachStyleRule(node, win, fn) {
+    var rules;
+
+    /* A cross-origin stylesheet throws on access and cannot be read at all. */
+    try { rules = node.cssRules; } catch (_) { return; }
+    if (!rules) return;
+
+    for (var i = 0; i < rules.length; i++) {
+      var rule = rules[i];
+
+      /* Style rules first, and never as an either/or with the recursion
+         below. Browsers that support nested CSS give a CSSStyleRule its own
+         cssRules list, so treating "has cssRules" as "is a grouping rule"
+         walks straight past every declaration on the page. */
+      if (rule.selectorText && rule.style) fn(rule);
+
+      if (rule.cssRules) {
+        /* A media block that does not apply at this width is not part of what
+           the reader sees, so its colours are not what they would get. */
+        var mediaText = rule.media && rule.media.mediaText;
+        if (mediaText && win.matchMedia && !win.matchMedia(mediaText).matches) continue;
+
+        eachStyleRule(rule, win, fn);
+      }
+    }
+  }
+
+  /* The element a state rule paints, as a selector: the state pseudo removed,
+     everything else left alone. `.btn:hover .icon` styles `.icon` while `.btn`
+     is hovered, so dropping the pseudo names the right target. */
+  function baseSelectorFor(part, stateKey) {
+    var base = part
+      .replace(/::selection\b/g, '')
+      .replace(/:hover\b/g, '')
+      .replace(/:focus(?:-visible|-within)?\b/g, '')
+      .trim();
+
+    /* Another pseudo-element in the same compound (`a:hover::after`) styles
+       generated content, which has no element to query and no text of its own
+       that this pass can read. */
+    if (base.indexOf('::') !== -1) return null;
+
+    if (base === '') return stateKey === 'selection' ? 'body' : null;
+
+    return base;
+  }
+
+  /* A colour a state rule declares, or null when it declares none. Returns
+     false when it declares one that cannot be resolved, which is the caller's
+     signal to skip the rule rather than guess. */
+  function declaredColour(rule, property) {
+    var raw = (rule.style.getPropertyValue(property) || '').trim();
+    if (raw === '' || raw === 'inherit' || raw === 'currentColor') return null;
+    if (raw === 'transparent') return null;
+
+    var parsed = parseRgb(raw);
+
+    return parsed || false;
+  }
+
+  /**
+   * Contrast failures in hover, focus and selection states.
+   *
+   * @param {Document} doc
+   * @param {Object} [opts] limit, htmlLength, perRule, skipEl
+   * @returns {Array} occurrences, each carrying the state it was found in
+   */
+  function collectStateContrastFailures(doc, opts) {
+    opts = opts || {};
+    var limit = opts.limit || 40;
+    var htmlLength = opts.htmlLength || 200;
+    var perRule = opts.perRule || 30;
+    var results = [];
+    var seen = {};
+
+    if (!doc || !doc.body) return results;
+    var win = doc.defaultView;
+    if (!win) return results;
+
+    try {
+      var sheets = doc.styleSheets;
+
+      for (var s = 0; s < sheets.length && results.length < limit; s++) {
+        eachStyleRule(sheets[s], win, function (rule) {
+          if (results.length >= limit) return;
+
+          var parts = rule.selectorText.split(',');
+
+          for (var p = 0; p < parts.length; p++) {
+            var part = parts[p].trim();
+            var state = null;
+
+            for (var st = 0; st < STATE_PATTERNS.length; st++) {
+              if (STATE_PATTERNS[st].re.test(part)) { state = STATE_PATTERNS[st]; break; }
+            }
+            if (!state) continue;
+
+            var base = baseSelectorFor(part, state.key);
+            if (!base) continue;
+
+            var fgDecl = declaredColour(rule, 'color');
+            var bgDecl = declaredColour(rule, 'background-color');
+
+            /* Declared but unreadable: skip rather than measure against a
+               colour that is not the one the reader will see. */
+            if (fgDecl === false || bgDecl === false) continue;
+
+            /* A rule that changes neither colour cannot fail on contrast. */
+            if (!fgDecl && !bgDecl) continue;
+
+            var els;
+            try { els = doc.querySelectorAll(base); } catch (_) { continue; }
+
+            for (var e = 0; e < els.length && e < perRule && results.length < limit; e++) {
+              var el = els[e];
+              if (opts.skipEl && opts.skipEl(el)) continue;
+              if (!isPaintedText(el, win)) continue;
+
+              /* No text, nothing to measure the colour of. */
+              if (!(el.textContent || '').trim()) continue;
+
+              var style = win.getComputedStyle(el);
+              var fg = fgDecl || parseRgb(style.color);
+              if (!fg) continue;
+
+              var beneath = effectiveBg(el, doc);
+              if (!beneath) continue;
+
+              var bg = bgDecl ? blendOver(bgDecl, beneath) : beneath;
+              var ratio = Math.round(wcagRatio(fg.r, fg.g, fg.b, bg.r, bg.g, bg.b) * 100) / 100;
+              var fs = parseFloat(style.fontSize);
+              var fw = parseInt(style.fontWeight, 10) || 400;
+              var isLarge = fs >= 24 || (fs >= 18.67 && fw >= 700);
+
+              if (ratio >= (isLarge ? 3 : 4.5)) continue;
+
+              /* One finding per distinct colour pair per rule, not one per
+                 element: a hover colour on fifty nav links is one thing to
+                 fix, and fifty identical cards is a queue nobody reads. */
+              var key = state.key + '|' + rgbToHex(fg.r, fg.g, fg.b) + '|'
+                + rgbToHex(bg.r, bg.g, bg.b) + '|' + base;
+              if (seen[key]) break;
+              seen[key] = true;
+
+              results.push({
+                state: state.key,
+                fg: rgbToHex(fg.r, fg.g, fg.b),
+                bg: rgbToHex(bg.r, bg.g, bg.b),
+                ratio: ratio,
+                expected: isLarge ? '3:1' : '4.5:1',
+                /* A selection colour is usually declared once for the whole
+                   page, so the rule that declares it says more than whichever
+                   element happened to match it first. */
+                html: state.key === 'selection'
+                  ? part.slice(0, htmlLength)
+                  : (el.outerHTML ? el.outerHTML.slice(0, htmlLength) : ''),
+                selector: cssPath(el, doc) || 'body',
+              });
+              break;
+            }
+          }
+        });
+      }
+    } catch (_) { /* collection must never break the caller's render */ }
+
+    return results;
+  }
+
+  /* A state background may be translucent, in which case what the reader sees
+     is it composited over whatever is already there. */
+  function blendOver(top, beneath) {
+    var a = top.a === undefined ? 1 : top.a;
+    if (a >= 1) return top;
+
+    return {
+      r: Math.round(top.r * a + beneath.r * (1 - a)),
+      g: Math.round(top.g * a + beneath.g * (1 - a)),
+      b: Math.round(top.b * a + beneath.b * (1 - a)),
+      a: 1,
+    };
+  }
+
+  /* Whether an element's text is actually painted for a reader to see.
+     Shared by both contrast passes so they can never disagree about what
+     counts. aria-hidden goes because a screen reader never reads it and axe
+     skips it too; fully transparent goes because hover-revealed text is not in
+     the state being measured and its background is whatever it will eventually
+     appear over. */
+  function isPaintedText(el, win) {
+    var style = win.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    if (!el.offsetWidth && !el.offsetHeight) return false;
+
+    var cur = el;
+    while (cur && cur.nodeType === 1) {
+      if (cur.getAttribute('aria-hidden') === 'true') return false;
+      if (parseFloat(win.getComputedStyle(cur).opacity) === 0) return false;
+      cur = cur.parentElement;
+    }
+
+    return true;
   }
 
   /* ── Small shared utilities ──────────────────────────────────────────── */
@@ -333,6 +549,7 @@
     effectiveBg: effectiveBg,
     cssPath: cssPath,
     collectContrastFailures: collectContrastFailures,
+    collectStateContrastFailures: collectStateContrastFailures,
     escHtml: escHtml,
     scoreClass: scoreClass,
   };

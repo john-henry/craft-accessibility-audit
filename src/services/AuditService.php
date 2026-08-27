@@ -70,6 +70,17 @@ class AuditService extends Component
     private const SEVERITY_WEIGHT = ['error' => 10, 'warning' => 4, 'notice' => 1];
 
     /**
+     * @var array<string, string> The interaction states contrast is also
+     *      measured in, and how each is described in a finding. These never
+     *      appear in a rendered page, so they are read from the stylesheet.
+     */
+    public const CONTRAST_STATES = [
+        'hover' => 'on hover',
+        'focus' => 'on focus',
+        'selection' => 'when selected',
+    ];
+
+    /**
      * @var string[] The scan columns the page report reads. Includes elementId,
      *               url and title, which are what tell an element scan and a
      *               URL scan apart once the row is out of the database.
@@ -3091,7 +3102,12 @@ class AuditService extends Component
      * for this scan, so desktop and mobile buckets union instead of
      * overwriting each other.
      *
-     * @param array<array-key, array{fg: string, bg: string, ratio: float|null, expected: string|null, html: string|null, selector?: string|null}> $occurrences
+     * An occurrence may carry a `state` naming an interaction the page is
+     * never in while it is scanned (see self::CONTRAST_STATES). Those are read
+     * from the stylesheet rather than the rendered page, and are stored under
+     * their own rule so they can be filtered and ignored separately.
+     *
+     * @param array<array-key, array{fg: string, bg: string, ratio: float|null, expected: string|null, html: string|null, selector?: string|null, state?: string|null}> $occurrences
      * @throws Exception
      * @throws \Exception
      */
@@ -3129,9 +3145,28 @@ class AuditService extends Component
                 continue;
             }
 
-            $message = $ratio !== null
-                ? sprintf('Contrast %s:1 (need %s) · Text %s on %s', $ratio, $expected, $fg, $bg)
-                : sprintf('Insufficient colour contrast · Text %s on %s', $fg, $bg);
+            // A state occurrence was read from the stylesheet rather than from
+            // the rendered page, because the page is never in that state while
+            // it is being scanned.
+            $state = trim((string)($occ['state'] ?? ''));
+            $state = isset(self::CONTRAST_STATES[$state]) ? $state : '';
+
+            if ($state !== '') {
+                $message = $ratio !== null
+                    ? sprintf(
+                        'Contrast %s:1 (need %s) %s · Text %s on %s',
+                        $ratio,
+                        $expected,
+                        self::CONTRAST_STATES[$state],
+                        $fg,
+                        $bg,
+                    )
+                    : sprintf('Insufficient colour contrast %s · Text %s on %s', self::CONTRAST_STATES[$state], $fg, $bg);
+            } else {
+                $message = $ratio !== null
+                    ? sprintf('Contrast %s:1 (need %s) · Text %s on %s', $ratio, $expected, $fg, $bg)
+                    : sprintf('Insufficient colour contrast · Text %s on %s', $fg, $bg);
+            }
 
             $context = Json::encode([
                 'html' => $html,
@@ -3139,13 +3174,14 @@ class AuditService extends Component
                 'bg' => $bg,
                 'ratio' => $ratio,
                 'expected' => $expected,
+                'state' => $state !== '' ? $state : null,
                 // The failing element's CSS path, computed in the browser where
                 // the DOM is live, so the report can highlight the exact element.
                 'selector' => mb_substr(trim((string)($occ['selector'] ?? '')), 0, 300),
             ]);
 
             $this->insertIssue($scanId, $scan['elementId'], $scan['elementType'], $scan['siteId'], IssueModel::make(
-                ruleId: 'color-contrast',
+                ruleId: $state !== '' ? 'contrast-' . $state : 'color-contrast',
                 severity: 'error',
                 message: $message,
                 wcagCriterion: '1.4.3',

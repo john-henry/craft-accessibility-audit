@@ -60,6 +60,9 @@
         'accesskey':             '[accesskey]',
         /* axe-core rules */
         'color-contrast':        'p, h1, h2, h3, h4, h5, h6, a, li, td, th, label, span, div',
+        'contrast-hover':        'p, h1, h2, h3, h4, h5, h6, a, li, td, th, label, span, div, button',
+        'contrast-focus':        'a, button, input, select, textarea, summary, [tabindex]',
+        'contrast-selection':    'p, h1, h2, h3, h4, h5, h6, a, li, td, th, label, span, div',
         /* Contrast axe couldn't measure, stored as a needs-review item. Same
            candidate elements as color-contrast, since it is the same rule. */
         'potential:contrast-unmeasurable': 'p, h1, h2, h3, h4, h5, h6, a, li, td, th, label, span, div',
@@ -430,11 +433,22 @@
         '</div>';
     }
 
+    /* Every rule whose occurrences carry the JSON contrast context: the two
+       axe ones, and the three read from the stylesheet for states the page is
+       never in while it is scanned. */
+    var CONTRAST_RULE_IDS = [
+        'color-contrast',
+        'color-contrast-enhanced',
+        'contrast-hover',
+        'contrast-focus',
+        'contrast-selection',
+    ];
+
     function renderExpandPanel(body, issue, occurrences) {
         var lvl = issue.wcagLevel ? '<span class="accessibility-audit-level">' + escHtml(issue.wcagLevel) + '</span>' : '<span class="accessibility-audit-level accessibility-audit-level--bp">BP</span>';
         var criterion = issue.wcagCriterion ? '<span class="light" style="font-size:11px;margin-left:4px">' + escHtml(issue.wcagCriterion) + '</span>' : '';
         var helpLink  = issue.helpUrl ? '<a href="' + escHtml(issue.helpUrl) + '" target="_blank" rel="noopener" class="accessibility-audit-pr-help-link">How to fix ↗</a>' : '';
-        var isContrast = issue.ruleId === 'color-contrast' || issue.ruleId === 'color-contrast-enhanced';
+        var isContrast = CONTRAST_RULE_IDS.indexOf(issue.ruleId) !== -1;
 
         var occHtml = '';
         if (occurrences && occurrences.length) {
@@ -1500,7 +1514,8 @@
 
     function collectContrastOccurrences(doc) {
         if (!doc || !doc.body) return null;
-        return AccessibilityAuditShared.collectContrastFailures(doc, {
+
+        var opts = {
             limit: 150,
             htmlLength: 200,
             /* Skip anything this tool injected or is currently decorating:
@@ -1511,7 +1526,13 @@
                 if (el.closest && el.closest('[data-accessibility-audit-hl], .accessibility-audit-hl-badge')) return true;
                 return inExcluded(el);
             },
-        });
+        };
+
+        /* Resting-state failures, then the ones only a hover, focus or text
+           selection would reveal. Both shapes travel together: the state ones
+           carry a `state` and the server routes on that. */
+        return AccessibilityAuditShared.collectContrastFailures(doc, opts)
+            .concat(AccessibilityAuditShared.collectStateContrastFailures(doc, opts));
     }
 
     /* Human-readable explanation of why the background colour is indeterminate */
@@ -1669,8 +1690,9 @@
     function _injectNeedsReviewIfOpen() {
         if (!_contrastNeedsReview || !_contrastNeedsReview.length) return;
         var activeRow = document.querySelector(
-            '.accessibility-audit-pr-issue-row--active[data-rule-id="color-contrast"],' +
-            '.accessibility-audit-pr-issue-row--active[data-rule-id="color-contrast-enhanced"]'
+            CONTRAST_RULE_IDS.map(function (id) {
+                return '.accessibility-audit-pr-issue-row--active[data-rule-id="' + id + '"]';
+            }).join(',')
         );
         if (!activeRow) return;
         var item = activeRow.closest('.accessibility-audit-pr-issue-item');

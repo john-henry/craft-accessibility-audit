@@ -11,6 +11,7 @@ A full WCAG 2.2 accessibility audit, built right into the Craft control panel. I
 
 ## Features
 
+- **Contrast in hover, focus and selection states** – every other checker reads the rendered page, and a rendered page is always at rest, so a hover colour that fails, a focus colour that fails, or a selection colour nobody can read has never turned up in an automated audit. This one reads them out of your stylesheet and measures them against the background the element actually sits on
 - **25+ WCAG 2.2 rules** – the PHP scanner checks images, links, forms, headings, colour usage, tables, and more
 - **axe-core overlay** – runs on the live site for admins, catching contrast, focus visibility, and target size issues that only show up once the page is actually rendered
 - **Server-side browser scanning** – point it at a Chrome binary and every queued scan runs the full axe checks at desktop and mobile widths, so nobody has to visit a page for it to be tested properly

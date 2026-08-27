@@ -52,6 +52,9 @@ class RuleRegistry
         'meta-description' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Page',           'abilities' => ['cognition']],
         'aria-hidden-focus' => ['difficulty' => 'advanced',     'responsibility' => 'development', 'elementType' => 'Interactive',    'abilities' => ['vision']],
         'list-structure' => ['difficulty' => 'beginner',     'responsibility' => 'development', 'elementType' => 'Lists',          'abilities' => ['cognition']],
+        'contrast-hover' => ['difficulty' => 'beginner',     'responsibility' => 'design',      'elementType' => 'Text',           'abilities' => ['vision']],
+        'contrast-focus' => ['difficulty' => 'beginner',     'responsibility' => 'design',      'elementType' => 'Text',           'abilities' => ['vision']],
+        'contrast-selection' => ['difficulty' => 'beginner',     'responsibility' => 'design',      'elementType' => 'Text',           'abilities' => ['vision']],
         'block-in-paragraph' => ['difficulty' => 'intermediate', 'responsibility' => 'development', 'elementType' => 'Page structure', 'abilities' => ['cognition']],
         'input-type' => ['difficulty' => 'intermediate', 'responsibility' => 'development', 'elementType' => 'Forms',          'abilities' => ['motor']],
 
