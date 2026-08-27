@@ -109,7 +109,12 @@ class AltController extends Controller
 
         $imageSource = $this->resolveImageSource($asset);
         if (!$imageSource) {
-            return $this->asJson(['success' => false, 'error' => Craft::t('accessibility-audit', 'Could not read asset. Ensure the asset has a public URL or a supported filesystem.')]);
+            return $this->asJson([
+                'success' => false,
+                'error' => VisionImage::isVector($asset)
+                    ? Craft::t('accessibility-audit', 'This SVG could not be rendered, so there is nothing to describe. Write its alt text by hand, or check that ImageMagick on this server was built with SVG support.')
+                    : Craft::t('accessibility-audit', 'Could not read asset. Ensure the asset has a public URL or a supported filesystem.'),
+            ]);
         }
 
         $prompt = AltTextPrompt::build($asset, $settings);
@@ -427,6 +432,12 @@ class AltController extends Controller
         $downscaled = VisionImage::downscaledSource($asset);
         if ($downscaled !== null) {
             return $downscaled;
+        }
+
+        // A vector that could not be rendered is never sent as-is: the API
+        // takes raster formats only and would refuse it.
+        if (VisionImage::isVector($asset)) {
+            return null;
         }
 
         $url = $asset->getUrl();

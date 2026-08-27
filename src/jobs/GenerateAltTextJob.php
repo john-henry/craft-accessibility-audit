@@ -72,7 +72,12 @@ class GenerateAltTextJob extends BaseJob
 
         $imageSource = $this->resolveImageSource($asset);
         if (!$imageSource) {
-            Craft::warning('A11y: GenerateAltTextJob: could not resolve image source for asset ' . $this->assetId, 'accessibility-audit');
+            Craft::warning(
+                VisionImage::isVector($asset)
+                    ? 'A11y: GenerateAltTextJob: could not render SVG asset ' . $this->assetId . ' for description.'
+                    : 'A11y: GenerateAltTextJob: could not resolve image source for asset ' . $this->assetId,
+                'accessibility-audit',
+            );
             return;
         }
 
@@ -223,6 +228,12 @@ class GenerateAltTextJob extends BaseJob
         $downscaled = VisionImage::downscaledSource($asset);
         if ($downscaled !== null) {
             return $downscaled;
+        }
+
+        // A vector that could not be rendered is never sent as-is: the API
+        // takes raster formats only and would refuse it.
+        if (VisionImage::isVector($asset)) {
+            return null;
         }
 
         $url = $asset->getUrl();

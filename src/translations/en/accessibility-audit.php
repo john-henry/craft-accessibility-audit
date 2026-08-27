@@ -136,6 +136,7 @@ return [
     'Alt text' => 'Alt text',
     'Generate all alt text' => 'Generate all alt text',
     'Checking desktop…' => 'Checking desktop…',
+    'This SVG could not be rendered, so there is nothing to describe. Write its alt text by hand, or check that ImageMagick on this server was built with SVG support.' => 'This SVG could not be rendered, so there is nothing to describe. Write its alt text by hand, or check that ImageMagick on this server was built with SVG support.',
     'Scan again' => 'Scan again',
     'Worked out from the scan of {date}. Fixing a page does not move these figures until it is scanned again.' => 'Worked out from the scan of {date}. Fixing a page does not move these figures until it is scanned again.',
     'The automated conformance suggestions below come from the scan of {date}. Fixing a page does not change them until it is scanned again.' => 'The automated conformance suggestions below come from the scan of {date}. Fixing a page does not change them until it is scanned again.',
