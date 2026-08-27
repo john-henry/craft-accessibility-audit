@@ -3227,6 +3227,35 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   cursor: pointer;
 }
 
+/* Repeated markup gathered into one question. The cluster card looks like an
+   ordinary review card; what marks it out is the disclosure underneath, which
+   holds the individual occurrences for anyone who wants them one at a time. */
+.accessibility-audit-pr-cluster {
+  margin-bottom: 6px;
+}
+
+.accessibility-audit-pr-cluster .accessibility-audit-pr-review {
+  margin-bottom: 0;
+}
+
+.accessibility-audit-pr-cluster__each > summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--aa-text-muted, #596673);
+}
+
+.accessibility-audit-pr-cluster__each > summary:hover {
+  color: var(--aa-text, #3f4d5a);
+}
+
+/* Indented so an occurrence reads as belonging to the cluster above it. */
+.accessibility-audit-pr-cluster__each[open] {
+  padding-left: 14px;
+  border-left: 2px solid var(--aa-border-section);
+  margin-top: 4px;
+}
+
 /* Bulk dismissal: the selection bar above the queue, and a pick box on the
    top-right corner of each card. */
 .accessibility-audit-pr-bulk {

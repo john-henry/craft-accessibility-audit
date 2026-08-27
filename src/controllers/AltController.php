@@ -112,7 +112,7 @@ class AltController extends Controller
             return $this->asJson([
                 'success' => false,
                 'error' => VisionImage::isVector($asset)
-                    ? Craft::t('accessibility-audit', 'This SVG could not be rendered, so there is nothing to describe. Write its alt text by hand, or check that ImageMagick on this server was built with SVG support.')
+                    ? $this->_vectorFailureMessage()
                     : Craft::t('accessibility-audit', 'Could not read asset. Ensure the asset has a public URL or a supported filesystem.'),
             ]);
         }
@@ -423,6 +423,32 @@ class AltController extends Controller
         $body = json_decode((string)$response->getBody(), true, 512, JSON_THROW_ON_ERROR);
 
         return trim($body['content'][0]['text'] ?? '');
+    }
+
+    /**
+     * Why a vector could not be described, in the terms that matter to whoever
+     * has to do something about it.
+     *
+     * Three different problems used to share one message telling you to check
+     * for SVG support, which was no help at all on a server that has it. The
+     * common case now is a renderer that draws fills but not strokes, and the
+     * fix for that is a server package, so it is worth naming.
+     *
+     * @return string
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _vectorFailureMessage(): string
+    {
+        if (!VisionImage::canReadVectors()) {
+            return Craft::t('accessibility-audit', 'This server cannot read SVG files. Write this alt text by hand, or check that ImageMagick was built with SVG support.');
+        }
+
+        if (!VisionImage::rendersStrokes()) {
+            return Craft::t('accessibility-audit', 'This SVG is drawn with strokes, and the SVG renderer on this server drops them, so there was nothing to describe. Write this alt text by hand, or ask your host to install librsvg. SVGs drawn with fills still work.');
+        }
+
+        return Craft::t('accessibility-audit', 'This SVG came out blank when rendered, so there was nothing to describe. Write its alt text by hand.');
     }
 
     private function resolveImageSource(Asset $asset): ?array

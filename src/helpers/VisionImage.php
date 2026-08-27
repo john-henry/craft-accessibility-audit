@@ -134,18 +134,30 @@ class VisionImage
     }
 
     /**
-     * Whether this server can render a vector faithfully enough to describe.
+     * Whether this server can read SVG at all.
      *
-     * Answering "is SVG supported?" is not enough. ImageMagick ships its own
-     * SVG renderer that draws fills and silently drops stroked paths, so an
-     * icon made of strokes comes out as an empty box, and the model then
-     * describes with total confidence something that was never drawn. Wrong
-     * alt text is worse than none, so the capability is tested rather than
-     * assumed: a stroke-only probe is rendered and the result checked for ink.
+     * @return bool True when Imagick is present and knows the format.
+     */
+    public static function canReadVectors(): bool
+    {
+        return extension_loaded('imagick') && !empty(Imagick::queryFormats('SVG'));
+    }
+
+    /**
+     * Whether this server's SVG renderer draws stroked paths.
+     *
+     * ImageMagick delegates SVG to librsvg where it is installed and falls
+     * back to its own renderer where it is not. The internal one draws fills
+     * and silently drops strokes, so an icon made of strokes comes out an
+     * empty box and the model then describes, with total confidence, something
+     * that was never drawn.
+     *
+     * Tested rather than assumed, and tested once: a stroke-only probe is
+     * rendered and the result checked for ink.
      *
      * @return bool True when strokes survive the render.
      */
-    public static function canRenderVectors(): bool
+    public static function rendersStrokes(): bool
     {
         static $capable = null;
 
@@ -153,7 +165,7 @@ class VisionImage
             return $capable;
         }
 
-        if (!extension_loaded('imagick') || empty(Imagick::queryFormats('SVG'))) {
+        if (!self::canReadVectors()) {
             return $capable = false;
         }
 
@@ -178,6 +190,28 @@ class VisionImage
     }
 
     /**
+     * Whether an SVG's artwork depends on stroked paths.
+     *
+     * Read from the source rather than the render, because a drawing that is
+     * part fills and part strokes comes back with ink either way: the fills
+     * survive, the strokes are missing, and nothing about the output says a
+     * piece of it went astray.
+     *
+     * Deliberately generous about what counts. A stroke declaration that
+     * happens to be decorative costs one image its generated alt text, which
+     * is a note asking you to write it yourself. Missing one costs a confident
+     * description of a picture nobody can see, which is worse.
+     *
+     * @param string $svg The SVG source.
+     * @return bool True when the source declares a stroke that draws.
+     */
+    public static function usesStrokes(string $svg): bool
+    {
+        // stroke="none" and stroke:none draw nothing, so they do not count.
+        return preg_match('/\bstroke\s*[:=]\s*["\']?\s*(?!none)[a-z0-9#(]/i', $svg) === 1;
+    }
+
+    /**
      * A base64 PNG of a vector asset, or null when it cannot be rendered.
      *
      * The API takes raster formats only, so without this an SVG is sent as-is
@@ -186,13 +220,13 @@ class VisionImage
      *
      * @param Asset $asset The vector asset to render.
      * @return array{type:string,media_type:string,data:string}|null A base64
-     *         PNG source, or null when Imagick cannot render vectors here.
+     *         PNG source, or null when this asset cannot be rendered here.
      */
     public static function rasterisedSource(Asset $asset): ?array
     {
-        if (!self::canRenderVectors()) {
+        if (!self::canReadVectors()) {
             Craft::warning(
-                "A11y: cannot render asset {$asset->id} for alt text, no usable SVG renderer.",
+                "A11y: cannot render asset {$asset->id} for alt text, no SVG support in Imagick.",
                 'accessibility-audit',
             );
 
@@ -203,6 +237,21 @@ class VisionImage
             $svg = $asset->getContents();
 
             if ($svg === '') {
+                return null;
+            }
+
+            // Judged per image, not per server. Where librsvg is missing the
+            // fallback renderer still draws fills correctly, which is most
+            // icons and most logos, so refusing every SVG on that server gives
+            // up the many to protect against the few. Only artwork that
+            // actually depends on strokes is turned away.
+            if (!self::rendersStrokes() && self::usesStrokes($svg)) {
+                Craft::warning(
+                    "A11y: asset {$asset->id} is drawn with strokes and this server's SVG renderer "
+                    . 'drops them, so it was not described.',
+                    'accessibility-audit',
+                );
+
                 return null;
             }
 
@@ -237,9 +286,23 @@ class VisionImage
                 $flat->thumbnailImage(self::SVG_RASTER_SIZE, self::SVG_RASTER_SIZE, true);
             }
 
+            // Last check, on the render itself: a single colour means nothing
+            // was drawn. Whatever the reason, there is no picture to describe
+            // and a guess is worse than an honest refusal.
+            $blank = $flat->getImageColors() <= 1;
+
             $png = $flat->getImageBlob();
             $flat->clear();
             $imagick->clear();
+
+            if ($blank) {
+                Craft::warning(
+                    "A11y: asset {$asset->id} rendered blank, so it was not described.",
+                    'accessibility-audit',
+                );
+
+                return null;
+            }
 
             Craft::info(
                 "A11y: rendered vector asset {$asset->id} to PNG for alt text.",

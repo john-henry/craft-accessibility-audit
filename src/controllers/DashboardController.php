@@ -23,6 +23,7 @@ use johnhenry\accessibilityaudit\assets\UtilitiesAsset;
 use johnhenry\accessibilityaudit\assets\VpatAsset;
 use johnhenry\accessibilityaudit\helpers\Csv;
 use johnhenry\accessibilityaudit\helpers\ElementLabel;
+use johnhenry\accessibilityaudit\helpers\OccurrenceCluster;
 use johnhenry\accessibilityaudit\helpers\ScanTarget;
 use johnhenry\accessibilityaudit\models\StatementExclusionModel;
 use johnhenry\accessibilityaudit\services\AuditService;
@@ -234,6 +235,14 @@ class DashboardController extends Controller
                     'occurrences' => [],
                 ];
                 $potential[$ruleId]['occurrences'][] = $row;
+            }
+
+            // Repeated markup is gathered into one thing to answer. A rule
+            // that fires per element on a repeated component otherwise asks
+            // the same question dozens of times over contexts that read
+            // identically, which is a queue nobody works through.
+            foreach ($potential as $ruleId => $group) {
+                $potential[$ruleId]['clusters'] = OccurrenceCluster::group($group['occurrences']);
             }
 
             foreach ($audit->getDismissedPotentialForScan((int)$scan['id']) as $row) {

@@ -1132,7 +1132,11 @@
        link on the page). Context comes as markup, quoted "text" plus urls, or
        plain text depending on the rule; each is resolved to real elements,
        with the broad selector kept only as a last resort. */
-    function highlightPotential(ruleId, context) {
+    /* append: add to what is already framed rather than replacing it, for a
+       cluster boxing every occurrence it stands for. An appended call that
+       finds nothing stays quiet: one notice for the cluster, not one per
+       occurrence that has since moved. */
+    function highlightPotential(ruleId, context, append) {
         var doc = iframeDoc();
         var selector = selectorFor(ruleId);
         if (!doc || !selector) return;
@@ -1177,6 +1181,8 @@
         }
 
         if (found.length === 0) {
+            if (append) { return; }
+
             /* No identifying signal survived in the snippet, or the element
                is gone: say so rather than box the broad selector. */
             clearHighlights(doc);
@@ -1187,12 +1193,16 @@
         }
 
         ensureHighlightStyles(doc);
-        clearHighlights(doc);
+        if (!append) { clearHighlights(doc); }
 
         found.forEach(function (el, i) {
             ensureLazyLoaded(el);
-            el.setAttribute('data-accessibility-audit-hl', i === 0 ? 'first' : 'other');
-            if (el.tagName.toLowerCase() !== 'html') {
+            el.setAttribute('data-accessibility-audit-hl', i === 0 && !append ? 'first' : 'other');
+
+            /* An appended element gets no counter badge: the numbering would
+               restart at 1 for every occurrence in the cluster and read as
+               nonsense next to the others. */
+            if (!append && el.tagName.toLowerCase() !== 'html') {
                 var badge = doc.createElement('span');
                 badge.className = 'accessibility-audit-hl-badge';
                 badge.textContent = (i + 1) + '/' + found.length;
@@ -1202,6 +1212,9 @@
 
         if (paneContent && paneContent.hidden) switchToView('content');
 
+        /* One notice for the whole cluster, not one per occurrence. */
+        if (append) { return; }
+
         noticeIfAllHidden(found, doc);
 
         /* Scroll now for responsiveness, then again once a just-loaded image
@@ -1209,6 +1222,7 @@
            offset and the page lands in the wrong place. Scroll to the first
            VISIBLE match: travelling to a hidden twin looks like nothing
            happened. */
+
         var first = found[0];
         for (var fv = 0; fv < found.length; fv++) {
             if (!hiddenInPage(found[fv], doc)) { first = found[fv]; break; }
@@ -2300,6 +2314,23 @@
            clicking the card is just a mouse shortcut and must not fire when a
            verdict button was the target. */
         wrap.addEventListener('click', function (e) {
+            /* A cluster frames every occurrence it stands for, so its own
+               button is handled before the card underneath it. */
+            var clusterBtn = e.target.closest('[data-highlight-cluster]');
+            if (clusterBtn) {
+                var cluster = clusterBtn.closest('[data-accessibility-audit-cluster]');
+                if (!cluster) { return; }
+
+                var contexts;
+                try { contexts = JSON.parse(cluster.dataset.contexts || '[]'); } catch (_) { return; }
+
+                contexts.forEach(function (context, i) {
+                    /* The first clears what was framed before; the rest add to it. */
+                    highlightPotential(cluster.dataset.ruleId, context || '', i > 0);
+                });
+                return;
+            }
+
             var card = e.target.closest('[data-accessibility-audit-review]');
             if (!card) { return; }
 
@@ -2390,6 +2421,73 @@
             bulkAll.addEventListener('change', function () {
                 wrap.querySelectorAll('[data-bulk-pick]').forEach(function (box) {
                     box.checked = bulkAll.checked;
+                });
+                refreshBulk();
+            });
+
+            /* Answering a cluster answers its members. The verdict is still
+               recorded against each occurrence's own context, so this is the
+               same as working through them one at a time, only without the
+               scrolling. */
+            wrap.addEventListener('click', function (e) {
+                var btn = e.target.closest('[data-cluster-verdict]');
+                if (!btn) return;
+
+                var cluster = btn.closest('[data-accessibility-audit-cluster]');
+                if (!cluster || !bulkEndpoint) return;
+
+                var contexts;
+                try { contexts = JSON.parse(cluster.dataset.contexts || '[]'); } catch (_) { return; }
+                if (!contexts.length) return;
+
+                var ruleId = cluster.dataset.ruleId || '';
+                var status = cluster.querySelector('.accessibility-audit-pr-review__status');
+                var buttons = cluster.querySelectorAll('[data-cluster-verdict]');
+                buttons.forEach(function (b) { b.disabled = true; });
+                if (status) { status.textContent = Craft.t('accessibility-audit', 'Saving…'); }
+
+                var token = csrf();
+                var body = new FormData();
+                body.append(token.name, token.value);
+                body.append('elementId', CFG.elementId);
+                if (CFG.pageUrl) { body.append('url', CFG.pageUrl); }
+                body.append('siteId', CFG.siteId);
+                body.append('verdict', btn.dataset.clusterVerdict || 'dismissed');
+                body.append('items', JSON.stringify(contexts.map(function (context) {
+                    return { ruleId: ruleId, context: context };
+                })));
+
+                fetch(bulkEndpoint, {
+                    method: 'POST',
+                    body: body,
+                    headers: { 'Accept': 'application/json' },
+                    credentials: 'same-origin',
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (!data || !data.success) {
+                            throw new Error((data && data.error) || 'failed');
+                        }
+                        window.location.reload();
+                    })
+                    .catch(function () {
+                        buttons.forEach(function (b) { b.disabled = false; });
+                        if (status) { status.textContent = ''; }
+                        if (window.Craft && Craft.cp) {
+                            Craft.cp.displayError(Craft.t('accessibility-audit', 'Could not save that. Try again.'));
+                        }
+                    });
+            });
+
+            /* The cluster's own checkbox stands for the cards inside it. */
+            wrap.addEventListener('change', function (e) {
+                if (!e.target.matches('[data-bulk-pick-cluster]')) return;
+
+                var cluster = e.target.closest('[data-accessibility-audit-cluster]');
+                if (!cluster) return;
+
+                cluster.querySelectorAll('[data-bulk-pick]').forEach(function (box) {
+                    box.checked = e.target.checked;
                 });
                 refreshBulk();
             });
