@@ -2325,6 +2325,9 @@
             var body = new FormData();
             body.append(token.name, token.value);
             body.append('elementId', CFG.elementId);
+            /* A page with no element behind it names itself by URL; the server
+               only accepts one it has actually scanned. */
+            if (CFG.pageUrl) { body.append('url', CFG.pageUrl); }
             body.append('siteId', CFG.siteId);
             body.append('ruleId', row.dataset.ruleId || '');
             body.append('context', row.dataset.context || '');
@@ -2407,6 +2410,7 @@
                 var body = new FormData();
                 body.append(token.name, token.value);
                 body.append('elementId', CFG.elementId);
+                if (CFG.pageUrl) { body.append('url', CFG.pageUrl); }
                 body.append('siteId', CFG.siteId);
                 body.append('verdict', 'dismissed');
                 body.append('items', JSON.stringify(items));

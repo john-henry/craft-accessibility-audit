@@ -263,6 +263,7 @@ class DashboardController extends Controller
             Json::encode([
                 'scanId' => (int)($scan['id'] ?? 0),
                 'elementId' => $elementId,
+                'pageUrl' => $scanUrl,
                 'siteId' => $siteId,
                 'elementType' => $element !== null ? get_class($element) : '',
                 'axeUrl' => Craft::$app->getAssetManager()->getPublishedUrl(
@@ -968,18 +969,26 @@ class DashboardController extends Controller
         $data = [];
         $siteHandle = Craft::$app->getSites()->getSiteById($siteId)?->handle;
 
-        // One query for the whole page of rows, not one per row.
+        // One query for the whole page of rows, not one per row. Keyed on the
+        // target rather than the element, so a row from a page scanned by URL
+        // finds its ruling too.
         $verdicts = AccessibilityAudit::getInstance()->verdicts;
-        $meta = $verdicts->metaForElements(
-            array_map(static fn(array $r): int => (int)$r['elementId'], $rows),
-            $siteId,
+        $targetHashes = array_map(
+            static fn(array $r): string => AccessibilityAudit::getInstance()->verdicts->targetHash(
+                $r['elementId'] !== null ? (int)$r['elementId'] : null,
+                $r['url'] ?? null,
+            ),
+            $rows,
         );
+        $meta = $verdicts->metaForTargets($targetHashes, $siteId);
         $formatter = Craft::$app->getFormatter();
 
-        foreach ($rows as $row) {
+        foreach ($rows as $index => $row) {
             $elementId = (int)$row['elementId'];
-            $element = Craft::$app->getElements()->getElementById($elementId, null, $siteId);
-            $ruling = $verdicts->lookupMeta($meta, $elementId, (string)$row['ruleId'], $row['context'] ?? null);
+            $element = $elementId !== 0
+                ? Craft::$app->getElements()->getElementById($elementId, null, $siteId)
+                : null;
+            $ruling = $verdicts->lookupMeta($meta, $targetHashes[$index], (string)$row['ruleId'], $row['context'] ?? null);
             $author = $ruling !== null && $ruling['userId'] !== null
                 ? Craft::$app->getUsers()->getUserById($ruling['userId'])
                 : null;
@@ -987,11 +996,13 @@ class DashboardController extends Controller
             $data[] = [
                 'id' => (int)$row['id'],
                 'page' => [
-                    'title' => ElementLabel::for($element, $elementId),
-                    'inspectUrl' => UrlHelper::cpUrl('accessibility-audit/page-report', [
-                        'elementId' => $elementId,
-                        'site' => $siteHandle,
-                    ]),
+                    'title' => ScanTarget::label($row, $element),
+                    // The row's own id is the issue's, so the scan id is put in
+                    // its place before the target is read off it.
+                    'inspectUrl' => UrlHelper::cpUrl(
+                        'accessibility-audit/page-report',
+                        ScanTarget::reportParams(array_merge($row, ['id' => (int)$row['scanId']]), $siteHandle),
+                    ),
                 ],
                 'rule' => (string)$row['ruleId'],
                 // One object, not two columns: a table callback only gets its own
@@ -1010,6 +1021,7 @@ class DashboardController extends Controller
                 ],
                 'restore' => [
                     'elementId' => $elementId,
+                    'url' => (string)($row['url'] ?? ''),
                     'ruleId' => (string)$row['ruleId'],
                     'context' => (string)($row['context'] ?? ''),
                     'siteId' => $siteId,

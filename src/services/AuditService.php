@@ -570,8 +570,18 @@ class AuditService extends Component
 
         $scanId = (int) $db->getLastInsertID('{{%accessibilityaudit_scans}}');
 
+        // Answers the author has already given for this URL, carried onto the
+        // fresh rows. Fetched once rather than per issue. Without this a
+        // dismissed question comes back on every re-scan.
+        $verdicts = AccessibilityAudit::getInstance()->verdicts;
+        $verdictMap = $verdicts->mapForElement(null, $siteId, $url);
+
         foreach (array_merge($issues, $potentialIssues) as $issue) {
-            $this->insertIssue($scanId, null, null, $siteId, $issue);
+            $this->insertIssue(
+                $scanId, null, null, $siteId, $issue,
+                $this->resolveFirstDetectedForUrl($url, $siteId, $issue->ruleId),
+                $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context),
+            );
         }
 
         return $scanId;
@@ -900,6 +910,10 @@ class AuditService extends Component
             // color-contrast: store every node with per-occurrence colour data
             if ($axeId === 'color-contrast' && !empty($nodes)) {
                 foreach ($nodes as $node) {
+                    if ($this->_isDecorativeContrastNode($node['html'] ?? '')) {
+                        continue;
+                    }
+
                     $colorData = $node['any'][0]['data'] ?? [];
                     $ratio = $colorData['contrastRatio'] ?? null;
                     $fg = $colorData['fgColor'] ?? null;
@@ -2623,11 +2637,40 @@ class AuditService extends Component
      */
     private function resolveFirstDetected(int $elementId, int $siteId, string $ruleId): ?DateTime
     {
+        return $this->_firstDetected(['i.elementId' => $elementId], $siteId, $ruleId);
+    }
+
+    /**
+     * The same, for a page addressed by URL rather than by element.
+     *
+     * @param string $url The absolute URL scanned.
+     * @param int $siteId The site.
+     * @param string $ruleId The rule.
+     * @return DateTime|null When this rule was first seen on this page.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function resolveFirstDetectedForUrl(string $url, int $siteId, string $ruleId): ?DateTime
+    {
+        return $this->_firstDetected(['s.url' => $url], $siteId, $ruleId);
+    }
+
+    /**
+     * Shared body of the two first-detected lookups above.
+     *
+     * @param array<string, mixed> $target Condition naming the scanned page.
+     * @param int $siteId The site.
+     * @param string $ruleId The rule.
+     * @return DateTime|null
+     */
+    private function _firstDetected(array $target, int $siteId, string $ruleId): ?DateTime
+    {
         $existing = (new Query())
             ->select(['MIN(firstDetected) as first'])
             ->from(['i' => '{{%accessibilityaudit_issues}}'])
             ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], 's.id = i.scanId')
-            ->where(['i.elementId' => $elementId, 's.siteId' => $siteId, 'i.ruleId' => $ruleId])
+            ->where($target)
+            ->andWhere(['s.siteId' => $siteId, 'i.ruleId' => $ruleId])
             ->scalar();
 
         if ($existing) {
@@ -2699,31 +2742,35 @@ class AuditService extends Component
         }
 
         // Whitelisted: the sort column arrives from a query parameter.
-        $sortable = ['ruleId', 'elementId'];
-        $column = in_array($orderBy, $sortable, true) ? $orderBy : 'ruleId';
+        $sortable = ['ruleId' => 'i.ruleId', 'elementId' => 'i.elementId'];
+        $column = $sortable[$orderBy] ?? 'i.ruleId';
 
         $query = (new Query())
-            ->select(['id', 'ruleId', 'message', 'context', 'elementId', 'elementType'])
-            ->from('{{%accessibilityaudit_issues}}')
-            ->where([
-                'scanId' => $latestIds,
-                'isResolved' => false,
-                'verdict' => VerdictService::VERDICT_DISMISSED,
+            ->select([
+                'i.id', 'i.scanId', 'i.ruleId', 'i.message', 'i.context',
+                'i.elementId', 'i.elementType', 's.url', 's.title',
             ])
-            ->andWhere(['like', 'ruleId', 'potential:%', false]);
+            ->from(['i' => '{{%accessibilityaudit_issues}}'])
+            ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], '[[s.id]] = [[i.scanId]]')
+            ->where([
+                'i.scanId' => $latestIds,
+                'i.isResolved' => false,
+                'i.verdict' => VerdictService::VERDICT_DISMISSED,
+            ])
+            ->andWhere(['like', 'i.ruleId', 'potential:%', false]);
 
         if ($search !== '') {
             $query->andWhere([
                 'or',
-                ['like', 'ruleId', $search],
-                ['like', 'context', $search],
+                ['like', 'i.ruleId', $search],
+                ['like', 'i.context', $search],
             ]);
         }
 
         $total = (int) (clone $query)->count();
 
         $rows = $query
-            ->orderBy([$column => $orderDir, 'id' => SORT_ASC])
+            ->orderBy([$column => $orderDir, 'i.id' => SORT_ASC])
             ->offset(($page - 1) * $perPage)
             ->limit($perPage)
             ->all();
@@ -3148,7 +3195,7 @@ class AuditService extends Component
             foreach ($result['nodes'] ?? [] as $node) {
                 $html = mb_substr($node['html'] ?? '', 0, 300);
 
-                if ($html === '') {
+                if ($html === '' || $this->_isDecorativeContrastNode($html)) {
                     continue;
                 }
 
@@ -3169,6 +3216,34 @@ class AuditService extends Component
                 ));
             }
         }
+    }
+
+    /**
+     * Whether a contrast finding is about something marked as decoration.
+     *
+     * WCAG 1.4.3 exempts text that is pure decoration, and `aria-hidden="true"`
+     * is the author saying exactly that: the glyph is not announced and
+     * carries nothing the surrounding content does not already say. The arrow
+     * in `<a>Read more<span aria-hidden="true"> →</span></a>` is the usual
+     * shape of it.
+     *
+     * This plugin's own contrast pass has always skipped those subtrees, but
+     * axe measures them, so the two engines disagreed on the same page and the
+     * report asked about a node its other engine had deliberately passed over.
+     * Asked enough times, a question about correct markup teaches you to
+     * dismiss the question without reading it.
+     *
+     * Only the reported element itself can be checked here: axe hands over a
+     * snippet, so an element hidden by an ancestor is not visible from it.
+     *
+     * @param string $html The node's markup as axe reported it.
+     * @return bool
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _isDecorativeContrastNode(string $html): bool
+    {
+        return preg_match('/<[a-z][^>]*\baria-hidden\s*=\s*(["\'])true\1/i', $html) === 1;
     }
 
     /**

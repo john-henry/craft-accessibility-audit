@@ -4,6 +4,7 @@ use craft\helpers\Db;
 use craft\helpers\StringHelper;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\helpers\ScanTarget;
+use johnhenry\accessibilityaudit\services\VerdictService;
 use markhuot\craftpest\factories\User as UserFactory;
 
 // ---------------------------------------------------------------------------
@@ -70,6 +71,7 @@ beforeEach(function() {
     $db = Craft::$app->getDb();
     $db->createCommand()->delete('{{%accessibilityaudit_issues}}')->execute();
     $db->createCommand()->delete('{{%accessibilityaudit_scans}}')->execute();
+    $db->createCommand()->delete('{{%accessibilityaudit_verdicts}}')->execute();
 });
 
 describe('URL scans in the page listings', function() {
@@ -209,5 +211,93 @@ describe('the page report for a URL scan', function() {
 
         $response->assertRedirect();
         expect($response->getHeaders()->get('Location'))->toContain('elementId=' . $elementId);
+    });
+});
+
+describe('rulings on a page scanned by URL', function() {
+    beforeEach(function() {
+        $this->actingAs(UserFactory::factory()->admin(true)->create());
+    });
+
+    it('keeps two URL pages\' answers apart', function() {
+        // The reason this needed its own column. Every URL scan has a null
+        // elementId, so a verdict keyed on that would have one dismissal on one
+        // page silently answer the same question on every other URL page.
+        $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
+        urlScanRow('https://example.test/news?page=2', 'News', $siteId, 'potential:identical-links');
+        urlScanRow('https://example.test/news?page=3', 'News', $siteId, 'potential:identical-links');
+
+        $verdicts = AccessibilityAudit::getInstance()->verdicts;
+        $context = '<img src="/a.jpg">';
+
+        $verdicts->setVerdict(
+            $siteId, null, 'potential:identical-links', $context,
+            VerdictService::VERDICT_DISMISSED, null, 'https://example.test/news?page=2',
+        );
+
+        $onPage2 = $verdicts->mapForElement(null, $siteId, 'https://example.test/news?page=2');
+        $onPage3 = $verdicts->mapForElement(null, $siteId, 'https://example.test/news?page=3');
+
+        expect($verdicts->lookup($onPage2, 'potential:identical-links', $context))
+            ->toBe(VerdictService::VERDICT_DISMISSED)
+            ->and($verdicts->lookup($onPage3, 'potential:identical-links', $context))
+            ->toBeNull();
+    });
+
+    it('keeps a URL answer apart from an element answer', function() {
+        $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
+        $elementId = (int) UserFactory::factory()->create()->id;
+        $verdicts = AccessibilityAudit::getInstance()->verdicts;
+        $context = '<img src="/a.jpg">';
+
+        $verdicts->setVerdict($siteId, $elementId, 'potential:long-alt', $context, VerdictService::VERDICT_CONFIRMED);
+        $verdicts->setVerdict(
+            $siteId, null, 'potential:long-alt', $context,
+            VerdictService::VERDICT_DISMISSED, null, 'https://example.test/a',
+        );
+
+        expect($verdicts->lookup($verdicts->mapForElement($elementId, $siteId), 'potential:long-alt', $context))
+            ->toBe(VerdictService::VERDICT_CONFIRMED)
+            ->and($verdicts->lookup($verdicts->mapForElement(null, $siteId, 'https://example.test/a'), 'potential:long-alt', $context))
+            ->toBe(VerdictService::VERDICT_DISMISSED);
+    });
+
+    it('stamps the ruling onto the URL page\'s stored issue rows', function() {
+        $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
+        urlScanRow('https://example.test/news?page=2', 'News', $siteId, 'potential:identical-links');
+
+        AccessibilityAudit::getInstance()->verdicts->setVerdict(
+            $siteId, null, 'potential:identical-links', '<img src="/a.jpg">',
+            VerdictService::VERDICT_DISMISSED, null, 'https://example.test/news?page=2',
+        );
+
+        $stored = (new craft\db\Query())
+            ->select(['verdict'])
+            ->from('{{%accessibilityaudit_issues}}')
+            ->where(['ruleId' => 'potential:identical-links'])
+            ->scalar();
+
+        expect($stored)->toBe(VerdictService::VERDICT_DISMISSED);
+    });
+
+    it('answers only once when the same question is answered twice', function() {
+        $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
+        $verdicts = AccessibilityAudit::getInstance()->verdicts;
+
+        $verdicts->setVerdict($siteId, null, 'potential:long-alt', 'x', VerdictService::VERDICT_DISMISSED, null, 'https://example.test/a');
+        $verdicts->setVerdict($siteId, null, 'potential:long-alt', 'x', VerdictService::VERDICT_CONFIRMED, null, 'https://example.test/a');
+
+        // Scoped to the one page: the unique index is what stops the same
+        // question on the same page holding two answers.
+        $rows = (new craft\db\Query())
+            ->from('{{%accessibilityaudit_verdicts}}')
+            ->where([
+                'siteId' => $siteId,
+                'ruleId' => 'potential:long-alt',
+                'targetHash' => $verdicts->targetHash(null, 'https://example.test/a'),
+            ])
+            ->count();
+
+        expect((int) $rows)->toBe(1);
     });
 });

@@ -186,6 +186,7 @@
             if (!v || !canRestore) { return ''; }
             return '<button class="btn small" data-accessibility-audit-restore'
                 + ' data-element-id="' + v.elementId + '"'
+                + ' data-url="' + Craft.escapeHtml(v.url || '') + '"'
                 + ' data-rule-id="' + Craft.escapeHtml(v.ruleId) + '"'
                 + ' data-context="' + Craft.escapeHtml(v.context) + '"'
                 + ' data-site-id="' + v.siteId + '">'

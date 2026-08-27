@@ -9,6 +9,7 @@ namespace johnhenry\accessibilityaudit\services;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
+use johnhenry\accessibilityaudit\helpers\AccessibleName;
 use johnhenry\accessibilityaudit\helpers\ExcludedElements;
 use johnhenry\accessibilityaudit\models\IssueModel;
 use yii\base\Component;
@@ -294,7 +295,7 @@ class ContentScanner extends Component
         $issues = [];
         foreach ($xpath->query('//a[@href]') as $a) {
             /** @var DOMElement $a */
-            if ($this->_accessibleName($a, $xpath) === '') {
+            if (AccessibleName::for($a, $xpath) === '') {
                 $issues[] = IssueModel::make(
                     'link-name', 'error',
                     'Link has no discernible name (no text, aria-label, title, or image alt).',
@@ -315,7 +316,7 @@ class ContentScanner extends Component
             /** @var DOMElement $a */
             // The announced name, not the visible text, with the new-tab
             // notice stripped so it cannot make a vague label look specific.
-            $text = $this->_linkPurposeText($this->_accessibleName($a, $xpath));
+            $text = $this->_linkPurposeText(AccessibleName::for($a, $xpath));
             if (in_array($text, self::GENERIC_LINK_TEXTS, true)) {
                 $issues[] = IssueModel::make(
                     'link-generic', 'warning',
@@ -338,7 +339,7 @@ class ContentScanner extends Component
             // The announced name, so a warning carried in visually hidden text
             // inside the link counts. An aria-label replaces that text, so when
             // one is set it is the label that has to carry the warning.
-            $label = strtolower($this->_accessibleName($a, $xpath) . ' ' . $a->getAttribute('title'));
+            $label = strtolower(AccessibleName::for($a, $xpath) . ' ' . $a->getAttribute('title'));
             $hasWarning = str_contains($label, 'new') || str_contains($label, 'opens') || str_contains($label, 'window') || str_contains($label, 'tab');
             if (!$hasWarning) {
                 $issues[] = IssueModel::make(
@@ -865,90 +866,6 @@ class ContentScanner extends Component
         $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
 
         return trim($text, " \t\n\r\0\x0B.,;:!?-");
-    }
-
-    /**
-     * The element's accessible name, resolved in the order the accessible name
-     * computation defines: aria-labelledby, aria-label, content, title.
-     *
-     * @param DOMElement $el The element to name.
-     * @param DOMXPath $xpath The document XPath, used to resolve references.
-     * @return string The accessible name, or an empty string if it has none.
-     */
-    private function _accessibleName(DOMElement $el, DOMXPath $xpath): string
-    {
-        $labelledBy = trim($el->getAttribute('aria-labelledby'));
-        if ($labelledBy !== '') {
-            $parts = [];
-            foreach (preg_split('/\s+/', $labelledBy) ?: [] as $id) {
-                // A double quote would break out of the XPath literal below.
-                if ($id === '' || str_contains($id, '"')) {
-                    continue;
-                }
-                foreach ($xpath->query('//*[@id="' . $id . '"]') as $ref) {
-                    if ($ref instanceof DOMElement) {
-                        $parts[] = $this->_contentName($ref);
-                    }
-                }
-            }
-            $name = trim(implode(' ', array_filter($parts)));
-            if ($name !== '') {
-                return $name;
-            }
-        }
-
-        $ariaLabel = trim($el->getAttribute('aria-label'));
-        if ($ariaLabel !== '') {
-            return $ariaLabel;
-        }
-
-        $content = $this->_contentName($el);
-        if ($content !== '') {
-            return $content;
-        }
-
-        return trim($el->getAttribute('title'));
-    }
-
-    /**
-     * The name an element contributes from its own subtree: text, image alt
-     * text and SVG titles. Subtrees hidden from assistive tech are skipped.
-     *
-     * @param DOMElement $el The element whose subtree should be read.
-     * @return string The collapsed subtree name, empty if there is nothing.
-     */
-    private function _contentName(DOMElement $el): string
-    {
-        if (strtolower($el->getAttribute('aria-hidden')) === 'true') {
-            return '';
-        }
-
-        $parts = [];
-
-        foreach ($el->childNodes as $child) {
-            if (!$child instanceof DOMElement) {
-                $parts[] = $child->textContent;
-                continue;
-            }
-
-            $tag = strtolower($child->nodeName);
-
-            if ($tag === 'img' || $tag === 'area') {
-                $parts[] = $child->getAttribute('alt');
-                continue;
-            }
-
-            if ($tag === 'svg') {
-                foreach ($child->getElementsByTagName('title') as $svgTitle) {
-                    $parts[] = $svgTitle->textContent;
-                }
-                continue;
-            }
-
-            $parts[] = $this->_contentName($child);
-        }
-
-        return trim(preg_replace('/\s+/', ' ', implode(' ', $parts)) ?? '');
     }
 
     private function outerHtml(DOMElement $el): string

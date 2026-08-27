@@ -32,8 +32,9 @@ it('reports who recorded a ruling, and when', function() {
         VerdictService::VERDICT_DISMISSED,
     );
 
-    $map = $verdicts->metaForElements([$entry->id], $siteId);
-    $meta = $verdicts->lookupMeta($map, $entry->id, 'potential:identical-links', $context);
+    $target = $verdicts->targetHash($entry->id);
+    $map = $verdicts->metaForTargets([$target], $siteId);
+    $meta = $verdicts->lookupMeta($map, $target, 'potential:identical-links', $context);
 
     expect($meta)->not->toBeNull()
         ->and($meta['userId'])->toBe((int) $user->id)
@@ -57,12 +58,13 @@ it('does not confuse one occurrence with another on the same page', function() {
         VerdictService::VERDICT_DISMISSED,
     );
 
-    $map = $verdicts->metaForElements([$entry->id], $siteId);
+    $target = $verdicts->targetHash($entry->id);
+    $map = $verdicts->metaForTargets([$target], $siteId);
 
-    expect($verdicts->lookupMeta($map, $entry->id, 'potential:identical-links', '<a href="/a">Read more</a>'))->not->toBeNull()
-        ->and($verdicts->lookupMeta($map, $entry->id, 'potential:identical-links', '<a href="/b">Read more</a>'))->toBeNull();
+    expect($verdicts->lookupMeta($map, $target, 'potential:identical-links', '<a href="/a">Read more</a>'))->not->toBeNull()
+        ->and($verdicts->lookupMeta($map, $target, 'potential:identical-links', '<a href="/b">Read more</a>'))->toBeNull();
 });
 
-it('returns nothing rather than querying when given no elements', function() {
-    expect(AccessibilityAudit::getInstance()->verdicts->metaForElements([], 1))->toBe([]);
+it('returns nothing rather than querying when given no pages', function() {
+    expect(AccessibilityAudit::getInstance()->verdicts->metaForTargets([], 1))->toBe([]);
 });

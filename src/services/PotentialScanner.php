@@ -11,6 +11,7 @@ use DOMDocument;
 use DOMElement;
 use DOMNode;
 use DOMXPath;
+use johnhenry\accessibilityaudit\helpers\AccessibleName;
 use johnhenry\accessibilityaudit\helpers\ExcludedElements;
 use johnhenry\accessibilityaudit\models\IssueModel;
 use yii\base\Component;
@@ -183,8 +184,15 @@ class PotentialScanner extends Component
             if (!$node instanceof DOMElement) {
                 continue;
             }
-            $text = trim(preg_replace('/\s+/', ' ', $node->textContent));
+
+            // The announced name, not the visible text. Two buttons both
+            // reading "Visit Website" with aria-labels naming their
+            // destinations are two distinct names: a screen reader user hears
+            // them apart, so 2.4.4 is satisfied and there is no question to
+            // ask. Compared on the text alone this reported correct markup.
+            $text = AccessibleName::for($node, $xpath);
             $href = trim($node->getAttribute('href'));
+
             if ($text && $href && !str_starts_with($href, '#')) {
                 // Keyed by the resolved destination so the same target written
                 // two ways counts once. The raw href is kept for the message,

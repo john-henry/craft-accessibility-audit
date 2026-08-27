@@ -91,12 +91,18 @@ class Install extends Migration
 
         // Rulings on potential issues, kept apart from the issues table since
         // issue rows are rebuilt on every scan and a verdict has to outlive them.
-        // Keyed by element, rule, and a hash of the offending markup, not by issue row id.
+        // Keyed by target, rule, and a hash of the offending markup, not by
+        // issue row id. The target is an element or, for a page scanned by URL,
+        // the URL: targetHash holds whichever, and is never null, because both
+        // MySQL and Postgres treat nulls in a unique index as distinct and
+        // uniqueness would stop being enforced for the rows that need it.
         if (!$this->db->tableExists('{{%accessibilityaudit_verdicts}}')) {
             $this->createTable('{{%accessibilityaudit_verdicts}}', [
                 'id' => $this->primaryKey(),
                 'siteId' => $this->integer()->notNull(),
-                'elementId' => $this->integer()->notNull(),
+                'elementId' => $this->integer()->null(),
+                'url' => $this->string(2048)->null(),
+                'targetHash' => $this->char(40)->notNull(),
                 'ruleId' => $this->string(50)->notNull(),
                 'contextHash' => $this->char(40)->notNull(),
                 'verdict' => $this->enum('verdict', ['dismissed', 'confirmed'])->notNull(),
@@ -233,8 +239,9 @@ class Install extends Migration
         $this->createIndex(null, '{{%accessibilityaudit_asset_issues}}', ['ruleId']);
         $this->createIndex(null, '{{%accessibilityaudit_asset_flags}}', ['assetId'], true);
         $this->createIndex(null, '{{%accessibilityaudit_issues}}', ['verdict']);
-        // One ruling per element + rule + occurrence.
-        $this->createIndex(null, '{{%accessibilityaudit_verdicts}}', ['siteId', 'elementId', 'ruleId', 'contextHash'], true);
+        // One ruling per target + rule + occurrence.
+        $this->createIndex(null, '{{%accessibilityaudit_verdicts}}', ['siteId', 'targetHash', 'ruleId', 'contextHash'], true);
+        $this->createIndex(null, '{{%accessibilityaudit_verdicts}}', ['siteId', 'targetHash']);
         $this->createIndex(null, '{{%accessibilityaudit_verdicts}}', ['elementId', 'siteId']);
     }
 

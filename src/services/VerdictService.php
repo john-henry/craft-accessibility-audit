@@ -25,7 +25,10 @@ use yii\db\Exception;
  * Rulings are kept in their own table rather than on the issue rows, because
  * issue rows are rebuilt on every scan and a verdict stored there would be
  * wiped by the next one. They are keyed by the things that survive a re-scan:
- * the element, the site, the rule, and a hash of the offending markup. The
+ * the site, the page, the rule, and a hash of the offending markup. The page is
+ * an element, or a URL for one Craft does not back with an element, and both
+ * reduce to a single non-null targetHash so the index enforcing one ruling per
+ * question actually holds either way. The
  * matching issue rows carry a copy so the scoring and listing queries stay
  * join-free; this service keeps that copy in step.
  *
@@ -58,6 +61,29 @@ class VerdictService extends Component
     // =========================================================================
 
     /**
+     * Identifies the page a ruling belongs to: an element, or a URL for a page
+     * Craft does not back with one.
+     *
+     * A single non-null value rather than a nullable elementId beside a
+     * nullable url, because the unique index that stops one question being
+     * answered twice is built on it, and both MySQL and Postgres treat nulls
+     * in a unique index as distinct. Keyed on a nullable column the index
+     * would enforce nothing on exactly the rows that need it.
+     *
+     * @param int|null $elementId The element, when there is one.
+     * @param string|null $url The scanned URL, when there is not.
+     * @return string A 40-character hash.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function targetHash(?int $elementId, ?string $url = null): string
+    {
+        return $elementId !== null && $elementId > 0
+            ? sha1('element:' . $elementId)
+            : sha1('url:' . (string)$url);
+    }
+
+    /**
      * Hashes the markup an occurrence was found in, so two occurrences of the
      * same rule on the same page can be ruled on separately.
      *
@@ -87,11 +113,13 @@ class VerdictService extends Component
      * stored issue rows into line so the change shows without a re-scan.
      *
      * @param int $siteId The site the issue belongs to.
-     * @param int $elementId The element the issue was found on.
+     * @param int|null $elementId The element the issue was found on, or null
+     *                            for a page scanned by URL.
      * @param string $ruleId The potential rule, e.g. `potential:decorative-image`.
      * @param string|null $context The occurrence's context snippet.
      * @param string|null $verdict One of self::VERDICTS, or null to clear.
      * @param string|null $note The author's reasoning, kept for the audit trail.
+     * @param string|null $url The scanned URL, when there is no element.
      * @throws Exception
      * @throws \Exception
      * @author JohnHenry <info@johnhenry.ie>
@@ -99,19 +127,23 @@ class VerdictService extends Component
      */
     public function setVerdict(
         int $siteId,
-        int $elementId,
+        ?int $elementId,
         string $ruleId,
         ?string $context,
         ?string $verdict,
         ?string $note = null,
+        ?string $url = null,
     ): void {
         $db = Craft::$app->getDb();
         $hash = $this->contextHash($context);
         $now = Db::prepareDateForDb(new DateTime());
+        $elementId = $elementId !== null && $elementId > 0 ? $elementId : null;
 
+        // Matched on the target hash, not on elementId and url separately: it
+        // is the one column that is never null and the unique index is on it.
         $match = [
             'siteId' => $siteId,
-            'elementId' => $elementId,
+            'targetHash' => $this->targetHash($elementId, $url),
             'ruleId' => $ruleId,
             'contextHash' => $hash,
         ];
@@ -134,6 +166,8 @@ class VerdictService extends Component
                 ], ['id' => $existing])->execute();
             } else {
                 $db->createCommand()->insert('{{%accessibilityaudit_verdicts}}', $match + [
+                    'elementId' => $elementId,
+                    'url' => $elementId === null ? $url : null,
                     'verdict' => $verdict,
                     'note' => $note,
                     'userId' => Craft::$app->getUser()->getId(),
@@ -144,7 +178,7 @@ class VerdictService extends Component
             }
         }
 
-        $this->applyToIssues($siteId, $elementId, $ruleId, $hash, $verdict);
+        $this->applyToIssues($siteId, $elementId, $ruleId, $hash, $verdict, $url);
     }
 
     /**
@@ -155,21 +189,39 @@ class VerdictService extends Component
      * row, so no schema is spent on a value that is derivable.
      *
      * @param int $siteId The site.
-     * @param int $elementId The element.
+     * @param int|null $elementId The element, or null for a URL page.
      * @param string $ruleId The potential rule.
      * @param string $hash The context hash the ruling applies to.
      * @param string|null $verdict The ruling, or null to clear it.
+     * @param string|null $url The scanned URL, when there is no element.
      * @throws Exception
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function applyToIssues(int $siteId, int $elementId, string $ruleId, string $hash, ?string $verdict): void
-    {
-        $rows = (new Query())
-            ->select(['id', 'context', 'scanId'])
-            ->from('{{%accessibilityaudit_issues}}')
-            ->where(['siteId' => $siteId, 'elementId' => $elementId, 'ruleId' => $ruleId])
-            ->all();
+    public function applyToIssues(
+        int $siteId,
+        ?int $elementId,
+        string $ruleId,
+        string $hash,
+        ?string $verdict,
+        ?string $url = null,
+    ): void {
+        $query = (new Query())
+            ->select(['i.id', 'i.context', 'i.scanId'])
+            ->from(['i' => '{{%accessibilityaudit_issues}}'])
+            ->where(['i.siteId' => $siteId, 'i.ruleId' => $ruleId]);
+
+        if ($elementId !== null && $elementId > 0) {
+            $query->andWhere(['i.elementId' => $elementId]);
+        } else {
+            // A URL page's issue rows carry no element, so they are reached
+            // through the scan that holds the URL.
+            $query
+                ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], '[[s.id]] = [[i.scanId]]')
+                ->andWhere(['s.url' => $url]);
+        }
+
+        $rows = $query->all();
 
         $ids = [];
         $scanIds = [];
@@ -200,18 +252,19 @@ class VerdictService extends Component
      * Every ruling recorded for an element, keyed so a scan can stamp its fresh
      * issue rows in one pass instead of a query per issue.
      *
-     * @param int $elementId The element.
+     * @param int|null $elementId The element, or null for a URL page.
      * @param int $siteId The site.
+     * @param string|null $url The scanned URL, when there is no element.
      * @return array<string, string> "ruleId|contextHash" => verdict.
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function mapForElement(int $elementId, int $siteId): array
+    public function mapForElement(?int $elementId, int $siteId, ?string $url = null): array
     {
         $rows = (new Query())
             ->select(['ruleId', 'contextHash', 'verdict'])
             ->from('{{%accessibilityaudit_verdicts}}')
-            ->where(['elementId' => $elementId, 'siteId' => $siteId])
+            ->where(['targetHash' => $this->targetHash($elementId, $url), 'siteId' => $siteId])
             ->all();
 
         $map = [];
@@ -223,7 +276,7 @@ class VerdictService extends Component
     }
 
     /**
-     * Who recorded each ruling, and when, for a batch of elements.
+     * Who recorded each ruling, and when, for a batch of pages.
      *
      * Attribution lives only on the verdicts table: the copy stamped onto the
      * issues row carries the ruling but not its author. There is no join to be
@@ -231,28 +284,29 @@ class VerdictService extends Component
      * that keys a verdict is derived in PHP, so a listing resolves the two in
      * one batched query and matches in memory rather than querying per row.
      *
-     * @param int[] $elementIds The elements on the current page of results.
+     * @param string[] $targetHashes The pages on the current page of results,
+     *                                from {@see self::targetHash()}.
      * @param int $siteId The site.
      * @return array<string, array{userId: int|null, date: string|null}> Keyed
-     *         "elementId|ruleId|contextHash".
+     *         "targetHash|ruleId|contextHash".
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function metaForElements(array $elementIds, int $siteId): array
+    public function metaForTargets(array $targetHashes, int $siteId): array
     {
-        if (empty($elementIds)) {
+        if (empty($targetHashes)) {
             return [];
         }
 
         $rows = (new Query())
-            ->select(['elementId', 'ruleId', 'contextHash', 'userId', 'dateUpdated'])
+            ->select(['targetHash', 'ruleId', 'contextHash', 'userId', 'dateUpdated'])
             ->from('{{%accessibilityaudit_verdicts}}')
-            ->where(['elementId' => $elementIds, 'siteId' => $siteId])
+            ->where(['targetHash' => $targetHashes, 'siteId' => $siteId])
             ->all();
 
         $map = [];
         foreach ($rows as $row) {
-            $key = $row['elementId'] . '|' . $row['ruleId'] . '|' . $row['contextHash'];
+            $key = $row['targetHash'] . '|' . $row['ruleId'] . '|' . $row['contextHash'];
             $map[$key] = [
                 'userId' => $row['userId'] !== null ? (int)$row['userId'] : null,
                 'date' => $row['dateUpdated'] ?? null,
@@ -267,16 +321,16 @@ class VerdictService extends Component
      * {@see self::metaForElements()}.
      *
      * @param array<string, array{userId: int|null, date: string|null}> $map The batch.
-     * @param int $elementId The element.
+     * @param string $targetHash The page, from {@see self::targetHash()}.
      * @param string $ruleId The rule.
      * @param string|null $context The occurrence's context snippet.
      * @return array{userId: int|null, date: string|null}|null Null when nothing was recorded.
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function lookupMeta(array $map, int $elementId, string $ruleId, ?string $context): ?array
+    public function lookupMeta(array $map, string $targetHash, string $ruleId, ?string $context): ?array
     {
-        $meta = $map[$elementId . '|' . $ruleId . '|' . $this->contextHash($context)] ?? null;
+        $meta = $map[$targetHash . '|' . $ruleId . '|' . $this->contextHash($context)] ?? null;
         if ($meta !== null) {
             return $meta;
         }
@@ -284,7 +338,7 @@ class VerdictService extends Component
         $legacy = $this->_legacyContextHash($context);
 
         return $legacy !== null
-            ? ($map[$elementId . '|' . $ruleId . '|' . $legacy] ?? null)
+            ? ($map[$targetHash . '|' . $ruleId . '|' . $legacy] ?? null)
             : null;
     }
 

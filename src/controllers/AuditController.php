@@ -386,14 +386,15 @@ class AuditController extends Controller
         // another site, or one that is not a dismissal, has no business being
         // cleared by this action whatever the request asks for.
         $rows = (new Query())
-            ->select(['elementId', 'ruleId', 'context'])
-            ->from('{{%accessibilityaudit_issues}}')
+            ->select(['i.elementId', 'i.ruleId', 'i.context', 's.url'])
+            ->from(['i' => '{{%accessibilityaudit_issues}}'])
+            ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], '[[s.id]] = [[i.scanId]]')
             ->where([
-                'id' => $ids,
-                'siteId' => $siteId,
-                'verdict' => VerdictService::VERDICT_DISMISSED,
+                'i.id' => $ids,
+                'i.siteId' => $siteId,
+                'i.verdict' => VerdictService::VERDICT_DISMISSED,
             ])
-            ->andWhere(['like', 'ruleId', 'potential:%', false])
+            ->andWhere(['like', 'i.ruleId', 'potential:%', false])
             ->all();
 
         $verdicts = AccessibilityAudit::getInstance()->verdicts;
@@ -401,11 +402,13 @@ class AuditController extends Controller
         foreach ($rows as $row) {
             $verdicts->setVerdict(
                 $siteId,
-                (int) $row['elementId'],
+                $row['elementId'] !== null ? (int) $row['elementId'] : null,
                 (string) $row['ruleId'],
                 $row['context'] !== null ? (string) $row['context'] : null,
                 // Null clears the ruling and puts the question back.
                 null,
+                null,
+                $row['url'] !== null ? (string) $row['url'] : null,
             );
         }
 
@@ -444,10 +447,15 @@ class AuditController extends Controller
             return $refusal;
         }
 
+        // A page with no element behind it names itself by URL, checked
+        // against the scans table so a ruling cannot be filed against an
+        // address this site never scanned.
+        $url = $this->_reviewableUrl($siteId);
+
         // Only potential rules are reviewable: a definite failure is not a
         // question, and letting one be dismissed here would be a quiet way to
         // hide a real problem from the score.
-        if ($elementId === 0 || !str_starts_with($ruleId, 'potential:')) {
+        if (($elementId === 0 && $url === null) || !str_starts_with($ruleId, 'potential:')) {
             return $this->asJson([
                 'success' => false,
                 'error' => Craft::t('accessibility-audit', 'That issue cannot be reviewed.'),
@@ -464,11 +472,12 @@ class AuditController extends Controller
 
         AccessibilityAudit::getInstance()->verdicts->setVerdict(
             $siteId,
-            $elementId,
+            $elementId ?: null,
             $ruleId,
             is_string($context) ? $context : null,
             $verdict !== '' ? $verdict : null,
             $note,
+            $url,
         );
 
         return $this->asJson(['success' => true, 'verdict' => $verdict !== '' ? $verdict : null]);
@@ -508,8 +517,10 @@ class AuditController extends Controller
             return $refusal;
         }
 
+        $url = $this->_reviewableUrl($siteId);
         $verdict = trim((string) $this->request->getBodyParam('verdict', ''));
-        if ($elementId === 0 || !in_array($verdict, VerdictService::VERDICTS, true)) {
+
+        if (($elementId === 0 && $url === null) || !in_array($verdict, VerdictService::VERDICTS, true)) {
             return $this->asJson([
                 'success' => false,
                 'error' => Craft::t('accessibility-audit', 'Unknown verdict.'),
@@ -534,10 +545,12 @@ class AuditController extends Controller
             $context = $item['context'] ?? null;
             $verdicts->setVerdict(
                 $siteId,
-                $elementId,
+                $elementId ?: null,
                 $ruleId,
                 is_string($context) ? $context : null,
                 $verdict,
+                null,
+                $url,
             );
             $applied++;
         }
@@ -684,6 +697,31 @@ class AuditController extends Controller
         }
 
         return $this->_requireAllowedSite($scanSiteId);
+    }
+
+    /**
+     * The posted URL, if it names a page this site has actually scanned.
+     *
+     * A ruling filed against an arbitrary address would sit in the verdicts
+     * table forever, matching nothing and answering nothing, so the address is
+     * checked against the scans table before it is allowed to key one. Returns
+     * null when nothing usable was posted, which leaves the element path to
+     * the caller's own checks.
+     *
+     * @param int $siteId The site the ruling belongs to.
+     * @return string|null The scanned URL, or null.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _reviewableUrl(int $siteId): ?string
+    {
+        $url = trim((string) $this->request->getBodyParam('url', ''));
+
+        if ($url === '') {
+            return null;
+        }
+
+        return AccessibilityAudit::getInstance()->audit->isKnownScanUrl($url, $siteId) ? $url : null;
     }
 
     private function _requireAllowedSite(int $siteId): ?Response

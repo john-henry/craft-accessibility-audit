@@ -546,6 +546,9 @@
           const fd = new FormData();
           csrfAppend(fd);
           fd.append('elementId', btn.dataset.elementId);
+          /* A dismissal made on a page with no element behind it is keyed to
+             the URL, so restoring it has to name the same page. */
+          if (btn.dataset.url) { fd.append('url', btn.dataset.url); }
           fd.append('ruleId', btn.dataset.ruleId);
           fd.append('context', btn.dataset.context || '');
           fd.append('siteId', btn.dataset.siteId);
