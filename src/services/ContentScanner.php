@@ -112,7 +112,14 @@ class ContentScanner extends Component
         foreach ($xpath->query('//img[@alt]') as $img) {
             /** @var DOMElement $img */
             $alt = trim($img->getAttribute('alt'));
-            if ($alt !== '' && preg_match('/\.(jpe?g|png|gif|webp|svg|bmp|tiff?)$/i', $alt)) {
+            if ($alt === '') {
+                continue;
+            }
+
+            $looksLikeFilename = preg_match('/\.(jpe?g|png|gif|webp|svg|bmp|tiff?)$/i', $alt) === 1
+                || $this->_altMatchesFilename($alt, $img->getAttribute('src'));
+
+            if ($looksLikeFilename) {
                 $issues[] = IssueModel::make(
                     'img-alt-filename', 'warning',
                     'Image alt text appears to be a filename: "' . htmlspecialchars($alt) . '".',
@@ -235,7 +242,10 @@ class ContentScanner extends Component
         $issues = [];
         foreach ($xpath->query('//a[@target="_blank"]') as $a) {
             /** @var DOMElement $a */
-            $label = strtolower($a->getAttribute('aria-label') . ' ' . $a->getAttribute('title'));
+            // The announced name, so a warning carried in visually hidden text
+            // inside the link counts. An aria-label replaces that text, so when
+            // one is set it is the label that has to carry the warning.
+            $label = strtolower($this->_accessibleName($a, $xpath) . ' ' . $a->getAttribute('title'));
             $hasWarning = str_contains($label, 'new') || str_contains($label, 'opens') || str_contains($label, 'window') || str_contains($label, 'tab');
             if (!$hasWarning) {
                 $issues[] = IssueModel::make(
@@ -690,6 +700,48 @@ class ContentScanner extends Component
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
+
+    /**
+     * Whether the alt text is the image's own filename in disguise.
+     *
+     * Craft derives an asset title from its filename, so a template reaching
+     * for the title instead of the alt field ships "Asset7623" for
+     * asset7623.jpg. The asset itself can hold perfectly good alt text while
+     * the page shows none of it, which asset-level checks cannot see.
+     *
+     * Only flagged when the alt also reads as machine-derived: a run of digits
+     * or a single unspaced token. A descriptive alt that happens to match a
+     * well-named file is left alone.
+     *
+     * @param string $alt The alt text as rendered.
+     * @param string $src The image's src attribute.
+     * @return bool True when the alt is the filename by another name.
+     */
+    private function _altMatchesFilename(string $alt, string $src): bool
+    {
+        $src = trim($src);
+        if ($src === '' || str_starts_with($src, 'data:')) {
+            return false;
+        }
+
+        $basename = pathinfo(parse_url($src, PHP_URL_PATH) ?: $src, PATHINFO_FILENAME);
+        if ($basename === '') {
+            return false;
+        }
+
+        $normalise = static function(string $value): string {
+            $value = mb_strtolower(rawurldecode($value));
+            $value = preg_replace('/[\-_.]+/u', ' ', $value) ?? $value;
+
+            return trim(preg_replace('/\s+/u', ' ', $value) ?? $value);
+        };
+
+        if ($normalise($alt) !== $normalise($basename)) {
+            return false;
+        }
+
+        return preg_match('/\d{2,}/', $alt) === 1 || !preg_match('/\s/u', trim($alt));
+    }
 
     /**
      * An accessible name with the new-tab notice taken off, leaving only what

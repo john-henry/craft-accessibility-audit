@@ -334,3 +334,105 @@ it('reports every vague link on the page, not just the unlabelled one', function
 
     expect(genericLinkIssues($body))->toHaveCount(3);
 });
+
+// ---------------------------------------------------------------------------
+// Alt text that is the filename by another name
+//
+// Craft derives an asset title from its filename, so a template reaching for
+// the title ships "Asset7623" for asset7623.jpg. The asset can hold good alt
+// text while the page shows none of it, which asset-level checks cannot see.
+// ---------------------------------------------------------------------------
+
+function filenameAltIssues(string $body): array
+{
+    $html = '<!DOCTYPE html><html lang="en"><head><title>T</title>'
+        . '<meta name="description" content="d"></head><body>'
+        . '<a href="#main">Skip to main content</a><main id="main">' . $body . '</main></body></html>';
+
+    return array_values(array_filter(
+        (new ContentScanner())->scan($html),
+        fn($i) => $i->ruleId === 'img-alt-filename',
+    ));
+}
+
+it('flags alt text that is the filename', function(string $src, string $alt) {
+    expect(filenameAltIssues('<img src="' . $src . '" alt="' . $alt . '">'))->toHaveCount(1);
+})->with([
+    'with the extension'   => ['/uploads/hero-shot.jpg', 'hero-shot.jpg'],
+    'title-derived'        => ['/uploads/asset7623.jpg', 'Asset7623'],
+    'underscores and digits' => ['/uploads/IMG_20260817.jpg', 'IMG 20260817'],
+    'through a transform url' => ['/transforms/_800x600/dsc01234.jpg', 'DSC01234'],
+]);
+
+it('leaves alt text alone that only happens to match a well-named file', function() {
+    // A descriptive sentence is not a filename just because the file was
+    // named after it too.
+    $body = '<img src="/uploads/roasted-garlic-focaccia.jpg" alt="Roasted garlic focaccia">';
+
+    expect(filenameAltIssues($body))->toBeEmpty();
+});
+
+it('leaves genuinely descriptive alt alone', function() {
+    $body = '<img src="/uploads/asset7623.jpg" alt="A bowl of aubergine curry with fresh coriander">';
+
+    expect(filenameAltIssues($body))->toBeEmpty();
+});
+
+it('ignores a data uri, which has no filename to match', function() {
+    expect(filenameAltIssues('<img src="data:image/png;base64,AAAA" alt="Chart">'))->toBeEmpty();
+});
+
+// ---------------------------------------------------------------------------
+// link-new-window and the announced name
+// ---------------------------------------------------------------------------
+
+function newWindowIssues(string $body): array
+{
+    $html = '<!DOCTYPE html><html lang="en"><head><title>T</title>'
+        . '<meta name="description" content="d"></head><body>'
+        . '<a href="#main">Skip to main content</a><main id="main">' . $body . '</main></body></html>';
+
+    return array_values(array_filter(
+        (new ContentScanner())->scan($html),
+        fn($i) => $i->ruleId === 'link-new-window',
+    ));
+}
+
+it('counts a new-tab warning carried in visually hidden text', function() {
+    // The pattern the plugin's own templates use: the warning is in the link,
+    // just not on screen, and a screen reader announces it either way.
+    $body = '<a href="https://x.example/" target="_blank">Our partner site'
+        . '<span class="visually-hidden"> (opens in new tab)</span></a>';
+
+    expect(newWindowIssues($body))->toBeEmpty();
+});
+
+it('still flags a new-tab link that warns nowhere', function() {
+    expect(newWindowIssues('<a href="https://x.example/" target="_blank">Our partner site</a>'))
+        ->toHaveCount(1);
+});
+
+it('flags a link whose aria-label replaces the hidden warning', function() {
+    // An aria-label replaces the content, so the hidden span is never
+    // announced and the label has to carry the warning itself.
+    $body = '<a href="https://x.example/" target="_blank" aria-label="Our partner site">Our partner site'
+        . '<span class="visually-hidden"> (opens in new tab)</span></a>';
+
+    expect(newWindowIssues($body))->toHaveCount(1);
+});
+
+it('reports a decorative image that is the only content of a link', function() {
+    // Marking an image decorative is right until it is the whole of a link,
+    // at which point the link has no name at all.
+    $html = '<!DOCTYPE html><html lang="en"><head><title>T</title>'
+        . '<meta name="description" content="d"></head><body>'
+        . '<a href="#main">Skip to main content</a><main id="main">'
+        . '<a href="/somewhere"><img src="/i/icon.svg" alt=""></a></main></body></html>';
+
+    $found = array_values(array_filter(
+        (new ContentScanner())->scan($html),
+        fn($i) => $i->ruleId === 'link-name',
+    ));
+
+    expect($found)->toHaveCount(1);
+});
