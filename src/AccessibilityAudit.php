@@ -25,6 +25,7 @@ use craft\helpers\UrlHelper;
 use craft\log\MonologTarget;
 use craft\models\Site;
 use craft\services\Dashboard;
+use craft\services\Gc;
 use craft\services\UserPermissions;
 use craft\web\twig\variables\CraftVariable;
 use craft\web\UrlManager;
@@ -444,6 +445,7 @@ class AccessibilityAudit extends BasePlugin
         $this->registerTwigVariable();
         $this->registerSiteTemplateRoots();
         $this->registerAssetAuditSync();
+        $this->registerScanPruning();
 
         if (Craft::$app->getRequest()->getIsCpRequest()) {
             $this->registerCpUrlRules();
@@ -663,6 +665,54 @@ class AccessibilityAudit extends BasePlugin
                 dateFormat: 'Y-m-d H:i:s',
             ),
         ]);
+    }
+
+    /**
+     * Hangs the scan-history prune off Craft's garbage collection.
+     *
+     * The Retain Scan Results setting used to be read by nothing that deletes:
+     * the only caller of pruneScanResults() was the console command, so unless
+     * somebody had wired that into cron themselves, history grew without end
+     * whatever the setting said. One row per occurrence per scan adds up
+     * quickly on a site of any size.
+     *
+     * Craft already runs garbage collection on its own schedule, which is the
+     * natural home for this and asks nothing of the installer.
+     *
+     * @return void
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.1.1
+     */
+    private function registerScanPruning(): void
+    {
+        Event::on(Gc::class, Gc::EVENT_RUN, static function(): void {
+            $plugin = self::$plugin;
+            $days = (int)$plugin->getSettings()->retainDays;
+
+            // Keeping history for good is a deliberate choice, and a Pro one.
+            // On Standard, pruneScanResults() clamps a zero to the edition cap
+            // rather than treating it as "keep everything", so it still runs.
+            if ($days <= 0 && $plugin->isPro()) {
+                return;
+            }
+
+            // Housekeeping is never worth taking a request down for.
+            try {
+                $deleted = $plugin->getAudit()->pruneScanResults($days);
+
+                if ($deleted > 0) {
+                    Craft::info(
+                        "A11y: pruned {$deleted} scan(s) older than {$days} days.",
+                        'accessibility-audit',
+                    );
+                }
+            } catch (Throwable $e) {
+                Craft::error(
+                    'A11y: scan prune failed during garbage collection: ' . $e->getMessage(),
+                    'accessibility-audit',
+                );
+            }
+        });
     }
 
     private function registerCpUrlRules(): void
