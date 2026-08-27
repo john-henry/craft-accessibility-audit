@@ -17,7 +17,9 @@ use craft\helpers\StringHelper;
 use craft\helpers\UrlHelper;
 use DateTime;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\exceptions\UnsafeUrlException;
 use johnhenry\accessibilityaudit\helpers\ElementLabel;
+use johnhenry\accessibilityaudit\helpers\UrlSafety;
 use johnhenry\accessibilityaudit\jobs\HeadlessScanJob;
 use johnhenry\accessibilityaudit\jobs\ScanElementJob;
 use johnhenry\accessibilityaudit\models\IssueModel;
@@ -175,9 +177,48 @@ class AuditService extends Component
      */
     public function getScannedElementCount(): int
     {
-        return (int) (new Query())
+        $elements = (int) (new Query())
             ->from('{{%accessibilityaudit_scans}}')
             ->count('DISTINCT [[elementId]]');
+
+        // COUNT(DISTINCT) skips nulls, so URL scans have to be counted on
+        // their own or they are a way around the cap rather than subject to it.
+        $urls = (int) (new Query())
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where(['not', ['url' => null]])
+            ->count('DISTINCT [[url]]');
+
+        return $elements + $urls;
+    }
+
+    /**
+     * Whether a scan may be created for the given URL.
+     *
+     * The same rule elements get: always on Pro, always for a URL already
+     * scanned, otherwise subject to the Standard cap.
+     *
+     * @param string $url The absolute URL.
+     * @param int $siteId The site it belongs to.
+     * @return bool
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function canScanNewUrl(string $url, int $siteId): bool
+    {
+        if (AccessibilityAudit::getInstance()->is(AccessibilityAudit::EDITION_PRO)) {
+            return true;
+        }
+
+        $alreadyScanned = (new Query())
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where(['url' => $url, 'siteId' => $siteId])
+            ->exists();
+
+        if ($alreadyScanned) {
+            return true;
+        }
+
+        return $this->getScannedElementCount() < self::STANDARD_SCAN_LIMIT;
     }
 
     /**
@@ -422,6 +463,164 @@ class AuditService extends Component
      * exactly what makes results flip-flop.
      * @throws Throwable
      */
+    /**
+     * Scans one URL that has no element behind it.
+     *
+     * Craft routes plenty of pages it does not back with an element: search
+     * results, filtered listings, paginated archives. They hold no row in
+     * elements_sites, so the element-driven sweep cannot reach them, and a
+     * query string cannot be carried on an element URL in any case.
+     *
+     * The scan is stored against the URL instead of an element. Findings are
+     * recorded the same way, but the per-element machinery (needs-review
+     * rulings, first-detected history, resolution tracking) is element-keyed
+     * and does not apply, so a URL scan is a snapshot rather than a thread.
+     *
+     * @param string $url The URL to scan, absolute or site-relative.
+     * @param int $siteId The site the URL belongs to.
+     * @param bool $withHeadless Whether to queue the server-side browser pass.
+     * @return array{scanId: int, score: int, url: string, error?: string}
+     * @throws \Exception
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function scanUrl(string $url, int $siteId, bool $withHeadless = true): array
+    {
+        $url = $this->absoluteUrl($url, $siteId);
+
+        if ($url === null) {
+            return ['scanId' => 0, 'score' => 0, 'url' => '', 'error' => 'Not a usable URL.'];
+        }
+
+        try {
+            UrlSafety::assertSafeUrl($url);
+        } catch (UnsafeUrlException $e) {
+            Craft::warning("A11y: refused to scan {$url}: " . $e->getMessage(), 'accessibility-audit');
+
+            return ['scanId' => 0, 'score' => 0, 'url' => $url, 'error' => $e->getMessage()];
+        }
+
+        // The Standard cap counts pages, and a URL is a page like any other.
+        if (!$this->canScanNewUrl($url, $siteId)) {
+            return ['scanId' => 0, 'score' => 0, 'url' => $url, 'limitReached' => true];
+        }
+
+        $html = $this->fetchHtml($url);
+
+        if ($html === null) {
+            return ['scanId' => 0, 'score' => 0, 'url' => $url, 'error' => 'Could not fetch the page.'];
+        }
+
+        $plugin = AccessibilityAudit::getInstance();
+        $definiteIssues = $plugin->content->scan($html, $this->_ignoredRuleIds());
+        $potentialIssues = $plugin->potential->scan($html);
+
+        $scanId = $this->createUrlScan($url, $siteId, $this->pageTitle($html), $definiteIssues, $potentialIssues);
+        $score = $this->calculateScore($definiteIssues);
+
+        if ($withHeadless && $scanId > 0 && $plugin->headless->isAvailable()) {
+            Craft::$app->getQueue()->push(new HeadlessScanJob([
+                'scanId' => $scanId,
+                'url' => $url,
+                'description' => Craft::t('accessibility-audit', 'Browser accessibility checks: {page}', [
+                    'page' => $url,
+                ]),
+            ]));
+        }
+
+        return ['scanId' => $scanId, 'score' => $score, 'url' => $url];
+    }
+
+    /**
+     * Stores a scan against a URL rather than an element.
+     *
+     * @param string $url The absolute URL scanned.
+     * @param int $siteId The site it belongs to.
+     * @param string|null $title The page's own title, if it had one.
+     * @param IssueModel[] $issues Definite findings.
+     * @param IssueModel[] $potentialIssues Findings needing a human eye.
+     * @return int The new scan id.
+     * @throws \Exception
+     */
+    private function createUrlScan(string $url, int $siteId, ?string $title, array $issues, array $potentialIssues = []): int
+    {
+        $db = Craft::$app->getDb();
+        $scores = $this->calculateScoreByLevel($issues);
+
+        $db->createCommand()->insert('{{%accessibilityaudit_scans}}', [
+            'elementId' => null,
+            'elementType' => null,
+            'url' => $url,
+            'title' => $title,
+            'siteId' => $siteId,
+            'score' => $scores['overall'],
+            'scoreA' => $scores['A'],
+            'scoreAA' => $scores['AA'],
+            'scoreAAA' => $scores['AAA'],
+            'errorCount' => count(array_filter($issues, fn($i) => $i->severity === 'error')),
+            'warningCount' => count(array_filter($issues, fn($i) => $i->severity === 'warning')),
+            'noticeCount' => count(array_filter($issues, fn($i) => $i->severity === 'notice')),
+            'dateScanned' => Db::prepareDateForDb(new DateTime()),
+            'dateCreated' => Db::prepareDateForDb(new DateTime()),
+            'dateUpdated' => Db::prepareDateForDb(new DateTime()),
+            'uid' => StringHelper::UUID(),
+        ])->execute();
+
+        $scanId = (int) $db->getLastInsertID('{{%accessibilityaudit_scans}}');
+
+        foreach (array_merge($issues, $potentialIssues) as $issue) {
+            $this->insertIssue($scanId, null, null, $siteId, $issue);
+        }
+
+        return $scanId;
+    }
+
+    /**
+     * Resolves a configured URL to an absolute one, or null if it cannot be.
+     *
+     * @param string $url The URL as configured, absolute or site-relative.
+     * @param int $siteId The site to resolve a relative URL against.
+     * @return string|null The absolute URL.
+     */
+    public function absoluteUrl(string $url, int $siteId): ?string
+    {
+        $url = trim($url);
+
+        if ($url === '') {
+            return null;
+        }
+
+        if (preg_match('~^https?://~i', $url) === 1) {
+            return $url;
+        }
+
+        $site = Craft::$app->getSites()->getSiteById($siteId);
+        $base = $site !== null ? rtrim((string)$site->getBaseUrl(), '/') : '';
+
+        if ($base === '') {
+            return null;
+        }
+
+        return $base . '/' . ltrim($url, '/');
+    }
+
+    /**
+     * The page's own title, for a scan that has no element to borrow one from.
+     *
+     * @param string $html The fetched page.
+     * @return string|null The trimmed title, or null when there is none.
+     */
+    private function pageTitle(string $html): ?string
+    {
+        if (preg_match('~<title[^>]*>(.*?)</title>~is', $html, $m) !== 1) {
+            return null;
+        }
+
+        $title = trim(html_entity_decode(strip_tags($m[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+
+        return $title !== '' ? mb_substr($title, 0, 255) : null;
+    }
+
     public function scanElement(ElementInterface $element, bool $withHeadless = true): array
     {
         assert($element instanceof Element);
@@ -2221,8 +2420,8 @@ class AuditService extends Component
      */
     private function insertIssue(
         int $scanId,
-        int $elementId,
-        string $elementType,
+        ?int $elementId,
+        ?string $elementType,
         int $siteId,
         IssueModel $issue,
         ?DateTime $firstDetected = null,

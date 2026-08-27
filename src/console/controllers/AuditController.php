@@ -88,7 +88,9 @@ class AuditController extends Controller
         $audit = AccessibilityAudit::getInstance()->audit;
         $urlRows = $audit->getUrlElements($siteId);
 
-        if (empty($urlRows)) {
+        // Configured URLs are scanned even when nothing else is, so a site
+        // that routes everything through templates is not turned away here.
+        if (empty($urlRows) && empty(AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls())) {
             $this->stdout("No URL-bearing elements found for this site.\n", BaseConsole::FG_YELLOW);
             return ExitCode::OK;
         }
@@ -126,6 +128,36 @@ class AuditController extends Controller
             } catch (Throwable $e) {
                 $this->stdout("FAILED: " . $e->getMessage() . "\n", BaseConsole::FG_RED);
                 $errors++;
+            }
+        }
+
+        // Configured URLs last: pages Craft routes without an element behind
+        // them, which the sweep above has no way of finding.
+        $customUrls = AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls();
+
+        if (!empty($customUrls)) {
+            $count = count($customUrls);
+            $this->stdout("\nScanning {$count} additional URL(s)...\n", BaseConsole::FG_GREEN);
+
+            foreach ($customUrls as $i => $customUrl) {
+                $this->stdout(sprintf("  [%d/%d] %s ... ", $i + 1, $count, $customUrl));
+
+                try {
+                    $result = $audit->scanUrl($customUrl, $siteId);
+
+                    if ($result['scanId'] === 0) {
+                        $this->stdout('SKIPPED: ' . ($result['error'] ?? 'scan limit reached') . "\n", BaseConsole::FG_YELLOW);
+                        continue;
+                    }
+
+                    $score = (int)$result['score'];
+                    $scoreColour = $score >= 80 ? BaseConsole::FG_GREEN : ($score >= 50 ? BaseConsole::FG_YELLOW : BaseConsole::FG_RED);
+                    $this->stdout("score: {$score}\n", $scoreColour);
+                    $total++;
+                } catch (Throwable $e) {
+                    $this->stdout('FAILED: ' . $e->getMessage() . "\n", BaseConsole::FG_RED);
+                    $errors++;
+                }
             }
         }
 

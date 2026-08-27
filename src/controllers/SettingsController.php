@@ -467,6 +467,7 @@ class SettingsController extends Controller
         }
         $settings->scannerUserAgent = (string) $this->request->getBodyParam('settings[scannerUserAgent]', $settings->scannerUserAgent);
         $settings->excludedSelectors = (string) $this->request->getBodyParam('settings[excludedSelectors]', $settings->excludedSelectors);
+        $settings->customUrls = (string) $this->request->getBodyParam('settings[customUrls]', $settings->customUrls);
         $settings->en301549 = (bool)   $this->request->getBodyParam('settings[en301549]',        $settings->en301549);
         $settings->vpatExportTemplate = (string) $this->request->getBodyParam('settings[vpatExportTemplate]', $settings->vpatExportTemplate);
         $settings->statementTemplate = (string) $this->request->getBodyParam('settings[statementTemplate]', $settings->statementTemplate);

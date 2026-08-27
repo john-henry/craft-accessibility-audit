@@ -184,6 +184,21 @@
         warning: config.excludedSelectors is defined ? 'Overridden by config file.'|t('accessibility-audit'),
         disabled: config.excludedSelectors is defined,
     }) }}
+
+    {{ forms.textareaField({
+        label: 'Additional URLs'|t('accessibility-audit'),
+        instructions: 'Pages Craft routes without an entry behind them: search results, filtered listings, paginated archives. The scan follows element URLs, so these are never reached on their own, and a query string cannot be carried on an element URL at all. One URL per line, absolute or starting with a slash, e.g. {example}. Lines beginning with # are ignored.'|t('accessibility-audit', {
+            example: '<code>/search/results?q=craft</code>',
+        }),
+        id: 'customUrls',
+        name: 'settings[customUrls]',
+        value: settings.customUrls,
+        rows: 4,
+        class: 'code',
+        errors: settings.getErrors('customUrls'),
+        warning: config.customUrls is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.customUrls is defined,
+    }) }}
     
 
     
@@ -244,7 +259,8 @@
     <div class="readable">
         <blockquote class="note">
             <p>{{ 'Full list of rule IDs:'|t('accessibility-audit') }}
-                <code>img-alt</code>, <code>img-alt-filename</code>, <code>heading-order</code>,
+                <code>img-alt</code>, <code>img-alt-filename</code>, <code>block-in-paragraph</code>,
+                <code>heading-order</code>,
                 <code>empty-heading</code>, <code>multiple-h1</code>, <code>link-name</code>,
                 <code>link-generic</code>, <code>link-new-window</code>, <code>button-name</code>,
                 <code>form-label</code>, <code>select-label</code>, <code>table-header</code>,

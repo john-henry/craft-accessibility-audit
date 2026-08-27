@@ -25,6 +25,14 @@ class ContentScanner extends Component
         'next', 'previous', 'page', 'article', 'post', 'open', 'view',
     ];
 
+    /**
+     * @var string Tags whose opening auto-closes an open paragraph, per the
+     *             HTML parsing spec. Alternated into a pattern below.
+     */
+    private const P_CLOSING_TAGS = 'address|article|aside|blockquote|details|div|dl|fieldset'
+        . '|figcaption|figure|footer|form|h1|h2|h3|h4|h5|h6|header|hgroup|hr|main'
+        . '|menu|nav|ol|p|pre|section|table|ul';
+
     private const WCAG_HELP_BASE = 'https://www.w3.org/WAI/WCAG22/Understanding/';
 
     /** @return IssueModel[] */
@@ -45,6 +53,7 @@ class ContentScanner extends Component
         ExcludedElements::removeFrom($xpath);
 
         $checks = [
+            'block-in-paragraph' => fn() => $this->checkBlockInParagraph($html),
             'img-alt' => fn() => $this->checkImgAlt($dom, $xpath),
             'img-alt-filename' => fn() => $this->checkImgAltFilename($dom, $xpath),
             'heading-order' => fn() => $this->checkHeadingOrder($dom, $xpath),
@@ -82,6 +91,90 @@ class ContentScanner extends Component
         }
 
         return $issues;
+    }
+
+    // ─── Paragraph nesting ───────────────────────────────────────────────────
+
+    /**
+     * Block content inside a paragraph, read from the raw HTML.
+     *
+     * Deliberately not an XPath query, and it must not be turned into one. The
+     * browser closes the paragraph the moment it meets block content, and
+     * libxml does the same on load, so by the time there is a DOM the nesting
+     * is gone: `//p//p` and `//p//div` both return nothing on markup that is
+     * plainly wrong. The evidence only exists in the string.
+     *
+     * What the reader sees is the wrapper's attributes going with it. A Twig
+     * template wrapping a rich-text field in a styled paragraph produces
+     * `<p class="text-base"><p>…</p></p>`, the outer paragraph is closed and
+     * discarded, and the text is left bare to inherit whatever the surrounding
+     * prose sets. Nothing is missing and nothing is mislabelled, so no engine
+     * working from the DOM reports a thing.
+     *
+     * @param string $html The raw page source, before parsing.
+     * @return IssueModel[]
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function checkBlockInParagraph(string $html): array
+    {
+        $issues = [];
+        $masked = $this->_maskUnparsedRegions($html);
+        $offset = 0;
+
+        // Adjacency only: the next token after the opening tag. Anything looser
+        // catches `<p>One<p>Two`, where the first paragraph is closed
+        // implicitly. That is legal HTML and loses nothing.
+        $pattern = '/<p\b[^>]*>\s*<(' . self::P_CLOSING_TAGS . ')\b[^>]*>/i';
+
+        while (preg_match($pattern, $masked, $m, PREG_OFFSET_CAPTURE, $offset) === 1) {
+            $at = (int)$m[0][1];
+            $offset = $at + strlen($m[0][0]);
+
+            $issues[] = IssueModel::make(
+                'block-in-paragraph', 'warning',
+                'A <' . strtolower($m[1][0]) . '> is nested inside a <p>. The browser will close the '
+                . 'paragraph early, discarding its attributes and any styling that depended on them. '
+                . 'Either unwrap the injected rich text (retconChange the "p" tag to false on the field) '
+                . 'or change the wrapper from <p> to <div>.',
+                // Not WCAG 4.1.1: that criterion was removed in WCAG 2.2, so
+                // reporting against it would be wrong.
+                null, null,
+                substr($html, $at, 300),
+                null,
+                'php',
+            );
+        }
+
+        return $issues;
+    }
+
+    /**
+     * Blanks out regions the parser never treats as markup, keeping the string
+     * the same length so reported offsets still line up with the original.
+     *
+     * @param string $html The raw page source.
+     * @return string The source with comments, templates, scripts and styles
+     *                replaced by spaces.
+     */
+    private function _maskUnparsedRegions(string $html): string
+    {
+        $patterns = [
+            '/<!--.*?-->/s',
+            '/<template\b[^>]*>.*?<\/template\s*>/is',
+            '/<script\b[^>]*>.*?<\/script\s*>/is',
+            '/<style\b[^>]*>.*?<\/style\s*>/is',
+        ];
+
+        foreach ($patterns as $pattern) {
+            $html = preg_replace_callback(
+                $pattern,
+                static fn(array $m): string => str_repeat(' ', strlen($m[0])),
+                $html,
+            ) ?? $html;
+        }
+
+        return $html;
     }
 
     // ─── Images ──────────────────────────────────────────────────────────────

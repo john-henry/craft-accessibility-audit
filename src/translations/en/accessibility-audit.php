@@ -136,6 +136,8 @@ return [
     'Alt text' => 'Alt text',
     'Generate all alt text' => 'Generate all alt text',
     'Checking desktop…' => 'Checking desktop…',
+    'Additional URLs' => 'Additional URLs',
+    'Pages Craft routes without an entry behind them: search results, filtered listings, paginated archives. The scan follows element URLs, so these are never reached on their own, and a query string cannot be carried on an element URL at all. One URL per line, absolute or starting with a slash, e.g. {example}. Lines beginning with # are ignored.' => 'Pages Craft routes without an entry behind them: search results, filtered listings, paginated archives. The scan follows element URLs, so these are never reached on their own, and a query string cannot be carried on an element URL at all. One URL per line, absolute or starting with a slash, e.g. {example}. Lines beginning with # are ignored.',
     'This SVG could not be rendered, so there is nothing to describe. Write its alt text by hand, or check that ImageMagick on this server was built with SVG support.' => 'This SVG could not be rendered, so there is nothing to describe. Write its alt text by hand, or check that ImageMagick on this server was built with SVG support.',
     'Scan again' => 'Scan again',
     'Worked out from the scan of {date}. Fixing a page does not move these figures until it is scanned again.' => 'Worked out from the scan of {date}. Fixing a page does not move these figures until it is scanned again.',
