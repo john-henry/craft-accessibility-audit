@@ -103,6 +103,14 @@
                 <div class="accessibility-audit-statfig accessibility-audit-statfig--sm">{{ statement.profileLabel }}</div>
             </div>
         </div>
+        {% if lastScanned %}
+            <p class="light accessibility-audit-statfoot">
+                {{ 'Worked out from the scan of {date}. Fixing a page does not move these figures until it is scanned again.'|t('accessibility-audit', {
+                    date: lastScanned|datetime('short'),
+                }) }}
+                <a class="go" href="{{ cpUrl('accessibility-audit', { site: siteHandle }) }}">{{ 'Scan again'|t('accessibility-audit') }}</a>
+            </p>
+        {% endif %}
     </div>
 
     {% if not derivation.hasScanData %}

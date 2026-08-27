@@ -894,6 +894,31 @@ class AuditService extends Component
         return $scan ? $this->getIssues($scan['id']) : [];
     }
 
+    /**
+     * When this site was last scanned, or null if it never has been.
+     *
+     * The statement and the VPAT are both worked out from scan data, so their
+     * figures do not move when a page is fixed, only when it is scanned again.
+     * Without a date on screen that reads as the report being stuck, which is
+     * a bad way to learn how the thing works.
+     *
+     * @param int $siteId The site to read.
+     * @return string|null The scan date as stored, or null if there is none.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function getLatestScanDate(int $siteId): ?string
+    {
+        $date = (new Query())
+            ->select(['dateScanned'])
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where(['siteId' => $siteId])
+            ->orderBy(['dateScanned' => SORT_DESC])
+            ->scalar();
+
+        return $date !== false && $date !== null ? (string)$date : null;
+    }
+
     // ─── Site-wide summary ───────────────────────────────────────────────────
 
     public function getSiteSummary(int $siteId): array

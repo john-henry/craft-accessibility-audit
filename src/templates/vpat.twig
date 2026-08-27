@@ -140,6 +140,15 @@
         </div>
     {% endif %}
 
+    {% if lastScanned %}
+        <div class="accessibility-audit-callout accessibility-audit-callout--notice">
+            <span>{{ 'The automated conformance suggestions below come from the scan of {date}. Fixing a page does not change them until it is scanned again.'|t('accessibility-audit', {
+                date: lastScanned|datetime('short'),
+            }) }}
+            <a class="go" href="{{ cpUrl('accessibility-audit', { site: siteHandle }) }}">{{ 'Scan again'|t('accessibility-audit') }}</a></span>
+        </div>
+    {% endif %}
+
     {% if report.en301549 ?? false %}
         <div class="accessibility-audit-callout accessibility-audit-callout--notice">
             <span>{{ 'This report is Level A and AA, so the export will also state EN 301 549 clause 9, which adopts the WCAG Level AA criteria for web content. Clauses covering non-web ICT are out of scope.'|t('accessibility-audit') }}</span>

@@ -3747,3 +3747,10 @@ fieldset.accessibility-audit-readonly select,
 fieldset.accessibility-audit-readonly textarea {
   opacity: 0.75;
 }
+
+/* Provenance line under the statement's summary strip: says which scan the
+   figures above came from. */
+.accessibility-audit-statfoot {
+  margin: 12px 0 0;
+  font-size: 12px;
+}

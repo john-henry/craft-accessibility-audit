@@ -497,6 +497,9 @@ class DashboardController extends Controller
         return $this->renderTemplate('accessibility-audit/vpat', [
             'isPro' => $isPro,
             'report' => $report,
+            // Both this and the statement are derived from scan data, so the
+            // date they were derived from belongs on screen beside them.
+            'lastScanned' => $plugin->getAudit()->getLatestScanDate($siteId),
             'siteId' => $siteId,
             'siteHandle' => $siteHandle,
             'sites' => $sites,
@@ -562,6 +565,7 @@ class DashboardController extends Controller
         return $this->renderTemplate('accessibility-audit/statement', [
             'statement' => $statement,
             'derivation' => $derivation,
+            'lastScanned' => $plugin->getAudit()->getLatestScanDate($siteId),
             'unconfirmedDetails' => $unconfirmedDetails,
             'suggestions' => $suggestions,
             'profiles' => StatementProfiles::options(),
