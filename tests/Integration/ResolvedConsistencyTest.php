@@ -26,19 +26,30 @@ it('applies the same potential-issue rule to every resolved listing', function()
         'getResolvedIssuesByImpact',
         'getResolvedTrend',
         'getResolvedIssuesForElement',
+        'getResolvedIssuesForUrl',
+        '_resolvedIssuesFor',
     ];
 
     $missing = [];
 
     foreach ($methods as $method) {
-        // The method body, up to the start of the next one.
-        $start = strpos($source, "public function {$method}(");
+        $start = strpos($source, "function {$method}(");
         expect($start)->not->toBeFalse("{$method}() is gone: update this test with its replacement.");
 
-        $next = strpos($source, 'public function ', $start + 20);
+        // The method body, up to the start of the next one at class level.
+        $next = false;
+        foreach (["\n    public function ", "\n    private function "] as $marker) {
+            $at = strpos($source, $marker, $start + 20);
+            if ($at !== false && ($next === false || $at < $next)) {
+                $next = $at;
+            }
+        }
         $body = substr($source, $start, $next !== false ? $next - $start : null);
 
-        if (!str_contains($body, 'definiteCondition')) {
+        // Either the method applies the rule itself, or it hands the whole
+        // query to the shared builder that does. The builder is on the list in
+        // its own right, so delegating to it is not a way round the check.
+        if (!str_contains($body, 'definiteCondition') && !str_contains($body, '_resolvedIssuesFor(')) {
             $missing[] = $method;
         }
     }

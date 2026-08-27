@@ -106,6 +106,70 @@ class AuditController extends Controller
     }
 
     /**
+     * POST /accessibility-audit/scan-url
+     * Re-scans a page that has no element behind it and returns JSON results.
+     *
+     * The URL is not taken on trust. This action fetches server-side, so an
+     * arbitrary posted address would make the site a proxy for reaching
+     * whatever the server can reach. Only a URL the admin already listed under
+     * Settings, or one already scanned for this site, is accepted; anything
+     * else is refused rather than fetched.
+     *
+     * @return Response
+     * @throws SiteNotFoundException
+     * @throws MethodNotAllowedHttpException
+     * @throws ForbiddenHttpException
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function actionScanUrl(): Response
+    {
+        $this->requirePostRequest();
+        $this->requirePermission('accessibility-audit:runScans');
+
+        $url = trim((string) $this->request->getBodyParam('url', ''));
+        $siteId = (int) ($this->request->getBodyParam('siteId') ?: Craft::$app->getSites()->getPrimarySite()->id);
+
+        if (($refusal = $this->_requireAllowedSite($siteId)) !== null) {
+            return $refusal;
+        }
+
+        $audit = AccessibilityAudit::getInstance()->audit;
+
+        if ($url === '' || !$audit->isKnownScanUrl($url, $siteId)) {
+            return $this->asJson([
+                'success' => false,
+                'error' => Craft::t('accessibility-audit', 'That URL is not one this site scans.'),
+            ]);
+        }
+
+        // Same reason as scan-entry: the Inspect page runs the browser pass
+        // itself, so queueing the headless job too would have two engines
+        // overwriting each other on the one scan.
+        $withHeadless = !(bool) $this->request->getBodyParam('skipHeadless', false);
+
+        $result = $audit->scanUrl($url, $siteId, $withHeadless);
+
+        if (!empty($result['limitReached'])) {
+            return $this->asJson([
+                'success' => true,
+                'limitReached' => true,
+                'limit' => AuditService::STANDARD_SCAN_LIMIT,
+            ]);
+        }
+
+        if (!empty($result['error'])) {
+            return $this->asJson(['success' => false, 'error' => $result['error']]);
+        }
+
+        return $this->asJson([
+            'success' => true,
+            'scanId' => $result['scanId'],
+            'score' => $result['score'],
+        ]);
+    }
+
+    /**
      * POST /accessibility-audit/scan-all
      * Queues a single batched background scan for all published elements with URLs.
      *

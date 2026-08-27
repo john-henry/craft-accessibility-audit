@@ -1937,7 +1937,12 @@
        only the overlay reflects the admin's actual window, which is its job. */
     var previewPane = document.getElementById('accessibility-audit-pane-content');
     var VIEWPORT_WIDTHS = { desktop: 1280, mobile: 375 };
-    var _viewportSessionKey = 'a11y_pr_viewport_' + CFG.elementId + '_' + CFG.siteId;
+    /* Every URL scan has an element id of 0, so keying per-page state on that
+       alone would have them all share one slot: the viewport chosen on one
+       would follow you to the next. A URL page is keyed by its scan instead. */
+    var _targetKey = CFG.elementId ? String(CFG.elementId) : 's' + CFG.scanId;
+
+    var _viewportSessionKey = 'a11y_pr_viewport_' + _targetKey + '_' + CFG.siteId;
     var activeViewport = (function () {
         /* Survives the post-store reload, so a switch to Mobile isn't undone
            when the sidebar refreshes with the recalculated scan. */
@@ -2015,9 +2020,9 @@
        totals reloads the page, which would cut an in-page sweep short. Each
        load moves the sweep on one step until both buckets are stored. */
     var _sweepFlagKey   = 'a11y_sweep_viewports';
-    var _sweepOriginKey = 'a11y_sweep_origin_' + CFG.elementId + '_' + CFG.siteId;
-    var _sweepTriesKey  = 'a11y_sweep_tries_' + CFG.elementId + '_' + CFG.siteId;
-    var _sweepLastKey   = 'a11y_sweep_last_' + CFG.elementId + '_' + CFG.siteId;
+    var _sweepOriginKey = 'a11y_sweep_origin_' + _targetKey + '_' + CFG.siteId;
+    var _sweepTriesKey  = 'a11y_sweep_tries_' + _targetKey + '_' + CFG.siteId;
+    var _sweepLastKey   = 'a11y_sweep_last_' + _targetKey + '_' + CFG.siteId;
     var SWEEP_MAX_TRIES = 5;
 
     /* The preview jumps to the other width mid-sweep, so say what is going on.

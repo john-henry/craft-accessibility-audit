@@ -12,7 +12,8 @@
 
 {% import 'accessibility-audit/_macros' as macros %}
 
-{% set pageUrl = element and element.url ? element.url : null %}
+{% set pageUrl = pageUrl ?? (element and element.url ? element.url : null) %}
+{% set isUrlScan = element is empty and pageUrl is not empty %}
 
 {% set previewUrl = pageUrl ? (pageUrl ~ ('?' in pageUrl ? '&' : '?') ~ 'accessibility-audit-preview=1') : null %}
 
@@ -34,14 +35,20 @@
             {{ 'Edit element'|t('accessibility-audit') }}
             <span class="visually-hidden">({{ 'opens in new tab'|t('accessibility-audit') }})</span>
         </a>
-        {% if pageUrl %}
-            <a href="{{ pageUrl }}" target="_blank" rel="noopener" class="btn">
-                <span class="cp-icon small" aria-hidden="true">{{ iconSvg('arrow-up-right-from-square') }}</span>
-                {{ 'View page'|t('accessibility-audit') }}
-                <span class="visually-hidden">({{ 'opens in new tab'|t('accessibility-audit') }})</span>
-            </a>
-        {% endif %}
+    {% endif %}
+    {% if pageUrl %}
+        <a href="{{ pageUrl }}" target="_blank" rel="noopener" class="btn">
+            <span class="cp-icon small" aria-hidden="true">{{ iconSvg('arrow-up-right-from-square') }}</span>
+            {{ 'View page'|t('accessibility-audit') }}
+            <span class="visually-hidden">({{ 'opens in new tab'|t('accessibility-audit') }})</span>
+        </a>
+    {% endif %}
+    {% if element %}
         <button class="btn submit" data-icon="refresh" data-accessibility-audit-scan-entry="{{ elementId }}" data-site-id="{{ siteId }}" aria-live="polite">
+            {{ 'Re-scan'|t('accessibility-audit') }}
+        </button>
+    {% elseif isUrlScan %}
+        <button class="btn submit" data-icon="refresh" data-accessibility-audit-scan-url="{{ pageUrl }}" data-site-id="{{ siteId }}" aria-live="polite">
             {{ 'Re-scan'|t('accessibility-audit') }}
         </button>
     {% endif %}
@@ -190,7 +197,7 @@
                 {% else %}
                     {% if potentialCount %}
                         <p class="accessibility-audit-pr-review-intro light">{{ 'These need a human eye. They do not count against your score until you confirm one.'|t('accessibility-audit') }}</p>
-                        {% if canRunScans and potentialCount > 1 %}
+                        {% if canRunScans and not isUrlScan and potentialCount > 1 %}
                             <div class="accessibility-audit-pr-bulk" id="accessibility-audit-pr-bulk-bar">
                                 <label class="accessibility-audit-pr-bulk__all">
                                     <input type="checkbox" id="accessibility-audit-pr-bulk-all" class="checkbox">
@@ -217,7 +224,7 @@
                                 <div class="accessibility-audit-pr-review" data-accessibility-audit-review
                                      data-rule-id="{{ row.ruleId }}"
                                      data-context="{{ row.context|default('') }}">
-                                    {% if canRunScans and potentialCount > 1 %}
+                                    {% if canRunScans and not isUrlScan and potentialCount > 1 %}
                                         <label class="accessibility-audit-pr-review__pick">
                                             <input type="checkbox" class="checkbox" data-bulk-pick
                                                    aria-label="{{ 'Select for bulk dismissal'|t('accessibility-audit') }}">
@@ -230,10 +237,12 @@
                                     {% endif %}
                                     <div class="accessibility-audit-pr-review__actions">
                                         <button type="button" class="btn small" data-highlight>{{ 'Show on page'|t('accessibility-audit') }}</button>
-                                        {% if canRunScans %}
+                                        {% if canRunScans and not isUrlScan %}
                                             <button type="button" class="btn small" data-verdict="dismissed">{{ 'Not an issue'|t('accessibility-audit') }}</button>
                                             <button type="button" class="btn small accessibility-audit-pr-review__confirm" data-verdict="confirmed">{{ 'Confirm as failure'|t('accessibility-audit') }}</button>
                                             <span class="accessibility-audit-pr-review__status" role="status" aria-live="polite"></span>
+                                        {% elseif canRunScans %}
+                                            <span class="light">{{ 'Answers are stored against the element, so they cannot be given on a page scanned by URL.'|t('accessibility-audit') }}</span>
                                         {% endif %}
                                     </div>
                                 </div>
@@ -256,7 +265,7 @@
                                          data-rule-id="{{ row.ruleId }}"
                                          data-context="{{ row.context|default('') }}">
                                         <p class="accessibility-audit-pr-review__ctx" title="{{ row.context|default('') }}">{{ row.context|default(row.question) }}</p>
-                                        {% if canRunScans %}
+                                        {% if canRunScans and not isUrlScan %}
                                             <div class="accessibility-audit-pr-review__actions">
                                                 <button type="button" class="btn small" data-verdict="">{{ 'Restore'|t('accessibility-audit') }}</button>
                                                 <span class="accessibility-audit-pr-review__status" role="status" aria-live="polite"></span>
@@ -462,7 +471,7 @@
 {% else %}
 <div class="readable mt-s">
     <blockquote class="note">
-        <p>{{ 'This element has no public URL, showing issue data only.'|t('accessibility-audit') }}</p>
+        <p>{{ 'This page has no public URL, showing issue data only.'|t('accessibility-audit') }}</p>
     </blockquote>
 </div>
 

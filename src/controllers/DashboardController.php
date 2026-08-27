@@ -23,6 +23,7 @@ use johnhenry\accessibilityaudit\assets\UtilitiesAsset;
 use johnhenry\accessibilityaudit\assets\VpatAsset;
 use johnhenry\accessibilityaudit\helpers\Csv;
 use johnhenry\accessibilityaudit\helpers\ElementLabel;
+use johnhenry\accessibilityaudit\helpers\ScanTarget;
 use johnhenry\accessibilityaudit\models\StatementExclusionModel;
 use johnhenry\accessibilityaudit\services\AuditService;
 use johnhenry\accessibilityaudit\services\RuleRegistry;
@@ -178,17 +179,45 @@ class DashboardController extends Controller
 
         $plugin = AccessibilityAudit::getInstance();
         $elementId = (int)($this->request->getQueryParam('elementId') ?? 0);
+        $scanId = (int)($this->request->getQueryParam('scanId') ?? 0);
         $siteId = $plugin->requestedSiteId();
         $siteHandle = $plugin->requestedSite()->handle;
 
-        if ($elementId === 0) {
+        if ($elementId === 0 && $scanId === 0) {
             return $this->redirect(UrlHelper::cpUrl('accessibility-audit/issues'));
         }
 
         $audit = $plugin->audit;
-        $scan = $audit->getLatestScan($elementId, $siteId);
+
+        // A page with no element behind it is addressed by scan ID, and the
+        // scan is loaded scoped to the requested site so an ID from another
+        // site is a miss rather than a way across the fence. Its URL is then
+        // what the report follows, so a rescan lands on the newest scan of the
+        // same page rather than on the one the link was made from.
+        if ($elementId === 0) {
+            $scan = $audit->getScan($scanId, $siteId);
+
+            if ($scan === null) {
+                return $this->redirect(UrlHelper::cpUrl('accessibility-audit/issues'));
+            }
+
+            if (!empty($scan['elementId'])) {
+                return $this->redirect(UrlHelper::cpUrl('accessibility-audit/page-report', [
+                    'elementId' => (int)$scan['elementId'],
+                    'site' => $siteHandle,
+                ]));
+            }
+
+            $scan = $audit->getLatestUrlScan((string)$scan['url'], $siteId) ?? $scan;
+        } else {
+            $scan = $audit->getLatestScan($elementId, $siteId);
+        }
+
+        $scanUrl = $scan !== null ? (string)($scan['url'] ?? '') : '';
         $issues = $scan ? $audit->getIssuesGroupedByScan((int)$scan['id']) : [];
-        $resolved = $audit->getResolvedIssuesForElement($elementId, $siteId);
+        $resolved = $scanUrl !== ''
+            ? $audit->getResolvedIssuesForUrl($scanUrl, $siteId)
+            : $audit->getResolvedIssuesForElement($elementId, $siteId);
 
         // Potential issues awaiting the author's answer, shown here (not just on
         // the Potential page) because the page markup is what settles the answer.
@@ -214,10 +243,14 @@ class DashboardController extends Controller
         }
         $potential = array_values($potential);
 
-        $element = Craft::$app->getElements()->getElementById($elementId, null, $siteId);
+        $element = $elementId !== 0
+            ? Craft::$app->getElements()->getElementById($elementId, null, $siteId)
+            : null;
         $sites = $plugin->allowedSites();
 
-        $pageLabel = ElementLabel::for($element, $elementId);
+        $pageLabel = $scan !== null
+            ? ScanTarget::label($scan, $element)
+            : ElementLabel::for($element, $elementId);
 
         $view = Craft::$app->getView();
         $view->registerAssetBundle(PageReportAsset::class);
@@ -253,6 +286,7 @@ class DashboardController extends Controller
         return $this->renderTemplate('accessibility-audit/page-report', [
             'element' => $element,
             'elementId' => $elementId,
+            'pageUrl' => $scan !== null ? ScanTarget::url($scan, $element) : $element?->getUrl(),
             'pageLabel' => $pageLabel,
             'scan' => $scan,
             'issues' => $issues,
@@ -1231,20 +1265,18 @@ class DashboardController extends Controller
             $scan = $row['scan'];
             $element = $row['element'] ?? null;
             $elementId = (int)$scan['elementId'];
-            $title = $element !== null
-                ? $element->getUiLabel()
-                : (Craft::t('accessibility-audit', 'Element #') . $elementId);
+            $reportUrl = UrlHelper::cpUrl(
+                'accessibility-audit/page-report',
+                ScanTarget::reportParams($scan, $siteHandle),
+            );
             $lastScanned = !empty($scan['dateScanned']) ? DateTimeHelper::toDateTime($scan['dateScanned']) : false;
 
             $data[] = [
                 'id' => $elementId,
                 'page' => [
-                    'title' => $title,
-                    'inspectUrl' => UrlHelper::cpUrl('accessibility-audit/page-report', [
-                        'elementId' => $elementId,
-                        'site' => $siteHandle,
-                    ]),
-                    'url' => $element?->getUrl(),
+                    'title' => ScanTarget::label($scan, $element),
+                    'inspectUrl' => $reportUrl,
+                    'url' => ScanTarget::url($scan, $element),
                     'scanId' => (int)$scan['id'],
                 ],
                 'score' => (int)$scan['score'],
@@ -1255,10 +1287,7 @@ class DashboardController extends Controller
                 ],
                 'lastScanned' => $lastScanned !== false ? $lastScanned->format('d M Y') : '—',
                 'rescan' => $element?->id ?? 0,
-                'report' => UrlHelper::cpUrl('accessibility-audit/page-report', [
-                    'elementId' => $elementId,
-                    'site' => $siteHandle,
-                ]),
+                'report' => $reportUrl,
             ];
         }
 
@@ -1328,30 +1357,24 @@ class DashboardController extends Controller
         foreach ($entries as $item) {
             $row = $item['row'];
             $element = $item['element'] ?? null;
-            $elementId = (int)$row['elementId'];
-            $title = $element !== null
-                ? $element->getUiLabel()
-                : (Craft::t('accessibility-audit', 'Element #') . $elementId);
+            $reportUrl = UrlHelper::cpUrl(
+                'accessibility-audit/page-report',
+                ScanTarget::reportParams($row, $siteHandle),
+            );
             $lastScanned = $row['dateScanned'] ? DateTimeHelper::toDateTime($row['dateScanned']) : false;
 
             $data[] = [
-                'id' => $elementId,
+                'id' => (int)$row['elementId'],
                 'page' => [
-                    'title' => $title,
-                    'inspectUrl' => UrlHelper::cpUrl('accessibility-audit/page-report', [
-                        'elementId' => $elementId,
-                        'site' => $siteHandle,
-                    ]),
-                    'url' => $element?->getUrl(),
+                    'title' => ScanTarget::label($row, $element),
+                    'inspectUrl' => $reportUrl,
+                    'url' => ScanTarget::url($row, $element),
                 ],
                 'issues' => (int)$row['issueCount'],
                 'count' => (int)$row['occurrences'],
                 'lastScanned' => $lastScanned !== false ? $lastScanned->format('d M Y') : '—',
                 'rescan' => $element?->id ?? 0,
-                'report' => UrlHelper::cpUrl('accessibility-audit/page-report', [
-                    'elementId' => $elementId,
-                    'site' => $siteHandle,
-                ]),
+                'report' => $reportUrl,
             ];
         }
 
@@ -1370,32 +1393,26 @@ class DashboardController extends Controller
 
         foreach ($entries as $row) {
             $element = $row['element'] ?? null;
-            $elementId = (int)$row['elementId'];
-            $title = $element !== null
-                ? $element->getUiLabel()
-                : (Craft::t('accessibility-audit', 'Element #') . $elementId);
+            $reportUrl = UrlHelper::cpUrl(
+                'accessibility-audit/page-report',
+                ScanTarget::reportParams($row, $siteHandle),
+            );
             $firstDetected = $row['firstDetected'] ? DateTimeHelper::toDateTime($row['firstDetected']) : false;
             $lastScanned = $row['dateScanned'] ? DateTimeHelper::toDateTime($row['dateScanned']) : false;
 
             $data[] = [
-                'id' => $elementId,
+                'id' => (int)$row['elementId'],
                 'page' => [
-                    'title' => $title,
-                    'inspectUrl' => UrlHelper::cpUrl('accessibility-audit/page-report', [
-                        'elementId' => $elementId,
-                        'site' => $siteHandle,
-                    ]),
-                    'url' => $element?->getUrl(),
+                    'title' => ScanTarget::label($row, $element),
+                    'inspectUrl' => $reportUrl,
+                    'url' => ScanTarget::url($row, $element),
                 ],
                 'score' => (int)$row['score'],
                 'count' => (int)$row['occurrences'],
                 'firstDetected' => $firstDetected !== false ? $firstDetected->format('d M Y') : '—',
                 'lastScanned' => $lastScanned !== false ? $lastScanned->format('d M Y') : '—',
                 'rescan' => $element?->id ?? 0,
-                'report' => UrlHelper::cpUrl('accessibility-audit/page-report', [
-                    'elementId' => $elementId,
-                    'site' => $siteHandle,
-                ]),
+                'report' => $reportUrl,
             ];
         }
 

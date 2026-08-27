@@ -136,12 +136,18 @@
 
     bindScanButtons() {
       document.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-accessibility-audit-scan-entry]');
+        const btn = e.target.closest('[data-accessibility-audit-scan-entry], [data-accessibility-audit-scan-url]');
         if (btn) {
           e.preventDefault();
-          const entryId = btn.dataset.accessibilityAuditScanEntry;
-          const siteId  = btn.dataset.siteId || '';
-          this.scanEntry(entryId, siteId, btn);
+          const siteId = btn.dataset.siteId || '';
+          // A page with no element behind it is re-scanned by its URL, which
+          // the server only accepts if it is one this site already scans.
+          const url = btn.dataset.accessibilityAuditScanUrl;
+          this.scanEntry(
+            url ? { url } : { entryId: btn.dataset.accessibilityAuditScanEntry },
+            siteId,
+            btn,
+          );
         }
       });
     },
@@ -156,7 +162,7 @@
       });
     },
 
-    async scanEntry(entryId, siteId, triggerEl) {
+    async scanEntry(target, siteId, triggerEl) {
       // The buttons follow Craft's own queue-button pattern: data-icon on the
       // button draws the refresh glyph as a :before, and the spin class animates
       // that pseudo-element while the scan runs. Table buttons wrap their label
@@ -174,7 +180,7 @@
       try {
         const fd = new FormData();
         csrfAppend(fd);
-        fd.append('entryId', entryId);
+        if (target.url) { fd.append('url', target.url); } else { fd.append('entryId', target.entryId); }
         if (siteId) fd.append('siteId', siteId);
         // On the Inspect page the preview iframe runs the browser pass itself
         // after the reload; skip the queued headless pass so exactly one
@@ -183,7 +189,8 @@
           fd.append('skipHeadless', '1');
         }
 
-        const res  = await fetch(getActionUrl('accessibility-audit/audit/scan-entry'), { method: 'POST', body: fd, headers: { 'Accept': 'application/json' } });
+        const action = target.url ? 'accessibility-audit/audit/scan-url' : 'accessibility-audit/audit/scan-entry';
+        const res  = await fetch(getActionUrl(action), { method: 'POST', body: fd, headers: { 'Accept': 'application/json' } });
         const data = await res.json();
 
         if (data.limitReached) {
@@ -214,8 +221,9 @@
           window.location.reload();
           return;
         } else {
+          const failure = data.error || Craft.t('accessibility-audit', 'Scan failed');
           setText(Craft.t('accessibility-audit', 'Scan failed'));
-          if (window.Craft && Craft.cp) { Craft.cp.displayError(Craft.t('accessibility-audit', 'Scan failed')); }
+          if (window.Craft && Craft.cp) { Craft.cp.displayError(failure); }
         }
       } catch (err) {
         console.error('[a11y]', err);

@@ -70,6 +70,17 @@ class AuditService extends Component
     private const SEVERITY_WEIGHT = ['error' => 10, 'warning' => 4, 'notice' => 1];
 
     /**
+     * @var string[] The scan columns the page report reads. Includes elementId,
+     *               url and title, which are what tell an element scan and a
+     *               URL scan apart once the row is out of the database.
+     */
+    private const SCAN_REPORT_COLUMNS = [
+        'id', 'elementId', 'elementType', 'url', 'title', 'score', 'scoreA',
+        'scoreAA', 'scoreAAA', 'errorCount', 'warningCount', 'noticeCount',
+        'dateScanned',
+    ];
+
+    /**
      * @var array<string, string> Axe rules whose finding duplicates a PHP
      * scanner rule. When the PHP scanner has already flagged the equivalent
      * rule on a scan, the axe violation is skipped so the same problem isn't
@@ -454,15 +465,6 @@ class AuditService extends Component
 
     // ─── Scan element (any type) ─────────────────────────────────────────────
 
-    /** @return array{scanId: int, score: int, issues: IssueModel[], limitReached?: bool} */
-    /**
-     * @param ElementInterface $element The element to scan.
-     * @param bool $withHeadless Whether to queue the server-side browser pass
-     * (when available). The Inspect page passes false: its preview runs the
-     * browser checks itself, and two browser writers racing on one scan is
-     * exactly what makes results flip-flop.
-     * @throws Throwable
-     */
     /**
      * Scans one URL that has no element behind it.
      *
@@ -471,15 +473,15 @@ class AuditService extends Component
      * elements_sites, so the element-driven sweep cannot reach them, and a
      * query string cannot be carried on an element URL in any case.
      *
-     * The scan is stored against the URL instead of an element. Findings are
-     * recorded the same way, but the per-element machinery (needs-review
-     * rulings, first-detected history, resolution tracking) is element-keyed
-     * and does not apply, so a URL scan is a snapshot rather than a thread.
+     * The scan is stored against the URL instead of an element, and the
+     * listings and the page report follow it there. Needs-review rulings are
+     * the exception: those are keyed to an element so they outlive the scan
+     * rows, so a URL page shows its potential issues but cannot answer them.
      *
      * @param string $url The URL to scan, absolute or site-relative.
      * @param int $siteId The site the URL belongs to.
      * @param bool $withHeadless Whether to queue the server-side browser pass.
-     * @return array{scanId: int, score: int, url: string, error?: string}
+     * @return array{scanId: int, score: int, url: string, error?: string, limitReached?: bool}
      * @throws \Exception
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.2.0
@@ -621,6 +623,19 @@ class AuditService extends Component
         return $title !== '' ? mb_substr($title, 0, 255) : null;
     }
 
+    /**
+     * Scans one element of any type.
+     *
+     * @param ElementInterface $element The element to scan.
+     * @param bool $withHeadless Whether to queue the server-side browser pass
+     * (when available). The Inspect page passes false: its preview runs the
+     * browser checks itself, and two browser writers racing on one scan is
+     * exactly what makes results flip-flop.
+     * @return array{scanId: int, score: int, issues: IssueModel[], limitReached?: bool}
+     * @throws Throwable
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     public function scanElement(ElementInterface $element, bool $withHeadless = true): array
     {
         assert($element instanceof Element);
@@ -952,10 +967,79 @@ class AuditService extends Component
     public function getLatestScan(int $elementId, int $siteId): ?array
     {
         return (new Query())
-            ->select(['id', 'score', 'scoreA', 'scoreAA', 'scoreAAA', 'errorCount', 'warningCount', 'noticeCount', 'dateScanned'])
+            ->select(self::SCAN_REPORT_COLUMNS)
             ->from('{{%accessibilityaudit_scans}}')
             ->where(['elementId' => $elementId, 'siteId' => $siteId])
             ->orderBy(['dateScanned' => SORT_DESC])
+            ->one() ?: null;
+    }
+
+    /**
+     * Whether a URL is one this site scans: either listed by an admin under
+     * Settings, or already scanned for this site.
+     *
+     * The gate for anything that fetches a posted URL server-side. Without it
+     * the scanner would fetch whatever address it was handed, which is a way
+     * of reaching things only the server can reach.
+     *
+     * @param string $url The URL to check.
+     * @param int $siteId The site to scope to.
+     * @return bool
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function isKnownScanUrl(string $url, int $siteId): bool
+    {
+        $configured = AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls();
+
+        foreach ($configured as $candidate) {
+            if ($this->absoluteUrl($candidate, $siteId) === $url) {
+                return true;
+            }
+        }
+
+        return (new Query())
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where(['url' => $url, 'siteId' => $siteId])
+            ->exists();
+    }
+
+    /**
+     * The latest scan of a URL, which is how a page with no element behind it
+     * is addressed.
+     *
+     * @param string $url The absolute URL that was scanned.
+     * @param int $siteId The site to scope to.
+     * @return array<string, mixed>|null
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function getLatestUrlScan(string $url, int $siteId): ?array
+    {
+        return (new Query())
+            ->select(self::SCAN_REPORT_COLUMNS)
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where(['url' => $url, 'siteId' => $siteId])
+            ->orderBy(['dateScanned' => SORT_DESC])
+            ->one() ?: null;
+    }
+
+    /**
+     * One scan by ID, scoped to a site so a scan ID from elsewhere cannot be
+     * read across the site fence.
+     *
+     * @param int $scanId The scan ID.
+     * @param int $siteId The site the caller is authorised for.
+     * @return array<string, mixed>|null
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function getScan(int $scanId, int $siteId): ?array
+    {
+        return (new Query())
+            ->select(self::SCAN_REPORT_COLUMNS)
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where(['id' => $scanId, 'siteId' => $siteId])
             ->one() ?: null;
     }
 
@@ -1257,7 +1341,7 @@ class AuditService extends Component
         }
 
         $query = (new Query())
-            ->select(['ruleId', 'wcagCriterion', 'wcagLevel', 'severity', 'COUNT(DISTINCT elementId) as pageCount', 'COUNT(*) as occurrences'])
+            ->select(['ruleId', 'wcagCriterion', 'wcagLevel', 'severity', 'COUNT(DISTINCT scanId) as pageCount', 'COUNT(*) as occurrences'])
             ->from('{{%accessibilityaudit_issues}}')
             ->where(['scanId' => $latestIds, 'isResolved' => false])
             ->andWhere($this->definiteCondition());
@@ -1268,7 +1352,7 @@ class AuditService extends Component
 
         return $query
             ->groupBy(['ruleId', 'wcagCriterion', 'wcagLevel', 'severity'])
-            ->having(['>=', 'COUNT(DISTINCT elementId)', $threshold])
+            ->having(['>=', 'COUNT(DISTINCT scanId)', $threshold])
             ->orderBy(['pageCount' => SORT_DESC])
             ->all();
     }
@@ -1404,6 +1488,34 @@ class AuditService extends Component
     /** Resolved issues for a specific element: for the page report view. */
     public function getResolvedIssuesForElement(int $elementId, int $siteId, int $limit = 30): array
     {
+        return $this->_resolvedIssuesFor(['i.elementId' => $elementId], $siteId, $limit);
+    }
+
+    /**
+     * Resolved issues for a page addressed by URL rather than by element.
+     *
+     * @param string $url The absolute URL that was scanned.
+     * @param int $siteId The site to scope to.
+     * @param int $limit Most rules to return.
+     * @return array<int, array<string, mixed>>
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function getResolvedIssuesForUrl(string $url, int $siteId, int $limit = 30): array
+    {
+        return $this->_resolvedIssuesFor(['s.url' => $url], $siteId, $limit);
+    }
+
+    /**
+     * Shared body of the two resolved-issue listings above.
+     *
+     * @param array<string, mixed> $target Condition naming the scanned page.
+     * @param int $siteId The site to scope to.
+     * @param int $limit Most rules to return.
+     * @return array<int, array<string, mixed>>
+     */
+    private function _resolvedIssuesFor(array $target, int $siteId, int $limit): array
+    {
         return (new Query())
             ->select([
                 'i.ruleId',
@@ -1414,7 +1526,8 @@ class AuditService extends Component
             ])
             ->from(['i' => '{{%accessibilityaudit_issues}}'])
             ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], 's.id = i.scanId')
-            ->where(['i.elementId' => $elementId, 's.siteId' => $siteId, 'i.isResolved' => true])
+            ->where($target)
+            ->andWhere(['s.siteId' => $siteId, 'i.isResolved' => true])
             // Same rule as every other resolved listing: see getResolvedIssues().
             ->andWhere($this->definiteCondition('i'))
             ->groupBy(['i.ruleId', 'i.wcagCriterion', 'i.severity'])
@@ -1443,7 +1556,7 @@ class AuditService extends Component
                 'MIN(i.wcagCriterion) as wcagCriterion',
                 'MIN(i.wcagLevel) as wcagLevel',
                 'MIN(i.severity) as severity',
-                'COUNT(DISTINCT i.elementId) as pageCount',
+                'COUNT(DISTINCT i.scanId) as pageCount',
                 'COUNT(*) as occurrences',
                 'MIN(i.firstDetected) as firstDetected',
             ])
@@ -1487,47 +1600,55 @@ class AuditService extends Component
         $search = trim($search);
 
         $orderColumn = match ($orderBy) {
-            'title' => 'es.title',
+            'title' => 'title',
             'score' => 's.score',
             'firstDetected' => 'firstDetected',
             'dateScanned' => 's.dateScanned',
             default => 'occurrences',
         };
-        $needsTitleJoin = $search !== '' || $orderColumn === 'es.title';
+        $needsTitleJoin = $search !== '' || $orderColumn === 'title';
 
-        // The page title lives in Craft's elements_sites table, not the plugin's
-        // issue tables, so it's joined only when it's searched or sorted on.
+        // An element's title lives in Craft's elements_sites table, not the
+        // plugin's, so it's joined only when it's searched or sorted on. The
+        // join is a left one: a URL scan has no element, and an inner join
+        // would drop it from the list the moment anyone sorted or searched.
         // Applied to both queries so pagination stays correct.
         $applyTitle = static function(Query $query) use ($needsTitleJoin, $search, $siteId): void {
             if (!$needsTitleJoin) {
                 return;
             }
-            $query->innerJoin(
+            $query->leftJoin(
                 ['es' => '{{%elements_sites}}'],
                 ['and', '[[es.elementId]] = [[i.elementId]]', ['es.siteId' => $siteId]],
             );
             if ($search !== '') {
-                $query->andWhere(['like', 'es.title', $search]);
+                $query->andWhere(['or', ['like', 'es.title', $search], ['like', 's.title', $search]]);
             }
         };
 
         $totalQuery = (new Query())
-            ->select(['COUNT(DISTINCT i.elementId)'])
+            ->select(['COUNT(DISTINCT i.scanId)'])
             ->from(['i' => '{{%accessibilityaudit_issues}}'])
+            ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], 's.id = i.scanId')
             ->where(['i.scanId' => $latestIds, 'i.ruleId' => $ruleId, 'i.isResolved' => false]);
         $applyTitle($totalQuery);
         $total = (int)$totalQuery->scalar();
 
-        // es.title joins the GROUP BY when sorting on it; it's 1:1 with the
-        // element, so the grouping is unchanged.
-        $groupBy = ['i.elementId', 's.score', 's.dateScanned'];
+        // Grouped by scan rather than by element: one scan is one page either
+        // way, and every URL scan shares a null elementId.
+        $groupBy = ['i.scanId', 'i.elementId', 's.url', 's.title', 's.score', 's.dateScanned'];
         if ($needsTitleJoin) {
             $groupBy[] = 'es.title';
         }
 
         $rowsQuery = (new Query())
             ->select([
+                'i.scanId as id',
                 'i.elementId',
+                's.url',
+                // A URL scan carries its own title; an element's is joined in
+                // above, and only when it is needed for sorting or searching.
+                $needsTitleJoin ? 'COALESCE([[es.title]], [[s.title]]) as title' : 's.title',
                 'COUNT(*) as occurrences',
                 'MIN(i.firstDetected) as firstDetected',
                 'MIN(i.context) as context',
@@ -1544,19 +1665,22 @@ class AuditService extends Component
         $applyTitle($rowsQuery);
         $rows = $rowsQuery->all();
 
-        $elementIds = array_column($rows, 'elementId');
+        $elementIds = array_values(array_filter(array_column($rows, 'elementId')));
         $elements = $this->loadElementsByIds($elementIds, $siteId);
 
         $result = [];
         foreach ($rows as $row) {
             $result[] = [
+                'id' => (int)$row['id'],
                 'elementId' => (int)$row['elementId'],
+                'url' => $row['url'],
+                'title' => $row['title'],
                 'occurrences' => (int)$row['occurrences'],
                 'firstDetected' => $row['firstDetected'],
                 'context' => $row['context'],
                 'score' => (int)$row['score'],
                 'dateScanned' => $row['dateScanned'],
-                'element' => $elements[(int)$row['elementId']] ?? null,
+                'element' => $row['elementId'] !== null ? ($elements[(int)$row['elementId']] ?? null) : null,
             ];
         }
 
@@ -1624,13 +1748,13 @@ class AuditService extends Component
             ->from('{{%accessibilityaudit_scans}}')
             ->where(['siteId' => $siteId])
             ->andWhere(['>=', 'dateScanned', $cutoff])
-            ->groupBy(['elementId', new Expression('DATE([[dateScanned]])')]);
+            ->groupBy(['elementId', 'url', new Expression('DATE([[dateScanned]])')]);
 
         $rows = (new Query())
             ->select([
                 'day' => $day,
                 'occurrences' => 'COUNT(*)',
-                'pages' => 'COUNT(DISTINCT [[i.elementId]])',
+                'pages' => 'COUNT(DISTINCT [[i.scanId]])',
             ])
             ->from(['i' => '{{%accessibilityaudit_issues}}'])
             ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], '[[s.id]] = [[i.scanId]]')
@@ -1658,7 +1782,7 @@ class AuditService extends Component
 
         $rows = (new Query())
             ->select(['ruleId', 'wcagCriterion', 'wcagLevel', 'severity',
-                      'COUNT(DISTINCT elementId) as pageCount', 'COUNT(*) as occurrences', ])
+                      'COUNT(DISTINCT scanId) as pageCount', 'COUNT(*) as occurrences', ])
             ->from('{{%accessibilityaudit_issues}}')
             ->where(['scanId' => $latestIds])
             ->andWhere($this->pendingPotentialCondition())
@@ -1699,30 +1823,32 @@ class AuditService extends Component
 
         $search = trim($search);
         $orderColumn = match ($orderBy) {
-            'title' => 'es.title',
+            'title' => 'title',
             'issues' => 'issueCount',
             'dateScanned' => 'dateScanned',
             default => 'occurrences',
         };
-        $needsTitleJoin = $search !== '' || $orderColumn === 'es.title';
+        $needsTitleJoin = $search !== '' || $orderColumn === 'title';
 
-        // The page title lives in elements_sites, joined only when searched or
-        // sorted on. Applied to both queries so pagination stays correct.
+        // An element's title lives in elements_sites, joined only when searched
+        // or sorted on, and left-joined so a URL scan (which has no element and
+        // carries its own title) is not dropped. Applied to both queries so
+        // pagination stays correct.
         $applyTitle = static function(Query $query) use ($needsTitleJoin, $search, $siteId): void {
             if (!$needsTitleJoin) {
                 return;
             }
-            $query->innerJoin(
+            $query->leftJoin(
                 ['es' => '{{%elements_sites}}'],
                 ['and', '[[es.elementId]] = [[s.elementId]]', ['es.siteId' => $siteId]],
             );
             if ($search !== '') {
-                $query->andWhere(['like', 'es.title', $search]);
+                $query->andWhere(['or', ['like', 'es.title', $search], ['like', 's.title', $search]]);
             }
         };
 
         $totalQuery = (new Query())
-            ->select(['COUNT(DISTINCT s.elementId)'])
+            ->select(['COUNT(DISTINCT s.id)'])
             ->from(['i' => '{{%accessibilityaudit_issues}}'])
             ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], 's.id = i.scanId')
             ->where(['i.scanId' => $latestIds])
@@ -1730,13 +1856,23 @@ class AuditService extends Component
         $applyTitle($totalQuery);
         $total = (int)$totalQuery->scalar();
 
-        $groupBy = ['s.elementId'];
+        // Grouped by scan: one scan is one page, and every URL scan shares a
+        // null elementId.
+        $groupBy = ['s.id', 's.elementId', 's.url', 's.title'];
         if ($needsTitleJoin) {
             $groupBy[] = 'es.title';
         }
 
         $rowsQuery = (new Query())
-            ->select(['s.elementId', 'COUNT(DISTINCT i.ruleId) as issueCount', 'COUNT(*) as occurrences', 'MAX(s.dateScanned) as dateScanned'])
+            ->select([
+                's.id',
+                's.elementId',
+                's.url',
+                $needsTitleJoin ? 'COALESCE([[es.title]], [[s.title]]) as title' : 's.title',
+                'COUNT(DISTINCT i.ruleId) as issueCount',
+                'COUNT(*) as occurrences',
+                'MAX(s.dateScanned) as dateScanned',
+            ])
             ->from(['i' => '{{%accessibilityaudit_issues}}'])
             ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], 's.id = i.scanId')
             ->where(['i.scanId' => $latestIds])
@@ -1748,11 +1884,14 @@ class AuditService extends Component
         $applyTitle($rowsQuery);
         $rows = $rowsQuery->all();
 
-        $elements = $this->loadElementsByIds(array_column($rows, 'elementId'), $siteId);
+        $elements = $this->loadElementsByIds(
+            array_values(array_filter(array_column($rows, 'elementId'))),
+            $siteId,
+        );
 
         $result = [];
         foreach ($rows as $row) {
-            $el = $elements[$row['elementId']] ?? null;
+            $el = $row['elementId'] !== null ? ($elements[$row['elementId']] ?? null) : null;
             $result[] = [
                 'row' => $row,
                 'entry' => $el,
@@ -1875,28 +2014,33 @@ class AuditService extends Component
         if ($orderBy === 'issues') {
             $orderExpr = new Expression('([[s.errorCount]] + [[s.warningCount]] + [[s.noticeCount]]) ' . ($orderDir === SORT_DESC ? 'DESC' : 'ASC'));
         } else {
-            $orderColumn = match ($orderBy) {
-                'title' => 'es.title',
-                'dateScanned' => 's.dateScanned',
-                default => 's.score',
-            };
-            $orderExpr = [$orderColumn => $orderDir];
+            if ($orderBy === 'title') {
+                // A URL scan carries its own title, an element scan's lives in
+                // elements_sites, and one sorted list has to read from
+                // whichever the row has.
+                $orderExpr = new Expression('COALESCE([[es.title]], [[s.title]]) ' . ($orderDir === SORT_DESC ? 'DESC' : 'ASC'));
+            } else {
+                $orderColumn = $orderBy === 'dateScanned' ? 's.dateScanned' : 's.score';
+                $orderExpr = [$orderColumn => $orderDir];
+            }
         }
         $needsTitleJoin = $search !== '' || $orderBy === 'title';
 
         // The page title lives in Craft's elements_sites table, not the scans
         // table, so it's joined only when it's searched or sorted on. Applied to
-        // both queries so pagination totals stay correct.
+        // both queries so pagination totals stay correct. The join is a left
+        // one: a URL scan has no element and an inner join would drop it from
+        // the list entirely the moment anyone sorted or searched.
         $applyTitle = static function(Query $query) use ($needsTitleJoin, $search, $siteId): void {
             if (!$needsTitleJoin) {
                 return;
             }
-            $query->innerJoin(
+            $query->leftJoin(
                 ['es' => '{{%elements_sites}}'],
                 ['and', '[[es.elementId]] = [[s.elementId]]', ['es.siteId' => $siteId]],
             );
             if ($search !== '') {
-                $query->andWhere(['like', 'es.title', $search]);
+                $query->andWhere(['or', ['like', 'es.title', $search], ['like', 's.title', $search]]);
             }
         };
 
@@ -1908,7 +2052,7 @@ class AuditService extends Component
         $total = (int)$totalQuery->scalar();
 
         $scansQuery = (new Query())
-            ->select(['s.id', 's.elementId', 's.elementType', 's.score', 's.scoreA', 's.scoreAA', 's.errorCount', 's.warningCount', 's.noticeCount', 's.dateScanned'])
+            ->select(['s.id', 's.elementId', 's.elementType', 's.url', 's.title', 's.score', 's.scoreA', 's.scoreAA', 's.errorCount', 's.warningCount', 's.noticeCount', 's.dateScanned'])
             ->from(['s' => '{{%accessibilityaudit_scans}}'])
             ->where(['s.id' => $latestIds])
             ->orderBy($orderExpr)
@@ -1918,12 +2062,13 @@ class AuditService extends Component
         $scans = $scansQuery->all();
 
         // Build typeMap from already-loaded scan data to avoid an extra query
+        $elementIds = array_values(array_filter(array_column($scans, 'elementId')));
         $typeMap = array_column($scans, 'elementType', 'elementId');
-        $elements = $this->loadElementsByIds(array_column($scans, 'elementId'), $siteId, $typeMap);
+        $elements = $this->loadElementsByIds($elementIds, $siteId, $typeMap);
 
         $result = [];
         foreach ($scans as $scan) {
-            $el = $elements[$scan['elementId']] ?? null;
+            $el = $scan['elementId'] !== null ? ($elements[$scan['elementId']] ?? null) : null;
             $result[] = [
                 'scan' => $scan,
                 'entry' => $el,
@@ -2838,7 +2983,11 @@ class AuditService extends Component
             ->select(['MAX(id)'])
             ->from('{{%accessibilityaudit_scans}}')
             ->where(['siteId' => $siteId])
-            ->groupBy(['elementId'])
+            // Grouped by url as well as elementId: every URL scan shares a null
+            // elementId, so grouping on that alone folds the lot into one row
+            // and only the most recently scanned URL survives. An element scan
+            // has no url, so the pairing changes nothing for those.
+            ->groupBy(['elementId', 'url'])
             ->column();
     }
 

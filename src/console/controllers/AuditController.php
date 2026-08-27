@@ -59,6 +59,12 @@ class AuditController extends Controller
      */
     public int $days = 90;
 
+    /**
+     * @var string|null A single URL to scan, for pages with no element behind
+     *                  them.
+     */
+    public ?string $url = null;
+
     // Public Methods
     // =========================================================================
 
@@ -70,6 +76,7 @@ class AuditController extends Controller
         return array_merge(parent::options($actionID), match ($actionID) {
             'scan-all' => ['site'],
             'scan-element' => ['elementId', 'site'],
+            'scan-url' => ['url', 'site'],
             'prune' => ['days'],
             'report' => ['site'],
             default => [],
@@ -208,6 +215,48 @@ class AuditController extends Controller
             $wcag = $issue->wcagCriterion ? " [WCAG {$issue->wcagCriterion}]" : '';
             $this->stdout("  [{$issue->severity}]{$wcag} {$issue->message}\n", $colour);
         }
+
+        return ExitCode::OK;
+    }
+
+    /**
+     * Scan a single URL that has no element behind it, such as a search results
+     * or filtered listing page.
+     *
+     * @return int
+     * @throws SiteNotFoundException
+     * @throws \Exception
+     */
+    public function actionScanUrl(): int
+    {
+        if (!$this->url) {
+            $this->stderr("--url is required.
+", BaseConsole::FG_RED);
+            return ExitCode::USAGE;
+        }
+
+        $siteId = $this->resolveSiteId();
+        $this->stdout("Scanning {$this->url}...
+");
+
+        $result = AccessibilityAudit::getInstance()->audit->scanUrl($this->url, $siteId);
+
+        if (!empty($result['error'])) {
+            $this->stderr($result['error'] . "
+", BaseConsole::FG_RED);
+            return ExitCode::DATAERR;
+        }
+
+        if (!empty($result['limitReached'])) {
+            $this->stderr("Scan limit reached for this edition.
+", BaseConsole::FG_RED);
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        $this->stdout("Score: {$result['score']}/100
+");
+        $this->stdout("Scan ID: {$result['scanId']}
+");
 
         return ExitCode::OK;
     }
