@@ -1690,7 +1690,17 @@
             (function check() {
                 var pending = false;
                 try {
-                    var links = doc.querySelectorAll('link[rel="stylesheet"]');
+                    /* Deferred stylesheets count as pending. A page that ships
+                       its CSS as <link rel="preload" as="style"> and swaps the
+                       rel on load carries no rel="stylesheet" at all until that
+                       swap lands, so looking only for those finds nothing
+                       outstanding and reads the page before a line of CSS has
+                       applied. Every link is then the browser default blue on
+                       whatever the section colour is, and a wall of contrast
+                       failures gets recorded against text that is actually fine. */
+                    var links = doc.querySelectorAll(
+                        'link[rel="stylesheet"], link[rel~="preload"][as="style"], link[rel~="alternate"][as="style"]'
+                    );
                     for (var i = 0; i < links.length; i++) {
                         if (!links[i].disabled && !links[i].sheet) { pending = true; break; }
                     }
