@@ -84,8 +84,7 @@ class ReadabilityService extends Component
                 'User-Agent' => AccessibilityAudit::getInstance()->getSettings()->getFetchUserAgent(),
             ];
 
-            $client = Craft::createGuzzleClient($clientConfig);
-            $response = $client->get($url);
+            $response = UrlSafety::fetch($url, $clientConfig);
             $html = (string) $response->getBody();
         } catch (Throwable $e) {
             // Logged so a recurring fetch failure is findable later; the client

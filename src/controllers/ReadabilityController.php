@@ -156,13 +156,10 @@ class ReadabilityController extends Controller
         try {
             $service = AccessibilityAudit::getInstance()->readability;
 
-            /* Fetch once, reuse for title extraction and analysis. The redirect
-               config re-validates each hop's host to block redirect-based SSRF. */
-            $client = Craft::createGuzzleClient(array_merge(
-                ['timeout' => 15],
-                UrlSafety::guzzleRedirectConfig(),
-            ));
-            $response = $client->get($url);
+            /* Fetched once and reused for the title and the analysis. The
+               guard validates every redirect hop and connects only to the
+               addresses it validated. */
+            $response = UrlSafety::fetch($url, ['timeout' => 15]);
             $html = (string) $response->getBody();
 
             $result = $service->analyseHtml($html, $url, $withClaude);

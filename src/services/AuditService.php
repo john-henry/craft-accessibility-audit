@@ -3062,8 +3062,11 @@ class AuditService extends Component
                 'User-Agent' => AccessibilityAudit::getInstance()->getSettings()->getFetchUserAgent(),
             ];
 
-            $client = Craft::createGuzzleClient($clientConfig);
-            $response = $client->get($url);
+            // Fetched through the guard, which connects only to the addresses
+            // it validated rather than letting the client resolve the name a
+            // second time.
+            $response = UrlSafety::fetch($url, $clientConfig);
+
             return (string) $response->getBody();
         } catch (Throwable $e) {
             Craft::warning("Accessibility scan failed to fetch $url: " . $e->getMessage(), __METHOD__);
