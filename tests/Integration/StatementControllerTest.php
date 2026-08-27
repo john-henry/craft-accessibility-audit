@@ -237,9 +237,13 @@ describe('StatementController entries', function() {
 
         $stored = AccessibilityAudit::getInstance()->statement->getRecord($siteId)['exclusions'];
 
+        // The row carries the criterion and a factual note about the scan.
+        // "What is affected" stays empty on purpose: it asks for what a member
+        // of the public would recognise, which only a person can write.
         expect($stored)->toHaveCount(1)
             ->and($stored[0]['criterion'])->toBe($suggestions[0]['criterion'])
-            ->and($stored[0]['content'])->not->toBeEmpty();
+            ->and($stored[0]['content'])->toBe('')
+            ->and($stored[0]['reason'])->not->toBeEmpty();
     });
 });
 
@@ -305,5 +309,29 @@ describe('StatementController add buttons on an empty list', function() {
 
         expect($stored)->toHaveCount(1)
             ->and($stored[0]['criterion'])->toBe('1.4.3');
+    });
+
+    it('never pre-fills the public description or restates the criterion as the reason', function() {
+        // This ends up in a published legal document. "What is affected" asks
+        // for what a member of the public would recognise, so a criterion name
+        // is exactly the wrong thing to put there. And a criterion's own
+        // wording states the condition for passing: printed under "Does not
+        // comply" it describes the site working correctly, which is worse than
+        // saying nothing.
+        $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
+        $criteria = AccessibilityAudit::getInstance()->vpat->getCriteria();
+
+        $this->post('actions/accessibility-audit/statement/save-meta', [
+            'siteId' => $siteId,
+            'productName' => 'Acme Council',
+            'addSuggestion' => '3.2.2',
+        ]);
+
+        $stored = AccessibilityAudit::getInstance()->statement->getRecord($siteId)['exclusions'];
+
+        expect($stored)->toHaveCount(1)
+            ->and($stored[0]['content'])->toBe('')
+            ->and($stored[0]['reason'])->not->toBe((string) ($criteria['3.2.2']['desc'] ?? 'x'))
+            ->and($stored[0]['reason'])->not->toContain((string) ($criteria['3.2.2']['name'] ?? 'x'));
     });
 });

@@ -880,4 +880,5 @@ return [
     'This SVG is drawn with strokes, and the SVG renderer on this server drops them, so there was nothing to describe. Write this alt text by hand, or ask your host to install librsvg. SVGs drawn with fills still work.' => 'This SVG is drawn with strokes, and the SVG renderer on this server drops them, so there was nothing to describe. Write this alt text by hand, or ask your host to install librsvg. SVGs drawn with fills still work.',
     'This page has no public URL, showing issue data only.' => 'This page has no public URL, showing issue data only.',
     'This server cannot read SVG files. Write this alt text by hand, or check that ImageMagick was built with SVG support.' => 'This server cannot read SVG files. Write this alt text by hand, or check that ImageMagick was built with SVG support.',
+    'Automated testing found {count} issues affecting this criterion.' => 'Automated testing found {count} issues affecting this criterion.',
 ];
