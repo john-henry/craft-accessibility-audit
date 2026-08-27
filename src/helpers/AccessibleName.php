@@ -18,12 +18,13 @@ use DOMXPath;
  * text and SVG titles count towards the subtree, and an `aria-hidden` branch
  * counts for nothing.
  *
- * It lives here rather than on one scanner because reading the wrong string is
- * a mistake each rule made separately: two links reading "Visit Website" with
- * distinct `aria-label`s were reported as ambiguous, and a link warning about
- * a new tab in a visually hidden span was reported as giving no warning. Both
- * flagged markup that was already correct, which is worse than saying nothing:
- * it teaches you to dismiss the question without reading it.
+ * It is shared rather than kept on one scanner because every rule that judges
+ * a link needs it and each would otherwise reach for `textContent`. Judged on
+ * visible text, two links reading "Visit Website" with distinct `aria-label`s
+ * look like the same link twice, and a link warning about a new tab in a
+ * visually hidden span looks like it gives no warning. Both readings flag
+ * markup that is already correct, which is worse than silence: it teaches the
+ * reader to dismiss the question without reading it.
  *
  * This is the computation from the accessible name spec reduced to what can be
  * had from static HTML. It does not resolve CSS-generated content or anything

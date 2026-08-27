@@ -3227,11 +3227,11 @@ class AuditService extends Component
      * in `<a>Read more<span aria-hidden="true"> →</span></a>` is the usual
      * shape of it.
      *
-     * This plugin's own contrast pass has always skipped those subtrees, but
-     * axe measures them, so the two engines disagreed on the same page and the
-     * report asked about a node its other engine had deliberately passed over.
-     * Asked enough times, a question about correct markup teaches you to
-     * dismiss the question without reading it.
+     * This plugin's own contrast pass skips those subtrees; axe measures them,
+     * since visually the glyph is on screen like any other. Without this the
+     * two engines report differently on the same page, and a question about
+     * correct markup, asked often enough, teaches the reader to dismiss
+     * questions without reading them.
      *
      * Only the reported element itself can be checked here: axe hands over a
      * snippet, so an element hidden by an ancestor is not visible from it.

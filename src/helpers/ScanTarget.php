@@ -11,13 +11,14 @@ use craft\base\ElementInterface;
 /**
  * Answers what a scan points at, whether that is an element or a bare URL.
  *
- * A scan used to be an element and nothing else, so every listing worked the
- * same way: read `elementId`, load the element, ask it for its label and its
- * URL. Scans of pages Craft routes without an element behind them, a search
- * results page or a filtered listing, have no element to ask, and the four
- * places that build table rows would each have had to learn that separately.
- * They ask here instead, so a URL scan is named and linked the same way
- * wherever it turns up.
+ * Most scans name an element: read `elementId`, load it, ask it for its label
+ * and its URL. A scan of a page Craft routes without an element behind it, a
+ * search results page or a filtered listing, has nothing to ask, and carries
+ * its own URL and the title captured when it ran.
+ *
+ * Four separate places build table rows, and each of them needs the same three
+ * answers. They ask here, so a URL scan is named, linked and addressed the
+ * same way wherever it turns up.
  *
  * @author JohnHenry <info@johnhenry.ie>
  * @since 1.2.0

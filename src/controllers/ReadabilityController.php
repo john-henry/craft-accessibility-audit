@@ -68,9 +68,15 @@ class ReadabilityController extends Controller
         // stats/results queries only run when they'll actually be shown.
         $isPro = AccessibilityAudit::getInstance()->isPro();
 
+        // Analysing fetches a page and can reach the Anthropic API, so the
+        // controls for it are shown only to whoever is allowed to do that.
+        // Reading the results stays on the viewing permission.
+        $canRunScans = Craft::$app->getUser()->checkPermission('accessibility-audit:runScans');
+
         if (!$isPro) {
             return $this->renderTemplate('accessibility-audit/readability', [
                 'isPro' => false,
+                'canRunScans' => $canRunScans,
                 'siteId' => $siteId,
                 'siteHandle' => $siteHandle,
                 'sites' => $sites,
@@ -83,6 +89,7 @@ class ReadabilityController extends Controller
 
         return $this->renderTemplate('accessibility-audit/readability', [
             'isPro' => true,
+            'canRunScans' => $canRunScans,
             'hasApiKey' => $hasApiKey,
             'stats' => $service->getStats($siteId),
             'results' => $service->getResults(elementId: $elementId, siteId: $siteId),
@@ -102,8 +109,14 @@ class ReadabilityController extends Controller
      */
     public function actionAnalyse(): Response
     {
+        $this->requirePostRequest();
         $this->requireAcceptsJson();
-        $this->requirePermission('accessibility-audit:viewReports');
+
+        // runScans, not viewReports: this fetches a URL from the server and can
+        // reach the Anthropic API, so it spends the site's outbound requests
+        // and the account's budget. That is the scanning tier's authority, not
+        // the reading tier's, whatever the results are used for afterwards.
+        $this->requirePermission('accessibility-audit:runScans');
 
         if (($refusal = $this->requireProJson('Readability analysis')) !== null) {
             return $refusal;
@@ -182,8 +195,11 @@ class ReadabilityController extends Controller
      */
     public function actionAnalyseEntry(): Response
     {
+        $this->requirePostRequest();
         $this->requireAcceptsJson();
-        $this->requirePermission('accessibility-audit:viewReports');
+
+        // Same tier as actionAnalyse, and for the same reason.
+        $this->requirePermission('accessibility-audit:runScans');
 
         if (($refusal = $this->requireProJson('Readability analysis')) !== null) {
             return $refusal;
