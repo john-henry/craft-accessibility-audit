@@ -323,7 +323,7 @@
   /* Walks every style rule in the document, descending into @media, @supports
      and @layer blocks. Tailwind 4 puts the whole framework inside layers, so a
      pass that only reads top-level rules sees nothing on a modern site. */
-  function eachStyleRule(node, win, fn) {
+  function eachStyleRule(node, win, fn, parentSel) {
     var rules;
 
     /* A cross-origin stylesheet throws on access and cannot be read at all. */
@@ -332,12 +332,16 @@
 
     for (var i = 0; i < rules.length; i++) {
       var rule = rules[i];
+      var resolved = null;
 
       /* Style rules first, and never as an either/or with the recursion
          below. Browsers that support nested CSS give a CSSStyleRule its own
          cssRules list, so treating "has cssRules" as "is a grouping rule"
          walks straight past every declaration on the page. */
-      if (rule.selectorText && rule.style) fn(rule);
+      if (rule.selectorText && rule.style) {
+        resolved = resolveSelector(rule.selectorText, parentSel);
+        fn(rule, parentSel);
+      }
 
       if (rule.cssRules) {
         /* A media block that does not apply at this width is not part of what
@@ -345,9 +349,30 @@
         var mediaText = rule.media && rule.media.mediaText;
         if (mediaText && win.matchMedia && !win.matchMedia(mediaText).matches) continue;
 
-        eachStyleRule(rule, win, fn);
+        eachStyleRule(rule, win, fn, resolved || parentSel);
       }
     }
+  }
+
+  /* A nested rule's selectorText is relative to the rule it sits in: "& a" or,
+     with the ampersand implied, "a". Neither means anything on its own, and
+     handing "& a" to querySelectorAll is worse than useless, because the
+     ampersand resolves to :scope and quietly matches every element in the
+     document. A colour declared for one component is then measured against
+     every element on the page.
+
+     So each rule is resolved against the chain it is nested in before anything
+     queries it. :is() carries a comma-separated parent through as one unit. */
+  function resolveSelector(sel, parentSel) {
+    if (!parentSel) return sel;
+
+    return sel.split(',').map(function (part) {
+      part = part.trim();
+
+      return part.indexOf('&') === -1
+        ? parentSel + ' ' + part
+        : part.replace(/&/g, ':is(' + parentSel + ')');
+    }).join(', ');
   }
 
   /* The element a state rule paints, as a selector: the state pseudo removed,
@@ -406,13 +431,16 @@
       var sheets = doc.styleSheets;
 
       for (var s = 0; s < sheets.length && results.length < limit; s++) {
-        eachStyleRule(sheets[s], win, function (rule) {
+        eachStyleRule(sheets[s], win, function (rule, parentSel) {
           if (results.length >= limit) return;
 
+          /* Split before resolving, never after: a resolved part can carry a
+             comma inside :is(), and splitting that again produces two broken
+             halves. */
           var parts = rule.selectorText.split(',');
 
           for (var p = 0; p < parts.length; p++) {
-            var part = parts[p].trim();
+            var part = resolveSelector(parts[p].trim(), parentSel);
             var state = null;
 
             for (var st = 0; st < STATE_PATTERNS.length; st++) {

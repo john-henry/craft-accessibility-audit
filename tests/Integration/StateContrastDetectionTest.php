@@ -54,11 +54,24 @@ function stateFixtureHtml(): string
 
           ::selection { color: #ffffff; background-color: #ffe08a; }  /* 1.29:1, fails */
 
+          /* A nested rule belonging to a component that is not on this page.
+             Its selectorText is "& a:hover", which is relative: handed to
+             querySelectorAll as-is, the ampersand resolves to :scope and it
+             matches every link in the document. */
+          .absent-component {
+            & a:hover { color: #241d13; }
+          }
+
           @media print { .printonly:hover { color: #fdfdfd; } }
           .printonly { color: #111111; }
+
+          /* Dark text on red: 3.11:1 if the absent component's rule were ever
+             applied to it, which it must not be. */
+          .onred { color: #ffffff; background-color: #d11f14; }
         </style></head>
         <body>
           <a href="#" class="btn">Hover me</a>
+          <a href="#" class="onred">On a red bar</a>
           <a href="#" class="ok">Safe hover</a>
           <a href="#" class="fbad">Focus me</a>
           <a href="#" class="varcase">Var case</a>
@@ -161,6 +174,22 @@ describe('state contrast detection', function() {
         $states = array_column(stateFindings(), 'state');
 
         expect($states)->toContain('hover')->and($states)->toContain('focus');
+    });
+
+    it('does not apply a nested rule to elements outside the component it belongs to', function() {
+        // A nested selector is relative to its parent rule. Queried as it
+        // stands, "& a:hover" matches every link on the page, so a colour
+        // declared for one component is measured against all of them. Here the
+        // owning component is not on the page at all, so nothing it declares
+        // may be reported.
+        $findings = stateFindings();
+        $selectors = implode(' ', array_column($findings, 'selector'));
+
+        expect($selectors)->not->toContain('onred');
+
+        foreach ($findings as $finding) {
+            expect(strtoupper((string) $finding['fg']))->not->toBe('#241D13');
+        }
     });
 
     it('stays quiet about everything it cannot be sure of', function() {
