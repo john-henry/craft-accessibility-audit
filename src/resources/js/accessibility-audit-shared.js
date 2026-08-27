@@ -283,10 +283,20 @@
         if (style.display === 'none' || style.visibility === 'hidden') return;
         if (!el.offsetWidth && !el.offsetHeight) return;
         /* Skip aria-hidden subtrees: axe-core ignores these for contrast too,
-           since screen readers don't read them. */
+           since screen readers don't read them.
+
+           Fully transparent subtrees come out for a different reason: a caption
+           that fades in over a photo on hover sits in the page at full size
+           with a colour of its own, so none of the checks above exclude it, but
+           it is not on screen and the background it is measured against is the
+           one behind the photo rather than the photo it will appear over. What
+           gets reported is white text on a page background it never touches.
+           Its contrast is only meaningful in the revealed state, which is not
+           the state being measured. */
         var cur = el;
         while (cur && cur.nodeType === 1) {
           if (cur.getAttribute('aria-hidden') === 'true') return;
+          if (parseFloat(win.getComputedStyle(cur).opacity) === 0) return;
           cur = cur.parentElement;
         }
         var fg = parseRgb(style.color);

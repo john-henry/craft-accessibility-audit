@@ -2499,7 +2499,20 @@ class AuditService extends Component
     /**
      * @throws Exception
      */
-    private function recalculateScanScore(int $scanId): void
+    /**
+     * Recomputes a scan's stored score and counts from the issues it holds.
+     *
+     * Public so anything that removes issues outside the normal scan cycle (a
+     * cleanup migration, say) can leave the scan's own totals honest rather
+     * than depressed by findings that are no longer there.
+     *
+     * @param int $scanId The scan to recalculate.
+     * @return void
+     * @throws \yii\db\Exception
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.1.1
+     */
+    public function recalculateScanScore(int $scanId): void
     {
         // Definite, unresolved issues only: potential issues never affect the
         // score, and resolved rows are history, matching calculateScore()'s
