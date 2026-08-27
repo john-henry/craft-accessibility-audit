@@ -199,9 +199,17 @@ class AuditService extends Component
      */
     public function getScannedElementCount(): int
     {
+        // Joined to elements so a page the site has since deleted stops
+        // counting. Craft soft-deletes, which leaves the elements row in place
+        // with a dateDeleted, so the cascade on this table never fires and the
+        // scan outlives the page. Counted without this, a site that has
+        // scanned and then deleted its way past the cap is refused new scans
+        // on the strength of pages that no longer exist.
         $elements = (int) (new Query())
-            ->from('{{%accessibilityaudit_scans}}')
-            ->count('DISTINCT [[elementId]]');
+            ->from(['s' => '{{%accessibilityaudit_scans}}'])
+            ->innerJoin(['e' => '{{%elements}}'], '[[e.id]] = [[s.elementId]]')
+            ->where(['e.dateDeleted' => null])
+            ->count('DISTINCT [[s.elementId]]');
 
         // COUNT(DISTINCT) skips nulls, so URL scans have to be counted on
         // their own or they are a way around the cap rather than subject to it.

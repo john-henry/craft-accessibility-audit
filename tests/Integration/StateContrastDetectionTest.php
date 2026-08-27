@@ -12,11 +12,11 @@ use johnhenry\accessibilityaudit\AccessibilityAudit;
 // Reading hover, focus and selection colours out of the stylesheet.
 //
 // This is the half of the state-contrast feature that lives in JavaScript, and
-// it is the half that can fail silently: it returns an array, and an empty one
-// looks exactly like a clean page. The first version of this pass returned
-// nothing on every site, because browsers give a CSSStyleRule its own cssRules
-// list for nested CSS and the walk treated that as "this is a grouping rule"
-// and recursed past every declaration. Nothing caught it but running it.
+// the half that can fail silently: it returns an array, and an empty one looks
+// exactly like a clean page. Reading the CSSOM has traps that produce exactly
+// that, one of them being that a CSSStyleRule carries its own cssRules list for
+// nested CSS, so a walk treating "has cssRules" as "is a grouping rule" skips
+// every declaration on the page. Nothing catches that but running it.
 //
 // So it runs for real, in the Chromium the plugin already depends on, against
 // a fixture whose numbers are known. Skipped where there is no browser.

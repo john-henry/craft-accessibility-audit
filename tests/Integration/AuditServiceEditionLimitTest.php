@@ -80,6 +80,35 @@ describe('AuditService::getScannedElementCount', function() {
 
         expect($service->getScannedElementCount())->toBe($before + 2);
     });
+
+    it('stops counting a page once the site deletes it', function() {
+        // Craft soft-deletes, so the elements row stays with a dateDeleted set
+        // and the cascade on the scans table never fires: the scan outlives the
+        // page. Counted regardless, a site that has scanned and then deleted
+        // its way past the Standard limit is refused new scans over pages that
+        // no longer exist, which is a paid-for feature withheld on the strength
+        // of stale rows.
+        $service = new AuditService();
+        $before = $service->getScannedElementCount();
+
+        $kept = makeElementId();
+        $deleted = makeElementId();
+
+        insertScanRow($kept);
+        insertScanRow($deleted);
+
+        expect($service->getScannedElementCount())->toBe($before + 2);
+
+        Craft::$app->getDb()->createCommand()
+            ->update(
+                '{{%elements}}',
+                ['dateDeleted' => Db::prepareDateForDb(new DateTime())],
+                ['id' => $deleted],
+            )
+            ->execute();
+
+        expect($service->getScannedElementCount())->toBe($before + 1);
+    });
 });
 
 // ---------------------------------------------------------------------------

@@ -136,6 +136,12 @@ describe('StatementController::actionSaveMeta', function() {
 describe('StatementController entries', function() {
     beforeEach(function() {
         $this->actingAs(UserFactory::factory()->admin(true)->create());
+
+        // Every test here counts the rows it expects to find afterwards, which
+        // only means anything from a known-empty record. Its siblings above and
+        // below already do this; these did not, and were reading whatever the
+        // record happened to hold.
+        resetStatementRecord((int) Craft::$app->getSites()->getPrimarySite()->id);
     });
 
     it('saves entries posted with the form', function() {

@@ -48,16 +48,54 @@ uses()->beforeEach(function() {
 
     Craft::$app->getSites()->refreshSites();
 
-    // excludedVolumes is a plugin setting: a process-level singleton that
-    // RefreshesDatabase doesn't roll back, and one that also loads from the dev
-    // project config. Reset it so asset tests stay deterministic and one test's
-    // exclusion can't leak into the next.
-    AccessibilityAudit::getInstance()->getSettings()->excludedVolumes = [];
-    // scannedElementTypes is the same kind of process-level singleton: reset it
-    // to null (the "all native types" default) so one test's allow-list can't
-    // leak into the next.
-    AccessibilityAudit::getInstance()->getSettings()->scannedElementTypes = null;
+    // The plugin, its settings model and its edition are process-level
+    // singletons, and RefreshesDatabase rolls back the database and nothing
+    // else. Without this, a test that changes a setting or drops the edition to
+    // Standard changes it for every test collected after it, in whatever order
+    // the files happen to land. The model is snapshotted on the first test,
+    // while it is still pristine, and put back before each one after that.
+    $plugin = AccessibilityAudit::getInstance();
+    $settings = $plugin->getSettings();
+
+    if (pristinePluginState() === null) {
+        pristinePluginState([
+            'edition' => $plugin->edition,
+            'settings' => $settings->getAttributes(),
+        ]);
+    }
+
+    $pristine = pristinePluginState();
+    $plugin->edition = $pristine['edition'];
+    $settings->setAttributes($pristine['settings'], false);
+
+    // Two deliberate normalisations on top of the restore, because the dev
+    // project config is not necessarily the state a test should assume: no
+    // excluded volumes, and every native element type in scope.
+    $settings->excludedVolumes = [];
+    $settings->scannedElementTypes = null;
 })->in('Integration');
+
+/**
+ * The plugin's edition and settings as they were before any test touched them.
+ *
+ * Held in a static rather than a global so nothing can overwrite it by
+ * accident: passing a value stores it once and only once, and later calls read
+ * it back.
+ *
+ * @param array{edition: string, settings: array<string, mixed>}|null $capture
+ *        The snapshot to store, on the first call only.
+ * @return array{edition: string, settings: array<string, mixed>}|null
+ */
+function pristinePluginState(?array $capture = null): ?array
+{
+    static $state = null;
+
+    if ($capture !== null && $state === null) {
+        $state = $capture;
+    }
+
+    return $state;
+}
 
 /**
  * Creates an entry in the dedicated `a11yFixture` section.

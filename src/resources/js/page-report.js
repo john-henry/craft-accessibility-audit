@@ -855,10 +855,26 @@
            ambiguous class can never frame the wrong element. */
         if (el.classList && el.classList.length) {
             try {
+                var classes = Array.prototype.slice.call(el.classList);
+
+                /* Utility-class markup puts a very long attribute at the
+                   front of the tag, so the length cap lands inside it more
+                   often than anywhere else. The token it lands in survives as
+                   a fragment ("sm:text-") that selects nothing, which would
+                   make a selector built from every token match nothing at all.
+                   Dropped here; the full class string is still compared as a
+                   prefix below, which is what tells the survivors apart. */
+                if (truncated && classes.length > 1) classes.pop();
+
                 var classSel = tag;
-                el.classList.forEach(function (cls) { classSel += '.' + CSS.escape(cls); });
+                classes.forEach(function (cls) { classSel += '.' + CSS.escape(cls); });
                 var byClass = doc.querySelectorAll(classSel);
                 if (byClass.length === 1) return byClass[0];
+
+                if (byClass.length > 1) {
+                    var byClassPick = pickCandidate(Array.prototype.slice.call(byClass));
+                    if (byClassPick) return byClassPick;
+                }
             } catch (_) {}
         }
 
