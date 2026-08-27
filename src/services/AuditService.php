@@ -884,7 +884,7 @@ class AuditService extends Component
         array $axeIncomplete = [],
     ): void {
         $scan = (new Query())
-            ->select(['elementId', 'elementType', 'siteId'])
+            ->select(['elementId', 'elementType', 'siteId', 'url'])
             ->from('{{%accessibilityaudit_scans}}')
             ->where(['id' => $scanId])
             ->one();
@@ -3232,6 +3232,17 @@ class AuditService extends Component
      */
     private function _storeContrastNeedsReview(int $scanId, array $scan, array $axeIncomplete, string $viewport): void
     {
+        // These rows are rebuilt from scratch on every browser pass, so an
+        // answer already given has to be carried onto the new ones. Without
+        // this the browser pass undoes the reader's work: a question dismissed
+        // this morning is back after the next scan, with nothing to say why.
+        $verdicts = AccessibilityAudit::getInstance()->verdicts;
+        $verdictMap = $verdicts->mapForElement(
+            !empty($scan['elementId']) ? (int)$scan['elementId'] : null,
+            (int)$scan['siteId'],
+            $scan['url'] ?? null,
+        );
+
         foreach ($axeIncomplete as $result) {
             if (($result['id'] ?? '') !== 'color-contrast') {
                 continue;
@@ -3260,7 +3271,7 @@ class AuditService extends Component
                     helpUrl: $result['helpUrl'] ?? null,
                     source: 'axe',
                     viewport: $viewport,
-                ));
+                ), null, $verdicts->lookup($verdictMap, self::RULE_POTENTIAL_CONTRAST, $html));
             }
         }
     }

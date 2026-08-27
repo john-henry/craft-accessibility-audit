@@ -2428,6 +2428,73 @@
                 });
         });
 
+        /* Answering a cluster answers its members. The verdict is still
+           recorded against each occurrence's own context, so this is the
+           same as working through them one at a time, only without the
+           scrolling. */
+        wrap.addEventListener('click', function (e) {
+            var btn = e.target.closest('[data-cluster-verdict]');
+            if (!btn) return;
+
+            var cluster = btn.closest('[data-accessibility-audit-cluster]');
+            if (!cluster || !bulkEndpoint) return;
+
+            var contexts;
+            try { contexts = JSON.parse(cluster.dataset.contexts || '[]'); } catch (_) { return; }
+            if (!contexts.length) return;
+
+            var ruleId = cluster.dataset.ruleId || '';
+            var status = cluster.querySelector('.accessibility-audit-pr-review__status');
+            var buttons = cluster.querySelectorAll('[data-cluster-verdict]');
+            buttons.forEach(function (b) { b.disabled = true; });
+            if (status) { status.textContent = Craft.t('accessibility-audit', 'Saving…'); }
+
+            var token = csrf();
+            var body = new FormData();
+            body.append(token.name, token.value);
+            body.append('elementId', CFG.elementId);
+            if (CFG.pageUrl) { body.append('url', CFG.pageUrl); }
+            body.append('siteId', CFG.siteId);
+            body.append('verdict', btn.dataset.clusterVerdict || 'dismissed');
+            body.append('items', JSON.stringify(contexts.map(function (context) {
+                return { ruleId: ruleId, context: context };
+            })));
+
+            fetch(endpoint, {
+                method: 'POST',
+                body: body,
+                headers: { 'Accept': 'application/json' },
+                credentials: 'same-origin',
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data || !data.success) {
+                        throw new Error((data && data.error) || 'failed');
+                    }
+                    window.location.reload();
+                })
+                .catch(function () {
+                    buttons.forEach(function (b) { b.disabled = false; });
+                    if (status) { status.textContent = ''; }
+                    if (window.Craft && Craft.cp) {
+                        Craft.cp.displayError(Craft.t('accessibility-audit', 'Could not save that. Try again.'));
+                    }
+                });
+        });
+
+        /* The cluster's own checkbox stands for the cards inside it. */
+        wrap.addEventListener('change', function (e) {
+            if (!e.target.matches('[data-bulk-pick-cluster]')) return;
+
+            var cluster = e.target.closest('[data-accessibility-audit-cluster]');
+            if (!cluster) return;
+
+            cluster.querySelectorAll('[data-bulk-pick]').forEach(function (box) {
+                box.checked = e.target.checked;
+            });
+            refreshBulk();
+        });
+
         /* Bulk dismissal: one judgment repeated fifty times deserves one
            click. Selection is per card; the ruling posts as one request and
            the reload paints the server-rendered counts, same as a single
@@ -2459,73 +2526,6 @@
             bulkAll.addEventListener('change', function () {
                 wrap.querySelectorAll('[data-bulk-pick]').forEach(function (box) {
                     box.checked = bulkAll.checked;
-                });
-                refreshBulk();
-            });
-
-            /* Answering a cluster answers its members. The verdict is still
-               recorded against each occurrence's own context, so this is the
-               same as working through them one at a time, only without the
-               scrolling. */
-            wrap.addEventListener('click', function (e) {
-                var btn = e.target.closest('[data-cluster-verdict]');
-                if (!btn) return;
-
-                var cluster = btn.closest('[data-accessibility-audit-cluster]');
-                if (!cluster || !bulkEndpoint) return;
-
-                var contexts;
-                try { contexts = JSON.parse(cluster.dataset.contexts || '[]'); } catch (_) { return; }
-                if (!contexts.length) return;
-
-                var ruleId = cluster.dataset.ruleId || '';
-                var status = cluster.querySelector('.accessibility-audit-pr-review__status');
-                var buttons = cluster.querySelectorAll('[data-cluster-verdict]');
-                buttons.forEach(function (b) { b.disabled = true; });
-                if (status) { status.textContent = Craft.t('accessibility-audit', 'Saving…'); }
-
-                var token = csrf();
-                var body = new FormData();
-                body.append(token.name, token.value);
-                body.append('elementId', CFG.elementId);
-                if (CFG.pageUrl) { body.append('url', CFG.pageUrl); }
-                body.append('siteId', CFG.siteId);
-                body.append('verdict', btn.dataset.clusterVerdict || 'dismissed');
-                body.append('items', JSON.stringify(contexts.map(function (context) {
-                    return { ruleId: ruleId, context: context };
-                })));
-
-                fetch(bulkEndpoint, {
-                    method: 'POST',
-                    body: body,
-                    headers: { 'Accept': 'application/json' },
-                    credentials: 'same-origin',
-                })
-                    .then(function (r) { return r.json(); })
-                    .then(function (data) {
-                        if (!data || !data.success) {
-                            throw new Error((data && data.error) || 'failed');
-                        }
-                        window.location.reload();
-                    })
-                    .catch(function () {
-                        buttons.forEach(function (b) { b.disabled = false; });
-                        if (status) { status.textContent = ''; }
-                        if (window.Craft && Craft.cp) {
-                            Craft.cp.displayError(Craft.t('accessibility-audit', 'Could not save that. Try again.'));
-                        }
-                    });
-            });
-
-            /* The cluster's own checkbox stands for the cards inside it. */
-            wrap.addEventListener('change', function (e) {
-                if (!e.target.matches('[data-bulk-pick-cluster]')) return;
-
-                var cluster = e.target.closest('[data-accessibility-audit-cluster]');
-                if (!cluster) return;
-
-                cluster.querySelectorAll('[data-bulk-pick]').forEach(function (box) {
-                    box.checked = e.target.checked;
                 });
                 refreshBulk();
             });
