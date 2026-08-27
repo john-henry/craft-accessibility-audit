@@ -82,9 +82,8 @@ class GenerateAltTextJob extends BaseJob
             $client = Craft::createGuzzleClient();
             $altText = $this->askClaude($client, $apiKey, $imageSource, $prompt);
 
-            // One more go when the model runs past the length it was asked for,
-            // then a trim. Storing the overshoot would only have the review
-            // queue ask whether the plugin's own alt text is too long.
+            // One more go when the model runs past the length it was asked
+            // for, then a trim.
             if (AltTextPrompt::exceedsLimit($altText)) {
                 $altText = $this->askClaude(
                     $client,
@@ -219,8 +218,8 @@ class GenerateAltTextJob extends BaseJob
      */
     private function resolveImageSource(Asset $asset): ?array
     {
-        // Oversized images are scaled down first. Must precede the URL tier,
-        // which would hand over the full-size original.
+        // Oversized images are scaled down before the URL tier, which would
+        // otherwise hand over the full-size original.
         $downscaled = VisionImage::downscaledSource($asset);
         if ($downscaled !== null) {
             return $downscaled;

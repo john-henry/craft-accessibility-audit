@@ -3748,9 +3748,10 @@ fieldset.accessibility-audit-readonly textarea {
   opacity: 0.75;
 }
 
-/* Provenance line under the statement's summary strip: says which scan the
-   figures above came from. */
+/* Provenance line under the statement's summary pane: says which scan the
+   figures above came from. Sits outside the pane so the tile grid and its
+   dividers are unaffected. */
 .accessibility-audit-statfoot {
-  margin: 12px 0 0;
+  margin: -8px 0 16px;
   font-size: 12px;
 }

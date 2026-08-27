@@ -545,13 +545,9 @@ class AuditService extends Component
             return 0;
         }
 
-        // A draft or revision never gets a scan of its own. The overlay runs
-        // inside Craft's preview pane, where the matched element is whatever
-        // is being previewed, so without this a preview scan would file
-        // against a provisional draft: invisible on the canonical element's
-        // report, and orphaned the moment the draft is published or dropped.
-        // Checked here rather than in the overlay alone, since the client
-        // sends the element id and cannot be the only thing enforcing it.
+        // A draft or revision never gets a scan of its own. Checked here
+        // rather than in the overlay alone, since the client sends the
+        // element id and cannot be the only thing enforcing it.
         $isDerivative = (new Query())
             ->from('{{%elements}}')
             ->where(['id' => $elementId])
@@ -895,12 +891,8 @@ class AuditService extends Component
     }
 
     /**
-     * When this site was last scanned, or null if it never has been.
-     *
-     * The statement and the VPAT are both worked out from scan data, so their
-     * figures do not move when a page is fixed, only when it is scanned again.
-     * Without a date on screen that reads as the report being stuck, which is
-     * a bad way to learn how the thing works.
+     * When this site was last scanned, or null if it never has been. Shown on
+     * the statement and the VPAT, which are both derived from scan data.
      *
      * @param int $siteId The site to read.
      * @return string|null The scan date as stored, or null if there is none.
@@ -948,14 +940,9 @@ class AuditService extends Component
             ->all();
 
         $count = count($scans);
-        /* Rounds the way a conformance figure has to: down onto 99 rather than
-           up onto 100. These are page scores averaged across the site, so on a
-           large one a handful of failing pages moves the mean by a fraction of
-           a point and ordinary rounding lands on 100. Beside a caption reading
-           "3 criteria failing" that is not a rounding artefact, it is a claim
-           of full conformance the evidence does not support, and the statement
-           refuses to make that claim on the same evidence. Every other value
-           rounds normally. */
+        /* Rounds the way a conformance figure has to: down onto 99 rather
+           than up onto 100, so a site with anything failing never presents as
+           fully conformant. Every other value rounds normally. */
         $avg = function(string $col) use ($scans, $count): int {
             $raw = array_sum(array_column($scans, $col)) / $count;
             $rounded = (int)round($raw);
@@ -2526,10 +2513,8 @@ class AuditService extends Component
      */
     /**
      * Recomputes a scan's stored score and counts from the issues it holds.
-     *
-     * Public so anything that removes issues outside the normal scan cycle (a
-     * cleanup migration, say) can leave the scan's own totals honest rather
-     * than depressed by findings that are no longer there.
+     * Public so anything removing issues outside the normal scan cycle (a
+     * cleanup migration, say) can keep the totals honest.
      *
      * @param int $scanId The scan to recalculate.
      * @return void

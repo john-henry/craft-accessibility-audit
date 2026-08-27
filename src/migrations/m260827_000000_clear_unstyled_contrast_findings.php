@@ -13,16 +13,10 @@ use johnhenry\accessibilityaudit\AccessibilityAudit;
 /**
  * Clears colour-contrast findings recorded against an unstyled page.
  *
- * The in-page contrast check used to read its colours before the page had
- * finished taking on styles. On a site that inlines its critical CSS and loads
- * the rest afterwards, that window has the backgrounds in place but not the
- * colours, and anything coloured through a CSS variable falls back to the
- * browser default link blue. Perfectly readable text was recorded as failing,
- * and it stayed recorded until the page happened to be scanned again.
- *
- * Those rows are recognisable: nobody chooses #0000EE, it is what an anchor
- * computes to when no author styles apply. Dropping them is safe either way,
- * since a genuine failure comes back on the next scan.
+ * Nobody chooses #0000EE: it is what an anchor computes to when no author
+ * styles apply, so a finding against it was measured before the page was
+ * styled. Dropping them is safe either way, since a genuine failure comes
+ * back on the next scan.
  *
  * @author JohnHenry <info@johnhenry.ie>
  * @since 1.1.1

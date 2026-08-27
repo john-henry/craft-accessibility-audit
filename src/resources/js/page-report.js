@@ -218,15 +218,10 @@
         catch (e) { return null; }
     }
 
-    /* Whether the preview holds a loaded page rather than a frame that is
-       still navigating. A fresh or in-flight frame is about:blank with an
-       empty body, and axe run against that reports the page as having no
-       title, no lang, no main landmark and no h1: all true of about:blank and
-       none of it about the page. Those findings then get stored.
-       The passes are wired to the frame's load event, but the viewport switch
-       and the post-re-scan sweep call them directly, so the guard belongs here
-       rather than on each caller. Bailing loses nothing: the load event fires
-       afterwards and runs the pass properly. */
+    /* Whether the preview holds a loaded page rather than a frame still
+       navigating. axe on about:blank reports no title, no lang, no main and no
+       h1, none of it about the page. Bailing loses nothing: the frame's load
+       event runs the pass properly afterwards. */
     function iframeReady() {
         var doc = iframeDoc();
         if (!doc || !doc.body) return false;
@@ -733,10 +728,8 @@
         /* Attributes can be shared (a nav link and a CTA with the same href),
            so among candidates the one also matching the stored element's
            classes and text wins; a lone candidate is trusted as-is. */
-        /* A capped context ends in an ellipsis, and whatever attribute the cut
-           landed in survives only as a prefix. Compared for equality those
-           attributes match nothing, which drops the good evidence and leaves
-           the candidates to be told apart by document order. */
+        /* A capped context ends in an ellipsis, and whatever attribute the
+           cut landed in survives only as a prefix, so compare it as one. */
         var truncated = html.slice(-1) === '…';
         var wantClassRaw = (el.getAttribute('class') || '').trim();
         var wantClass = wantClassRaw.split(/\s+/).filter(Boolean).sort().join(' ');
@@ -770,11 +763,9 @@
                 if (score > bestScore) { bestScore = score; best = cands[c]; bestTies = 1; }
                 else if (score === bestScore) { bestTies++; }
             }
-            /* Several candidates share an attribute and nothing else tells them
-               apart: the class and text that would have are gone, cut off by
-               the length cap. Picking the first is document order dressed up as
-               a decision, and it framed the wrong link often enough to report.
-               Better to say it cannot be placed than to point at the wrong one. */
+            /* Nothing left to tell the candidates apart, the class and text
+               having been cut off by the length cap. Say so rather than pick
+               one by document order. */
             if (bestTies > 1 && bestScore <= 1) return null;
             return best;
         }
@@ -1101,8 +1092,7 @@
         return clone.textContent.trim();
     }
 
-    /* An element's accessible name, resolved in accessible-name order:
-       aria-labelledby, aria-label, content, title. Mirrors
+    /* An element's accessible name, in accessible-name order. Mirrors
        ContentScanner::_accessibleName so the filters agree with the scanner. */
     function accessibleName(el) {
         var labelledBy = (el.getAttribute('aria-labelledby') || '').trim();
@@ -1653,11 +1643,9 @@
     var _contrastStored = {}; /* per-viewport: run once per page load each */
     var _contrastNeedsReview = null; /* elements where bg colour is indeterminate */
 
-    /* Takes the viewport rather than reading the live one: the caller snapshots
-       it before awaiting, and a switch during that await would otherwise have
-       the guard check one width's key while the results belong to another. The
-       pass then stores a second time and the same element is reported twice in
-       the one bucket. */
+    /* Takes the viewport rather than reading the live one: the caller
+       snapshots it before awaiting, and a switch mid-await must not have the
+       guard check one width's key against another width's results. */
     function contrastSessionKey(viewport) {
         return 'accessibility-audit-contrast-stored-' + CFG.scanId + '-' + (viewport || activeViewport);
     }
@@ -1684,25 +1672,15 @@
        stylesheets present in the HTML; one injected by the page's own JS
        lands after load, and sampling before it applies reads UA defaults.
        Capped at ~3s so a broken stylesheet reference cannot stall the pass. */
-    /* Waits until the page has stopped acquiring styles, by two measures.
+    /* Waits until the page has stopped acquiring styles.
      *
-     * Link elements first: a page that ships its CSS as
-     * <link rel="preload" as="style"> and swaps the rel on load carries no
-     * rel="stylesheet" at all until that swap lands, so counting only those
-     * finds nothing outstanding.
+     * Deferred links count as pending, since a preload-and-swap sheet carries
+     * no rel="stylesheet" until the swap lands. The sheet count is watched too,
+     * for CSS injected from JavaScript after the load event.
      *
-     * Then the sheet count, because link elements are not the whole story. A
-     * dev server that injects its CSS from JavaScript (Vite and the like) adds
-     * stylesheets after the load event, so every link having loaded does not
-     * mean the page is styled. Waiting for the count to hold still covers all
-     * three delivery routes.
-     *
-     * Reading a page too early is not a harmless miss. Colours defined through
-     * a custom property, which is how Tailwind ships its palette, fall back to
-     * the browser default when the theme layer has yet to arrive: an anchor
-     * computes to link blue while a literal background from an already-loaded
-     * sheet applies, and a page of perfectly good white-on-red text gets
-     * recorded as a wall of contrast failures. */
+     * Colours read too early fall back to browser defaults, because a palette
+     * held in custom properties is only as good as the theme layer that
+     * defines it. */
     function stylesheetsSettled(doc) {
         return new Promise(function (resolve) {
             var tries = 0;
@@ -1749,12 +1727,9 @@
         if (!doc) return; /* cross-origin: skip silently */
         if (!iframeReady()) return; /* still navigating: the load event retries */
 
-        /* The same settle the axe pass takes before it measures. Waiting on
-           stylesheets alone cannot cover CSS that arrives from JavaScript, as
-           a dev server's does: there is nothing outstanding to wait on until
-           the injection happens, so a poll settles early and reads a page
-           whose theme layer has yet to land. Contrast is read off computed
-           colours, so it is the pass with most to lose by going first. */
+        /* The same settle the axe pass takes. Waiting on stylesheets alone
+           cannot cover CSS injected from JavaScript, since there is nothing
+           outstanding to wait on until the injection happens. */
         await new Promise(function (resolve) { setTimeout(resolve, 2000); });
         await stylesheetsSettled(doc);
 
@@ -1835,9 +1810,8 @@
         if (!doc || _axeRunning || !iframeReady()) return;
         if (sessionStorage.getItem(axeSessionKey(viewport))) return;
 
-        /* A pass that changes the totals reloads the page, and the sweep picks
-           itself up on the next load. One that changes nothing does not, so
-           the sweep has to be carried on from here instead. */
+        /* A pass that changes the totals reloads and the sweep resumes on the
+           next load; one that changes nothing has to carry it on from here. */
         var reloading = false;
         var scanId    = CFG.scanId;
         var elementId = CFG.elementId;
@@ -1946,9 +1920,8 @@
             if (activeViewport !== viewport) {
                 autoRunAxeInIframe();
             } else if (!reloading) {
-                /* Carried on after the guard is cleared, not before: the next
-                   leg starts its own pass, which this one would otherwise
-                   block itself. */
+                /* After the guard is cleared, not before: the next leg starts
+                   its own pass. */
                 resumeViewportSweep();
             }
         }
@@ -2034,27 +2007,21 @@
         await autoRunAxeInIframe();
     }
 
-    /* A re-scan from this page suppresses the queued headless pass, so that the
-       preview is the only engine writing this scan. That pass covered both
-       viewports though, and the preview only ever measured the width on
-       screen, which left whichever bucket you were not looking at carrying
-       findings from the scan before. After a re-scan the preview walks both
-       widths itself and puts the view back where it started.
+    /* A re-scan here suppresses the queued headless pass so the preview is the
+       only engine writing this scan, so the preview has to cover both viewports
+       itself and return to the width it started on.
 
-       Driven through sessionStorage rather than a loop, because a pass that
-       changes the totals reloads the page to re-render the sidebar, which
-       would cut an in-page sweep off after the first width. Each load moves
-       the sweep on one step and it stops once both buckets are stored. */
+       Driven through sessionStorage rather than a loop: a pass that changes the
+       totals reloads the page, which would cut an in-page sweep short. Each
+       load moves the sweep on one step until both buckets are stored. */
     var _sweepFlagKey   = 'a11y_sweep_viewports';
     var _sweepOriginKey = 'a11y_sweep_origin_' + CFG.elementId + '_' + CFG.siteId;
     var _sweepTriesKey  = 'a11y_sweep_tries_' + CFG.elementId + '_' + CFG.siteId;
     var _sweepLastKey   = 'a11y_sweep_last_' + CFG.elementId + '_' + CFG.siteId;
     var SWEEP_MAX_TRIES = 5;
 
-    /* The preview visibly jumps to the other width mid-sweep, which reads as a
-       glitch unless something says what is going on. Announced as well as
-       shown: the pane is what changes, and a reader not watching it would
-       otherwise get no word of it. */
+    /* The preview jumps to the other width mid-sweep, so say what is going on.
+       Announced as well as shown, since the pane is what changes. */
     function setSweepNote(viewport) {
         var note = document.getElementById('accessibility-audit-pr-sweep-note');
         if (!note) return;
@@ -2093,10 +2060,8 @@
             try { sessionStorage.setItem(_sweepOriginKey, origin); } catch (_) {}
         }
 
-        /* A viewport whose pass cannot complete (axe failing on the page, the
-           store refused) would otherwise bounce the preview back and forth on
-           every load. Give it a few goes, then leave it be, back at the width
-           the reader was on rather than parked on the one that failed. */
+        /* A pass that cannot complete would otherwise bounce the preview back
+           and forth on every load. A few goes, then back to the origin. */
         var tries = 0;
         try { tries = parseInt(sessionStorage.getItem(_sweepTriesKey) || '0', 10) + 1; } catch (_) {}
         if (tries > SWEEP_MAX_TRIES) {
@@ -2119,9 +2084,8 @@
            already the one on screen its own pass runs on this load anyway. */
         var missing = haveDesktop ? 'mobile' : 'desktop';
 
-        /* Coming back to the same width with its bucket still empty means that
-           leg ran and stored nothing. Nothing is gained by waiting on it a
-           second time, and leaving the note up would read as a hang. */
+        /* Back to the same width with its bucket still empty means that leg
+           ran and stored nothing. Give up rather than wait on it again. */
         var last = null;
         try { last = sessionStorage.getItem(_sweepLastKey); } catch (_) {}
         if (last === missing) {

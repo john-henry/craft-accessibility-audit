@@ -668,16 +668,8 @@ class AccessibilityAudit extends BasePlugin
     }
 
     /**
-     * Hangs the scan-history prune off Craft's garbage collection.
-     *
-     * The Retain Scan Results setting used to be read by nothing that deletes:
-     * the only caller of pruneScanResults() was the console command, so unless
-     * somebody had wired that into cron themselves, history grew without end
-     * whatever the setting said. One row per occurrence per scan adds up
-     * quickly on a site of any size.
-     *
-     * Craft already runs garbage collection on its own schedule, which is the
-     * natural home for this and asks nothing of the installer.
+     * Hangs the scan-history prune off Craft's garbage collection, so the
+     * Retain Scan Results setting applies without anything to schedule.
      *
      * @return void
      * @author JohnHenry <info@johnhenry.ie>
@@ -1044,18 +1036,14 @@ class AccessibilityAudit extends BasePlugin
             ]);
         };
 
-        // Registered on every scannable element type as well as on the base
-        // Element, each prepended to its handler queue, so the panel sits
-        // above the informational panels other plugins add (SEOmatic's among
-        // them) but never above Craft's own status and meta, which are in the
-        // event's html before any listener runs. The concrete registrations
-        // are what win that slot: Yii fires a concrete class's handlers before
-        // its parents', and the other plugins hook the concrete classes, so a
-        // handler only on Element runs after them whatever order it registered
-        // in. The base registration stays as the net for a type registered by
-        // a plugin this one cannot see, and the markup check above keeps the
-        // pair from drawing the panel twice. Deferred to onInit so the element
-        // type registry is complete when it is read.
+        // Registered on every scannable type and on the base Element, each
+        // prepended so the panel sits above other plugins' panels but below
+        // Craft's own status and meta. The concrete registrations win that
+        // slot: Yii fires a concrete class's handlers before its parents', and
+        // other plugins hook the concrete classes. The base registration is
+        // the net for a type this plugin cannot see, and the markup check
+        // above keeps the pair from drawing twice. Deferred to onInit so the
+        // element type registry is complete when read.
         Craft::$app->onInit(static function() use ($handler): void {
             $classes = array_keys(ScannableElementTypes::all());
             $classes[] = Element::class;

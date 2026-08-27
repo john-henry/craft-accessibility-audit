@@ -198,14 +198,10 @@
      page report's needs-review paths): nearest id wins, else up to three
      tag.class segments. Stored with each failure so the report can highlight
      the exact element instead of guessing from its colours. */
-  /* A selector that resolves to the one element it was built from.
-   *
-   * Tag and classes alone do not manage that: a list of tags, a row of nav
-   * links, any repeated component gives every item an identical path. Stored
-   * against a finding that path is worse than useless, because the report
-   * shows one occurrence per element and every one of them then highlights
-   * whichever matched first. So each step carries its position among matching
-   * siblings, and the path is only shortened as far as it stays unique. */
+  /* A selector that resolves to the one element it was built from. Tag and
+     classes alone do not manage that on repeated markup, so each step carries
+     its position among matching siblings and the path is only shortened as
+     far as it stays unique. */
   function cssPath(el, doc) {
     var esc = (window.CSS && CSS.escape) ? CSS.escape : function (s) { return s; };
     var parts = [];
@@ -283,16 +279,9 @@
         if (style.display === 'none' || style.visibility === 'hidden') return;
         if (!el.offsetWidth && !el.offsetHeight) return;
         /* Skip aria-hidden subtrees: axe-core ignores these for contrast too,
-           since screen readers don't read them.
-
-           Fully transparent subtrees come out for a different reason: a caption
-           that fades in over a photo on hover sits in the page at full size
-           with a colour of its own, so none of the checks above exclude it, but
-           it is not on screen and the background it is measured against is the
-           one behind the photo rather than the photo it will appear over. What
-           gets reported is white text on a page background it never touches.
-           Its contrast is only meaningful in the revealed state, which is not
-           the state being measured. */
+           since screen readers don't read them. Fully transparent subtrees go
+           the same way: hover-revealed text is not in the state being measured,
+           and its background is whatever it will eventually appear over. */
         var cur = el;
         while (cur && cur.nodeType === 1) {
           if (cur.getAttribute('aria-hidden') === 'true') return;

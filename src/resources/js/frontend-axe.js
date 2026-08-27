@@ -39,8 +39,7 @@
   // Mirrors the admin's "Use shapes to represent statuses" CP preference: when
   // on, the overlay's colour-only severity dots also take a shape (frontend-axe.css).
   const useShapes   = cfg.useShapes === true;
-  /* False inside Craft's preview pane. The preview renders a draft, which the
-     rest of the plugin does not scan, so findings are shown but never posted. */
+  /* False inside Craft's preview pane: findings are shown but never posted. */
   const storeResults = cfg.storeResults !== false;
 
   // Auto-scan only when the page has a known element to attach results to,
@@ -69,9 +68,8 @@
   // panel. Stores the full snapshot (score, issues, passes, label), not just
   // a timestamp, so results survive a page reload.
   function saveSnapshot(snap) {
-    /* Not in a preview: a draft's findings share the canonical pathname, so
-       caching them would restore draft results onto the published page. The
-       draft also changes between reloads, which a cached snapshot would hide. */
+    /* Not in a preview: a draft shares the canonical pathname, so a cached
+       snapshot would restore draft results onto the published page. */
     if (!storeResults) return;
     try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), snap: snap })); } catch (_) {}
   }

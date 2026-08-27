@@ -213,10 +213,8 @@ class ContentScanner extends Component
         $issues = [];
         foreach ($xpath->query('//a[@href]') as $a) {
             /** @var DOMElement $a */
-            // The announced name, not the visible text: an aria-label naming
-            // the destination overrides whatever the link wraps. The new-tab
-            // notice comes off first, so "here (opens in new tab)" is judged
-            // as the "here" it actually is.
+            // The announced name, not the visible text, with the new-tab
+            // notice stripped so it cannot make a vague label look specific.
             $text = $this->_linkPurposeText($this->_accessibleName($a, $xpath));
             if (in_array($text, self::GENERIC_LINK_TEXTS, true)) {
                 $issues[] = IssueModel::make(
@@ -695,12 +693,8 @@ class ContentScanner extends Component
 
     /**
      * An accessible name with the new-tab notice taken off, leaving only what
-     * the name says about where the link goes.
-     *
-     * "here (opens in new tab)" is a warning about behaviour wrapped around a
-     * word that still names nothing. Judged whole it looks specific enough to
-     * pass, so a link no more descriptive than "here" escapes the check purely
-     * for carrying a courtesy notice.
+     * the name says about where the link goes. The notice describes what the
+     * link does to the browser, not where it goes.
      *
      * @param string $name The accessible name.
      * @return string The name reduced to its purpose, lowercased.

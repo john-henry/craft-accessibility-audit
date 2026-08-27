@@ -60,12 +60,8 @@ class AltTextPrompt
     }
 
     /**
-     * Whether the model overshot the length it was asked for.
-     *
-     * Models count characters poorly, so the instruction alone does not hold
-     * the line. Left unchecked the overshoot lands in the alt field and the
-     * plugin's own review queue then asks whether it is too long, which is a
-     * daft question to be asked about text the plugin wrote itself.
+     * Whether the model overshot the length it was asked for. Models count
+     * characters poorly, so the instruction alone does not hold the line.
      *
      * @param string $alt The alt text the model returned.
      * @return bool True when it is longer than the cap.
@@ -90,10 +86,8 @@ class AltTextPrompt
     }
 
     /**
-     * Cuts over-long alt text back to the cap at a word boundary.
-     *
-     * The last resort, for when a second attempt still overshoots. Cutting on
-     * a space rather than mid-word at least leaves it readable.
+     * Cuts over-long alt text back to the cap at a word boundary. The last
+     * resort, for when a second attempt still overshoots.
      *
      * @param string $alt The alt text to shorten.
      * @return string Alt text within the cap.
@@ -143,12 +137,8 @@ class AltTextPrompt
     /**
      * The instruction itself.
      *
-     * The screenshot rule earns its place: a screenshot is a picture of an
-     * interface, and interfaces are usually full of other pictures. Left to
-     * itself the model describes whichever layer fills the frame, so a
-     * screenshot demonstrating a button gets alt text about the stock photo
-     * sitting behind it. That reads fluently and tells the reader nothing
-     * about what they are being shown.
+     * A screenshot is a picture of an interface, and interfaces are usually
+     * full of other pictures, so the model is told which layer to describe.
      *
      * @param SettingsModel $settings The plugin settings.
      * @return string The instruction block.
