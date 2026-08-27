@@ -923,7 +923,20 @@ class AuditService extends Component
             ->all();
 
         $count = count($scans);
-        $avg = fn($col) => (int) round(array_sum(array_column($scans, $col)) / $count);
+        /* Rounds the way a conformance figure has to: down onto 99 rather than
+           up onto 100. These are page scores averaged across the site, so on a
+           large one a handful of failing pages moves the mean by a fraction of
+           a point and ordinary rounding lands on 100. Beside a caption reading
+           "3 criteria failing" that is not a rounding artefact, it is a claim
+           of full conformance the evidence does not support, and the statement
+           refuses to make that claim on the same evidence. Every other value
+           rounds normally. */
+        $avg = function(string $col) use ($scans, $count): int {
+            $raw = array_sum(array_column($scans, $col)) / $count;
+            $rounded = (int)round($raw);
+
+            return ($rounded === 100 && $raw < 100) ? 99 : $rounded;
+        };
 
         // Distinct WCAG success criteria with at least one definite, unresolved
         // failure, bucketed by the criterion's own level. No "passing" count:

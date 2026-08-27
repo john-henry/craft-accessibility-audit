@@ -218,6 +218,26 @@
         catch (e) { return null; }
     }
 
+    /* Whether the preview holds a loaded page rather than a frame that is
+       still navigating. A fresh or in-flight frame is about:blank with an
+       empty body, and axe run against that reports the page as having no
+       title, no lang, no main landmark and no h1: all true of about:blank and
+       none of it about the page. Those findings then get stored.
+       The passes are wired to the frame's load event, but the viewport switch
+       and the post-re-scan sweep call them directly, so the guard belongs here
+       rather than on each caller. Bailing loses nothing: the load event fires
+       afterwards and runs the pass properly. */
+    function iframeReady() {
+        var doc = iframeDoc();
+        if (!doc || !doc.body) return false;
+
+        var href = '';
+        try { href = doc.location ? doc.location.href : ''; } catch (_) { return false; }
+        if (!href || href === 'about:blank') return false;
+
+        return doc.readyState === 'complete' && doc.body.children.length > 0;
+    }
+
     function ensureHighlightStyles(doc) {
         if (doc.getElementById('accessibility-audit-hl-styles')) return;
         var s = doc.createElement('style');
@@ -1688,6 +1708,7 @@
         if (_contrastStored[viewport]) return;
         var doc = iframeDoc();
         if (!doc) return; /* cross-origin: skip silently */
+        if (!iframeReady()) return; /* still navigating: the load event retries */
 
         await stylesheetsSettled(doc);
 
@@ -1765,7 +1786,7 @@
            it, and a mid-await switch must not mislabel the results. */
         var viewport = activeViewport;
         var doc = iframeDoc();
-        if (!doc || _axeRunning) return;
+        if (!doc || _axeRunning || !iframeReady()) return;
         if (sessionStorage.getItem(axeSessionKey(viewport))) return;
 
         /* A pass that changes the totals reloads the page, and the sweep picks
