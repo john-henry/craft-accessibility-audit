@@ -214,8 +214,10 @@ class ContentScanner extends Component
         foreach ($xpath->query('//a[@href]') as $a) {
             /** @var DOMElement $a */
             // The announced name, not the visible text: an aria-label naming
-            // the destination overrides whatever the link wraps.
-            $text = strtolower($this->_accessibleName($a, $xpath));
+            // the destination overrides whatever the link wraps. The new-tab
+            // notice comes off first, so "here (opens in new tab)" is judged
+            // as the "here" it actually is.
+            $text = $this->_linkPurposeText($this->_accessibleName($a, $xpath));
             if (in_array($text, self::GENERIC_LINK_TEXTS, true)) {
                 $issues[] = IssueModel::make(
                     'link-generic', 'warning',
@@ -690,6 +692,41 @@ class ContentScanner extends Component
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
+
+    /**
+     * An accessible name with the new-tab notice taken off, leaving only what
+     * the name says about where the link goes.
+     *
+     * "here (opens in new tab)" is a warning about behaviour wrapped around a
+     * word that still names nothing. Judged whole it looks specific enough to
+     * pass, so a link no more descriptive than "here" escapes the check purely
+     * for carrying a courtesy notice.
+     *
+     * @param string $name The accessible name.
+     * @return string The name reduced to its purpose, lowercased.
+     */
+    private function _linkPurposeText(string $name): string
+    {
+        $text = mb_strtolower(trim($name));
+
+        // Parenthesised or bracketed: "(opens in a new tab)", "[external]".
+        $text = preg_replace(
+            '/[(\[{][^)\]}]*\b(?:opens?|new\s+(?:tab|window)|external)\b[^)\]}]*[)\]}]/u',
+            ' ',
+            $text,
+        ) ?? $text;
+
+        // Trailing clause: "read more, opens in a new window".
+        $text = preg_replace(
+            '/[,;:\-]?\s*\b(?:opens?|will\s+open)\b[^,;.]*?\b(?:tab|window)\b/u',
+            ' ',
+            $text,
+        ) ?? $text;
+
+        $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
+
+        return trim($text, " \t\n\r\0\x0B.,;:!?-");
+    }
 
     /**
      * The element's accessible name, resolved in the order the accessible name

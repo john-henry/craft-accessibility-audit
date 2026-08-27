@@ -277,3 +277,60 @@ describe('ContentScanner severities and ignore list', function() {
         expect($dupes)->toHaveCount(1);
     });
 });
+
+// ---------------------------------------------------------------------------
+// link-generic and the new-tab notice
+//
+// Judging the accessible name stopped "View" with a descriptive aria-label
+// being called vague, which was the point. It also let through the opposite
+// case: "here (opens in new tab)" is the word "here" carrying a courtesy
+// notice, and judged whole it looked specific enough to pass. The notice
+// describes behaviour, not destination, so it comes off before the check.
+// ---------------------------------------------------------------------------
+
+function genericLinkIssues(string $body): array
+{
+    $html = '<!DOCTYPE html><html lang="en"><head><title>T</title>'
+        . '<meta name="description" content="d"></head><body>'
+        . '<a href="#main">Skip to main content</a><main id="main">' . $body . '</main></body></html>';
+
+    return array_values(array_filter(
+        (new ContentScanner())->scan($html),
+        fn($i) => $i->ruleId === 'link-generic',
+    ));
+}
+
+it('flags a vague link whose label only adds a new-tab notice', function(string $label) {
+    $body = '<a href="/x" target="_blank" aria-label="' . $label . '">here</a>';
+
+    expect(genericLinkIssues($body))->toHaveCount(1);
+})->with([
+    'parenthesised' => 'here (opens in new tab)',
+    'bracketed'     => 'here [opens in a new window]',
+    'trailing'      => 'here, opens in a new tab',
+    'external'      => 'here (external)',
+]);
+
+it('leaves a label that names the destination alone', function() {
+    // Issue #7: the whole reason the accessible name is consulted at all.
+    $body = '<a href="/x" target="_blank" aria-label="Full recipe at ohmydish.com (opens in new tab)">View</a>';
+
+    expect(genericLinkIssues($body))->toBeEmpty();
+});
+
+it('still flags a bare generic link', function() {
+    expect(genericLinkIssues('<a href="/x">click here</a>'))->toHaveCount(1);
+});
+
+it('leaves genuinely descriptive link text alone', function() {
+    expect(genericLinkIssues('<a href="/x">Read the full accessibility statement</a>'))->toBeEmpty();
+});
+
+it('reports every vague link on the page, not just the unlabelled one', function() {
+    // The reported case: two labelled "here (opens in new tab)", one bare.
+    $body = '<a href="https://a.example/x" target="_blank" aria-label="here (opens in new tab)">here</a>'
+        . '<a href="https://b.example/x">here</a>'
+        . '<a href="https://c.example/x" target="_blank" aria-label="here (opens in new tab)">here</a>';
+
+    expect(genericLinkIssues($body))->toHaveCount(3);
+});
