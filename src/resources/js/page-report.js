@@ -1684,29 +1684,58 @@
        stylesheets present in the HTML; one injected by the page's own JS
        lands after load, and sampling before it applies reads UA defaults.
        Capped at ~3s so a broken stylesheet reference cannot stall the pass. */
+    /* Waits until the page has stopped acquiring styles, by two measures.
+     *
+     * Link elements first: a page that ships its CSS as
+     * <link rel="preload" as="style"> and swaps the rel on load carries no
+     * rel="stylesheet" at all until that swap lands, so counting only those
+     * finds nothing outstanding.
+     *
+     * Then the sheet count, because link elements are not the whole story. A
+     * dev server that injects its CSS from JavaScript (Vite and the like) adds
+     * stylesheets after the load event, so every link having loaded does not
+     * mean the page is styled. Waiting for the count to hold still covers all
+     * three delivery routes.
+     *
+     * Reading a page too early is not a harmless miss. Colours defined through
+     * a custom property, which is how Tailwind ships its palette, fall back to
+     * the browser default when the theme layer has yet to arrive: an anchor
+     * computes to link blue while a literal background from an already-loaded
+     * sheet applies, and a page of perfectly good white-on-red text gets
+     * recorded as a wall of contrast failures. */
     function stylesheetsSettled(doc) {
         return new Promise(function (resolve) {
             var tries = 0;
+            var lastCount = -1;
+            var stableFor = 0;
+
             (function check() {
                 var pending = false;
+                var count = 0;
+
                 try {
-                    /* Deferred stylesheets count as pending. A page that ships
-                       its CSS as <link rel="preload" as="style"> and swaps the
-                       rel on load carries no rel="stylesheet" at all until that
-                       swap lands, so looking only for those finds nothing
-                       outstanding and reads the page before a line of CSS has
-                       applied. Every link is then the browser default blue on
-                       whatever the section colour is, and a wall of contrast
-                       failures gets recorded against text that is actually fine. */
                     var links = doc.querySelectorAll(
                         'link[rel="stylesheet"], link[rel~="preload"][as="style"], link[rel~="alternate"][as="style"]'
                     );
                     for (var i = 0; i < links.length; i++) {
                         if (!links[i].disabled && !links[i].sheet) { pending = true; break; }
                     }
+                    count = doc.styleSheets.length;
                 } catch (_) {}
-                if (!pending || tries++ >= 10) { resolve(); return; }
-                setTimeout(check, 300);
+
+                if (count === lastCount) {
+                    stableFor++;
+                } else {
+                    stableFor = 0;
+                    lastCount = count;
+                }
+
+                /* The cap still resolves rather than giving up: a page really
+                   without stylesheets is unusual but legitimate, and it should
+                   be scanned rather than skipped. */
+                if ((!pending && count > 0 && stableFor >= 2) || tries++ >= 20) { resolve(); return; }
+
+                setTimeout(check, 150);
             })();
         });
     }
@@ -1720,6 +1749,13 @@
         if (!doc) return; /* cross-origin: skip silently */
         if (!iframeReady()) return; /* still navigating: the load event retries */
 
+        /* The same settle the axe pass takes before it measures. Waiting on
+           stylesheets alone cannot cover CSS that arrives from JavaScript, as
+           a dev server's does: there is nothing outstanding to wait on until
+           the injection happens, so a poll settles early and reads a page
+           whose theme layer has yet to land. Contrast is read off computed
+           colours, so it is the pass with most to lose by going first. */
+        await new Promise(function (resolve) { setTimeout(resolve, 2000); });
         await stylesheetsSettled(doc);
 
         /* Always collect needs-review items: needed for the expand panel regardless of
