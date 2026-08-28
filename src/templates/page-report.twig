@@ -235,6 +235,10 @@
                                             <p class="accessibility-audit-pr-review__ctx" title="{{ cluster.occurrences|first.context|default('') }}">
                                                 {{ cluster.occurrences|first.context|default('') }}
                                             </p>
+                                            {% set clusterReason = cluster.occurrences|first.message|default('') %}
+                                            {% if clusterReason and clusterReason != group.question %}
+                                                <p class="accessibility-audit-pr-review__msg light">{{ clusterReason }}</p>
+                                            {% endif %}
                                             <p class="accessibility-audit-pr-review__msg light">
                                                 {{ 'The same markup repeats {n} times on this page. Answering here answers all of them.'|t('accessibility-audit', { n: cluster.count }) }}
                                             </p>
@@ -262,7 +266,8 @@
                                     {% endif %}
                                     {% if row.context %}
                                         <p class="accessibility-audit-pr-review__ctx" title="{{ row.context }}">{{ row.context }}</p>
-                                    {% elseif row.message %}
+                                    {% endif %}
+                                    {% if row.message and row.message != group.question %}
                                         <p class="accessibility-audit-pr-review__msg light">{{ row.message }}</p>
                                     {% endif %}
                                     <div class="accessibility-audit-pr-review__actions">
@@ -290,7 +295,8 @@
                                     {% endif %}
                                     {% if row.context %}
                                         <p class="accessibility-audit-pr-review__ctx" title="{{ row.context }}">{{ row.context }}</p>
-                                    {% elseif row.message %}
+                                    {% endif %}
+                                    {% if row.message and row.message != group.question %}
                                         <p class="accessibility-audit-pr-review__msg light">{{ row.message }}</p>
                                     {% endif %}
                                     <div class="accessibility-audit-pr-review__actions">

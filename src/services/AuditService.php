@@ -3252,6 +3252,14 @@ class AuditService extends Component
 
             foreach ($result['nodes'] ?? [] as $node) {
                 $html = mb_substr($node['html'] ?? '', 0, 300);
+                $data = $node['any'][0]['data'] ?? [];
+
+                // "Element is hidden" is axe saying there was nothing on
+                // screen to measure. Contrast is about what a person can see,
+                // so there is no question here for anyone to answer.
+                if (($data['messageKey'] ?? '') === 'hidden') {
+                    continue;
+                }
 
                 if ($html === '' || $this->_isDecorativeContrastNode($html)) {
                     continue;
@@ -3260,7 +3268,7 @@ class AuditService extends Component
                 $this->insertIssue($scanId, $scan['elementId'], $scan['elementType'], $scan['siteId'], IssueModel::make(
                     ruleId: self::RULE_POTENTIAL_CONTRAST,
                     severity: 'notice',
-                    message: $this->_contrastNeedsReviewMessage($node['any'][0]['data'] ?? []),
+                    message: $this->_contrastNeedsReviewMessage($data),
                     wcagCriterion: $wcag['criterion'] ?? '1.4.3',
                     wcagLevel: $wcag['level'] ?? 'AA',
                     // Bare markup, like every other potential issue. The report
@@ -3316,12 +3324,24 @@ class AuditService extends Component
         $size = isset($data['fontSize']) ? " The text is {$data['fontSize']}." : '';
         $needs = $data['expectedContrastRatio'] ?? '4.5:1';
 
+        // Every key axe's colour-contrast check can report. An unmapped key
+        // falls through to a sentence that says nothing, which is worse than
+        // no question at all: the reader cannot tell what to look at, so the
+        // habit becomes dismissing without reading.
         $reason = match ($data['messageKey'] ?? '') {
             'bgOverlap' => 'another element sits over it',
             'bgImage' => 'it sits on a background image',
             'bgGradient' => 'it sits on a gradient',
-            'imgNode' => 'it sits on an image',
+            'imgNode' => 'it contains an image',
             'pseudoContent' => 'a CSS pseudo-element covers it',
+            'fgAlpha' => 'the text colour is partly transparent',
+            'elmPartiallyObscured' => 'another element covers part of it',
+            'elmPartiallyObscuring' => 'it overlaps another element',
+            'complexTextShadows' => 'it uses layered text shadows',
+            'equalRatio' => 'its text and background came out as the same colour',
+            'shortTextContent' => 'there is too little text to sample',
+            'nonBmp' => 'its characters cannot be measured',
+            'outsideViewport' => 'it was outside the part of the page the browser had laid out',
             default => 'the background could not be worked out',
         };
 

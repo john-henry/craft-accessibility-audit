@@ -707,7 +707,7 @@
            fell inside one) and parse again. */
         var repaired = html;
         if (!el && repaired.charAt(0) === '<') {
-            if (repaired.slice(-1) === '…') repaired = repaired.slice(0, -1);
+            while (repaired.slice(-1) === '…') repaired = repaired.slice(0, -1);
             if (repaired.indexOf('>') === -1) {
                 repaired += ((repaired.match(/"/g) || []).length % 2 === 1) ? '">' : '>';
                 parsed = new DOMParser().parseFromString(repaired, 'text/html');
@@ -742,9 +742,13 @@
         /* Attributes can be shared (a nav link and a CTA with the same href),
            so among candidates the one also matching the stored element's
            classes and text wins; a lone candidate is trusted as-is. */
-        /* A capped context ends in an ellipsis, and whatever attribute the
-           cut landed in survives only as a prefix, so compare it as one. */
-        var truncated = html.slice(-1) === '…';
+        /* A capped context has whatever attribute the cut landed in surviving
+           only as a prefix, so compare it as one. Two shapes reach here: the
+           PHP rules mark the cut with an ellipsis, while axe's snippets are
+           capped bare and give themselves away by stopping short of a closing
+           '>'. Missing the second shape means an exact class match against a
+           half-read class list, which a Tailwind element never satisfies. */
+        var truncated = html.slice(-1) === '…' || !/>\s*$/.test(html);
         var wantClassRaw = (el.getAttribute('class') || '').trim();
         var wantClass = wantClassRaw.split(/\s+/).filter(Boolean).sort().join(' ');
         var wantText = el.textContent.trim();
