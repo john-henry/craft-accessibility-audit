@@ -881,4 +881,5 @@ return [
     'This page has no public URL, showing issue data only.' => 'This page has no public URL, showing issue data only.',
     'This server cannot read SVG files. Write this alt text by hand, or check that ImageMagick was built with SVG support.' => 'This server cannot read SVG files. Write this alt text by hand, or check that ImageMagick was built with SVG support.',
     'Automated testing found {count} issues affecting this criterion.' => 'Automated testing found {count} issues affecting this criterion.',
+    'Entry {n}' => 'Entry {n}',
 ];

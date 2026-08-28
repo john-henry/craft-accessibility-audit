@@ -612,6 +612,14 @@ class DashboardController extends Controller
             'lastScanned' => $plugin->getAudit()->getLatestScanDate($siteId),
             'unconfirmedDetails' => $unconfirmedDetails,
             'suggestions' => $suggestions,
+            // Criterion names, so an entry can label itself in the editor. The
+            // label is chrome: the published statement is built from the
+            // fields, and a criterion name is developer wording that has no
+            // business in a document written for the public.
+            'criteriaNames' => array_map(
+                static fn(array $criterion): string => (string)($criterion['name'] ?? ''),
+                $plugin->vpat->getCriteria(),
+            ),
             'profiles' => StatementProfiles::options(),
             'siteId' => $siteId,
             'siteHandle' => $siteHandle,

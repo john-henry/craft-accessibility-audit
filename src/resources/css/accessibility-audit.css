@@ -2178,6 +2178,15 @@ body.use-shapes .accessibility-audit-pr-dot--error {
   margin: 0;
 }
 
+/* Names the entry it heads, so a list of them is navigable. Editor chrome
+   only: the published statement is built from the fields below it. */
+.accessibility-audit-subcard__title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--aa-text, #3f4d5a);
+}
+
 .accessibility-audit-subcard {
   background: var(--aa-surface);
   border: 1px solid var(--aa-border-section);

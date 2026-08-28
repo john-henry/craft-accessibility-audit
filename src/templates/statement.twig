@@ -365,7 +365,18 @@
 
         <div class="accessibility-audit-col accessibility-audit-col--g10">
             {% for i, entry in statement.entries %}
+                {% set entryCriterion = entry.criterion ?? '' %}
+                {% set entryName = entryCriterion ? (criteriaNames[entryCriterion] ?? '') : '' %}
                 <div class="accessibility-audit-subcard">
+                    <h3 class="accessibility-audit-subcard__title">
+                        {% if entryName %}
+                            {{ entryName }} <span class="light">({{ entryCriterion }})</span>
+                        {% elseif entryCriterion %}
+                            {{ 'WCAG'|t('accessibility-audit') }} {{ entryCriterion }}
+                        {% else %}
+                            {{ 'Entry {n}'|t('accessibility-audit', { n: i + 1 }) }}
+                        {% endif %}
+                    </h3>
                     {{ forms.selectField({
                         label: 'Category'|t('accessibility-audit'),
                         name: 'entries[' ~ i ~ '][category]',
