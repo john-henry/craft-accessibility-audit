@@ -533,26 +533,61 @@ class AuditController extends Controller
         $decoded = is_array($raw) ? $raw : Json::decodeIfJson($raw);
         $items = is_array($decoded) ? $decoded : [];
 
-        $verdicts = AccessibilityAudit::getInstance()->verdicts;
+        $plugin = AccessibilityAudit::getInstance();
+        $verdicts = $plugin->verdicts;
         $applied = 0;
+        $needScoring = [];
 
-        foreach ($items as $item) {
-            $ruleId = trim((string) ($item['ruleId'] ?? ''));
-            if (!str_starts_with($ruleId, 'potential:')) {
-                continue;
+        // A ruling is a small write; the expensive part is working the scan's
+        // score out again, and every occurrence in a group shares one scan. So
+        // the scoring is held back and done once at the end rather than fifty
+        // times over.
+        try {
+            foreach ($items as $item) {
+                $ruleId = trim((string) ($item['ruleId'] ?? ''));
+
+                if (!str_starts_with($ruleId, 'potential:')) {
+                    continue;
+                }
+
+                $context = $item['context'] ?? null;
+                $needScoring = array_merge($needScoring, $verdicts->setVerdict(
+                    $siteId,
+                    $elementId ?: null,
+                    $ruleId,
+                    is_string($context) ? $context : null,
+                    $verdict,
+                    null,
+                    $url,
+                    deferScoring: true,
+                ));
+                $applied++;
             }
 
-            $context = $item['context'] ?? null;
-            $verdicts->setVerdict(
-                $siteId,
-                $elementId ?: null,
-                $ruleId,
-                is_string($context) ? $context : null,
-                $verdict,
-                null,
-                $url,
+            foreach (array_unique($needScoring) as $scanId) {
+                $plugin->audit->recalculateScoreForScan($scanId);
+            }
+        } catch (Throwable $e) {
+            // Whatever went wrong, the reader gets a sentence rather than a
+            // blank error page. The detail goes to the log, where it can
+            // actually be read, and the rulings written before the failure
+            // stand: this is not one transaction and pretending otherwise
+            // would lose the work that did land.
+            Craft::error(
+                'A11y: bulk verdict failed after ' . $applied . ' of ' . count($items) . ': '
+                . $e->getMessage(),
+                'accessibility-audit',
             );
-            $applied++;
+
+            return $this->asJson([
+                'success' => false,
+                'applied' => $applied,
+                'error' => Craft::t(
+                    'accessibility-audit',
+                    'Saved {applied} of {total} before something went wrong. The details are in the logs.',
+                    ['applied' => $applied, 'total' => count($items)],
+                ),
+            ]);
         }
 
         return $this->asJson(['success' => true, 'applied' => $applied]);

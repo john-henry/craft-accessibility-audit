@@ -110,7 +110,7 @@ describe('PotentialScanner contract', function() {
             ->and((new PotentialScanner())->scan('   '))->toBeEmpty();
     });
 
-    it('prefixes every rule id with potential: and grades everything a notice', function() {
+    it('prefixes every rule id with potential: and grades by how sure it is', function() {
         $issues = (new PotentialScanner())->scan(
             '<html><body>' .
             '<img src="/p.jpg" alt=""><img src="/q.jpg" alt="ab">' .
@@ -125,8 +125,32 @@ describe('PotentialScanner contract', function() {
 
         foreach ($issues as $issue) {
             expect($issue->ruleId)->toStartWith('potential:')
-                ->and($issue->severity)->toBe('notice');
+                ->and($issue->severity)->toBeIn(['notice', 'warning']);
         }
+    });
+
+    it('grades a question it can settle above one it cannot', function() {
+        // A potential issue is a question, and most of them stay notices
+        // because the scanner genuinely cannot answer them. Where it can, from
+        // the page itself, the finding carries that weight: two links reading
+        // the same inside one landmark is a 2.4.4 failure, not a maybe.
+        //
+        // Reported at one weight, a real failure and a benign pair look
+        // identical in the queue, which is what teaches people to clear it
+        // unread. None of this reaches the score until somebody confirms it.
+        $issues = (new PotentialScanner())->scan(
+            '<html lang="en"><body><nav aria-label="Main">'
+            . '<a href="/a">Services</a><a href="/b">Services</a>'
+            . '</nav></body></html>',
+        );
+
+        $links = array_values(array_filter(
+            $issues,
+            static fn($issue): bool => $issue->ruleId === 'potential:identical-links',
+        ));
+
+        expect($links)->toHaveCount(1)
+            ->and($links[0]->severity)->toBe('warning');
     });
 
     it('reports identical link text once per text, not once per link', function() {

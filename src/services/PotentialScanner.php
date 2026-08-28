@@ -13,6 +13,7 @@ use DOMNode;
 use DOMXPath;
 use johnhenry\accessibilityaudit\helpers\AccessibleName;
 use johnhenry\accessibilityaudit\helpers\ExcludedElements;
+use johnhenry\accessibilityaudit\helpers\LinkContext;
 use johnhenry\accessibilityaudit\models\IssueModel;
 use yii\base\Component;
 
@@ -173,53 +174,218 @@ class PotentialScanner extends Component
         return array_values(array_unique($hosts));
     }
 
+    /**
+     * Links that read the same but go to different places.
+     *
+     * 2.4.4 is satisfied when the context tells them apart, so the verdict
+     * depends on where each one sits. Same context with nothing to separate
+     * them is a failure. Different landmarks, one of them unnamed, is also a
+     * failure, and the missing name is the fix. Different named landmarks pass
+     * at AA and are still a problem in a screen reader's links list, which
+     * strips context away and shows two identical entries, so that is reported
+     * as advice rather than as a breach.
+     *
+     * Reporting all three at one weight is what teaches people to clear the
+     * queue without reading it, and that is how the real ones get missed.
+     *
+     * @param DOMXPath $xpath The parsed page.
+     * @return IssueModel[]
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     private function checkIdenticalLinks(DOMXPath $xpath): array
     {
         $issues = [];
-        $nodes = $xpath->query('//a[normalize-space(.) != ""]');
         $linkMap = [];
         $siteHosts = $this->siteHosts();
 
-        foreach ($nodes as $node) {
+        foreach ($xpath->query('//a[@href]') as $node) {
             if (!$node instanceof DOMElement) {
                 continue;
             }
 
-            // The announced name, not the visible text. Two buttons both
-            // reading "Visit Website" with aria-labels naming their
-            // destinations are two distinct names: a screen reader user hears
-            // them apart, so 2.4.4 is satisfied and there is no question to
-            // ask. Compared on the text alone this reported correct markup.
-            $text = AccessibleName::for($node, $xpath);
+            // Markup that cannot be reached at the same time as its twin is not
+            // a duplicate anybody experiences.
+            if (LinkContext::isHidden($node)) {
+                continue;
+            }
+
+            // The announced name, not the visible text: an icon link named only
+            // by aria-label is exactly the case this rule is for.
+            $name = AccessibleName::for($node, $xpath);
             $href = trim($node->getAttribute('href'));
 
-            if ($text && $href && !str_starts_with($href, '#')) {
-                // Keyed by the resolved destination so the same target written
-                // two ways counts once. The raw href is kept for the message,
-                // since that is what the author will recognise in their markup.
-                $linkMap[$text][$this->normaliseHref($href, $siteHosts)] = $href;
+            if ($name === '' || $href === '' || str_starts_with($href, '#')) {
+                continue;
             }
+
+            // Compared case-insensitively and whitespace-collapsed, since a
+            // reader hears no difference. The first spelling seen is kept for
+            // the report, because that is what the author will recognise.
+            $key = mb_strtolower(trim(preg_replace('/\s+/u', ' ', $name) ?? $name));
+            $target = $this->normaliseHref($href, $siteHosts);
+
+            $linkMap[$key]['name'] ??= $name;
+            // Keyed by resolved destination so the same target written two ways
+            // counts once, and only the first link to each is kept: a repeated
+            // destination is not what this rule is about.
+            $linkMap[$key]['links'][$target] ??= ['href' => $href, 'node' => $node];
         }
 
-        $seen = [];
-        foreach ($linkMap as $text => $hrefsByTarget) {
-            $unique = array_values($hrefsByTarget);
-            if (count($unique) > 1 && !isset($seen[$text])) {
-                $seen[$text] = true;
-                $issues[] = IssueModel::make(
-                    ruleId: 'potential:identical-links',
-                    severity: 'notice',
-                    message: 'Are these identical links going to the same place? Multiple links share the same text but point to different destinations.',
-                    wcagCriterion: '2.4.4',
-                    wcagLevel: 'A',
-                    context: '"' . $text . '" → ' . implode(', ', array_slice($unique, 0, 3)),
-                    helpUrl: null,
-                    source: 'php',
-                );
+        foreach ($linkMap as $group) {
+            // A name seen once has one destination and is not this rule's
+            // business; two or more means the same words go to different places.
+            if (count($group['links']) < 2) {
+                continue;
             }
+
+            $issues[] = $this->identicalLinkIssue((string)$group['name'], $group['links'], $xpath);
         }
 
         return $issues;
+    }
+
+    /**
+     * Builds one finding for a set of links sharing an announced name.
+     *
+     * @param string $name The name they share.
+     * @param array<string, array{href: string, node: DOMElement}> $links Keyed by destination.
+     * @param DOMXPath $xpath The document.
+     * @return IssueModel
+     */
+    private function identicalLinkIssue(string $name, array $links, DOMXPath $xpath): IssueModel
+    {
+        $lines = [];
+        $places = [];
+        $anyUnnamed = false;
+
+        // Do the destinations differ in the way that matters? Two links to
+        // different sections of one document are a tidiness question, not
+        // somebody being sent somewhere they did not expect, and in
+        // documentation that is most of what this rule finds.
+        $documents = array_unique(array_map(
+            static fn(string $target): string => explode('#', $target, 2)[0],
+            array_keys($links),
+        ));
+        $sameDocument = count($documents) === 1;
+
+        foreach ($links as $link) {
+            $context = LinkContext::for($link['node'], $xpath);
+            $lines[] = '  ' . $context['label'] . ' → ' . $link['href'];
+
+            // Identity of the place, for deciding whether anything separates
+            // them: the landmark element itself, plus the heading above.
+            $places[] = ($context['landmark'] !== null ? spl_object_id($context['landmark']) : 0)
+                . '|' . $context['heading'];
+
+            // A landmark with no name announces nothing, and no landmark at all
+            // with no heading above it is the same problem by another route.
+            if ($context['name'] === '' && $context['heading'] === '') {
+                $anyUnnamed = true;
+            }
+        }
+
+        $separated = count(array_unique($places)) === count($places);
+
+        if ($sameDocument) {
+            $verdict = 'These go to the same page, different sections. Nobody is sent anywhere they did '
+                . 'not expect, so this is not the WCAG 2.4.4 Link Purpose (In Context) failure it looks '
+                . 'like from the URLs alone. It is still worth tidying: in a screen reader links list, '
+                . 'stripped of everything around them, both read the same with no way to tell which part '
+                . 'of the page each goes to.';
+            $criterion = '2.4.9';
+            $level = 'AAA';
+            $severity = 'notice';
+        } elseif (!$separated) {
+            $verdict = 'These sit in the same part of the page with nothing to tell them apart, which is '
+                . 'the failure WCAG 2.4.4 Link Purpose (In Context) describes.';
+            $criterion = '2.4.4';
+            $level = 'A';
+            $severity = 'warning';
+        } elseif ($anyUnnamed) {
+            $verdict = 'These are in different parts of the page, but at least one of those parts has no '
+                . 'name, so there is nothing for a screen reader to announce that would separate them. '
+                . 'That leaves WCAG 2.4.4 Link Purpose (In Context) failing until the landmark is named.';
+            $criterion = '2.4.4';
+            $level = 'A';
+            $severity = 'warning';
+        } else {
+            $verdict = 'These are in different named parts of the page, so they satisfy WCAG 2.4.4 at AA. '
+                . 'They are still identical in a screen reader links list, which strips that context away '
+                . 'and shows both entries reading the same, so it is worth fixing under WCAG 2.4.9 Link '
+                . 'Purpose (Link Only).';
+            $criterion = '2.4.9';
+            $level = 'AAA';
+            $severity = 'notice';
+        }
+
+        $headline = $sameDocument
+            ? sprintf('"%s" goes to %d different sections of the same page.', $name, count($links))
+            : sprintf('"%s" goes to %d different places.', $name, count($links));
+
+        if ($sameDocument) {
+            return IssueModel::make(
+                ruleId: 'potential:identical-links',
+                severity: $severity,
+                message: $headline . "\n" . implode("\n", $lines) . "\n\n" . $verdict . "\n\n"
+                    . "How to tidy it up:\n"
+                    . '  1. Name the section in the link text, so one reads "' . $name . ', overview" '
+                    . 'rather than the same words twice.' . "\n"
+                    . '  2. Or drop the fragment from one of them, if both were only ever meant to reach '
+                    . 'the page itself.',
+                wcagCriterion: $criterion,
+                wcagLevel: $level,
+                context: $this->identicalLinkContext($name, $links),
+                helpUrl: null,
+                source: 'php',
+            );
+        }
+
+        $message = $headline . "\n"
+            . implode("\n", $lines) . "\n\n"
+            . $verdict . "\n\n"
+            . "How to fix it, best first:\n"
+            . "  1. Change the visible text so the two read differently. Everyone benefits and no ARIA is involved.\n"
+            . '  2. If the visible text has to stay, add to the announced name inside the link with visually '
+            . 'hidden text: <a href="...">' . $name . '<span class="sr-only">, API reference</span></a>.' . "\n"
+            . '  3. Name the part of the page it sits in, with aria-label on the surrounding landmark.';
+
+        if ($anyUnnamed) {
+            $message .= "\n\nOption 3 is the one to reach for here: a part of the page with no name is the "
+                . 'missing piece.';
+        }
+
+        $message .= "\n\n" . 'Do not reach for aria-label on the link itself. It replaces the announced name '
+            . 'rather than adding to it, so a voice-control user can no longer say "click ' . $name . '", '
+            . 'which breaks WCAG 2.5.3 Label in Name, and many translation tools skip it. If you use it '
+            . 'anyway, the visible text has to still appear inside it word for word.';
+
+        return IssueModel::make(
+            ruleId: 'potential:identical-links',
+            severity: $severity,
+            message: $message,
+            wcagCriterion: $criterion,
+            wcagLevel: $level,
+            context: $this->identicalLinkContext($name, $links),
+            helpUrl: null,
+            source: 'php',
+        );
+    }
+
+    /**
+     * The context string for a set of same-named links.
+     *
+     * Deliberately unchanged in shape. This string is hashed to key the
+     * author's ruling on the question, so rewording it would quietly discard
+     * every dismissal already made against this rule.
+     *
+     * @param string $name The name the links share.
+     * @param array<string, array{href: string, node: DOMElement}> $links Keyed by destination.
+     * @return string
+     */
+    private function identicalLinkContext(string $name, array $links): string
+    {
+        return '"' . $name . '" → ' . implode(', ', array_slice(array_column($links, 'href'), 0, 3));
     }
 
     private function checkUrlAsLinkText(DOMXPath $xpath): array

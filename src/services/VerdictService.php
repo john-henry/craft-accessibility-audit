@@ -120,6 +120,11 @@ class VerdictService extends Component
      * @param string|null $verdict One of self::VERDICTS, or null to clear.
      * @param string|null $note The author's reasoning, kept for the audit trail.
      * @param string|null $url The scanned URL, when there is no element.
+     * @param bool $deferScoring Skip the score recalculation and hand back the
+     *                           scans that need one. A caller ruling on fifty
+     *                           occurrences at once would otherwise recompute
+     *                           the same scan fifty times.
+     * @return int[] The scans whose scores are now out of date.
      * @throws Exception
      * @throws \Exception
      * @author JohnHenry <info@johnhenry.ie>
@@ -133,7 +138,8 @@ class VerdictService extends Component
         ?string $verdict,
         ?string $note = null,
         ?string $url = null,
-    ): void {
+        bool $deferScoring = false,
+    ): array {
         $db = Craft::$app->getDb();
         $hash = $this->contextHash($context);
         $now = Db::prepareDateForDb(new DateTime());
@@ -178,7 +184,7 @@ class VerdictService extends Component
             }
         }
 
-        $this->applyToIssues($siteId, $elementId, $ruleId, $hash, $verdict, $url);
+        return $this->applyToIssues($siteId, $elementId, $ruleId, $hash, $verdict, $url, $deferScoring);
     }
 
     /**
@@ -194,6 +200,8 @@ class VerdictService extends Component
      * @param string $hash The context hash the ruling applies to.
      * @param string|null $verdict The ruling, or null to clear it.
      * @param string|null $url The scanned URL, when there is no element.
+     * @param bool $deferScoring Whether to leave the recalculation to the caller.
+     * @return int[] The scans whose scores are now out of date.
      * @throws Exception
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
@@ -205,7 +213,8 @@ class VerdictService extends Component
         string $hash,
         ?string $verdict,
         ?string $url = null,
-    ): void {
+        bool $deferScoring = false,
+    ): array {
         $query = (new Query())
             ->select(['i.id', 'i.context', 'i.scanId'])
             ->from(['i' => '{{%accessibilityaudit_issues}}'])
@@ -233,7 +242,7 @@ class VerdictService extends Component
         }
 
         if (empty($ids)) {
-            return;
+            return [];
         }
 
         Craft::$app->getDb()->createCommand()->update('{{%accessibilityaudit_issues}}', [
@@ -241,11 +250,19 @@ class VerdictService extends Component
             'dateUpdated' => Db::prepareDateForDb(new DateTime()),
         ], ['id' => $ids])->execute();
 
+        $affected = array_map('intval', array_keys($scanIds));
+
         // Confirming promotes the issue into a real failure, so the score has
         // to be redone. Clearing or dismissing can equally take one back out.
-        foreach (array_keys($scanIds) as $scanId) {
+        if ($deferScoring) {
+            return $affected;
+        }
+
+        foreach ($affected as $scanId) {
             AccessibilityAudit::getInstance()->audit->recalculateScoreForScan($scanId);
         }
+
+        return $affected;
     }
 
     /**

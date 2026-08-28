@@ -72,6 +72,36 @@ Plus `block-in-paragraph`, which stores raw markup as its context like the other
 
 If you have anything switching on rule IDs, or a hard-coded list of them, add these. `RuleRegistry::get()` has metadata for all four.
 
+### potential:identical-links now varies its severity and criterion
+
+The rule id is unchanged and the stored `context` string is unchanged byte for byte, so existing dismissals and history stay valid. What changed is the finding it produces:
+
+- `severity` is `warning` for a 2.4.4 failure and `notice` for the AAA advisory, where it used to always be `notice`.
+- `wcagCriterion` is `2.4.4` (level A) for a failure and `2.4.9` (level AAA) for the advisory, where it used to always be `2.4.4`.
+
+If you have anything grouping potential issues on the assumption that all of them are notices, or reading `wcagCriterion` from this rule as a constant, that assumption no longer holds. Nothing reaches the score until a finding is confirmed either way.
+
+### VerdictService::setVerdict() and applyToIssues() now return the scans needing a score
+
+Both used to return `void` and recalculate every affected scan's score themselves. They still do by default, so existing calls need no change, but both now return `int[]` of the scans whose scores are out of date, and both take a trailing `bool $deferScoring = false`.
+
+Pass `deferScoring: true` when ruling on many occurrences at once and recalculate the collected scan ids yourself at the end. Every occurrence in a group shares one scan, so the default path recomputes the same number once per ruling.
+
+```php
+$needScoring = [];
+
+foreach ($items as $item) {
+    $needScoring = array_merge($needScoring, $verdicts->setVerdict(
+        $siteId, $elementId, $item['ruleId'], $item['context'], 'dismissed',
+        null, null, deferScoring: true,
+    ));
+}
+
+foreach (array_unique($needScoring) as $scanId) {
+    $plugin->audit->recalculateScoreForScan($scanId);
+}
+```
+
 ### New helpers
 
 Public and reusable, if any of it saves you writing your own:
@@ -79,6 +109,7 @@ Public and reusable, if any of it saves you writing your own:
 | Class | For |
 |---|---|
 | `helpers\AccessibleName` | The name a screen reader announces for an element (`aria-labelledby`, then `aria-label`, then the subtree, then `title`) |
+| `helpers\LinkContext` | The landmark and heading a link sits under, and whether it is hidden from a reader |
 | `helpers\ScanTarget` | Naming, linking and addressing a scan, whether it points at an element or a URL |
 | `helpers\OccurrenceCluster` | Grouping repeated occurrences of one finding by tag and class |
 | `helpers\UrlSafety::fetch()` | An outbound fetch that connects only to addresses it validated, following redirects one checked hop at a time |
