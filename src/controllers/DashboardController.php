@@ -21,6 +21,7 @@ use johnhenry\accessibilityaudit\assets\PageReportAsset;
 use johnhenry\accessibilityaudit\assets\StatementAsset;
 use johnhenry\accessibilityaudit\assets\UtilitiesAsset;
 use johnhenry\accessibilityaudit\assets\VpatAsset;
+use johnhenry\accessibilityaudit\helpers\AffectedExample;
 use johnhenry\accessibilityaudit\helpers\Csv;
 use johnhenry\accessibilityaudit\helpers\ElementLabel;
 use johnhenry\accessibilityaudit\helpers\OccurrenceCluster;
@@ -619,6 +620,18 @@ class DashboardController extends Controller
             'criteriaNames' => array_map(
                 static fn(array $criterion): string => (string)($criterion['name'] ?? ''),
                 $plugin->vpat->getCriteria(),
+            ),
+            // Placeholders, not values: shown greyed and never saved, so a
+            // published statement can only ever carry what somebody wrote.
+            'affectedExamples' => array_merge(
+                array_map(
+                    static fn(string $number): string => AffectedExample::for($number),
+                    array_combine(
+                        array_keys($plugin->vpat->getCriteria()),
+                        array_keys($plugin->vpat->getCriteria()),
+                    ),
+                ),
+                ['*' => AffectedExample::for('')],
             ),
             'profiles' => StatementProfiles::options(),
             'siteId' => $siteId,

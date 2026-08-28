@@ -391,9 +391,10 @@
 
                     {{ forms.textField({
                         label: 'What is affected'|t('accessibility-audit'),
-                        instructions: 'Describe it the way a member of the public would recognise it.'|t('accessibility-audit'),
+                        instructions: 'Describe it the way a member of the public would recognise it. Name the content, not the rule: the next field is where the failure goes.'|t('accessibility-audit'),
                         name: 'entries[' ~ i ~ '][content]',
                         id: 'entry-' ~ i ~ '-content',
+                        placeholder: affectedExamples[entryCriterion] ?? affectedExamples['*'],
                         value: entry.content ?? '',
                     }) }}
 

@@ -335,3 +335,45 @@ describe('StatementController add buttons on an empty list', function() {
             ->and($stored[0]['reason'])->not->toContain((string) ($criteria['3.2.2']['name'] ?? 'x'));
     });
 });
+
+// ---------------------------------------------------------------------------
+// Guidance for "what is affected"
+// ---------------------------------------------------------------------------
+
+describe('affected-content examples', function() {
+    it('offers an example for every criterion the scanners can raise', function() {
+        // The criteria this plugin's own rules attach to. A reader who lands on
+        // one of these has a fair chance of needing help writing the sentence.
+        foreach (['1.1.1', '1.2.2', '1.2.5', '1.3.1', '1.3.5', '1.3.6', '1.4.2',
+                  '1.4.3', '2.4.1', '2.4.2', '2.4.4', '2.4.6', '3.1.1', '3.2.2',
+                  '4.1.1', '4.1.2'] as $criterion) {
+            expect(\johnhenry\accessibilityaudit\helpers\AffectedExample::for($criterion))
+                ->toStartWith('For example:');
+        }
+    });
+
+    it('falls back to a generic example for anything else', function() {
+        expect(\johnhenry\accessibilityaudit\helpers\AffectedExample::for('9.9.9'))
+            ->toStartWith('For example:')
+            ->and(\johnhenry\accessibilityaudit\helpers\AffectedExample::for(''))
+            ->toStartWith('For example:');
+    });
+
+    it('names content rather than restating the rule', function() {
+        // The field asks what a member of the public would recognise. An
+        // example that repeats the criterion teaches the wrong answer.
+        $example = \johnhenry\accessibilityaudit\helpers\AffectedExample::for('2.4.4');
+
+        expect($example)->not->toContain('2.4.4')
+            ->and($example)->not->toContain('Link Purpose')
+            ->and($example)->toContain('Read more');
+    });
+
+    it('is only ever a placeholder, never a stored value', function() {
+        // A default value would be published verbatim by somebody in a hurry.
+        $template = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/statement.twig');
+
+        expect($template)->toContain('placeholder: affectedExamples[')
+            ->and($template)->toContain("value: entry.content ?? ''");
+    });
+});
