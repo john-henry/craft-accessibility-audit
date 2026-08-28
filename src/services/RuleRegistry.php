@@ -55,6 +55,7 @@ class RuleRegistry
         'contrast-hover' => ['difficulty' => 'beginner',     'responsibility' => 'design',      'elementType' => 'Text',           'abilities' => ['vision']],
         'contrast-focus' => ['difficulty' => 'beginner',     'responsibility' => 'design',      'elementType' => 'Text',           'abilities' => ['vision']],
         'contrast-selection' => ['difficulty' => 'beginner',     'responsibility' => 'design',      'elementType' => 'Text',           'abilities' => ['vision']],
+        'unescaped-markup-in-code' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Page structure', 'abilities' => ['vision', 'cognition']],
         'block-in-paragraph' => ['difficulty' => 'intermediate', 'responsibility' => 'development', 'elementType' => 'Page structure', 'abilities' => ['cognition']],
         'input-type' => ['difficulty' => 'intermediate', 'responsibility' => 'development', 'elementType' => 'Forms',          'abilities' => ['motor']],
 

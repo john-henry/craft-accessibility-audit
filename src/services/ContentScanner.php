@@ -34,6 +34,26 @@ class ContentScanner extends Component
         . '|figcaption|figure|footer|form|h1|h2|h3|h4|h5|h6|header|hgroup|hr|main'
         . '|menu|nav|ol|p|pre|section|table|ul';
 
+    /**
+     * @var string[] Tags that are not void, so a browser hands one everything
+     *      that follows as its content until a closing tag that never comes.
+     *      Left unescaped in prose, these delete the rest of the page.
+     */
+    private const SWALLOWING_TAGS = [
+        'iframe', 'script', 'style', 'textarea', 'title', 'select', 'noscript',
+    ];
+
+    /**
+     * @var string[] Tags that belong inside a code sample. Highlighters wrap
+     *      tokens in spans, renderers nest pre and code, and a link to an API
+     *      page is deliberate. Anything else in there could only have come
+     *      from markup that was meant to be shown and was not escaped.
+     */
+    private const CODE_PRESENTATION_TAGS = [
+        'span', 'a', 'br', 'em', 'strong', 'b', 'i', 'code', 'pre',
+        'mark', 'small', 'sub', 'sup', 'wbr', 'var', 'samp', 'kbd', 'abbr',
+    ];
+
     private const WCAG_HELP_BASE = 'https://www.w3.org/WAI/WCAG22/Understanding/';
 
     /** @return IssueModel[] */
@@ -55,6 +75,7 @@ class ContentScanner extends Component
 
         $checks = [
             'block-in-paragraph' => fn() => $this->checkBlockInParagraph($html),
+            'unescaped-markup-in-code' => fn() => $this->checkUnescapedMarkupInCode($xpath, $html),
             'img-alt' => fn() => $this->checkImgAlt($dom, $xpath),
             'img-alt-filename' => fn() => $this->checkImgAltFilename($dom, $xpath),
             'heading-order' => fn() => $this->checkHeadingOrder($dom, $xpath),
@@ -92,6 +113,122 @@ class ContentScanner extends Component
         }
 
         return $issues;
+    }
+
+    // ─── Markup shown as text ────────────────────────────────────────────────
+
+    /**
+     * Markup rendering inside a `<code>` where it was meant to be read.
+     *
+     * Documentation writes about HTML, and `<code>` is where it goes. But
+     * `<code>` is presentational: it does not escape anything, so
+     * `<code><iframe src></code>` puts a real iframe on the page rather than
+     * the three words the author typed. The resulting document is perfectly
+     * valid, which is why no validator and no other checker says a word.
+     *
+     * What it costs depends on the tag. A void one such as `<img>` takes the
+     * sentence with it. A tag that is not void takes the rest of the page: the
+     * parser gives it everything up to a closing tag that never arrives, so
+     * paragraphs, tables and whole sections stop existing while the page still
+     * returns 200 and looks fine until somebody scrolls.
+     *
+     * @param DOMXPath $xpath The parsed page.
+     * @param string $html The raw source, for measuring what a tag swallowed.
+     * @return IssueModel[]
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function checkUnescapedMarkupInCode(DOMXPath $xpath, string $html): array
+    {
+        $issues = [];
+        $seen = [];
+
+        foreach ($xpath->query('//code | //pre') as $holder) {
+            if (!$holder instanceof DOMElement) {
+                continue;
+            }
+
+            foreach ($xpath->query('.//*', $holder) as $child) {
+                if (!$child instanceof DOMElement) {
+                    continue;
+                }
+
+                $tag = strtolower($child->nodeName);
+
+                if (in_array($tag, self::CODE_PRESENTATION_TAGS, true)) {
+                    continue;
+                }
+
+                // One report per sample per tag: the same mistake nested three
+                // deep is still one thing to fix.
+                $key = spl_object_id($holder) . '|' . $tag;
+
+                if (isset($seen[$key])) {
+                    continue;
+                }
+
+                $seen[$key] = true;
+                $swallowed = $this->_swallowedLength($html, $tag);
+
+                $issues[] = IssueModel::make(
+                    'unescaped-markup-in-code',
+                    $swallowed > 0 ? 'error' : 'warning',
+                    $swallowed > 0
+                        ? sprintf(
+                            'A <%s> is rendering inside a code sample instead of being shown as text, and '
+                            . 'because that tag is not self-closing the browser has given it the rest of the '
+                            . 'page: roughly %s characters after it never render. Wrapping markup in <code> '
+                            . 'does not escape it. Write the angle brackets as &lt; and &gt;.',
+                            $tag,
+                            number_format($swallowed),
+                        )
+                        : sprintf(
+                            'A <%s> is rendering inside a code sample instead of being shown as text, so the '
+                            . 'reader sees the tag act rather than read it. Wrapping markup in <code> does not '
+                            . 'escape it. Write the angle brackets as &lt; and &gt;.',
+                            $tag,
+                        ),
+                    // No WCAG criterion: content that never renders is a
+                    // content-integrity problem, not a failure of a success
+                    // criterion, and claiming one would be wrong.
+                    null, null,
+                    $this->outerHtml($holder),
+                    null,
+                    'php',
+                );
+            }
+        }
+
+        return $issues;
+    }
+
+    /**
+     * How much of the source a tag absorbs because nothing ever closes it.
+     *
+     * Counted on the raw string rather than the parsed tree: libxml recovers
+     * from an unclosed tag differently from a browser, and it is the browser's
+     * reading that decides what a reader is left with.
+     *
+     * @param string $html The raw page source.
+     * @param string $tag The tag found rendering inside a code sample.
+     * @return int Characters swallowed, or 0 when the tag is closed or void.
+     */
+    private function _swallowedLength(string $html, string $tag): int
+    {
+        if (!in_array($tag, self::SWALLOWING_TAGS, true)) {
+            return 0;
+        }
+
+        $opens = preg_match_all('/<' . $tag . '[\s>\/]/i', $html);
+        $closes = preg_match_all('/<\/' . $tag . '\s*>/i', $html);
+
+        if ($opens === false || $closes === false || $opens <= $closes) {
+            return 0;
+        }
+
+        $at = strripos($html, '<' . $tag);
+
+        return $at === false ? 0 : strlen($html) - $at;
     }
 
     // ─── Paragraph nesting ───────────────────────────────────────────────────
