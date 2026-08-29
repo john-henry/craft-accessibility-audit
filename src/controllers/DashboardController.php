@@ -99,8 +99,23 @@ class DashboardController extends Controller
         // all sites" wording on multi-site installs.
         $isMultiSite = count($sites) > 1;
 
+        // A score of 100 with unanswered questions behind it is not the same
+        // thing as a site that has been through them, and the headline could
+        // not tell the difference because nothing here knew the questions
+        // existed.
+        $potentialRows = $plugin->audit->getPotentialIssues($siteId);
+        $pendingPotential = array_sum(array_map(
+            static fn(array $row): int => (int) $row['occurrences'],
+            $potentialRows,
+        ));
+        $potentialPages = $pendingPotential > 0
+            ? $plugin->audit->getPagesWithPotentialIssues($siteId, 1, 1)['total']
+            : 0;
+
         return $this->renderTemplate('accessibility-audit/index', [
             'summary' => $summary,
+            'pendingPotential' => $pendingPotential,
+            'potentialPages' => $potentialPages,
             'byImpact' => $byImpact,
             'byImpactAll' => $byImpactAll,
             'templateIssues' => $templateIssues,

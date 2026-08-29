@@ -3325,6 +3325,41 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   overflow-wrap: break-word;
 }
 
+/* The all-clear. Shown only when nothing is failing and nothing is left to
+   answer, so it cannot be mistaken for a passing score with a queue behind it.
+   The tick draws itself once, and the whole flourish is dropped for anyone who
+   has asked for less motion: a tool that argues for accessibility should not
+   be the thing on the page that ignores the setting. */
+.accessibility-audit-allclear {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 10px 14px;
+  border-radius: 6px;
+  border-left: 3px solid var(--success-color, #1f7a44);
+  background: var(--gray-050, #f8f9fa);
+  color: var(--text-color);
+  font-size: 13px;
+}
+
+.accessibility-audit-allclear__tick {
+  flex: none;
+  color: var(--success-color, #1f7a44);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .accessibility-audit-allclear__tick path {
+    stroke-dasharray: 36;
+    stroke-dashoffset: 36;
+    animation: accessibility-audit-tick 620ms cubic-bezier(0.65, 0, 0.35, 1) 180ms forwards;
+  }
+
+  @keyframes accessibility-audit-tick {
+    to { stroke-dashoffset: 0; }
+  }
+}
+
 /* How much room is left in an alt field, beside the field itself. Turns red
    for the last stretch, where a description is about to get cut short. */
 .accessibility-audit-alt-count {

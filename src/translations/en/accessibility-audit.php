@@ -911,4 +911,7 @@ return [
     'This address redirects to {host}, which is not part of this site.' => 'This address redirects to {host}, which is not part of this site.',
     'Do these identical links read the same out of context?' => 'Do these identical links read the same out of context?',
     'Nothing failing across {n} scanned pages.' => 'Nothing failing across {n} scanned pages.',
+    'Nothing failing and nothing left to answer. Every question has been through a human. That is the whole of it.' => 'Nothing failing and nothing left to answer. Every question has been through a human. That is the whole of it.',
+    'Review them' => 'Review them',
+    '{n} questions across {p} pages are still waiting on a person. They do not count against the score either way until you answer them, so this number is not the whole picture yet.' => '{n} questions across {p} pages are still waiting on a person. They do not count against the score either way until you answer them, so this number is not the whole picture yet.',
 ];

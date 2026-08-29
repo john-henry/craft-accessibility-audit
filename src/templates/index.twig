@@ -196,6 +196,22 @@
 
 </div>
 
+{% set allClear = openTotal == 0 and (pendingPotential ?? 0) == 0 and summary.score is defined and summary.score >= 100 %}
+
+{% if (pendingPotential ?? 0) > 0 %}
+    <p class="light accessibility-audit-en-note">
+        {{ '{n} questions across {p} pages are still waiting on a person. They do not count against the score either way until you answer them, so this number is not the whole picture yet.'|t('accessibility-audit', { n: pendingPotential, p: potentialPages }) }}
+        <a href="{{ cpUrl('accessibility-audit/potential', { site: siteHandle }) }}">{{ 'Review them'|t('accessibility-audit') }}</a>
+    </p>
+{% elseif allClear %}
+    <p class="accessibility-audit-allclear">
+        <svg class="accessibility-audit-allclear__tick" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+            <path d="M3 13 L9 19 L21 5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        {{ 'Nothing failing and nothing left to answer. Every question has been through a human. That is the whole of it.'|t('accessibility-audit') }}
+    </p>
+{% endif %}
+
 {% if en301549 ?? false %}
     <p class="light accessibility-audit-en-note">
         {%- if targetRank >= 2 -%}
