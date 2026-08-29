@@ -140,7 +140,11 @@ class DashboardController extends Controller
         $page = max(1, (int) ($this->request->getQueryParam('page') ?? 1));
         $perPage = self::TABLE_PER_PAGE;
 
-        $result = $plugin->audit->getScannedElements($siteId, $page, $perPage);
+        // The tab is named for pages with issues, so it lists those. The full
+        // count is kept separately: a clean site and a site nobody has scanned
+        // both produce an empty list, and they need different words.
+        $result = $plugin->audit->getScannedElements($siteId, $page, $perPage, withIssuesOnly: true);
+        $scannedCount = $plugin->audit->getScannedElements($siteId, 1, 1)['total'];
         // The Issues tab is the full list, so no rule cap: a silently
         // truncated "full list" would contradict the dashboard.
         $byRule = $plugin->audit->getIssuesByImpact($siteId, PHP_INT_MAX);
@@ -157,6 +161,7 @@ class DashboardController extends Controller
 
         return $this->renderTemplate('accessibility-audit/issues', [
             'result' => $result,
+            'scannedCount' => $scannedCount,
             'byRule' => $byRule,
             'resolvedByRule' => $resolvedByRule,
             'resolvedTrend' => $resolvedTrend,

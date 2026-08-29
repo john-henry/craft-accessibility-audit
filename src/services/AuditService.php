@@ -2043,7 +2043,7 @@ class AuditService extends Component
      *
      * @throws \yii\base\Exception
      */
-    public function getScannedElements(int $siteId, int $page = 1, int $perPage = 50, string $search = '', string $orderBy = 'score', int $orderDir = SORT_ASC): array
+    public function getScannedElements(int $siteId, int $page = 1, int $perPage = 50, string $search = '', string $orderBy = 'score', int $orderDir = SORT_ASC, bool $withIssuesOnly = false): array
     {
         $latestIds = $this->getLatestScanIds($siteId);
         if (empty($latestIds)) {
@@ -2070,6 +2070,17 @@ class AuditService extends Component
         }
         $needsTitleJoin = $search !== '' || $orderBy === 'title';
 
+        // A listing that says "pages with issues" has to mean it. Matched to
+        // what the row's own count shows, so a page never appears with a dash
+        // where its issue counts should be.
+        $applyIssueFilter = static function(Query $query) use ($withIssuesOnly): void {
+            if ($withIssuesOnly) {
+                $query->andWhere(new Expression(
+                    '([[s.errorCount]] + [[s.warningCount]] + [[s.noticeCount]]) > 0',
+                ));
+            }
+        };
+
         // The page title lives in Craft's elements_sites table, not the scans
         // table, so it's joined only when it's searched or sorted on. Applied to
         // both queries so pagination totals stay correct. The join is a left
@@ -2093,6 +2104,7 @@ class AuditService extends Component
             ->from(['s' => '{{%accessibilityaudit_scans}}'])
             ->where(['s.id' => $latestIds]);
         $applyTitle($totalQuery);
+        $applyIssueFilter($totalQuery);
         $total = (int)$totalQuery->scalar();
 
         $scansQuery = (new Query())
@@ -2103,6 +2115,7 @@ class AuditService extends Component
             ->offset(($page - 1) * $perPage)
             ->limit($perPage);
         $applyTitle($scansQuery);
+        $applyIssueFilter($scansQuery);
         $scans = $scansQuery->all();
 
         // Build typeMap from already-loaded scan data to avoid an extra query

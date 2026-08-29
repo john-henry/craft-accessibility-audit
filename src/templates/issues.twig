@@ -44,9 +44,11 @@
 
     {% if byRule|length == 0 %}
         <div class="zilch">
-        
-            <p>{{ 'Run a scan to check every page against WCAG and list what needs fixing here.'|t('accessibility-audit') }}</p>
-           
+            {% if scannedCount %}
+                <p>{{ 'Nothing failing across {n} scanned pages.'|t('accessibility-audit', { n: scannedCount }) }}</p>
+            {% else %}
+                <p>{{ 'Run a scan to check every page against WCAG and list what needs fixing here.'|t('accessibility-audit') }}</p>
+            {% endif %}
         </div>
     {% else %}
   
