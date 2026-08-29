@@ -3501,8 +3501,6 @@ class AuditService extends Component
             'shortTextContent' => 'there is too little text to sample',
             'nonBmp' => 'its characters cannot be measured',
             'outsideViewport' => 'it was outside the part of the page the browser had laid out',
-            'notFullyInView' => 'part of it sits outside the area the page was measured in, so there '
-                . 'was nothing under it to sample',
             default => 'the background could not be worked out',
         };
 

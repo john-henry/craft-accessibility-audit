@@ -555,15 +555,19 @@ class HeadlessScanner extends Component
                     };
                 };
 
-                // Only the undecided results are relabelled, never a
-                // violation: the worst this can do is reword a question.
-                var relabel = function(v) {
-                    v.nodes.forEach(function(n) {
-                        var d = (n.any && n.any[0] && n.any[0].data) || null;
-                        if (d && !window.__aaFullyInView(n.target)) {
-                            d.messageKey = 'notFullyInView';
-                        }
+                // Undecided results about text the pass never had under a
+                // sample point are dropped, not asked. "The scanner could not
+                // see this" is not a question a person can settle by looking
+                // at the page, and which elements it lands on shifts with
+                // layout timing, so the same page yields a different one each
+                // run: an answer never ends the queue, a new question just
+                // takes its place. Violations are untouched, so nothing
+                // measured and failing is ever hidden.
+                var measured = function(v) {
+                    v.nodes = v.nodes.filter(function(n) {
+                        return window.__aaFullyInView(n.target);
                     });
+
                     return v;
                 };
 
@@ -571,7 +575,9 @@ class HeadlessScanner extends Component
                     violations: r.violations.map(slim),
                     incomplete: (r.incomplete || []).filter(function(v) {
                         return v.id === 'color-contrast';
-                    }).map(slim).map(relabel),
+                    }).map(slim).map(measured).filter(function(v) {
+                        return v.nodes.length > 0;
+                    }),
                 });
             })
             JS;
