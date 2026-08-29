@@ -47,7 +47,7 @@ it('does not animate for anyone who asked for less motion', function() {
     // ignoring the setting.
     $css = (string) file_get_contents(dirname(__DIR__, 2) . '/src/resources/css/accessibility-audit.css');
 
-    $start = strpos($css, '.accessibility-audit-note__tick path');
+    $start = strpos($css, '.accessibility-audit-panelnote__tick path');
 
     expect($start)->not->toBeFalse();
 
@@ -62,7 +62,7 @@ it('hides the tick from a screen reader', function() {
     // It repeats what the sentence beside it already says.
     $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/index.twig');
 
-    expect($twig)->toContain('class="accessibility-audit-note__tick" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"');
+    expect($twig)->toContain('class="accessibility-audit-panelnote__tick" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"');
 });
 
 it('renders the overview without a Twig error', function() {
@@ -79,4 +79,29 @@ it('renders the overview without a Twig error', function() {
     } finally {
         $view->setTemplateMode($mode);
     }
+});
+
+// ---------------------------------------------------------------------------
+// Class names are shared ground.
+//
+// "accessibility-audit-note" was already taken, by the muted "/100" beside the
+// score on the page report. A second rule under the same name won the cascade
+// and put a border and padding round it.
+// ---------------------------------------------------------------------------
+
+it('does not reuse a class name another screen already had', function() {
+    $css = (string) file_get_contents(dirname(__DIR__, 2) . '/src/resources/css/accessibility-audit.css');
+
+    // One rule per name. Two blocks under one selector is the shape of the bug.
+    expect(substr_count($css, "\n.accessibility-audit-note {"))->toBe(1)
+        ->and(substr_count($css, "\n.accessibility-audit-panelnote {"))->toBe(1);
+});
+
+it('leaves the page report score alone', function() {
+    $report = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/page-report.twig');
+    $overview = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/index.twig');
+
+    expect($report)->toContain('class="light accessibility-audit-note">/100<')
+        ->and($overview)->not->toContain('"accessibility-audit-note ')
+        ->and($overview)->toContain('accessibility-audit-panelnote');
 });

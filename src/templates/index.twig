@@ -209,21 +209,21 @@
 {% set allClear = openTotal == 0 and (pendingPotential ?? 0) == 0 and summary.score is defined and summary.score >= 100 %}
 
 {% if (pendingPotential ?? 0) > 0 %}
-    <div class="accessibility-audit-note accessibility-audit-note--waiting">
-        <p class="accessibility-audit-note__lead">
+    <div class="accessibility-audit-panelnote accessibility-audit-panelnote--waiting">
+        <p class="accessibility-audit-panelnote__lead">
             {{ '{n} questions across {p} pages are still waiting on a person.'|t('accessibility-audit', { n: pendingPotential, p: potentialPages }) }}
         </p>
-        <p class="accessibility-audit-note__body">
+        <p class="accessibility-audit-panelnote__body">
             {{ 'They do not count against the score either way until you answer them, so the number above is not the whole picture yet.'|t('accessibility-audit') }}
             <a href="{{ cpUrl('accessibility-audit/potential', { site: siteHandle }) }}">{{ 'Review them'|t('accessibility-audit') }}</a>
         </p>
     </div>
 {% elseif allClear %}
-    <div class="accessibility-audit-note accessibility-audit-note--good">
-        <svg class="accessibility-audit-note__tick" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+    <div class="accessibility-audit-panelnote accessibility-audit-panelnote--good">
+        <svg class="accessibility-audit-panelnote__tick" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
             <path d="M3 13 L9 19 L21 5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
-        <p class="accessibility-audit-note__lead">
+        <p class="accessibility-audit-panelnote__lead">
             {{ 'Nothing failing and nothing left to answer. Every question has been through a human. That is the whole of it.'|t('accessibility-audit') }}
         </p>
     </div>
@@ -309,11 +309,11 @@
 
     {% if assetStats %}
         {% if assetStats.withIssues == 0 %}
-            <div class="accessibility-audit-note accessibility-audit-note--good">
-                <svg class="accessibility-audit-note__tick" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+            <div class="accessibility-audit-panelnote accessibility-audit-panelnote--good">
+                <svg class="accessibility-audit-panelnote__tick" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
                     <path d="M3 13 L9 19 L21 5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-                <p class="accessibility-audit-note__lead">
+                <p class="accessibility-audit-panelnote__lead">
                     {{ 'All {n} images'|t('accessibility-audit', {n: assetStats.total}) }} {{ 'in the library have alt text.'|t('accessibility-audit') }}
                 </p>
             </div>
