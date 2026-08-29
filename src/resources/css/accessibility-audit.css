@@ -3329,7 +3329,7 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
    for the last stretch, where a description is about to get cut short. */
 .accessibility-audit-alt-count {
   display: block;
-  margin-top: 3px;
+  margin-top: 6px;
   font-size: 11px;
   line-height: 1.4;
 }

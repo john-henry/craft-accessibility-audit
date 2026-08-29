@@ -300,7 +300,7 @@
   // number the report will quote back. Not a cap: Craft's own alt field sets
   // no limit, and truncating an editor mid-description to a number the rule
   // does not even use would be its own bug.
-  const ALT_GUIDELINE = {{ constant('johnhenry\accessibilityaudit\services\PotentialScanner::MAX_ALT_LENGTH') }};
+  const ALT_GUIDELINE = {{ altGuideline|json_encode|raw }};
   const checkIcon   = {{ iconSvg('check')|json_encode|raw }};
   const activeView = {{ activeFilter|json_encode|raw }};
   const emptyAllHaveAlt   = {{ 'All images now have alt text, nice work!'|t('accessibility-audit')|json_encode|raw }};

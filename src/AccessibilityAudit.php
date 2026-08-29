@@ -877,6 +877,9 @@ class AccessibilityAudit extends BasePlugin
                         // so it follows the Alt Text Field setting instead of
                         // always targeting Craft's native "alt" field.
                         'altField' => $settings->altTextField ?: 'alt',
+                        // The same number the long-alt check reports on, so the
+                        // count beside the field agrees with the finding.
+                        'altGuideline' => PotentialScanner::MAX_ALT_LENGTH,
                         'pageIssuesUrl' => UrlHelper::cpUrl('accessibility-audit/page-issues'),
                         'pageRuleOccurrencesUrl' => UrlHelper::cpUrl('accessibility-audit/page-rule-occurrences'),
                         'storeContrastUrl' => UrlHelper::actionUrl('accessibility-audit/audit/store-contrast-results'),

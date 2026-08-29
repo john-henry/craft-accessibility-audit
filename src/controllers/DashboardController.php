@@ -28,6 +28,7 @@ use johnhenry\accessibilityaudit\helpers\OccurrenceCluster;
 use johnhenry\accessibilityaudit\helpers\ScanTarget;
 use johnhenry\accessibilityaudit\models\StatementExclusionModel;
 use johnhenry\accessibilityaudit\services\AuditService;
+use johnhenry\accessibilityaudit\services\PotentialScanner;
 use johnhenry\accessibilityaudit\services\RuleRegistry;
 use johnhenry\accessibilityaudit\services\StatementProfiles;
 use yii\base\InvalidConfigException;
@@ -736,6 +737,9 @@ class DashboardController extends Controller
             'totalPages' => $paged['totalPages'],
             'pageInfo' => $this->_pageInfo('accessibility-audit/assets', $paged['page'], $paged['perPage'], $paged['total'], $paged['totalPages'], $extraParams),
             'hasApiKey' => !empty(trim(App::parseEnv($settings->anthropicApiKey ?? ''))),
+            // The same number the long-alt check reports on, so the count
+            // beside the field agrees with the finding.
+            'altGuideline' => PotentialScanner::MAX_ALT_LENGTH,
             'volumes' => $volumes,
             'currentVolume' => $volume,
             'currentSearch' => $search,

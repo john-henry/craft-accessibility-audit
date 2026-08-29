@@ -752,14 +752,38 @@ window.AccessibilityAuditInjectAltBtn = (function () {
       return;
     }
 
+    // Counted here as well as on the Assets page, because this is the screen
+    // most alt text actually gets written on. Counts up against the guideline
+    // the long-alt check reports on: there is no cap to run out of, and the
+    // useful number is how far past it the description sits.
+    const guideline = Number(cfg.altGuideline) || 0;
+    const count = document.createElement('span');
+    count.className = 'light accessibility-audit-alt-count';
+    count.setAttribute('role', 'status');
+    count.setAttribute('aria-live', 'polite');
+
+    const renderCount = () => {
+      if (!guideline) return;
+      const n = [...textarea.value].length;
+      const over = n - guideline;
+
+      count.textContent = over > 0
+        ? Craft.t('accessibility-audit', '{n} characters, {over} over', { n: n, over: over })
+        : Craft.t('accessibility-audit', '{n} characters', { n: n });
+      count.classList.toggle('accessibility-audit-alt-count--low', over > 0);
+    };
+
     const btn = document.createElement('button');
     btn.type      = 'button';
     btn.className = 'btn small accessibility-audit-gen-alt-btn';
     btn.textContent = Craft.t('accessibility-audit', 'Generate Alt Text');
     btn.style.cssText = 'margin-top:6px;display:block;';
 
-    textarea.closest('.input') && textarea.closest('.input').after(btn)
-      || textarea.parentElement.appendChild(btn);
+    const anchor = textarea.closest('.input') || textarea.parentElement;
+    anchor.after ? anchor.after(count, btn) : anchor.appendChild(count);
+
+    textarea.addEventListener('input', renderCount);
+    renderCount();
 
     btn.addEventListener('click', async () => {
       btn.textContent = Craft.t('accessibility-audit', 'Generating…');
@@ -775,6 +799,7 @@ window.AccessibilityAuditInjectAltBtn = (function () {
 
         if (data.success) {
           textarea.value = data.alt;
+          renderCount();
           textarea.dispatchEvent(new Event('input', { bubbles: true }));
           textarea.dispatchEvent(new Event('change', { bubbles: true }));
           btn.textContent = Craft.t('accessibility-audit', 'Regenerate');

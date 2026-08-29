@@ -4,6 +4,8 @@
  * @copyright Copyright (c) John Henry Donovan
  */
 
+use craft\web\View;
+use johnhenry\accessibilityaudit\controllers\DashboardController;
 use johnhenry\accessibilityaudit\helpers\AltTextPrompt;
 use johnhenry\accessibilityaudit\models\IssueModel;
 use johnhenry\accessibilityaudit\services\PotentialScanner;
@@ -61,8 +63,48 @@ it('counts the field against the number the report quotes', function() {
     // target the finding will not agree with.
     $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/assets.twig');
 
-    expect($twig)->toContain('PotentialScanner::MAX_ALT_LENGTH')
+    expect($twig)->toContain('{{ altGuideline|json_encode|raw }}')
         ->and(PotentialScanner::MAX_ALT_LENGTH)->toBe(150);
+});
+
+it('hands the guideline to the template that draws the field', function() {
+    // The value has to arrive as a variable. Reaching for the constant from
+    // inside Twig looks equivalent and is not: a single-quoted Twig string
+    // eats the namespace separators and the page dies at render.
+    $source = (string) file_get_contents(
+        (new ReflectionClass(DashboardController::class))->getFileName(),
+    );
+
+    expect($source)->toContain("'altGuideline' => PotentialScanner::MAX_ALT_LENGTH,");
+});
+
+it('renders the assets page without a Twig error', function() {
+    // The check that would have caught it. Reading the file for a string says
+    // nothing about whether Twig can run what it finds there.
+    $view = Craft::$app->getView();
+    $mode = $view->getTemplateMode();
+
+    try {
+        $view->setTemplateMode(View::TEMPLATE_MODE_CP);
+
+        expect($view->renderPageTemplate('accessibility-audit/assets', [
+            'assetIssues' => [],
+            'stats' => ['missing' => 0, 'filename' => 0, 'short' => 0, 'pdf' => 0, 'decorative' => 0],
+            'storedStats' => [],
+            'canRunScans' => true,
+            'page' => 1,
+            'perPage' => 50,
+            'total' => 0,
+            'totalPages' => 1,
+            'pageInfo' => '',
+            'hasApiKey' => false,
+            'volumes' => [],
+            'currentVolume' => null,
+            'altGuideline' => PotentialScanner::MAX_ALT_LENGTH,
+        ]))->toContain('const ALT_GUIDELINE = 150;');
+    } finally {
+        $view->setTemplateMode($mode);
+    }
 });
 
 it('keeps the generation ceiling separate from the guideline', function() {
