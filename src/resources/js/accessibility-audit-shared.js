@@ -542,16 +542,43 @@
   function isPaintedText(el, win) {
     var style = win.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return false;
-    if (!el.offsetWidth && !el.offsetHeight) return false;
+    if (isVisuallyHidden(el, style)) return false;
 
     var cur = el;
     while (cur && cur.nodeType === 1) {
       if (cur.getAttribute('aria-hidden') === 'true') return false;
-      if (parseFloat(win.getComputedStyle(cur).opacity) === 0) return false;
+      var curStyle = win.getComputedStyle(cur);
+      if (parseFloat(curStyle.opacity) === 0) return false;
+      if (cur !== el && isVisuallyHidden(cur, curStyle)) return false;
       cur = cur.parentElement;
     }
 
     return true;
+  }
+
+  /* Text put where a screen reader will read it and an eye will never see it:
+     sr-only, visually-hidden, whatever the class is called. It is announced,
+     so it belongs in the accessibility tree, but there is no contrast question
+     because nothing is on screen to have contrast with.
+
+     Three shapes cover every version of the idiom in the wild. A box of a
+     pixel or less, which no glyph fits in; a clip-path collapsed to nothing,
+     which is how Tailwind does it; and the older clip rect, which is how
+     nearly everything before it did. Checked on ancestors too, since the class
+     usually sits on a wrapper rather than on the element holding the text. */
+  function isVisuallyHidden(el, style) {
+    if (el.offsetWidth <= 1 && el.offsetHeight <= 1) return true;
+
+    var clipPath = style.clipPath || '';
+    if (/^inset\(\s*(?:50|[6-9]\d|100)(?:\.\d+)?%/.test(clipPath)) return true;
+    if (/^circle\(\s*0(?:px|%)?/.test(clipPath)) return true;
+
+    // rect(0px, 0px, 0px, 0px) and rect(1px, 1px, 1px, 1px), in the comma and
+    // space-separated forms browsers report.
+    var clip = (style.clip || '').replace(/,/g, ' ');
+    if (/^rect\(\s*[01]px\s+[01]px\s+[01]px\s+[01]px\s*\)$/.test(clip)) return true;
+
+    return false;
   }
 
   /* ── Small shared utilities ──────────────────────────────────────────── */
@@ -570,6 +597,8 @@
   }
 
   window.AccessibilityAuditShared = {
+    isPaintedText: isPaintedText,
+    isVisuallyHidden: isVisuallyHidden,
     parseRgb: parseRgb,
     rgbToHex: rgbToHex,
     lum: lum,
