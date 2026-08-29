@@ -127,6 +127,16 @@ The scan fetcher sets `http_errors => false` and checks the status itself. Anyth
 
 `scanElement()` returns `score: 0` and an `error` key when the page could not be read. It previously returned `score: 100`, which read as a clean page rather than as one nobody looked at. Nothing was stored in either case, so no history changes, but anything reading `score` off that return should check `error` first.
 
+### Occurrence identity no longer includes element ids
+
+`VerdictService::stableContextHash()` is what a ruling is keyed on now. It hashes the context with every id, and every attribute referencing one (`for`, `aria-describedby`, `headers`, and the rest), taken out, and with the id-built CSS path dropped from a contrast finding's JSON. Identity comes from the tag, its classes, the field `name`, and the text.
+
+This is for pages whose ids change per render. Formie mints a fresh token into every id each time a form is drawn, so the same field arrived as a new occurrence on every scan and rulings against it were orphaned.
+
+`contextHash()` is unchanged and still public. Lookups try the stable hash first, then the raw hash, then the older short-snippet form, so nothing already dismissed comes back. If you compare hashes yourself, use `stableContextHash()`.
+
+No attempt is made to detect a generated id, and none should be added: "kqjyvj" and "submit" are both six lowercase letters, and a false positive collapses two separate occurrences into one, so a ruling on either would silently answer both.
+
 ### New helpers
 
 Public and reusable, if any of it saves you writing your own:

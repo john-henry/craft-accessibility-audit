@@ -47,7 +47,7 @@ it('does not animate for anyone who asked for less motion', function() {
     // ignoring the setting.
     $css = (string) file_get_contents(dirname(__DIR__, 2) . '/src/resources/css/accessibility-audit.css');
 
-    $start = strpos($css, '.accessibility-audit-allclear__tick path');
+    $start = strpos($css, '.accessibility-audit-note__tick path');
 
     expect($start)->not->toBeFalse();
 
@@ -62,7 +62,7 @@ it('hides the tick from a screen reader', function() {
     // It repeats what the sentence beside it already says.
     $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/index.twig');
 
-    expect($twig)->toContain('class="accessibility-audit-allclear__tick" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"');
+    expect($twig)->toContain('class="accessibility-audit-note__tick" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"');
 });
 
 it('renders the overview without a Twig error', function() {

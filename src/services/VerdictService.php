@@ -98,6 +98,43 @@ class VerdictService extends Component
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
      */
+    /**
+     * @var string[] Attributes holding an element id, or a reference to one.
+     *
+     *      Some form builders mint a fresh token into every id on the page at
+     *      each render, Formie among them: the same textarea comes back as
+     *      "fui-support-kqjyvj-fields-details", then "-jbuoir-", then
+     *      "-jhaqor-". Keyed on anything carrying that, an occurrence is a new
+     *      occurrence every scan, and every ruling made on it is orphaned.
+     */
+    private const IDREF_ATTRIBUTES = [
+        'id', 'for', 'form', 'list', 'headers', 'aria-labelledby', 'aria-describedby',
+        'aria-controls', 'aria-owns', 'aria-activedescendant', 'aria-flowto',
+        'aria-details', 'aria-errormessage',
+    ];
+
+    /**
+     * The hash an occurrence is keyed on, ignoring anything that changes
+     * between two renders of the same page.
+     *
+     * No attempt is made to tell a generated id from a hand-written one. There
+     * is no reliable test for it: "kqjyvj" and "submit" are both six lowercase
+     * letters, and guessing wrong the other way is worse than the problem,
+     * because two genuinely separate occurrences would collapse into one and a
+     * ruling on either would silently answer both. So no id is trusted at all,
+     * and identity comes from what is left: the tag, its classes, the field
+     * name, and the text.
+     *
+     * @param string|null $context The occurrence's context snippet.
+     * @return string
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function stableContextHash(?string $context): string
+    {
+        return sha1($this->_normalisedContext($context));
+    }
+
     public function contextHash(?string $context): string
     {
         // Line endings are normalised before hashing: the browser's form
@@ -141,7 +178,7 @@ class VerdictService extends Component
         bool $deferScoring = false,
     ): array {
         $db = Craft::$app->getDb();
-        $hash = $this->contextHash($context);
+        $hash = $this->stableContextHash($context);
         $now = Db::prepareDateForDb(new DateTime());
         $elementId = $elementId !== null && $elementId > 0 ? $elementId : null;
 
@@ -235,7 +272,13 @@ class VerdictService extends Component
         $ids = [];
         $scanIds = [];
         foreach ($rows as $row) {
-            if ($this->contextHash($row['context']) === $hash) {
+            // Compared on the stable hash, and on the two older forms as
+            // well: a ruling made before this changed is still that ruling.
+            if (
+                $this->stableContextHash($row['context']) === $hash
+                || $this->contextHash($row['context']) === $hash
+                || $this->_legacyContextHash($row['context']) === $hash
+            ) {
                 $ids[] = (int)$row['id'];
                 $scanIds[(int)$row['scanId']] = true;
             }
@@ -347,16 +390,15 @@ class VerdictService extends Component
      */
     public function lookupMeta(array $map, string $targetHash, string $ruleId, ?string $context): ?array
     {
-        $meta = $map[$targetHash . '|' . $ruleId . '|' . $this->contextHash($context)] ?? null;
-        if ($meta !== null) {
-            return $meta;
+        foreach ($this->_candidateHashes($context) as $hash) {
+            $meta = $map[$targetHash . '|' . $ruleId . '|' . $hash] ?? null;
+
+            if ($meta !== null) {
+                return $meta;
+            }
         }
 
-        $legacy = $this->_legacyContextHash($context);
-
-        return $legacy !== null
-            ? ($map[$targetHash . '|' . $ruleId . '|' . $legacy] ?? null)
-            : null;
+        return null;
     }
 
     /**
@@ -372,16 +414,15 @@ class VerdictService extends Component
      */
     public function lookup(array $map, string $ruleId, ?string $context): ?string
     {
-        $verdict = $map[$ruleId . '|' . $this->contextHash($context)] ?? null;
-        if ($verdict !== null) {
-            return $verdict;
+        foreach ($this->_candidateHashes($context) as $hash) {
+            $verdict = $map[$ruleId . '|' . $hash] ?? null;
+
+            if ($verdict !== null) {
+                return $verdict;
+            }
         }
 
-        $legacy = $this->_legacyContextHash($context);
-
-        return $legacy !== null
-            ? ($map[$ruleId . '|' . $legacy] ?? null)
-            : null;
+        return null;
     }
 
     // Private Methods
@@ -403,6 +444,92 @@ class VerdictService extends Component
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
      */
+    /**
+     * The context with every id, and every reference to one, taken out.
+     *
+     * @param string|null $context The occurrence's context snippet.
+     * @return string
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    /**
+     * Every hash a ruling on this occurrence could have been stored under,
+     * newest form first.
+     *
+     * Rulings are written under the stable hash now. Anything decided before
+     * that was stored under the raw context, and before that under a shorter
+     * snippet again, so both are still tried on the way past. A reader who has
+     * already answered a question should never be asked it twice because the
+     * key changed underneath them.
+     *
+     * @param string|null $context The occurrence's context snippet.
+     * @return string[]
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _candidateHashes(?string $context): array
+    {
+        $hashes = [$this->stableContextHash($context), $this->contextHash($context)];
+        $legacy = $this->_legacyContextHash($context);
+
+        if ($legacy !== null) {
+            $hashes[] = $legacy;
+        }
+
+        return array_values(array_unique($hashes));
+    }
+
+    private function _normalisedContext(?string $context): string
+    {
+        $context = trim(str_replace(["\r\n", "\r"], "\n", (string)$context));
+
+        if ($context === '') {
+            return '';
+        }
+
+        // Contrast findings store JSON carrying a CSS path built from ids,
+        // alongside the markup. The path is for highlighting, never for
+        // identity, so it comes out whole. Keys are sorted so two encodings of
+        // the same data cannot hash differently.
+        $decoded = json_decode($context, true);
+
+        if (is_array($decoded) && array_key_exists('html', $decoded)) {
+            unset($decoded['selector']);
+            $decoded['html'] = $this->_stripIdReferences((string)$decoded['html']);
+            ksort($decoded);
+
+            return (string)json_encode($decoded);
+        }
+
+        return $this->_stripIdReferences($context);
+    }
+
+    /**
+     * Strips id-bearing attributes from a markup snippet.
+     *
+     * Matched on whitespace before the attribute name, so "data-id" and the
+     * like are left alone: only the attribute itself goes, never a fragment of
+     * a longer name.
+     *
+     * @param string $html The snippet.
+     * @return string
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _stripIdReferences(string $html): string
+    {
+        $names = implode('|', array_map(
+            static fn(string $name): string => preg_quote($name, '/'),
+            self::IDREF_ATTRIBUTES,
+        ));
+
+        return (string)preg_replace(
+            '/\s+(?:' . $names . ')\s*=\s*(["\'])(?:(?!\g{1}).)*\g{1}/i',
+            '',
+            $html,
+        );
+    }
+
     private function _legacyContextHash(?string $context): ?string
     {
         // Same line-ending normalisation as contextHash(), before measuring:
