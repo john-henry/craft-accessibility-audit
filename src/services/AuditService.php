@@ -526,11 +526,19 @@ class AuditService extends Component
             return ['scanId' => 0, 'score' => 0, 'url' => $url, 'limitReached' => true];
         }
 
-        $html = $this->fetchHtml($url);
+        $page = $this->_fetchPage($url);
 
-        if ($html === null) {
-            return ['scanId' => 0, 'score' => 0, 'url' => $url, 'error' => 'Could not fetch the page.'];
+        if ($page['html'] === null) {
+            return ['scanId' => 0, 'score' => 0, 'url' => $url, 'error' => $page['error']];
         }
+
+        // A redirect's content belongs to the address it ended on, not the one
+        // that was asked for. Filed under the requested URL, /old and /new are
+        // two pages in the listing carrying the same findings, both counting
+        // against the edition's page limit, and answering a question on one
+        // leaves its twin asking.
+        $url = $page['url'];
+        $html = $page['html'];
 
         $plugin = AccessibilityAudit::getInstance();
         $definiteIssues = $plugin->content->scan($html, $this->_ignoredRuleIds());
@@ -660,7 +668,7 @@ class AuditService extends Component
      * (when available). The Inspect page passes false: its preview runs the
      * browser checks itself, and two browser writers racing on one scan is
      * exactly what makes results flip-flop.
-     * @return array{scanId: int, score: int, issues: IssueModel[], limitReached?: bool}
+     * @return array{scanId: int, score: int, issues: IssueModel[], limitReached?: bool, error?: string}
      * @throws Throwable
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
@@ -681,12 +689,15 @@ class AuditService extends Component
             return ['scanId' => 0, 'score' => 0, 'issues' => [], 'limitReached' => true];
         }
 
-        $html = $this->fetchHtml($url);
-        if ($html === null) {
-            return ['scanId' => 0, 'score' => 100, 'issues' => []];
+        $page = $this->_fetchPage($url);
+
+        // Nothing was read, so there is nothing to score. A number here would
+        // read as a verdict on the page rather than as the absence of one.
+        if ($page['html'] === null) {
+            return ['scanId' => 0, 'score' => 0, 'issues' => [], 'error' => $page['error']];
         }
 
-        $result = $this->processHtml($html, $element->id, get_class($element), $element->siteId);
+        $result = $this->processHtml($page['html'], $element->id, get_class($element), $element->siteId);
 
         // When server-side Chrome is configured (Pro), queue a full browser
         // pass for contrast, focus, and target-size findings. Queued, not
@@ -3058,20 +3069,36 @@ class AuditService extends Component
     }
 
     /**
-     * Fetches the rendered HTML for a scan target.
+     * Fetches the rendered HTML for a scan target, with the address it came
+     * from and the reason it did not, when it did not.
      *
      * URLs reach this method from element scans ($element->getUrl()), i.e. the
      * site's own known entries, so they are not attacker-controlled the way the
      * readability URL fetcher is. TLS verification is only disabled in dev /
      * ephemeral environments (DDEV self-signed certs); production verifies certs.
+     *
+     * @param string $url The address to fetch.
+     * @return array{html: string|null, url: string, error: string|null} The
+     *         body, the address it actually came from after any redirects, and
+     *         a reason when there is no body.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
      */
-    private function fetchHtml(string $url): ?string
+    private function _fetchPage(string $url): array
     {
+        $miss = static fn(string $reason): array => ['html' => null, 'url' => $url, 'error' => $reason];
+
         try {
             $clientConfig = [
                 'timeout' => 15,
                 'connect_timeout' => 5,
                 'verify' => self::_verifyTls(),
+
+                // Read the status rather than catching an exception for it,
+                // so a page that is missing is told apart from a network that
+                // is down. Both are throwables otherwise, and both would be
+                // reported with the same sentence.
+                'http_errors' => false,
             ];
 
             // The scanner always identifies itself so hosts can allow-list
@@ -3084,13 +3111,118 @@ class AuditService extends Component
             // Fetched through the guard, which connects only to the addresses
             // it validated rather than letting the client resolve the name a
             // second time.
-            $response = UrlSafety::fetch($url, $clientConfig);
+            $landed = $url;
+            $response = UrlSafety::fetch($url, $clientConfig, $landed);
+            $status = $response->getStatusCode();
 
-            return (string) $response->getBody();
+            // A redirect that leaves the site leaves the remit with it. What
+            // is at the other end is somebody else's page: auditing it says
+            // nothing about this site, and filing the result would put a
+            // foreign address in the listing and count it against the
+            // edition's page limit.
+            if (!$this->_isSameSite($url, $landed)) {
+                $host = (string)(parse_url($landed, PHP_URL_HOST) ?: $landed);
+
+                Craft::info(
+                    "Accessibility scan skipped {$url}: it redirects to {$host}, which is off the site.",
+                    'accessibility-audit',
+                );
+
+                return [
+                    'html' => null,
+                    'url' => $url,
+                    'error' => Craft::t('accessibility-audit', 'This address redirects to {host}, which is not part of this site.', [
+                        'host' => $host,
+                    ]),
+                ];
+            }
+
+            // Nothing below 200 or at 300 and up reaches here as a page worth
+            // auditing: redirects were already followed, so what is left is a
+            // page that is missing, refused, or broken. Auditing the body of
+            // one means reporting the error page's markup against an address
+            // that has no page, and counting it against the edition's limit.
+            if ($status < 200 || $status > 299) {
+                Craft::info(
+                    "Accessibility scan skipped {$url}: the page returned {$status}.",
+                    'accessibility-audit',
+                );
+
+                return [
+                    'html' => null,
+                    'url' => $landed,
+                    'error' => Craft::t('accessibility-audit', 'The page returned {status}.', [
+                        'status' => $status,
+                    ]),
+                ];
+            }
+
+            return ['html' => (string) $response->getBody(), 'url' => $landed, 'error' => null];
         } catch (Throwable $e) {
             Craft::warning("Accessibility scan failed to fetch $url: " . $e->getMessage(), __METHOD__);
-            return null;
+
+            return $miss(Craft::t('accessibility-audit', 'The page could not be reached.'));
         }
+    }
+
+    /**
+     * Whether a redirect stayed on ground this install is responsible for.
+     *
+     * Matched against hosts already known to be this install's: the address
+     * the scan asked for, and every site's own base URL. Anything at or below
+     * one of those is ours, so a hop to a subdomain is allowed.
+     *
+     * Anchoring on a known host is what makes this safe without a public
+     * suffix list. Deriving a registrable domain from the string instead means
+     * deciding whether "co.uk" is a domain or a suffix, and getting that wrong
+     * hands the whole of a public suffix to the first site hosted under it.
+     * Nothing is derived here: the question is only ever whether the landed
+     * host sits under a host already trusted.
+     *
+     * The one hop upwards allowed is dropping a leading "www.", which is the
+     * common pair and cannot be widened into a suffix. Going up generally
+     * would let a site on foo.github.io claim github.io and everything on it.
+     *
+     * @param string $requested The address the scan asked for.
+     * @param string $landed The address the last hop ended on.
+     * @return bool
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _isSameSite(string $requested, string $landed): bool
+    {
+        $hostOf = static function(string $url): string {
+            $host = parse_url($url, PHP_URL_HOST);
+
+            return is_string($host) ? strtolower(trim($host, '[]')) : '';
+        };
+
+        $to = $hostOf($landed);
+
+        // Nothing to compare, and nothing to go on: a URL with no host never
+        // reached this method from absoluteUrl(), so treat it as ours rather
+        // than inventing a reason to refuse.
+        if ($to === '') {
+            return true;
+        }
+
+        $trusted = [$hostOf($requested)];
+
+        foreach (Craft::$app->getSites()->getAllSites() as $site) {
+            $base = $site->getBaseUrl();
+
+            if ($base !== null) {
+                $trusted[] = $hostOf($base);
+            }
+        }
+
+        foreach (array_unique(array_filter($trusted)) as $host) {
+            if ($to === $host || str_ends_with($to, '.' . $host) || $host === 'www.' . $to) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

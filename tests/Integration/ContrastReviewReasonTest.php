@@ -69,8 +69,8 @@ it('still answers when axe sends a key it has never seen', function() {
 });
 
 it('shows the reason next to the occurrence, not only when there is no markup', function() {
-    // The reason used to render on an "elseif" behind the markup snippet, so
-    // a contrast finding, which always carries markup, never showed one.
+    // Behind an "elseif" on the markup snippet, the reason never reaches a
+    // contrast finding at all, because those always carry markup.
     $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/page-report.twig');
 
     expect($twig)->toContain('{% if row.message and row.message != group.question %}')

@@ -14,8 +14,8 @@ use johnhenry\accessibilityaudit\services\AuditService;
 // decoration that clears the text column on a wide screen can sit behind it on
 // a narrow one, so a question can be perfectly real and still be invisible in
 // the preview the reader is looking at. Without the width on the row there is
-// no way to tell that from a bug, and the reader is left hunting for something
-// that is not on the screen.
+// no way to tell that from a bug, and the reader hunts for something that is
+// not on the screen.
 // ---------------------------------------------------------------------------
 
 /** The label built for a set of viewports. */

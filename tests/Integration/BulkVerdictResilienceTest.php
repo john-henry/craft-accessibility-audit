@@ -15,10 +15,9 @@ use markhuot\craftpest\factories\User as UserFactory;
 // ---------------------------------------------------------------------------
 // Dismissing a whole group at once.
 //
-// A group can hold every occurrence on a page, and each ruling used to work
-// the scan's score out again from scratch. Fifty occurrences share one scan,
-// so that was fifty recalculations of the same number, and the reader was
-// waiting for all of them.
+// A group can hold every occurrence on a page, and every occurrence in it
+// shares one scan. Working the score out per ruling means computing the same
+// number once for each, with the reader waiting on all of them.
 //
 // The other half is what happens when something does go wrong part way. These
 // are separate writes, not one transaction, so the rulings already made are

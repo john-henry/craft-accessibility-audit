@@ -104,6 +104,29 @@ foreach (array_unique($needScoring) as $scanId) {
 }
 ```
 
+### UrlSafety::fetch() reports where it landed
+
+The third parameter is new and optional, so existing calls are unaffected. Pass a variable by reference to get the URL the last hop actually ended on:
+
+```php
+$landed = $url;
+$response = UrlSafety::fetch($url, $clientConfig, $landed);
+```
+
+A redirect landing on a host this install does not serve is skipped instead of scanned, with the reason naming the host. Comparison is on the host alone, so http to https, trailing slashes and path moves are unaffected.
+
+A host counts as yours when it is at or below one already known to be yours: the address the scan asked for, or any site's base URL. So `site.com` to `shop.site.com` is allowed, as is a hop to another site in the install. The only hop upwards allowed is dropping a leading `www.`.
+
+No public suffix list is involved, and none is needed: nothing is derived from the host string, the question is only ever whether the landed host sits under a host already trusted. That is why `example.co.uk` to `somebody-else.co.uk` is refused without anyone having to decide whether `co.uk` is a domain or a suffix.
+
+`AuditService::scanUrl()` now files a scan under `$landed` rather than the URL it was asked for. A redirect therefore produces one page in the listing instead of two, and the returned `url` may differ from the one you passed. Existing scans stored under redirecting addresses are left alone; they fall away as those pages are scanned again.
+
+### Missing pages are skipped deliberately
+
+The scan fetcher sets `http_errors => false` and checks the status itself. Anything outside 200-299 is skipped with a reason naming the status, where a 4xx previously threw and was reported with the same message as an unreachable host.
+
+`scanElement()` returns `score: 0` and an `error` key when the page could not be read. It previously returned `score: 100`, which read as a clean page rather than as one nobody looked at. Nothing was stored in either case, so no history changes, but anything reading `score` off that return should check `error` first.
+
 ### New helpers
 
 Public and reusable, if any of it saves you writing your own:

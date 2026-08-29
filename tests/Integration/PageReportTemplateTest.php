@@ -42,8 +42,8 @@ it('compiles the page report template', function() {
 // axe's snippets are cut at 300 characters with nothing to show for it. On
 // utility-class markup that cut nearly always lands inside the class
 // attribute, leaving a fragment like "prose-a:focus-v" that selects nothing.
-// Reading only the ellipsis meant the second shape was matched as though it
-// were whole, and "Show on page" could never find it.
+// Reading only the ellipsis matches the second shape as though it were whole,
+// and "Show on page" then has a selector that finds nothing.
 // ---------------------------------------------------------------------------
 
 it('treats a context that stops short of a closing bracket as capped', function() {
@@ -54,10 +54,9 @@ it('treats a context that stops short of a closing bracket as capped', function(
 });
 
 it('caps axe contexts without changing what a verdict hashes', function() {
-    // The cap stays exactly as it was on purpose. Appending an ellipsis to
-    // mark it would change the stored context, and the verdict hash is taken
-    // over that string, so every dismissal on a long snippet would be orphaned
-    // and the question would come back.
+    // The cap stays bare on purpose. The verdict hash is taken over the
+    // stored context, so appending an ellipsis to mark the cut would orphan
+    // every dismissal made against a long snippet.
     $source = (string) file_get_contents(
         (new ReflectionClass(\johnhenry\accessibilityaudit\services\AuditService::class))->getFileName(),
     );

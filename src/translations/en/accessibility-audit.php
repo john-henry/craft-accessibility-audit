@@ -904,4 +904,7 @@ return [
     'One of these findings' => 'One of these findings',
     'Desktop only' => 'Desktop only',
     'Mobile only' => 'Mobile only',
+    'The page could not be reached.' => 'The page could not be reached.',
+    'The page returned {status}.' => 'The page returned {status}.',
+    'This address redirects to {host}, which is not part of this site.' => 'This address redirects to {host}, which is not part of this site.',
 ];

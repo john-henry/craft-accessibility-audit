@@ -223,14 +223,23 @@ class UrlSafety
      * @param string $url The URL to fetch. Validated before each hop.
      * @param array<string, mixed> $clientConfig Guzzle client options, e.g.
      *                                           timeout and headers.
+     * @param string|null $finalUrl Set to the URL the last hop actually landed
+     *                               on, which is the address the body belongs
+     *                               to. Storing a result against the URL that
+     *                               was asked for instead files a redirect's
+     *                               content under an address it does not live
+     *                               at, and the same page is then reported
+     *                               twice under two names.
      * @return ResponseInterface The final response.
      * @throws UnsafeUrlException If any hop is unsafe, or there are too many.
      * @throws GuzzleException If the request itself fails.
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.2.0
      */
-    public static function fetch(string $url, array $clientConfig = []): ResponseInterface
+    public static function fetch(string $url, array $clientConfig = [], ?string &$finalUrl = null): ResponseInterface
     {
+        $finalUrl = $url;
+
         // Redirects are followed by the loop below, one validated hop at a
         // time, so the client must not follow them itself.
         $clientConfig['allow_redirects'] = false;
@@ -266,6 +275,8 @@ class UrlSafety
             $location = $response->getHeaderLine('Location');
 
             if ($status < 300 || $status > 399 || $location === '') {
+                $finalUrl = $url;
+
                 return $response;
             }
 

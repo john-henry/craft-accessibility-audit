@@ -31,6 +31,10 @@
 - **Edit element** on a page report opens in a new tab, the same as **View page** beside it, and carries the same icon. Working through a list of pages, you were losing the report every time you went to fix something. ([#2](https://github.com/john-henry/craft-accessibility-audit/issues/2))
 
 ### Fixed
+- A page that redirects off the site altogether is skipped and says so. What is at the other end belongs to somebody else, so auditing it tells you nothing about your own site, and it would have put a foreign address in your listing counting against your page limit. Redirects that stay put carry on as normal: http to https, trailing slashes, path moves, a hop down to a subdomain, dropping a leading www, and moves between sites this install serves.
+- A page that redirects is now recorded against the address it ends on. Asking for the old address filed the new page's content under the old one, so the same page sat in the listing twice under two names, with the same findings, both counting against your page limit, and answering a question on one left the other still asking.
+- Pages that are missing or broken are skipped on purpose rather than by accident, and the report says which status came back. A page returning 404 and a server that could not be reached at all used to arrive with the same sentence, so there was no telling one from the other.
+- Scanning an entry whose page could not be read no longer reports it as scoring 100. Nothing was read, so there is no score, and the console now says why it was skipped instead of printing a green 100 for a page nobody opened.
 - Long explanations are readable again. They are written as a headline, the places involved, then a numbered list of fixes, and the report was rendering them in a way that dropped every line break, so it all arrived as one block with the numbering buried mid-sentence.
 - A rule page now describes the rule instead of quoting one page's findings as though that were the definition. Where there is no description written yet you still get an example, but it is labelled as one.
 - The reason a question was asked no longer runs straight on from the markup above it.

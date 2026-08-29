@@ -129,6 +129,14 @@ class AuditController extends Controller
 
             try {
                 $result = $audit->scanElement($element);
+
+                // A page that could not be read has no score, and printing one
+                // for it reads as a verdict on a page nobody opened.
+                if (($result['error'] ?? null) !== null) {
+                    $this->stdout('skipped: ' . $result['error'] . PHP_EOL, BaseConsole::FG_YELLOW);
+                    continue;
+                }
+
                 $score = $result['score'];
                 $colour = $score >= 80 ? BaseConsole::FG_GREEN : ($score >= 50 ? BaseConsole::FG_YELLOW : BaseConsole::FG_RED);
                 $this->stdout("score: {$score} (issues: " . count($result['issues']) . ")\n", $colour);

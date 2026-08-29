@@ -429,10 +429,10 @@ class AltController extends Controller
      * Why a vector could not be described, in the terms that matter to whoever
      * has to do something about it.
      *
-     * Three different problems used to share one message telling you to check
-     * for SVG support, which was no help at all on a server that has it. The
-     * common case now is a renderer that draws fills but not strokes, and the
-     * fix for that is a server package, so it is worth naming.
+     * Three separate problems land here, and one message about SVG support
+     * covers none of them on a server that already has it. The common case is
+     * a renderer that draws fills but not strokes, and the fix for that is a
+     * server package, so it is worth naming.
      *
      * @return string
      * @author JohnHenry <info@johnhenry.ie>
