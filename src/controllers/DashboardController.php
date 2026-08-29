@@ -1376,7 +1376,7 @@ class DashboardController extends Controller
             $ruleId = (string)$row['ruleId'];
             $data[] = [
                 'question' => [
-                    'title' => $this->_potentialQuestion($ruleId),
+                    'title' => $this->_potentialQuestion($ruleId, $row['wcagCriterion'] ?? null),
                     'url' => UrlHelper::cpUrl('accessibility-audit/issues/detail', ['ruleId' => $ruleId, 'site' => $siteHandle]),
                 ],
                 'conformance' => $row['wcagLevel'] ?? null,
@@ -1418,10 +1418,20 @@ class DashboardController extends Controller
      * Human-readable question for a potential-issue rule.
      *
      * @param string $ruleId
+     * @param string|null $criterion The criterion this grouping is for, where
+     *                               the caller groups on it.
      * @return string
      */
-    private function _potentialQuestion(string $ruleId): string
+    private function _potentialQuestion(string $ruleId, ?string $criterion = null): string
     {
+        // A rule that judges each occurrence on its own can land on more than
+        // one criterion, and the listing groups on criterion, so one question
+        // per rule puts the same sentence on two rows with no way to tell them
+        // apart. Only rules that actually split need an entry here.
+        if ($ruleId === 'potential:identical-links' && $criterion === '2.4.9') {
+            return Craft::t('accessibility-audit', 'Do these identical links read the same out of context?');
+        }
+
         return match ($ruleId) {
             'potential:short-alt' => Craft::t('accessibility-audit', 'Is this image alt text descriptive enough?'),
             'potential:long-alt' => Craft::t('accessibility-audit', 'Is this image alt text too long?'),

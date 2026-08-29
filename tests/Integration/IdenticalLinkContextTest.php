@@ -231,3 +231,61 @@ describe('identical links graded by how far apart the destinations are', functio
             ->and($found[0]->wcagCriterion)->toBe('2.4.9');
     });
 });
+
+// ---------------------------------------------------------------------------
+// Telling the two rows apart on the listing.
+//
+// The rule judges each occurrence on its own and can land on either criterion,
+// and the Potential issues listing groups on criterion. One question per rule
+// therefore puts the same sentence on two rows, with different counts and
+// different conformance badges, and nothing saying which is which.
+// ---------------------------------------------------------------------------
+
+/** The listing label for a rule at a given criterion. */
+function potentialQuestion(string $ruleId, ?string $criterion = null): string
+{
+    $method = new ReflectionMethod(
+        \johnhenry\accessibilityaudit\controllers\DashboardController::class,
+        '_potentialQuestion',
+    );
+    $method->setAccessible(true);
+
+    return $method->invoke(
+        new \johnhenry\accessibilityaudit\controllers\DashboardController(
+            'dashboard',
+            \johnhenry\accessibilityaudit\AccessibilityAudit::getInstance(),
+        ),
+        $ruleId,
+        $criterion,
+    );
+}
+
+it('asks a different question of each criterion', function() {
+    $a = potentialQuestion('potential:identical-links', '2.4.4');
+    $aaa = potentialQuestion('potential:identical-links', '2.4.9');
+
+    expect($a)->not->toBe($aaa)
+        ->and($a)->toContain('going to different places')
+        ->and($aaa)->toContain('out of context');
+});
+
+it('keeps the plain question when no criterion is given', function() {
+    // The page report groups by rule rather than by criterion, so it wants the
+    // question that covers both.
+    expect(potentialQuestion('potential:identical-links'))
+        ->toBe(potentialQuestion('potential:identical-links', '2.4.4'));
+});
+
+it('leaves rules that only ever land on one criterion alone', function() {
+    foreach (['potential:short-alt', 'potential:long-alt', 'potential:table-layout'] as $ruleId) {
+        expect(potentialQuestion($ruleId, '1.1.1'))->toBe(potentialQuestion($ruleId));
+    }
+});
+
+it('passes the criterion through from the listing', function() {
+    $source = (string) file_get_contents(
+        (new ReflectionClass(\johnhenry\accessibilityaudit\controllers\DashboardController::class))->getFileName(),
+    );
+
+    expect($source)->toContain("\$this->_potentialQuestion(\$ruleId, \$row['wcagCriterion'] ?? null)");
+});

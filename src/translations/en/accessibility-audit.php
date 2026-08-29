@@ -909,4 +909,5 @@ return [
     'The page could not be reached.' => 'The page could not be reached.',
     'The page returned {status}.' => 'The page returned {status}.',
     'This address redirects to {host}, which is not part of this site.' => 'This address redirects to {host}, which is not part of this site.',
+    'Do these identical links read the same out of context?' => 'Do these identical links read the same out of context?',
 ];

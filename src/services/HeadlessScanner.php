@@ -412,6 +412,7 @@ class HeadlessScanner extends Component
             }
 
             $page->evaluate($axeSource)->waitForResponse(self::PAGE_TIMEOUT_MS);
+            $page->evaluate(self::IN_VIEW_PROBE_JS)->waitForResponse(self::PAGE_TIMEOUT_MS);
 
             $result = $page->evaluate($this->_axeRunScript())->getReturnValue(self::PAGE_TIMEOUT_MS);
             $decoded = is_string($result) ? Json::decodeIfJson($result) : null;
@@ -468,6 +469,56 @@ class HeadlessScanner extends Component
      * @return string
      * @throws InvalidConfigException
      */
+    /**
+     * @var string A function deciding whether an element was fully laid out
+     *      inside the area the page was measured in.
+     *
+     *      axe samples an element's background at points on its rects. Where a
+     *      rect runs past the edge of the viewport there is nothing under the
+     *      part that ran off, and axe reports that as an overlap: "another
+     *      element covers part of it". Nothing covers it. It was never
+     *      measured, and the two read identically in the report while calling
+     *      for completely different work.
+     *
+     *      Kept as a constant so the browser pass and its test run the same
+     *      source rather than two copies that drift.
+     */
+    public const IN_VIEW_PROBE_JS = <<<'JS'
+        window.__aaFullyInView = function (target) {
+          var sel = Array.isArray(target) ? target[target.length - 1] : target;
+          var el = null;
+
+          try { el = document.querySelector(sel); } catch (e) { return true; }
+          if (!el) return true;
+
+          var rects = el.getClientRects();
+          if (!rects.length) return false;
+
+          // Content wider or taller than the box it sits in paints outside
+          // that box, and axe samples on the box. A long identifier in a
+          // heading, or a code block that scrolls sideways, keeps a rect that
+          // fits perfectly while half the text is somewhere else.
+          if (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1) {
+            return false;
+          }
+
+          var vw = window.innerWidth;
+          var vh = window.innerHeight;
+
+          for (var i = 0; i < rects.length; i++) {
+            var r = rects[i];
+            // A pixel of tolerance: sub-pixel layout puts rects a hair past an
+            // edge constantly, and treating that as unmeasured would relabel
+            // most of the page.
+            if (r.left < -1 || r.top < -1 || r.right > vw + 1 || r.bottom > vh + 1) {
+              return false;
+            }
+          }
+
+          return true;
+        };
+        JS;
+
     private function _axeRunScript(): string
     {
         $tagsJson = Json::encode(AccessibilityAudit::getInstance()->getAudit()->getAxeTags());
@@ -504,11 +555,23 @@ class HeadlessScanner extends Component
                     };
                 };
 
+                // Only the undecided results are relabelled, never a
+                // violation: the worst this can do is reword a question.
+                var relabel = function(v) {
+                    v.nodes.forEach(function(n) {
+                        var d = (n.any && n.any[0] && n.any[0].data) || null;
+                        if (d && !window.__aaFullyInView(n.target)) {
+                            d.messageKey = 'notFullyInView';
+                        }
+                    });
+                    return v;
+                };
+
                 return JSON.stringify({
                     violations: r.violations.map(slim),
                     incomplete: (r.incomplete || []).filter(function(v) {
                         return v.id === 'color-contrast';
-                    }).map(slim),
+                    }).map(slim).map(relabel),
                 });
             })
             JS;
