@@ -29,6 +29,9 @@
 - **Edit element** on a page report opens in a new tab, the same as **View page** beside it, and carries the same icon. Working through a list of pages, you were losing the report every time you went to fix something. ([#2](https://github.com/john-henry/craft-accessibility-audit/issues/2))
 
 ### Fixed
+- Long explanations are readable again. They are written as a headline, the places involved, then a numbered list of fixes, and the report was rendering them in a way that dropped every line break, so it all arrived as one block with the numbering buried mid-sentence.
+- A rule page now describes the rule instead of quoting one page's findings as though that were the definition. Where there is no description written yet you still get an example, but it is labelled as one.
+- The reason a question was asked no longer runs straight on from the markup above it.
 - Contrast questions now say why they were asked. axe tells us what stopped it measuring, and that reason was being worked out and then thrown away, so every question read the same and there was nothing to tell you where to look. You now get the actual reason next to the markup: a background image, a partly transparent text colour, something sitting over it, and so on.
 - Contrast questions are no longer raised about text that was not visible on the page. There is nothing to see, so there was nothing to answer.
 - "Show on page" now finds occurrences whose markup was too long to store whole. Anything with a long list of utility classes was getting cut inside the class attribute, and the report was matching on the half-read list, so it could never locate the element and told you the page must have changed.

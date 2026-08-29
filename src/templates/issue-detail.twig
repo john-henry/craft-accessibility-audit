@@ -87,14 +87,17 @@
 </div>
 
 
-{% if detail.message or (meta.abilities is defined and meta.abilities|length) or detail.helpUrl %}
+{% if detail.message or (meta.description is defined) or (meta.abilities is defined and meta.abilities|length) or detail.helpUrl %}
 <div class="pane">
     <h2>{{ 'About this rule'|t('accessibility-audit') }}</h2>
     <div class="accessibility-audit-about-grid">
-        {% if detail.message %}
+        {% set ruleDescription = meta.description is defined ? meta.description : null %}
+        {% if ruleDescription or detail.message %}
             <div>
-                <div class="light accessibility-audit-statlabel">{{ 'Description'|t('accessibility-audit') }}</div>
-                <p style="margin:6px 0 0 0;line-height:1.5">{{ detail.message }}</p>
+                <div class="light accessibility-audit-statlabel">
+                    {{ ruleDescription ? 'Description'|t('accessibility-audit') : 'One of these findings'|t('accessibility-audit') }}
+                </div>
+                <p style="margin:6px 0 0 0;line-height:1.5;white-space:pre-line">{{ ruleDescription ?? detail.message }}</p>
             </div>
         {% endif %}
         {% if meta.abilities is defined and meta.abilities|length %}

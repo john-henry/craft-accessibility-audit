@@ -87,3 +87,37 @@ it('does not ask about text that was not visible', function() {
         ->toContain("if ((\$data['messageKey'] ?? '') === 'hidden') {")
         ->and($scanner->isPrivate())->toBeTrue();
 });
+
+// ---------------------------------------------------------------------------
+// Reading a long explanation.
+//
+// The longer messages are written as a headline, the places involved, then a
+// numbered list of fixes. Rendered in a plain paragraph the newlines collapse
+// and it arrives as one unbroken block with "1." and "2." buried in the
+// middle of sentences, which is where a reader gives up.
+// ---------------------------------------------------------------------------
+
+it('keeps the line breaks in an explanation that has them', function() {
+    $report = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/page-report.twig');
+    $detail = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/issue-detail.twig');
+    $css = (string) file_get_contents(dirname(__DIR__, 2) . '/src/resources/css/accessibility-audit.css');
+
+    expect($css)->toContain('white-space: pre-line;')
+        ->and($detail)->toContain('white-space:pre-line')
+        ->and($report)->toContain('accessibility-audit-pr-review__msg');
+});
+
+it('describes the rule on a rule page, rather than quoting one page', function() {
+    // The rule page totals every page the rule fired on, so a message naming
+    // one page's links read as the definition of the rule.
+    $meta = \johnhenry\accessibilityaudit\services\RuleRegistry::get('potential:identical-links');
+
+    expect($meta)->toHaveKey('description')
+        ->and($meta['description'])->toContain('read the same but go to different places')
+        ->and($meta['description'])->not->toContain('johnhenry.ie');
+
+    $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/issue-detail.twig');
+
+    expect($twig)->toContain('{{ ruleDescription ?? detail.message }}')
+        ->and($twig)->toContain("'One of these findings'|t('accessibility-audit')");
+});

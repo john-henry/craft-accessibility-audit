@@ -62,7 +62,17 @@ class RuleRegistry
         // Potential issue rules
         'potential:short-alt' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Images',   'abilities' => ['vision']],
         'potential:long-alt' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Images',   'abilities' => ['vision', 'cognition']],
-        'potential:identical-links' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Links',    'abilities' => ['cognition']],
+        'potential:identical-links' => [
+            'difficulty' => 'beginner',
+            'responsibility' => 'content',
+            'elementType' => 'Links',
+            'abilities' => ['cognition'],
+            'description' => 'Two or more links on a page read the same but go to different places. Someone '
+                . 'moving through a list of links in a screen reader sees the same words twice with nothing '
+                . 'to choose between them. Whether it fails WCAG 2.4.4 at level A or is a 2.4.9 improvement '
+                . 'at AAA depends on what surrounds each link, so every occurrence is judged on its own and '
+                . 'says which it is.',
+        ],
         'potential:url-as-link-text' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Links',    'abilities' => ['cognition']],
         'potential:decorative-image' => ['difficulty' => 'beginner',     'responsibility' => 'development', 'elementType' => 'Images',   'abilities' => ['vision']],
         'potential:possible-heading' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Headings', 'abilities' => ['cognition']],

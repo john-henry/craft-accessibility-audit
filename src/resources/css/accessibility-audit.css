@@ -3325,10 +3325,16 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   overflow-wrap: break-word;
 }
 
+/* The reason a question was asked, under the markup it is about. Needs the
+   gap: run straight on from a monospace snippet it reads as more of the
+   snippet. Line breaks are kept because the longer explanations are written
+   as a headline, the places involved, then a numbered list of fixes, and
+   collapsing that gives a paragraph nobody finishes. */
 .accessibility-audit-pr-review__msg {
-  margin: 0;
+  margin: 6px 0 0;
   font-size: 11px;
   line-height: 1.45;
+  white-space: pre-line;
 }
 
 .accessibility-audit-pr-review__actions {
