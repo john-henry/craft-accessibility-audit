@@ -35,6 +35,35 @@ class ContentScanner extends Component
         . '|menu|nav|ol|p|pre|section|table|ul';
 
     /**
+     * @var string Characters that carry meaning by their shape rather than by
+     *      what they say: ticks, crosses, arrows, dashes standing in for "no
+     *      value", bullets and stars. Deliberately a fixed list rather than
+     *      "anything that is not a letter or a digit", which would sweep up
+     *      currency, maths and punctuation that read perfectly well.
+     *      Variation selectors and joiners ride along with the emoji forms.
+     */
+    private const MEANING_BY_SHAPE = '\x{2713}\x{2714}\x{2611}\x{2705}'
+        . '\x{2717}\x{2718}\x{2715}\x{2716}\x{274C}\x{00D7}\x{2612}'
+        . '\x{2192}\x{2190}\x{2191}\x{2193}\x{27F6}\x{2794}\x{279C}\x{27A1}'
+        . '\x{2014}\x{2013}\x{2012}\x{2015}\x{2212}\x{002D}'
+        . '\x{2022}\x{00B7}\x{25CF}\x{25CB}\x{2605}\x{2606}'
+        . '\x{2731}\x{2020}\x{2021}\x{FE0F}\x{FE0E}\x{200D}';
+
+    /**
+     * @var array<string, array{0: string, 1: string}> Which criterion a
+     *      symbol-only element fails, by tag. A link that announces "right
+     *      arrow" has a name that does not describe where it goes, which is
+     *      2.4.4. A cell holding a lone tick has a picture sitting in the
+     *      place of text, which is 1.1.1.
+     */
+    private const SYMBOL_ONLY_CRITERIA = [
+        'a' => ['2.4.4', 'link-purpose-in-context'],
+        'button' => ['1.1.1', 'non-text-content'],
+        'td' => ['1.1.1', 'non-text-content'],
+        'th' => ['1.1.1', 'non-text-content'],
+    ];
+
+    /**
      * @var string[] Tags that are not void, so a browser hands one everything
      *      that follows as its content until a closing tag that never comes.
      *      Left unescaped in prose, these delete the rest of the page.
@@ -83,6 +112,7 @@ class ContentScanner extends Component
             'multiple-h1' => fn() => $this->checkMultipleH1($dom, $xpath),
             'link-name' => fn() => $this->checkLinkName($dom, $xpath),
             'link-generic' => fn() => $this->checkLinkGeneric($dom, $xpath),
+            'symbol-only-content' => fn() => $this->checkSymbolOnlyContent($xpath),
             'link-new-window' => fn() => $this->checkLinkNewWindow($dom, $xpath),
             'button-name' => fn() => $this->checkButtonName($dom, $xpath),
             'form-label' => fn() => $this->checkFormLabels($dom, $xpath),
@@ -464,6 +494,69 @@ class ContentScanner extends Component
                 );
             }
         }
+        return $issues;
+    }
+
+    /**
+     * Cells, links and buttons whose whole announced name is a symbol.
+     *
+     * A tick in a comparison table is a picture doing the work of a word. The
+     * shape says "supported"; the character says nothing of the sort. Screen
+     * readers announce it as "check mark", or as nothing at all depending on
+     * how the reader has punctuation and symbol verbosity set, and either way
+     * the meaning a sighted reader takes from the column is lost. A lone dash
+     * standing in for "not applicable" is the same bargain, and an arrow as a
+     * link name leaves the destination unsaid.
+     *
+     * Read off the announced name rather than the visible text, so anything
+     * that already fixes it (a label, a title, visually hidden text beside the
+     * glyph) takes the element out of scope without needing a second rule.
+     *
+     * @param DOMXPath $xpath The document to search.
+     * @return IssueModel[]
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function checkSymbolOnlyContent(DOMXPath $xpath): array
+    {
+        $issues = [];
+        $pattern = '/^[' . self::MEANING_BY_SHAPE . '\s\x{00A0}]+$/u';
+
+        foreach ($xpath->query('//td | //th | //button | //a[@href]') as $node) {
+            /** @var DOMElement $node */
+            // Out of the accessibility tree altogether: what gets announced in
+            // its place is another element's business.
+            if (strtolower($node->getAttribute('aria-hidden')) === 'true') {
+                continue;
+            }
+
+            $name = trim(AccessibleName::for($node, $xpath));
+
+            // An empty cell is a different question, and not this one.
+            if ($name === '' || preg_match($pattern, $name) !== 1) {
+                continue;
+            }
+
+            $tag = strtolower($node->nodeName);
+            [$criterion, $help] = self::SYMBOL_ONLY_CRITERIA[$tag] ?? self::SYMBOL_ONLY_CRITERIA['td'];
+
+            $issues[] = IssueModel::make(
+                'symbol-only-content',
+                'warning',
+                $tag === 'a'
+                    ? 'This link announces only "' . htmlspecialchars($name) . '", which does not say where it '
+                        . 'goes. Give it real text, or add visually hidden text inside the link.'
+                    : 'This ' . ($tag === 'button' ? 'button' : 'cell') . ' holds only "'
+                        . htmlspecialchars($name) . '". The shape carries the meaning, the character does not, '
+                        . 'and some screen readers skip it entirely. Add visually hidden text saying what it '
+                        . 'means and mark the symbol aria-hidden.',
+                $criterion,
+                'A',
+                $this->outerHtml($node),
+                self::WCAG_HELP_BASE . $help
+            );
+        }
+
         return $issues;
     }
 

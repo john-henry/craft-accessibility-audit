@@ -902,4 +902,6 @@ return [
     'For example: videos on the training pages, or PDFs published before 2024' => 'For example: videos on the training pages, or PDFs published before 2024',
     'Saved {applied} of {total} before something went wrong. The details are in the logs.' => 'Saved {applied} of {total} before something went wrong. The details are in the logs.',
     'One of these findings' => 'One of these findings',
+    'Desktop only' => 'Desktop only',
+    'Mobile only' => 'Mobile only',
 ];

@@ -270,6 +270,9 @@
                                     {% if row.message and row.message != group.question %}
                                         <p class="accessibility-audit-pr-review__msg light">{{ row.message }}</p>
                                     {% endif %}
+                                    {% if row.viewportLabel is defined and row.viewportLabel %}
+                                        <p class="accessibility-audit-pr-review__vp">{{ row.viewportLabel }}</p>
+                                    {% endif %}
                                     <div class="accessibility-audit-pr-review__actions">
                                         <button type="button" class="btn small" data-highlight>{{ 'Show on page'|t('accessibility-audit') }}</button>
                                         {% if canRunScans %}
@@ -298,6 +301,9 @@
                                     {% endif %}
                                     {% if row.message and row.message != group.question %}
                                         <p class="accessibility-audit-pr-review__msg light">{{ row.message }}</p>
+                                    {% endif %}
+                                    {% if row.viewportLabel is defined and row.viewportLabel %}
+                                        <p class="accessibility-audit-pr-review__vp">{{ row.viewportLabel }}</p>
                                     {% endif %}
                                     <div class="accessibility-audit-pr-review__actions">
                                         <button type="button" class="btn small" data-highlight>{{ 'Show on page'|t('accessibility-audit') }}</button>

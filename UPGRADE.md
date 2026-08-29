@@ -68,7 +68,9 @@ Three rules can now appear in `accessibilityaudit_issues.ruleId`, all with the s
 - `contrast-focus`
 - `contrast-selection`
 
-Plus `block-in-paragraph`, which stores raw markup as its context like the other PHP rules.
+Plus `block-in-paragraph` and `symbol-only-content`, which store raw markup as their context like the other PHP rules.
+
+`symbol-only-content` varies its criterion by element: `2.4.4` on a link, whose name simply does not say where it goes, and `1.1.1` on a cell or button, where a glyph is sitting in the place of text. Anything switching on rule IDs to pick a criterion needs to read it off the issue rather than assume one per rule.
 
 If you have anything switching on rule IDs, or a hard-coded list of them, add these. `RuleRegistry::get()` has metadata for all four.
 

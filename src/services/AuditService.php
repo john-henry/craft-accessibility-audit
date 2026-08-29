@@ -2708,14 +2708,14 @@ class AuditService extends Component
      * occurrences would ask one question and apply the answer to several.
      *
      * @param int $scanId The scan.
-     * @return array<array-key, array{id: int, ruleId: string, message: string, context: string|null, wcagCriterion: string|null, wcagLevel: string|null}>
+     * @return array<array-key, array{id: int, ruleId: string, message: string, context: string|null, wcagCriterion: string|null, wcagLevel: string|null, viewport: string|null}>
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getPendingPotentialForScan(int $scanId): array
     {
         return (new Query())
-            ->select(['id', 'ruleId', 'message', 'context', 'wcagCriterion', 'wcagLevel'])
+            ->select(['id', 'ruleId', 'message', 'context', 'wcagCriterion', 'wcagLevel', 'viewport'])
             ->from('{{%accessibilityaudit_issues}}')
             ->where(['scanId' => $scanId, 'isResolved' => false])
             ->andWhere($this->pendingPotentialCondition())

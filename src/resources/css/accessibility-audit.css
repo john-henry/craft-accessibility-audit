@@ -3337,6 +3337,23 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   white-space: pre-line;
 }
 
+/* Which width the question came from, when it came from only one. Reads as a
+   badge rather than more prose: the reader is usually looking at the desktop
+   preview, and needs to know at a glance that what they are being asked about
+   is not on the screen in front of them. */
+.accessibility-audit-pr-review__vp {
+  margin: 6px 0 0;
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--text-color);
+  background: var(--gray-100, #f3f4f6);
+  border: 1px solid var(--hairline-color, #d9d9d9);
+}
+
 .accessibility-audit-pr-review__actions {
   display: flex;
   align-items: center;

@@ -228,6 +228,14 @@ class DashboardController extends Controller
         $potential = [];
         $dismissed = [];
         if ($scan) {
+            // The page is measured at both widths, and a question can come
+            // from one of them only: a decoration that clears the text column
+            // on a wide screen sits behind it on a narrow one. Those arrive as
+            // two rows differing by viewport alone, so they are folded into one
+            // question carrying both, and a reader looking at the desktop
+            // preview is told when what they are being asked about is not there.
+            $seen = [];
+
             foreach ($audit->getPendingPotentialForScan((int)$scan['id']) as $row) {
                 $ruleId = $row['ruleId'];
                 $potential[$ruleId] ??= [
@@ -235,6 +243,21 @@ class DashboardController extends Controller
                     'question' => $this->_potentialQuestion($ruleId),
                     'occurrences' => [],
                 ];
+
+                $key = (string)($row['context'] ?? '') . '|' . $row['message'];
+                $at = $seen[$ruleId][$key] ?? null;
+
+                if ($at !== null) {
+                    $potential[$ruleId]['occurrences'][$at]['viewports'][] = (string)($row['viewport'] ?? '');
+                    $potential[$ruleId]['occurrences'][$at]['viewportLabel'] = $this->_viewportLabel(
+                        $potential[$ruleId]['occurrences'][$at]['viewports'],
+                    );
+                    continue;
+                }
+
+                $row['viewports'] = [(string)($row['viewport'] ?? '')];
+                $row['viewportLabel'] = $this->_viewportLabel($row['viewports']);
+                $seen[$ruleId][$key] = count($potential[$ruleId]['occurrences']);
                 $potential[$ruleId]['occurrences'][] = $row;
             }
 
@@ -1362,6 +1385,29 @@ class DashboardController extends Controller
         }
 
         return $data;
+    }
+
+    /**
+     * Which width a question came from, when it came from only one.
+     *
+     * @param string[] $viewports The viewports the question was recorded at.
+     * @return string|null
+     */
+    private function _viewportLabel(array $viewports): ?string
+    {
+        $set = array_unique(array_filter($viewports));
+
+        // Found at both widths, or on a scan that recorded none: saying so adds
+        // nothing, and a label on every row stops meaning anything.
+        if (count($set) !== 1) {
+            return null;
+        }
+
+        return match (reset($set)) {
+            AuditService::VIEWPORT_MOBILE => Craft::t('accessibility-audit', 'Mobile only'),
+            AuditService::VIEWPORT_DESKTOP => Craft::t('accessibility-audit', 'Desktop only'),
+            default => null,
+        };
     }
 
     /**

@@ -73,6 +73,18 @@ class RuleRegistry
                 . 'at AAA depends on what surrounds each link, so every occurrence is judged on its own and '
                 . 'says which it is.',
         ],
+        'symbol-only-content' => [
+            'difficulty' => 'beginner',
+            'responsibility' => 'development',
+            'elementType' => 'Text',
+            'abilities' => ['vision', 'cognition'],
+            'description' => 'A cell, link or button whose whole announced name is a symbol: a tick, a '
+                . 'cross, an arrow, or a dash standing in for "not applicable". The shape carries the '
+                . 'meaning and the character does not, so a screen reader announces "check mark" or, '
+                . 'depending on how the reader has symbol verbosity set, nothing at all. The fix is '
+                . 'visually hidden text saying what the symbol means, with the symbol itself marked '
+                . 'aria-hidden.',
+        ],
         'potential:url-as-link-text' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Links',    'abilities' => ['cognition']],
         'potential:decorative-image' => ['difficulty' => 'beginner',     'responsibility' => 'development', 'elementType' => 'Images',   'abilities' => ['vision']],
         'potential:possible-heading' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Headings', 'abilities' => ['cognition']],
