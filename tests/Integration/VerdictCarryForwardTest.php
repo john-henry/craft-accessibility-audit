@@ -72,3 +72,39 @@ it('keeps a dismissed contrast question dismissed after the browser pass runs ag
     expect($stored)->toBe('dismissed')
         ->and($audit->getPendingPotentialForScan($scanId))->toHaveCount(0);
 });
+
+// ---------------------------------------------------------------------------
+// The client-side contrast pass rebuilds too.
+//
+// It tears down its rows for a viewport and writes them again every time the
+// report runs, the same as the axe pass. Without carrying the answer across,
+// opening the report undoes the reader's work: a finding waved through this
+// morning is back with nothing to say why.
+// ---------------------------------------------------------------------------
+
+it('carries a ruling through a client-side contrast rebuild', function() {
+    $source = (string) file_get_contents(
+        (new ReflectionClass(\johnhenry\accessibilityaudit\services\AuditService::class))->getFileName(),
+    );
+
+    $start = strpos($source, 'public function storeContrastIssues(');
+    $body = substr($source, (int) $start, 5200);
+
+    expect($body)->toContain('$verdictMap = $verdicts->mapForElement(')
+        ->and($body)->toContain('$verdicts->lookup($verdictMap, $ruleId, $context)')
+        // The url matters: a page scanned by address has no element to key to.
+        ->and($body)->toContain("\$scan['url'] ?? null,");
+});
+
+it('reads the url when loading the scan it is writing against', function() {
+    // Without it the map is built for the wrong target and every ruling on a
+    // URL-scanned page is missed.
+    $source = (string) file_get_contents(
+        (new ReflectionClass(\johnhenry\accessibilityaudit\services\AuditService::class))->getFileName(),
+    );
+
+    $start = strpos($source, 'public function storeContrastIssues(');
+    $body = substr($source, (int) $start, 700);
+
+    expect($body)->toContain("->select(['elementId', 'elementType', 'siteId', 'url'])");
+});

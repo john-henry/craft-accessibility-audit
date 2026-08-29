@@ -3267,7 +3267,7 @@ class AuditService extends Component
     public function storeContrastIssues(int $scanId, array $occurrences, string $viewport = self::VIEWPORT_DESKTOP): int
     {
         $scan = (new Query())
-            ->select(['elementId', 'elementType', 'siteId'])
+            ->select(['elementId', 'elementType', 'siteId', 'url'])
             ->from('{{%accessibilityaudit_scans}}')
             ->where(['id' => $scanId])
             ->one();
@@ -3275,6 +3275,18 @@ class AuditService extends Component
         if (!$scan) {
             return 0;
         }
+
+        // These rows are torn down and rebuilt on every pass, so an answer
+        // already given has to be carried onto the new ones. Without it the
+        // report undoes the reader's work each time it opens: a finding
+        // confirmed or waved through this morning is back, with nothing to say
+        // why. Same reasoning as the axe pass, which does this too.
+        $verdicts = AccessibilityAudit::getInstance()->verdicts;
+        $verdictMap = $verdicts->mapForElement(
+            !empty($scan['elementId']) ? (int)$scan['elementId'] : null,
+            (int)$scan['siteId'],
+            $scan['url'] ?? null,
+        );
 
         // Replace previous client-side contrast results for this viewport only.
         // As with axe results, the desktop bucket also sweeps untagged legacy rows.
@@ -3333,8 +3345,10 @@ class AuditService extends Component
                 'selector' => mb_substr(trim((string)($occ['selector'] ?? '')), 0, 300),
             ]);
 
+            $ruleId = $state !== '' ? 'contrast-' . $state : 'color-contrast';
+
             $this->insertIssue($scanId, $scan['elementId'], $scan['elementType'], $scan['siteId'], IssueModel::make(
-                ruleId: $state !== '' ? 'contrast-' . $state : 'color-contrast',
+                ruleId: $ruleId,
                 severity: 'error',
                 message: $message,
                 wcagCriterion: '1.4.3',
@@ -3343,7 +3357,7 @@ class AuditService extends Component
                 helpUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum',
                 source: 'contrast',
                 viewport: $viewport,
-            ));
+            ), null, $verdicts->lookup($verdictMap, $ruleId, $context));
             $count++;
         }
 
