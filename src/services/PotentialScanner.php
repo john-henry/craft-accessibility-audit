@@ -80,18 +80,39 @@ class PotentialScanner extends Component
         return $issues;
     }
 
+    /**
+     * @var int The length past which alt text is worth a second look. Longer
+     *      than most screen readers will read out in one breath, and past the
+     *      point where the detail belongs in the page rather than in an
+     *      attribute nobody can skim.
+     */
+    private const MAX_ALT_LENGTH = 150;
+
     private function checkLongAlt(DOMXPath $xpath): array
     {
         $issues = [];
-        $nodes = $xpath->query('//img[@alt and string-length(@alt) > 150]');
+        $nodes = $xpath->query('//img[@alt and string-length(@alt) > ' . self::MAX_ALT_LENGTH . ']');
         foreach ($nodes as $node) {
             if (!$node instanceof DOMElement) {
                 continue;
             }
+
+            // The number, not just the verdict. Trimming to a limit means
+            // knowing how far over it is, and counting a truncated preview by
+            // eye is the part nobody wants to do twice.
+            $length = mb_strlen($node->getAttribute('alt'));
+            $over = $length - self::MAX_ALT_LENGTH;
+
             $issues[] = IssueModel::make(
                 ruleId: 'potential:long-alt',
                 severity: 'notice',
-                message: 'Is this image alt text too long? Consider using aria-describedby for descriptions over 150 characters.',
+                message: sprintf(
+                    'Is this image alt text too long? It is %d characters, %d over the %d guideline. '
+                        . 'Consider moving the detail to aria-describedby.',
+                    $length,
+                    $over,
+                    self::MAX_ALT_LENGTH,
+                ),
                 wcagCriterion: '1.1.1',
                 wcagLevel: 'A',
                 context: mb_substr($node->getAttribute('alt'), 0, 100) . '…',

@@ -210,6 +210,7 @@ class AccessibilityAudit extends BasePlugin
         'Marking images decorative hides missing-alt warnings. Only mark images that carry no information. Mark {n} images decorative?',
         '{n} images marked decorative.',
         '{n} images no longer decorative.',
+        '{n} left',
         '{n} selected',
         '~age {n}',
         'What was dismissed',

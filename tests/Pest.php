@@ -46,8 +46,6 @@ uses()->beforeEach(function() {
         );
     }
 
-    Craft::$app->getSites()->refreshSites();
-
     // The plugin, its settings model and its edition are process-level
     // singletons, and RefreshesDatabase rolls back the database and nothing
     // else. Without this, a test that changes a setting or drops the edition to
@@ -73,6 +71,13 @@ uses()->beforeEach(function() {
     // excluded volumes, and every native element type in scope.
     $settings->excludedVolumes = [];
     $settings->scannedElementTypes = null;
+
+    // Craft works out which sites are editable once and holds the answer for
+    // the rest of the request, reading it off whoever is logged in at the time.
+    // A suite is one request, so the first test to ask fixes the answer for
+    // every test after it, whatever user those act as. Anything gated on
+    // editable sites then passes or fails on test order.
+    Craft::$app->getSites()->refreshSites();
 })->in('Integration');
 
 /**

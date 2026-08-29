@@ -177,6 +177,7 @@ return [
     '{n} selected' => '{n} selected',
     '{n} images marked decorative.' => '{n} images marked decorative.',
     '{n} images no longer decorative.' => '{n} images no longer decorative.',
+    '{n} left' => '{n} left',
     'Marking images decorative hides missing-alt warnings. Only mark images that carry no information. Mark {n} images decorative?' => 'Marking images decorative hides missing-alt warnings. Only mark images that carry no information. Mark {n} images decorative?',
     'No images marked decorative.' => 'No images marked decorative.',
     'these images are marked decorative and correctly carry no alt text' => 'these images are marked decorative and correctly carry no alt text',
