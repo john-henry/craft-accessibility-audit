@@ -296,9 +296,11 @@
   const csrfValue   = window.Craft ? Craft.csrfTokenValue : (window.csrfTokenValue || '');
   const sparkleIcon = {{ iconSvg('sparkles')|json_encode|raw }};
 
-  // Declared once and written onto the field's maxlength below, so the
-  // counter and the cap can never drift apart.
-  const ALT_MAX = 125;
+  // The length the long-alt check reports on, so the field counts against the
+  // number the report will quote back. Not a cap: Craft's own alt field sets
+  // no limit, and truncating an editor mid-description to a number the rule
+  // does not even use would be its own bug.
+  const ALT_GUIDELINE = {{ constant('johnhenry\accessibilityaudit\services\PotentialScanner::MAX_ALT_LENGTH') }};
   const checkIcon   = {{ iconSvg('check')|json_encode|raw }};
   const activeView = {{ activeFilter|json_encode|raw }};
   const emptyAllHaveAlt   = {{ 'All images now have alt text, nice work!'|t('accessibility-audit')|json_encode|raw }};
@@ -371,7 +373,7 @@
     const labelId = 'accessibility-audit-alt-' + esc(String(assetId));
     altCell.innerHTML =
       '<label for="' + labelId + '" class="visually-hidden">{{ 'Alt text'|t('accessibility-audit') }}</label>' +
-      '<input type="text" id="' + labelId + '" class="text accessibility-audit-alt-input accessibility-audit-alt-input--pending" maxlength="' + ALT_MAX + '" ' +
+      '<input type="text" id="' + labelId + '" class="text accessibility-audit-alt-input accessibility-audit-alt-input--pending" ' +
       'aria-describedby="' + labelId + '-count" ' +
       'placeholder="{{ 'Describe what the image shows…'|t('accessibility-audit') }}" value="' + esc(value || '') + '">' +
       '<span class="accessibility-audit-alt-count light" id="' + labelId + '-count" role="status" aria-live="polite"></span>';
@@ -386,14 +388,17 @@
     const altInput = altCell.querySelector('.accessibility-audit-alt-input');
     const altCount = altCell.querySelector('.accessibility-audit-alt-count');
 
-    // Written as what is left rather than what is used: the question while
-    // typing is how much room is in hand, and the last stretch is where a
-    // description gets cut short, so it says so before the field stops taking
-    // characters rather than after.
+    // Counts up rather than down. There is no ceiling to run out of, and the
+    // useful number when trimming is how far past the guideline the text sits,
+    // which is what the report quotes.
     const renderAltCount = () => {
-      const left = ALT_MAX - altInput.value.length;
-      altCount.textContent = Craft.t('accessibility-audit', '{n} left', { n: left });
-      altCount.classList.toggle('accessibility-audit-alt-count--low', left <= 20);
+      const n = [...altInput.value].length;
+      const over = n - ALT_GUIDELINE;
+
+      altCount.textContent = over > 0
+        ? Craft.t('accessibility-audit', '{n} characters, {over} over', { n: n, over: over })
+        : Craft.t('accessibility-audit', '{n} characters', { n: n });
+      altCount.classList.toggle('accessibility-audit-alt-count--low', over > 0);
     };
 
     altInput.addEventListener('input', renderAltCount);

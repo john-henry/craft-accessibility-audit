@@ -85,8 +85,13 @@ class PotentialScanner extends Component
      *      than most screen readers will read out in one breath, and past the
      *      point where the detail belongs in the page rather than in an
      *      attribute nobody can skim.
+     *
+     *      A guideline, not a cap. Craft's own alt field sets no limit and
+     *      neither does this plugin: text is counted and flagged, never cut.
+     *      Public so the editing field counts against the same number the
+     *      rule reports on.
      */
-    private const MAX_ALT_LENGTH = 150;
+    public const MAX_ALT_LENGTH = 150;
 
     private function checkLongAlt(DOMXPath $xpath): array
     {

@@ -4,6 +4,7 @@
  * @copyright Copyright (c) John Henry Donovan
  */
 
+use johnhenry\accessibilityaudit\helpers\AltTextPrompt;
 use johnhenry\accessibilityaudit\models\IssueModel;
 use johnhenry\accessibilityaudit\services\PotentialScanner;
 
@@ -46,12 +47,27 @@ it('counts characters, not bytes', function() {
         ->and($issues[0]->message)->toContain('10 over');
 });
 
-it('keeps the counter and the field cap as one number', function() {
-    // Two numbers for one limit drift, and the counter is then telling the
-    // editor something the field will not honour.
+it('does not cap the field, because Craft does not either', function() {
+    // Craft's AltField unsets maxlength outright. Capping the plugin's own
+    // editing field stops an editor part-way through fixing a finding the
+    // plugin raised, at a number the rule does not even use.
     $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/assets.twig');
 
-    expect($twig)->toContain('const ALT_MAX = 125;')
-        ->and($twig)->toContain("maxlength=\"' + ALT_MAX + '\"")
-        ->and($twig)->not->toContain('maxlength="125"');
+    expect($twig)->not->toContain('maxlength');
+});
+
+it('counts the field against the number the report quotes', function() {
+    // Two numbers for one idea drift, and the editor is then trimming to a
+    // target the finding will not agree with.
+    $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/assets.twig');
+
+    expect($twig)->toContain('PotentialScanner::MAX_ALT_LENGTH')
+        ->and(PotentialScanner::MAX_ALT_LENGTH)->toBe(150);
+});
+
+it('keeps the generation ceiling separate from the guideline', function() {
+    // 125 is what the model is asked to aim for, which is a different job
+    // from the length a human is warned about.
+    expect(AltTextPrompt::MAX_LENGTH)->toBe(125)
+        ->and(PotentialScanner::MAX_ALT_LENGTH)->not->toBe(AltTextPrompt::MAX_LENGTH);
 });
