@@ -797,7 +797,18 @@ class DashboardController extends Controller
         };
         $sortDir = $this->request->getParam('sort.0.direction') === 'desc' ? SORT_DESC : SORT_ASC;
 
-        $result = AccessibilityAudit::getInstance()->audit->getScannedElements($siteId, $page, $limit, $search, $sortField, $sortDir);
+        // Filtered the same way the tab's own count is. Filtering one and not
+        // the other is how the heading came to say nothing while the rows
+        // underneath it listed the whole site.
+        $result = AccessibilityAudit::getInstance()->audit->getScannedElements(
+            $siteId,
+            $page,
+            $limit,
+            $search,
+            $sortField,
+            $sortDir,
+            withIssuesOnly: true,
+        );
 
         return $this->asSuccess(data: [
             'pagination' => AdminTable::paginationLinks($page, (int)$result['total'], $limit),

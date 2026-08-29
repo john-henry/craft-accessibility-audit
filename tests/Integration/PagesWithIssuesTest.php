@@ -99,6 +99,20 @@ it('pages the filtered list, not the whole set', function() {
     }
 });
 
+it('filters the rows as well as the count', function() {
+    // The count comes from the page render and the rows from an endpoint of
+    // their own. Filtering one and not the other gives a heading that says
+    // nothing above a table listing the whole site.
+    $source = (string) file_get_contents(
+        dirname(__DIR__, 2) . '/src/controllers/DashboardController.php',
+    );
+
+    $start = strpos($source, 'public function actionScannedPagesTable(');
+    $body = substr($source, (int) $start, 1800);
+
+    expect($body)->toContain('withIssuesOnly: true,');
+});
+
 it('tells a clean site apart from an unscanned one', function() {
     $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/issues.twig');
 

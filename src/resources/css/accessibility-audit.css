@@ -3325,6 +3325,33 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   overflow-wrap: break-word;
 }
 
+/* Questions still waiting on a person, sitting under the score they qualify.
+   Deliberately not the footnote style used for the EN note beside it: this
+   changes what the number above it means, and 11px of muted grey is how you
+   say something you would rather nobody read. Sized and weighted to be read,
+   with the count carrying the weight and the reasoning underneath it. */
+.accessibility-audit-pending-note {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: 6px;
+  border-left: 3px solid var(--warning-color, #cb6e17);
+  background: var(--gray-050, #f8f9fa);
+  color: var(--text-color);
+}
+
+.accessibility-audit-pending-note__lead {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.accessibility-audit-pending-note__body {
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 /* The all-clear. Shown only when nothing is failing and nothing is left to
    answer, so it cannot be mistaken for a passing score with a queue behind it.
    The tick draws itself once, and the whole flourish is dropped for anyone who
