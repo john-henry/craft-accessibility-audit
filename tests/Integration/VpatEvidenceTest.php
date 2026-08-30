@@ -394,6 +394,32 @@ it('drafts remarks from the findings the rest of the plugin recognises', functio
         ->and($body)->toContain("->groupBy(['elementId', 'url'])");
 });
 
+// ---------------------------------------------------------------------------
+// A clean site has still been scanned.
+//
+// hasScanData was read off the auto-conformance map, which held a criterion for
+// every violation plus the ones a clean scan used to claim. Once no criterion
+// is signed off by the scanner, that map is empty on a site with nothing
+// failing, and a fully scanned site reported as never scanned: the statement
+// told the author their compliance status rested on no evidence at all.
+// ---------------------------------------------------------------------------
+
+it('knows the site has been scanned even when nothing is failing', function() {
+    // The beforeEach clears 1.3.1 and writes a clean scan, so this is exactly
+    // the shape that broke: pages scanned, nothing found against them.
+    $report = $this->vpat->getFullReport($this->siteId);
+
+    expect($report['hasScanData'])->toBeTrue();
+});
+
+it('says a site with no scans has none', function() {
+    Craft::$app->getDb()->createCommand()
+        ->delete('{{%accessibilityaudit_scans}}', ['siteId' => $this->siteId])
+        ->execute();
+
+    expect($this->vpat->getFullReport($this->siteId)['hasScanData'])->toBeFalse();
+});
+
 it('hands the evidence to the report so the screen can show it', function() {
     $report = AccessibilityAudit::getInstance()->vpat->getFullReport($this->siteId);
 

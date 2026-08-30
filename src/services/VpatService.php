@@ -874,7 +874,13 @@ class VpatService extends Component
             'meta' => $record['meta'],
             'levelA' => $levelA,
             'levelAA' => $levelAA,
-            'hasScanData' => !empty($auto),
+            // Whether pages have been scanned, not whether the scans concluded
+            // anything. Derived from the auto-conformance map until that map
+            // stopped carrying clean criteria: with nothing failing there was
+            // nothing in it, so a fully scanned site with no open findings
+            // reported as never scanned, and the statement told the author
+            // their status rested on no evidence at all.
+            'hasScanData' => ($evidence[array_key_first($evidence)]['pages'] ?? 0) > 0,
             // Whether to state EN 301 549 alongside WCAG: clause 9 restates WCAG
             // 2.1 Level AA, and this report is Level AA throughout.
             'en301549' => (bool)(AccessibilityAudit::getInstance()->getSettings()->en301549 ?? false),
