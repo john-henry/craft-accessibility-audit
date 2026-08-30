@@ -874,7 +874,7 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
    matters is the one the eye lands on first. Uses box-shadow rather than a
    border so the card doesn't shift by a pixel against its unhighlighted siblings. */
 .accessibility-audit-kpi__cell--target {
-  box-shadow: inset 0 0 0 2px var(--aa-warning-marker);
+  box-shadow: inset 0 0 0 2px var(--aa-target-marker);
 }
 
 .accessibility-audit-kpi__badge {
@@ -886,8 +886,8 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--aa-warning-strong);
-  background: var(--aa-warning-bg);
+  color: var(--aa-target);
+  background: var(--aa-target-bg);
   vertical-align: 1px;
 }
 
@@ -1391,6 +1391,14 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
   background: var(--aa-pass-bg);
   color: var(--aa-pass);
   font-size: 9px;
+}
+
+/* Empty states that are good news rather than missing data, so they carry the
+   same circled tick as a resolved row. */
+.accessibility-audit-emptyok {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .accessibility-audit-legend__dot--error {

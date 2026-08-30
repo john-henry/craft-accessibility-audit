@@ -30,8 +30,59 @@ it('holds the all-clear back until the questions are answered too', function() {
     $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/index.twig');
 
     expect($twig)->toContain(
-        "{% set allClear = openTotal == 0 and (pendingPotential ?? 0) == 0 and summary.score is defined and summary.score >= 100 %}",
+        "{% set allClear = openTotal == 0 and (pendingPotential ?? 0) == 0 and summary.avgScore >= 100 %}",
     );
+});
+
+// ---------------------------------------------------------------------------
+// A key that does not exist reads as empty, and Twig says nothing about it.
+//
+// The all-clear was gated on `summary.score`, which the summary has never had:
+// the key is `avgScore`. `is defined` was false every time, so the panel could
+// not appear on any site at any score. Nothing errored and nothing logged. The
+// only symptom was an absence, which is the hardest kind to notice.
+// ---------------------------------------------------------------------------
+
+it('only reads summary keys the summary actually has', function() {
+    $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/index.twig');
+    $summary = \johnhenry\accessibilityaudit\AccessibilityAudit::getInstance()->audit->getSiteSummary(
+        (int) Craft::$app->getSites()->getPrimarySite()->id,
+    );
+
+    preg_match_all('/summary\.([a-zA-Z]+)/', $twig, $matches);
+
+    $referenced = array_unique($matches[1]);
+
+    expect($referenced)->not->toBeEmpty();
+
+    foreach ($referenced as $key) {
+        expect($summary)->toHaveKey($key);
+    }
+});
+
+// ---------------------------------------------------------------------------
+// Colour carries meaning here, so the target marker must not borrow one.
+//
+// Every colour in the palette is a severity. The target card was built from the
+// warning tokens, which put an amber ring and an amber badge on a card reading
+// 100% with nothing failing: the one card on the screen with no problem was the
+// one drawn as though it had one.
+// ---------------------------------------------------------------------------
+
+it('marks the target level without claiming anything about its state', function() {
+    $css = (string) file_get_contents(dirname(__DIR__, 2) . '/src/resources/css/accessibility-audit.css');
+
+    foreach (['.accessibility-audit-kpi__cell--target {', '.accessibility-audit-kpi__badge {'] as $selector) {
+        $start = strpos($css, $selector);
+
+        expect($start)->not->toBeFalse();
+
+        $block = substr($css, (int) $start, (int) strpos($css, '}', (int) $start) - (int) $start);
+
+        foreach (['--aa-warning', '--aa-error', '--aa-notice', '--aa-pass'] as $severity) {
+            expect($block)->not->toContain($severity);
+        }
+    }
 });
 
 it('counts only questions nobody has answered', function() {
