@@ -140,6 +140,15 @@
         </div>
     {% endif %}
 
+    {% if lastScanned %}
+        <div class="accessibility-audit-callout accessibility-audit-callout--notice">
+            <span>{{ 'The automated conformance suggestions below come from the scan of {date}. Fixing a page does not change them until it is scanned again.'|t('accessibility-audit', {
+                date: lastScanned|datetime('short'),
+            }) }}
+            <a class="go" href="{{ cpUrl('accessibility-audit', { site: siteHandle }) }}">{{ 'Scan again'|t('accessibility-audit') }}</a></span>
+        </div>
+    {% endif %}
+
     {% if report.en301549 ?? false %}
         <div class="accessibility-audit-callout accessibility-audit-callout--notice">
             <span>{{ 'This report is Level A and AA, so the export will also state EN 301 549 clause 9, which adopts the WCAG Level AA criteria for web content. Clauses covering non-web ICT are out of scope.'|t('accessibility-audit') }}</span>
@@ -420,6 +429,31 @@
                             </td>
                             <td class="accessibility-audit-vpat-name">
                                 {{ row.name }}
+                                {% if row.evidence %}
+                                    <div class="accessibility-audit-vpat-evidence">
+                                        {% if row.evidence.checks %}
+                                            <p class="accessibility-audit-vpat-evidence__line">
+                                                <span class="accessibility-audit-vpat-evidence__tag">{{ 'Scanned'|t('accessibility-audit') }}</span>
+                                                {%- if row.evidence.findings > 0 -%}
+                                                    {{ ' ' }}{{ 'Checked {what} across {pages} pages, and found {n} still open.'|t('accessibility-audit', { what: row.evidence.checks, pages: row.evidence.pages, n: row.evidence.findings }) }}
+                                                {%- elseif row.evidence.pages > 0 -%}
+                                                    {{ ' ' }}{{ 'Checked {what} across {pages} pages, and found nothing.'|t('accessibility-audit', { what: row.evidence.checks, pages: row.evidence.pages }) }}
+                                                {%- else -%}
+                                                    {{ ' ' }}{{ 'Checks {what}, once pages have been scanned.'|t('accessibility-audit', { what: row.evidence.checks }) }}
+                                                {%- endif -%}
+                                            </p>
+                                            <p class="accessibility-audit-vpat-evidence__line accessibility-audit-vpat-evidence__line--gap">
+                                                <span class="accessibility-audit-vpat-evidence__tag accessibility-audit-vpat-evidence__tag--gap">{{ 'For you'|t('accessibility-audit') }}</span>
+                                                {{ ' ' }}{{ 'No scanner can tell {what}.'|t('accessibility-audit', { what: row.evidence.cannot }) }}
+                                            </p>
+                                        {% else %}
+                                            <p class="accessibility-audit-vpat-evidence__line accessibility-audit-vpat-evidence__line--gap">
+                                                <span class="accessibility-audit-vpat-evidence__tag accessibility-audit-vpat-evidence__tag--gap">{{ 'For you'|t('accessibility-audit') }}</span>
+                                                {{ ' ' }}{{ 'Nothing here can be established by a scanner. It needs a person.'|t('accessibility-audit') }}
+                                            </p>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
                             </td>
                             <td class="accessibility-audit-vpat-level-cell">
                                 {% if row.autoLevel and not row.overrideLevel %}
@@ -455,14 +489,18 @@
                                                 data-criterion="{{ num }}"
                                                 title="{{ row.autoLevel
                                                     ? 'Draft from the scanner’s findings'|t('accessibility-audit')
-                                                    : 'Tidy your rough notes into VPAT wording'|t('accessibility-audit') }}"
+                                                    : (row.evidence.checks and row.evidence.pages > 0
+                                                        ? 'Draft what the scans covered and what is left for you, or tidy notes you have typed'|t('accessibility-audit')
+                                                        : 'Tidy your rough notes into VPAT wording'|t('accessibility-audit')) }}"
                                                 aria-label="Draft remarks for {{ row.name }} with AI">
                                             {{ 'Draft with AI'|t('accessibility-audit') }}
                                         </button>
                                         <span class="accessibility-audit-vpat-draft-mode">
                                             {{ row.autoLevel
                                                 ? 'from scan findings'|t('accessibility-audit')
-                                                : 'from your notes'|t('accessibility-audit') }}
+                                                : (row.evidence.checks and row.evidence.pages > 0
+                                                    ? 'from scan coverage'|t('accessibility-audit')
+                                                    : 'from your notes'|t('accessibility-audit')) }}
                                         </span>
                                     {% endif %}
                                     {% set rowNeedsRemark = row.effectiveLevel in ['Not Applicable', 'Partially Supports', 'Does Not Support']
@@ -470,6 +508,14 @@
                                     <span class="accessibility-audit-vpat-remark-nudge{% if not rowNeedsRemark %} hidden{% endif %}">
                                         {{ 'This level needs a remark: say why.'|t('accessibility-audit') }}
                                     </span>
+                                    {% if row.remarkStale %}
+                                        <span class="accessibility-audit-vpat-remark-stale">
+                                            {{ 'Written against {was} findings, there are now {now}. Check it still reads true.'|t('accessibility-audit', {
+                                                was: row.remarkFindings,
+                                                now: row.evidence.findings,
+                                            }) }}
+                                        </span>
+                                    {% endif %}
                                     <span class="accessibility-audit-vpat-row-status" aria-live="polite"></span>
                                 </div>
                             </td>

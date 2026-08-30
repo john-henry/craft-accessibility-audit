@@ -21,10 +21,14 @@ use johnhenry\accessibilityaudit\assets\PageReportAsset;
 use johnhenry\accessibilityaudit\assets\StatementAsset;
 use johnhenry\accessibilityaudit\assets\UtilitiesAsset;
 use johnhenry\accessibilityaudit\assets\VpatAsset;
+use johnhenry\accessibilityaudit\helpers\AffectedExample;
 use johnhenry\accessibilityaudit\helpers\Csv;
 use johnhenry\accessibilityaudit\helpers\ElementLabel;
+use johnhenry\accessibilityaudit\helpers\OccurrenceCluster;
+use johnhenry\accessibilityaudit\helpers\ScanTarget;
 use johnhenry\accessibilityaudit\models\StatementExclusionModel;
 use johnhenry\accessibilityaudit\services\AuditService;
+use johnhenry\accessibilityaudit\services\PotentialScanner;
 use johnhenry\accessibilityaudit\services\RuleRegistry;
 use johnhenry\accessibilityaudit\services\StatementProfiles;
 use yii\base\InvalidConfigException;
@@ -95,8 +99,24 @@ class DashboardController extends Controller
         // all sites" wording on multi-site installs.
         $isMultiSite = count($sites) > 1;
 
+        // A score of 100 with unanswered questions behind it is not the same
+        // thing as a site that has been through them, and the headline could
+        // not tell the difference because nothing here knew the questions
+        // existed.
+        $potentialRows = $plugin->audit->getPotentialIssues($siteId);
+        $pendingPotential = array_sum(array_map(
+            static fn(array $row): int => (int) $row['occurrences'],
+            $potentialRows,
+        ));
+        $potentialPages = $pendingPotential > 0
+            ? $plugin->audit->getPagesWithPotentialIssues($siteId, 1, 1)['total']
+            : 0;
+
         return $this->renderTemplate('accessibility-audit/index', [
             'summary' => $summary,
+            'coverage' => $plugin->audit->getCoverage($siteId),
+            'pendingPotential' => $pendingPotential,
+            'potentialPages' => $potentialPages,
             'byImpact' => $byImpact,
             'byImpactAll' => $byImpactAll,
             'templateIssues' => $templateIssues,
@@ -136,7 +156,11 @@ class DashboardController extends Controller
         $page = max(1, (int) ($this->request->getQueryParam('page') ?? 1));
         $perPage = self::TABLE_PER_PAGE;
 
-        $result = $plugin->audit->getScannedElements($siteId, $page, $perPage);
+        // The tab is named for pages with issues, so it lists those. The full
+        // count is kept separately: a clean site and a site nobody has scanned
+        // both produce an empty list, and they need different words.
+        $result = $plugin->audit->getScannedElements($siteId, $page, $perPage, withIssuesOnly: true);
+        $scannedCount = $plugin->audit->getScannedElements($siteId, 1, 1)['total'];
         // The Issues tab is the full list, so no rule cap: a silently
         // truncated "full list" would contradict the dashboard.
         $byRule = $plugin->audit->getIssuesByImpact($siteId, PHP_INT_MAX);
@@ -153,6 +177,7 @@ class DashboardController extends Controller
 
         return $this->renderTemplate('accessibility-audit/issues', [
             'result' => $result,
+            'scannedCount' => $scannedCount,
             'byRule' => $byRule,
             'resolvedByRule' => $resolvedByRule,
             'resolvedTrend' => $resolvedTrend,
@@ -178,17 +203,45 @@ class DashboardController extends Controller
 
         $plugin = AccessibilityAudit::getInstance();
         $elementId = (int)($this->request->getQueryParam('elementId') ?? 0);
+        $scanId = (int)($this->request->getQueryParam('scanId') ?? 0);
         $siteId = $plugin->requestedSiteId();
         $siteHandle = $plugin->requestedSite()->handle;
 
-        if ($elementId === 0) {
+        if ($elementId === 0 && $scanId === 0) {
             return $this->redirect(UrlHelper::cpUrl('accessibility-audit/issues'));
         }
 
         $audit = $plugin->audit;
-        $scan = $audit->getLatestScan($elementId, $siteId);
+
+        // A page with no element behind it is addressed by scan ID, and the
+        // scan is loaded scoped to the requested site so an ID from another
+        // site is a miss rather than a way across the fence. Its URL is then
+        // what the report follows, so a rescan lands on the newest scan of the
+        // same page rather than on the one the link was made from.
+        if ($elementId === 0) {
+            $scan = $audit->getScan($scanId, $siteId);
+
+            if ($scan === null) {
+                return $this->redirect(UrlHelper::cpUrl('accessibility-audit/issues'));
+            }
+
+            if (!empty($scan['elementId'])) {
+                return $this->redirect(UrlHelper::cpUrl('accessibility-audit/page-report', [
+                    'elementId' => (int)$scan['elementId'],
+                    'site' => $siteHandle,
+                ]));
+            }
+
+            $scan = $audit->getLatestUrlScan((string)$scan['url'], $siteId) ?? $scan;
+        } else {
+            $scan = $audit->getLatestScan($elementId, $siteId);
+        }
+
+        $scanUrl = $scan !== null ? (string)($scan['url'] ?? '') : '';
         $issues = $scan ? $audit->getIssuesGroupedByScan((int)$scan['id']) : [];
-        $resolved = $audit->getResolvedIssuesForElement($elementId, $siteId);
+        $resolved = $scanUrl !== ''
+            ? $audit->getResolvedIssuesForUrl($scanUrl, $siteId)
+            : $audit->getResolvedIssuesForElement($elementId, $siteId);
 
         // Potential issues awaiting the author's answer, shown here (not just on
         // the Potential page) because the page markup is what settles the answer.
@@ -197,6 +250,14 @@ class DashboardController extends Controller
         $potential = [];
         $dismissed = [];
         if ($scan) {
+            // The page is measured at both widths, and a question can come
+            // from one of them only: a decoration that clears the text column
+            // on a wide screen sits behind it on a narrow one. Those arrive as
+            // two rows differing by viewport alone, so they are folded into one
+            // question carrying both, and a reader looking at the desktop
+            // preview is told when what they are being asked about is not there.
+            $seen = [];
+
             foreach ($audit->getPendingPotentialForScan((int)$scan['id']) as $row) {
                 $ruleId = $row['ruleId'];
                 $potential[$ruleId] ??= [
@@ -204,7 +265,30 @@ class DashboardController extends Controller
                     'question' => $this->_potentialQuestion($ruleId),
                     'occurrences' => [],
                 ];
+
+                $key = (string)($row['context'] ?? '') . '|' . $row['message'];
+                $at = $seen[$ruleId][$key] ?? null;
+
+                if ($at !== null) {
+                    $potential[$ruleId]['occurrences'][$at]['viewports'][] = (string)($row['viewport'] ?? '');
+                    $potential[$ruleId]['occurrences'][$at]['viewportLabel'] = $this->_viewportLabel(
+                        $potential[$ruleId]['occurrences'][$at]['viewports'],
+                    );
+                    continue;
+                }
+
+                $row['viewports'] = [(string)($row['viewport'] ?? '')];
+                $row['viewportLabel'] = $this->_viewportLabel($row['viewports']);
+                $seen[$ruleId][$key] = count($potential[$ruleId]['occurrences']);
                 $potential[$ruleId]['occurrences'][] = $row;
+            }
+
+            // Repeated markup is gathered into one thing to answer. A rule
+            // that fires per element on a repeated component otherwise asks
+            // the same question dozens of times over contexts that read
+            // identically, which is a queue nobody works through.
+            foreach ($potential as $ruleId => $group) {
+                $potential[$ruleId]['clusters'] = OccurrenceCluster::group($group['occurrences']);
             }
 
             foreach ($audit->getDismissedPotentialForScan((int)$scan['id']) as $row) {
@@ -214,10 +298,14 @@ class DashboardController extends Controller
         }
         $potential = array_values($potential);
 
-        $element = Craft::$app->getElements()->getElementById($elementId, null, $siteId);
+        $element = $elementId !== 0
+            ? Craft::$app->getElements()->getElementById($elementId, null, $siteId)
+            : null;
         $sites = $plugin->allowedSites();
 
-        $pageLabel = ElementLabel::for($element, $elementId);
+        $pageLabel = $scan !== null
+            ? ScanTarget::label($scan, $element)
+            : ElementLabel::for($element, $elementId);
 
         $view = Craft::$app->getView();
         $view->registerAssetBundle(PageReportAsset::class);
@@ -230,6 +318,7 @@ class DashboardController extends Controller
             Json::encode([
                 'scanId' => (int)($scan['id'] ?? 0),
                 'elementId' => $elementId,
+                'pageUrl' => $scanUrl,
                 'siteId' => $siteId,
                 'elementType' => $element !== null ? get_class($element) : '',
                 'axeUrl' => Craft::$app->getAssetManager()->getPublishedUrl(
@@ -253,6 +342,7 @@ class DashboardController extends Controller
         return $this->renderTemplate('accessibility-audit/page-report', [
             'element' => $element,
             'elementId' => $elementId,
+            'pageUrl' => $scan !== null ? ScanTarget::url($scan, $element) : $element?->getUrl(),
             'pageLabel' => $pageLabel,
             'scan' => $scan,
             'issues' => $issues,
@@ -497,6 +587,9 @@ class DashboardController extends Controller
         return $this->renderTemplate('accessibility-audit/vpat', [
             'isPro' => $isPro,
             'report' => $report,
+            // Both this and the statement are derived from scan data, so the
+            // date they were derived from belongs on screen beside them.
+            'lastScanned' => $plugin->getAudit()->getLatestScanDate($siteId),
             'siteId' => $siteId,
             'siteHandle' => $siteHandle,
             'sites' => $sites,
@@ -562,8 +655,29 @@ class DashboardController extends Controller
         return $this->renderTemplate('accessibility-audit/statement', [
             'statement' => $statement,
             'derivation' => $derivation,
+            'lastScanned' => $plugin->getAudit()->getLatestScanDate($siteId),
             'unconfirmedDetails' => $unconfirmedDetails,
             'suggestions' => $suggestions,
+            // Criterion names, so an entry can label itself in the editor. The
+            // label is chrome: the published statement is built from the
+            // fields, and a criterion name is developer wording that has no
+            // business in a document written for the public.
+            'criteriaNames' => array_map(
+                static fn(array $criterion): string => (string)($criterion['name'] ?? ''),
+                $plugin->vpat->getCriteria(),
+            ),
+            // Placeholders, not values: shown greyed and never saved, so a
+            // published statement can only ever carry what somebody wrote.
+            'affectedExamples' => array_merge(
+                array_map(
+                    static fn(string $number): string => AffectedExample::for($number),
+                    array_combine(
+                        array_keys($plugin->vpat->getCriteria()),
+                        array_keys($plugin->vpat->getCriteria()),
+                    ),
+                ),
+                ['*' => AffectedExample::for('')],
+            ),
             'profiles' => StatementProfiles::options(),
             'siteId' => $siteId,
             'siteHandle' => $siteHandle,
@@ -644,6 +758,9 @@ class DashboardController extends Controller
             'totalPages' => $paged['totalPages'],
             'pageInfo' => $this->_pageInfo('accessibility-audit/assets', $paged['page'], $paged['perPage'], $paged['total'], $paged['totalPages'], $extraParams),
             'hasApiKey' => !empty(trim(App::parseEnv($settings->anthropicApiKey ?? ''))),
+            // The same number the long-alt check reports on, so the count
+            // beside the field agrees with the finding.
+            'altGuideline' => PotentialScanner::MAX_ALT_LENGTH,
             'volumes' => $volumes,
             'currentVolume' => $volume,
             'currentSearch' => $search,
@@ -681,7 +798,18 @@ class DashboardController extends Controller
         };
         $sortDir = $this->request->getParam('sort.0.direction') === 'desc' ? SORT_DESC : SORT_ASC;
 
-        $result = AccessibilityAudit::getInstance()->audit->getScannedElements($siteId, $page, $limit, $search, $sortField, $sortDir);
+        // Filtered the same way the tab's own count is. Filtering one and not
+        // the other is how the heading came to say nothing while the rows
+        // underneath it listed the whole site.
+        $result = AccessibilityAudit::getInstance()->audit->getScannedElements(
+            $siteId,
+            $page,
+            $limit,
+            $search,
+            $sortField,
+            $sortDir,
+            withIssuesOnly: true,
+        );
 
         return $this->asSuccess(data: [
             'pagination' => AdminTable::paginationLinks($page, (int)$result['total'], $limit),
@@ -930,18 +1058,26 @@ class DashboardController extends Controller
         $data = [];
         $siteHandle = Craft::$app->getSites()->getSiteById($siteId)?->handle;
 
-        // One query for the whole page of rows, not one per row.
+        // One query for the whole page of rows, not one per row. Keyed on the
+        // target rather than the element, so a row from a page scanned by URL
+        // finds its ruling too.
         $verdicts = AccessibilityAudit::getInstance()->verdicts;
-        $meta = $verdicts->metaForElements(
-            array_map(static fn(array $r): int => (int)$r['elementId'], $rows),
-            $siteId,
+        $targetHashes = array_map(
+            static fn(array $r): string => AccessibilityAudit::getInstance()->verdicts->targetHash(
+                $r['elementId'] !== null ? (int)$r['elementId'] : null,
+                $r['url'] ?? null,
+            ),
+            $rows,
         );
+        $meta = $verdicts->metaForTargets($targetHashes, $siteId);
         $formatter = Craft::$app->getFormatter();
 
-        foreach ($rows as $row) {
+        foreach ($rows as $index => $row) {
             $elementId = (int)$row['elementId'];
-            $element = Craft::$app->getElements()->getElementById($elementId, null, $siteId);
-            $ruling = $verdicts->lookupMeta($meta, $elementId, (string)$row['ruleId'], $row['context'] ?? null);
+            $element = $elementId !== 0
+                ? Craft::$app->getElements()->getElementById($elementId, null, $siteId)
+                : null;
+            $ruling = $verdicts->lookupMeta($meta, $targetHashes[$index], (string)$row['ruleId'], $row['context'] ?? null);
             $author = $ruling !== null && $ruling['userId'] !== null
                 ? Craft::$app->getUsers()->getUserById($ruling['userId'])
                 : null;
@@ -949,11 +1085,20 @@ class DashboardController extends Controller
             $data[] = [
                 'id' => (int)$row['id'],
                 'page' => [
-                    'title' => ElementLabel::for($element, $elementId),
-                    'inspectUrl' => UrlHelper::cpUrl('accessibility-audit/page-report', [
-                        'elementId' => $elementId,
-                        'site' => $siteHandle,
-                    ]),
+                    'title' => ScanTarget::label($row, $element),
+                    // Titles are not unique. A plugin's landing page and its
+                    // support page carry the same one, share the same layout,
+                    // and so throw up the same findings: without the address
+                    // beside it there is no telling two rows apart, and a
+                    // ruling made on one looks like a ruling that did not hold
+                    // on the other.
+                    'url' => ScanTarget::url($row, $element),
+                    // The row's own id is the issue's, so the scan id is put in
+                    // its place before the target is read off it.
+                    'inspectUrl' => UrlHelper::cpUrl(
+                        'accessibility-audit/page-report',
+                        ScanTarget::reportParams(array_merge($row, ['id' => (int)$row['scanId']]), $siteHandle),
+                    ),
                 ],
                 'rule' => (string)$row['ruleId'],
                 // One object, not two columns: a table callback only gets its own
@@ -972,6 +1117,7 @@ class DashboardController extends Controller
                 ],
                 'restore' => [
                     'elementId' => $elementId,
+                    'url' => (string)($row['url'] ?? ''),
                     'ruleId' => (string)$row['ruleId'],
                     'context' => (string)($row['context'] ?? ''),
                     'siteId' => $siteId,
@@ -1227,20 +1373,18 @@ class DashboardController extends Controller
             $scan = $row['scan'];
             $element = $row['element'] ?? null;
             $elementId = (int)$scan['elementId'];
-            $title = $element !== null
-                ? $element->getUiLabel()
-                : (Craft::t('accessibility-audit', 'Element #') . $elementId);
+            $reportUrl = UrlHelper::cpUrl(
+                'accessibility-audit/page-report',
+                ScanTarget::reportParams($scan, $siteHandle),
+            );
             $lastScanned = !empty($scan['dateScanned']) ? DateTimeHelper::toDateTime($scan['dateScanned']) : false;
 
             $data[] = [
                 'id' => $elementId,
                 'page' => [
-                    'title' => $title,
-                    'inspectUrl' => UrlHelper::cpUrl('accessibility-audit/page-report', [
-                        'elementId' => $elementId,
-                        'site' => $siteHandle,
-                    ]),
-                    'url' => $element?->getUrl(),
+                    'title' => ScanTarget::label($scan, $element),
+                    'inspectUrl' => $reportUrl,
+                    'url' => ScanTarget::url($scan, $element),
                     'scanId' => (int)$scan['id'],
                 ],
                 'score' => (int)$scan['score'],
@@ -1251,10 +1395,7 @@ class DashboardController extends Controller
                 ],
                 'lastScanned' => $lastScanned !== false ? $lastScanned->format('d M Y') : '—',
                 'rescan' => $element?->id ?? 0,
-                'report' => UrlHelper::cpUrl('accessibility-audit/page-report', [
-                    'elementId' => $elementId,
-                    'site' => $siteHandle,
-                ]),
+                'report' => $reportUrl,
             ];
         }
 
@@ -1274,7 +1415,7 @@ class DashboardController extends Controller
             $ruleId = (string)$row['ruleId'];
             $data[] = [
                 'question' => [
-                    'title' => $this->_potentialQuestion($ruleId),
+                    'title' => $this->_potentialQuestion($ruleId, $row['wcagCriterion'] ?? null),
                     'url' => UrlHelper::cpUrl('accessibility-audit/issues/detail', ['ruleId' => $ruleId, 'site' => $siteHandle]),
                 ],
                 'conformance' => $row['wcagLevel'] ?? null,
@@ -1290,13 +1431,46 @@ class DashboardController extends Controller
     }
 
     /**
+     * Which width a question came from, when it came from only one.
+     *
+     * @param string[] $viewports The viewports the question was recorded at.
+     * @return string|null
+     */
+    private function _viewportLabel(array $viewports): ?string
+    {
+        $set = array_unique(array_filter($viewports));
+
+        // Found at both widths, or on a scan that recorded none: saying so adds
+        // nothing, and a label on every row stops meaning anything.
+        if (count($set) !== 1) {
+            return null;
+        }
+
+        return match (reset($set)) {
+            AuditService::VIEWPORT_MOBILE => Craft::t('accessibility-audit', 'Mobile only'),
+            AuditService::VIEWPORT_DESKTOP => Craft::t('accessibility-audit', 'Desktop only'),
+            default => null,
+        };
+    }
+
+    /**
      * Human-readable question for a potential-issue rule.
      *
      * @param string $ruleId
+     * @param string|null $criterion The criterion this grouping is for, where
+     *                               the caller groups on it.
      * @return string
      */
-    private function _potentialQuestion(string $ruleId): string
+    private function _potentialQuestion(string $ruleId, ?string $criterion = null): string
     {
+        // A rule that judges each occurrence on its own can land on more than
+        // one criterion, and the listing groups on criterion, so one question
+        // per rule puts the same sentence on two rows with no way to tell them
+        // apart. Only rules that actually split need an entry here.
+        if ($ruleId === 'potential:identical-links' && $criterion === '2.4.9') {
+            return Craft::t('accessibility-audit', 'Do these identical links read the same out of context?');
+        }
+
         return match ($ruleId) {
             'potential:short-alt' => Craft::t('accessibility-audit', 'Is this image alt text descriptive enough?'),
             'potential:long-alt' => Craft::t('accessibility-audit', 'Is this image alt text too long?'),
@@ -1324,30 +1498,24 @@ class DashboardController extends Controller
         foreach ($entries as $item) {
             $row = $item['row'];
             $element = $item['element'] ?? null;
-            $elementId = (int)$row['elementId'];
-            $title = $element !== null
-                ? $element->getUiLabel()
-                : (Craft::t('accessibility-audit', 'Element #') . $elementId);
+            $reportUrl = UrlHelper::cpUrl(
+                'accessibility-audit/page-report',
+                ScanTarget::reportParams($row, $siteHandle),
+            );
             $lastScanned = $row['dateScanned'] ? DateTimeHelper::toDateTime($row['dateScanned']) : false;
 
             $data[] = [
-                'id' => $elementId,
+                'id' => (int)$row['elementId'],
                 'page' => [
-                    'title' => $title,
-                    'inspectUrl' => UrlHelper::cpUrl('accessibility-audit/page-report', [
-                        'elementId' => $elementId,
-                        'site' => $siteHandle,
-                    ]),
-                    'url' => $element?->getUrl(),
+                    'title' => ScanTarget::label($row, $element),
+                    'inspectUrl' => $reportUrl,
+                    'url' => ScanTarget::url($row, $element),
                 ],
                 'issues' => (int)$row['issueCount'],
                 'count' => (int)$row['occurrences'],
                 'lastScanned' => $lastScanned !== false ? $lastScanned->format('d M Y') : '—',
                 'rescan' => $element?->id ?? 0,
-                'report' => UrlHelper::cpUrl('accessibility-audit/page-report', [
-                    'elementId' => $elementId,
-                    'site' => $siteHandle,
-                ]),
+                'report' => $reportUrl,
             ];
         }
 
@@ -1366,32 +1534,26 @@ class DashboardController extends Controller
 
         foreach ($entries as $row) {
             $element = $row['element'] ?? null;
-            $elementId = (int)$row['elementId'];
-            $title = $element !== null
-                ? $element->getUiLabel()
-                : (Craft::t('accessibility-audit', 'Element #') . $elementId);
+            $reportUrl = UrlHelper::cpUrl(
+                'accessibility-audit/page-report',
+                ScanTarget::reportParams($row, $siteHandle),
+            );
             $firstDetected = $row['firstDetected'] ? DateTimeHelper::toDateTime($row['firstDetected']) : false;
             $lastScanned = $row['dateScanned'] ? DateTimeHelper::toDateTime($row['dateScanned']) : false;
 
             $data[] = [
-                'id' => $elementId,
+                'id' => (int)$row['elementId'],
                 'page' => [
-                    'title' => $title,
-                    'inspectUrl' => UrlHelper::cpUrl('accessibility-audit/page-report', [
-                        'elementId' => $elementId,
-                        'site' => $siteHandle,
-                    ]),
-                    'url' => $element?->getUrl(),
+                    'title' => ScanTarget::label($row, $element),
+                    'inspectUrl' => $reportUrl,
+                    'url' => ScanTarget::url($row, $element),
                 ],
                 'score' => (int)$row['score'],
                 'count' => (int)$row['occurrences'],
                 'firstDetected' => $firstDetected !== false ? $firstDetected->format('d M Y') : '—',
                 'lastScanned' => $lastScanned !== false ? $lastScanned->format('d M Y') : '—',
                 'rescan' => $element?->id ?? 0,
-                'report' => UrlHelper::cpUrl('accessibility-audit/page-report', [
-                    'elementId' => $elementId,
-                    'site' => $siteHandle,
-                ]),
+                'report' => $reportUrl,
             ];
         }
 

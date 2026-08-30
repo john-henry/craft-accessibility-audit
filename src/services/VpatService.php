@@ -169,7 +169,11 @@ class VpatService extends Component
             'level' => 'A',
             'principle' => 'Operable',
             'url' => 'https://www.w3.org/WAI/WCAG22/Understanding/page-titled',
-            'auto' => 'automated',
+            // Partial, not automated: the scan establishes that a title exists
+            // and is not empty. The criterion asks for one that describes the
+            // page, and a site where every title is the site name passes the
+            // scan while failing the criterion outright.
+            'auto' => 'partial',
             'desc' => 'Web pages have titles that describe topic or purpose.',
         ],
         '2.4.3' => [
@@ -228,7 +232,12 @@ class VpatService extends Component
             'level' => 'A',
             'principle' => 'Understandable',
             'url' => 'https://www.w3.org/WAI/WCAG22/Understanding/language-of-page',
-            'auto' => 'automated',
+            // Partial, not automated: the scan establishes that a lang
+            // attribute is present and well formed. Whether it names the
+            // language the page is actually written in is not something any
+            // scanner can settle, and lang="en" on a page of Irish is the
+            // common way this fails.
+            'auto' => 'partial',
             'desc' => 'The default human language of each web page can be programmatically determined.',
         ],
         '3.2.1' => [
@@ -332,7 +341,12 @@ class VpatService extends Component
             'level' => 'AA',
             'principle' => 'Perceivable',
             'url' => 'https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum',
-            'auto' => 'automated',
+            // Partial, not automated: the pass measures computed colours, which
+            // is as thorough as this plugin gets, and text drawn into an image
+            // has no computed colour to measure. The criterion covers images of
+            // text as well, so a clean pass is strong evidence rather than a
+            // finished answer.
+            'auto' => 'partial',
             'desc' => 'The visual presentation of text and images of text has a contrast ratio of at least 4.5:1, except for large text (3:1), incidental, or logotype text.',
         ],
         '1.4.4' => [
@@ -490,21 +504,79 @@ class VpatService extends Component
     ];
 
     /**
-     * @var string[] Criteria a fleet-wide headless browser pass genuinely
-     * verifies. When server-side browser scanning is active and the sweep
-     * finds nothing against them, they're auto-marked "Supports".
+     * @var array<string, array{checks: string, cannot: string}> What the
+     *      scanner tests for a criterion, and what it cannot establish.
      *
-     * Target Size (2.5.8) qualifies because every headless scan renders the
-     * page at both the desktop and mobile viewports
-     * (HeadlessScanner::VIEWPORTS), so a clean sweep is evidence the
-     * touch-sized layout passes too, not an inference from a desktop-only
-     * render.
-     *
-     * Deliberately NOT here:
-     * - Focus Visible (2.4.7): a static pass can't truly exercise focus
-     *   states, so it stays a human judgement no matter what tooling says.
+     *      Most of a VPAT is signed off by a person, and a row offering no
+     *      more than a dropdown makes that person go and work out what has
+     *      already been tested before they can answer. Both halves are needed:
+     *      what was covered says the work is smaller than it looks, and what
+     *      was not says where to actually go looking. A criterion missing from
+     *      this list is one no scanner contributes to at all, which is worth
+     *      saying too rather than leaving blank.
      */
-    private const BROWSER_VERIFIED_CRITERIA = ['1.4.11', '2.5.8'];
+    private const EVIDENCE = [
+        '1.1.1' => [
+            'checks' => 'every image, input and area for a missing or empty alt attribute, and flags alt text that is only a filename',
+            'cannot' => 'whether the alt text describes the image, or whether an image left with an empty alt is genuinely decorative',
+        ],
+        '1.2.2' => [
+            'checks' => 'video elements for a captions track',
+            'cannot' => 'whether the captions are accurate, complete or in step with the audio',
+        ],
+        '1.3.1' => [
+            'checks' => 'heading order, empty headings, table headers, form and select labels, and list structure',
+            'cannot' => 'whether the structure in the markup matches the structure a sighted reader sees',
+        ],
+        '1.3.5' => [
+            'checks' => 'input fields for an autocomplete attribute',
+            'cannot' => 'whether the autocomplete value is the right one for that field',
+        ],
+        '1.4.2' => [
+            'checks' => 'media elements set to play on load',
+            'cannot' => 'whether a way to pause or stop the audio is provided',
+        ],
+        '1.4.3' => [
+            'checks' => 'the computed text and background colour of every element, at both viewports, including hover, focus and selection states',
+            'cannot' => 'text baked into an image',
+        ],
+        '1.4.11' => [
+            'checks' => 'the contrast of interface components and graphics in a real browser, at both viewports',
+            'cannot' => 'components that only appear part way through an interaction',
+        ],
+        '2.4.1' => [
+            'checks' => 'each page for a skip link and for landmark regions',
+            'cannot' => 'whether the skip link goes anywhere useful when it is used',
+        ],
+        '2.4.2' => [
+            'checks' => 'every page for a title element that is not empty',
+            'cannot' => 'whether the title describes that page rather than repeating the site name',
+        ],
+        '2.4.4' => [
+            'checks' => 'links whose text is generic, a bare URL, or repeated on the same page while going somewhere else',
+            'cannot' => 'whether a link makes sense where a reader meets it',
+        ],
+        '2.4.6' => [
+            'checks' => 'headings for emptiness and for skipped levels',
+            'cannot' => 'whether a heading or a label describes what comes after it',
+        ],
+        '2.5.8' => [
+            'checks' => 'the size and spacing of every touch target in a real browser, at both viewports',
+            'cannot' => 'targets that only appear part way through an interaction',
+        ],
+        '3.1.1' => [
+            'checks' => 'every page for a lang attribute on the html element',
+            'cannot' => 'whether the language declared is the language actually written',
+        ],
+        '3.3.2' => [
+            'checks' => 'form fields for a label that is properly associated with them',
+            'cannot' => 'whether the label or the instructions are clear enough to work from',
+        ],
+        '4.1.2' => [
+            'checks' => 'buttons, links, iframes and form controls for an accessible name',
+            'cannot' => 'widgets built in script, or whether a name matches the label a reader can see',
+        ],
+    ];
 
     // ─── Public API ──────────────────────────────────────────────────────────
 
@@ -599,6 +671,17 @@ class VpatService extends Component
             unset($overrides[$criterion]);
         } else {
             $overrides[$criterion] = ['level' => $level, 'remarks' => $remarks];
+
+            // What the findings looked like when this wording was written. A
+            // remark is stored text and nothing recomputes it, so one that
+            // counts four occurrences keeps saying four after they are fixed
+            // or the questions behind them are answered. Recorded here rather
+            // than when a draft is generated, because a remark typed by hand
+            // goes out of date exactly the same way.
+            if ($remarks !== '') {
+                $overrides[$criterion]['remarkFindings'] = $this->getEvidence($siteId)[$criterion]['findings'] ?? 0;
+                $overrides[$criterion]['remarkSavedAt'] = (new DateTime())->format('Y-m-d');
+            }
         }
 
         Craft::$app->getDb()->createCommand()
@@ -625,23 +708,87 @@ class VpatService extends Component
      *
      * @return array<string, array{level: string, basis: string}>
      */
-    public function getAutoConformance(int $siteId): array
+    /**
+     * What the scans can say about each criterion, for a person deciding how
+     * to sign it off.
+     *
+     * The level suggestion answers "what did the scanner conclude". This
+     * answers the question in front of it: what was actually looked at, over
+     * how many pages, and what is left for a person. Most criteria are signed
+     * off by hand, and without this every one of those rows is a blank box
+     * with no way of telling a five-second decision from an afternoon's work.
+     *
+     * @param int $siteId The site to report on.
+     * @return array<string, array{checks: ?string, cannot: ?string, findings: int, pages: int}>
+     *         Keyed by criterion number. checks and cannot are null where no
+     *         scanner contributes to that criterion at all.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function getEvidence(int $siteId): array
     {
         $latestScanIds = (new Query())
             ->select(['MAX(id)'])
             ->from('{{%accessibilityaudit_scans}}')
             ->where(['siteId' => $siteId])
-            ->groupBy(['elementId'])
+            ->groupBy(['elementId', 'url'])
+            ->column();
+
+        $counts = [];
+
+        if (!empty($latestScanIds)) {
+            $counts = (new Query())
+                ->select(['wcagCriterion', 'COUNT(*) as n'])
+                ->from('{{%accessibilityaudit_issues}}')
+                ->where(['scanId' => $latestScanIds, 'isResolved' => false])
+                ->andWhere(AccessibilityAudit::getInstance()->audit->definiteCondition())
+                ->andWhere(['not', ['wcagCriterion' => null]])
+                ->groupBy(['wcagCriterion'])
+                ->indexBy('wcagCriterion')
+                ->column();
+        }
+
+        $pages = count($latestScanIds);
+        $evidence = [];
+
+        foreach (array_keys(self::CRITERIA) as $num) {
+            $evidence[(string)$num] = [
+                'checks' => self::EVIDENCE[$num]['checks'] ?? null,
+                'cannot' => self::EVIDENCE[$num]['cannot'] ?? null,
+                'findings' => (int)($counts[$num] ?? 0),
+                'pages' => $pages,
+            ];
+        }
+
+        return $evidence;
+    }
+
+    public function getAutoConformance(int $siteId): array
+    {
+        $audit = AccessibilityAudit::getInstance()->audit;
+
+        $latestScanIds = (new Query())
+            ->select(['MAX(id)'])
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where(['siteId' => $siteId])
+            // Grouped by url as well as elementId: every URL scan shares a null
+            // elementId, so grouping on that alone folds the lot into one row.
+            ->groupBy(['elementId', 'url'])
             ->column();
 
         if (empty($latestScanIds)) {
             return [];
         }
 
+        // Read the same way every other report does. A question the author has
+        // dismissed is answered, and a fixed issue is fixed: counting either
+        // one puts a criterion on the statement with nothing behind it on the
+        // Issues screen, and no way to work out where it came from.
         $rows = (new Query())
             ->select(['wcagCriterion', 'severity'])
             ->from('{{%accessibilityaudit_issues}}')
-            ->where(['scanId' => $latestScanIds])
+            ->where(['scanId' => $latestScanIds, 'isResolved' => false])
+            ->andWhere($audit->definiteCondition())
             ->andWhere(['not', ['wcagCriterion' => null]])
             ->all();
 
@@ -673,17 +820,6 @@ class VpatService extends Component
             }
         }
 
-        // With server-side browser scanning active, every queued scan carries a
-        // full axe pass, so a clean fleet-wide result for the browser-verified
-        // criteria is real evidence rather than "probably never checked".
-        if (AccessibilityAudit::getInstance()->headless->isAvailable()) {
-            foreach (self::BROWSER_VERIFIED_CRITERIA as $num) {
-                if (!isset($result[$num])) {
-                    $result[$num] = ['level' => 'Supports', 'basis' => 'automated'];
-                }
-            }
-        }
-
         return $result;
     }
 
@@ -699,6 +835,7 @@ class VpatService extends Component
     {
         $record = $this->getRecord($siteId);
         $auto = $this->getAutoConformance($siteId);
+        $evidence = $this->getEvidence($siteId);
         $overrides = $record['overrides'];
 
         $levelA = [];
@@ -720,6 +857,10 @@ class VpatService extends Component
                 'overrideRemarks' => $override['remarks'] ?? '',
                 'effectiveLevel' => $effectiveLevel,
                 'effectiveRemarks' => $effectiveRemarks,
+                'evidence' => $evidence[$num] ?? null,
+                'remarkStale' => $this->_remarkIsStale($override, $evidence[$num] ?? null),
+                'remarkSavedAt' => $override['remarkSavedAt'] ?? null,
+                'remarkFindings' => $override['remarkFindings'] ?? null,
             ]);
 
             if ($criterion['level'] === 'A') {
@@ -733,7 +874,13 @@ class VpatService extends Component
             'meta' => $record['meta'],
             'levelA' => $levelA,
             'levelAA' => $levelAA,
-            'hasScanData' => !empty($auto),
+            // Whether pages have been scanned, not whether the scans concluded
+            // anything. Derived from the auto-conformance map until that map
+            // stopped carrying clean criteria: with nothing failing there was
+            // nothing in it, so a fully scanned site with no open findings
+            // reported as never scanned, and the statement told the author
+            // their status rested on no evidence at all.
+            'hasScanData' => ($evidence[array_key_first($evidence)]['pages'] ?? 0) > 0,
             // Whether to state EN 301 549 alongside WCAG: clause 9 restates WCAG
             // 2.1 Level AA, and this report is Level AA throughout.
             'en301549' => (bool)(AccessibilityAudit::getInstance()->getSettings()->en301549 ?? false),
@@ -806,15 +953,23 @@ class VpatService extends Component
             ->select(['MAX(id)'])
             ->from('{{%accessibilityaudit_scans}}')
             ->where(['siteId' => $siteId])
-            ->groupBy(['elementId'])
+            // Grouped by url as well as elementId: every URL scan shares a null
+            // elementId, so grouping on that alone folds the lot into one row.
+            ->groupBy(['elementId', 'url'])
             ->column();
 
         $evidence = [];
         if (!empty($latestScanIds)) {
+            // Read the same way the rest of the plugin reads findings. A
+            // question the author has dismissed is answered, and handing it to
+            // the model as evidence puts a count in the remark that appears
+            // nowhere else on the site: the draft says four instances were
+            // found while the row beside it says nothing was.
             $evidence = (new Query())
                 ->select(['ruleId', 'severity', 'MIN(message) as message', 'COUNT(*) as occurrences', 'COUNT(DISTINCT elementId) as pages'])
                 ->from('{{%accessibilityaudit_issues}}')
                 ->where(['scanId' => $latestScanIds, 'wcagCriterion' => $criterion, 'isResolved' => false])
+                ->andWhere(AccessibilityAudit::getInstance()->audit->definiteCondition())
                 ->groupBy(['ruleId', 'severity'])
                 ->orderBy(['occurrences' => SORT_DESC])
                 ->limit(8)
@@ -823,19 +978,24 @@ class VpatService extends Component
 
         $notes = trim($notes);
 
-        // A clean fleet-wide browser pass is real scan evidence for the
-        // browser-verified criteria, matching getAutoConformance(): the row's
-        // "From scans: Supports" pill and this button must agree on whether
-        // there is anything to draft from.
-        $browserVerified = in_array($criterion, self::BROWSER_VERIFIED_CRITERIA, true)
-            && !empty($latestScanIds)
-            && AccessibilityAudit::getInstance()->headless->isAvailable();
+        // Whether the scans have anything to say about this criterion at all,
+        // as opposed to anything to report against it.
+        $hasCoverage = isset(self::EVIDENCE[$criterion]) && !empty($latestScanIds);
 
-        // Nothing recorded, not machine-testable, and no author notes: there
-        // is no honest basis for an AI draft, so make the human evaluate first.
+        // No findings and no notes, but the scans did cover part of this
+        // criterion. There is something honest to write: what was tested and
+        // what was not. It is a statement of the testing position and not a
+        // conformance claim, and the author still picks the level.
+        $positionOnly = empty($evidence) && $notes === '' && $hasCoverage;
+        $hasFindings = !empty($evidence);
+        $hasNotes = $notes !== '';
+
+        // Nothing recorded, no notes, and nothing the scans cover: the only
+        // material left is the criterion's own name, and a remark written from
+        // that is invented. Make the person evaluate first.
         // `hint` marks this as guidance rather than a failure, so the editor
         // can style it as a nudge instead of an error.
-        if (empty($evidence) && $meta['auto'] !== 'automated' && !$browserVerified && $notes === '') {
+        if (empty($evidence) && $notes === '' && !$hasCoverage) {
             return [
                 'success' => false,
                 'hint' => true,
@@ -858,15 +1018,17 @@ class VpatService extends Component
                 $evidence,
             );
             $sources[] = "Scanner findings for this criterion (latest scans):\n" . implode("\n", $lines);
-        } elseif ($meta['auto'] === 'automated') {
+        } elseif (isset(self::EVIDENCE[$criterion]) && !empty($latestScanIds)) {
+            // What the sweep covered, stated as coverage rather than as a
+            // verdict, and paired with what it could not reach. The author has
+            // written notes to get this far; this tells the model what the
+            // scans can and cannot back those notes up with.
             $sources[] = sprintf(
-                'The scanner fully automates this check and found no violations across %d scanned page(s).',
+                'Scan coverage: the scanner checked %s across %d scanned page(s) and recorded no findings against this criterion. '
+                . 'It cannot establish %s, so that part of the criterion is unassessed rather than passing.',
+                self::EVIDENCE[$criterion]['checks'],
                 count($latestScanIds),
-            );
-        } elseif ($browserVerified) {
-            $sources[] = sprintf(
-                'Server-side browser scanning runs the full axe-core checks for this criterion at both desktop and mobile viewports, and found no violations across %d scanned page(s).',
-                count($latestScanIds),
+                self::EVIDENCE[$criterion]['cannot'],
             );
         }
 
@@ -882,12 +1044,49 @@ class VpatService extends Component
             "Criterion description: {$meta['desc']}\n" .
             'Conformance level chosen for this row: ' . ($level !== '' ? $level : 'not yet selected') . "\n\n" .
             implode("\n\n", $sources) . "\n\n" .
-            "Rules:\n" .
-            "- 1 to 2 sentences, no preamble, professional VPAT register, plain text only (no markdown, no lists).\n" .
-            "- Base every statement strictly on the material above. Do not invent features, testing activity, or fixes that are not in it.\n" .
-            "- When the author's notes are present, treat them as the primary source: keep their facts and intent, tidy the wording.\n" .
-            "- Do not state or suggest a conformance level; describe the situation the material shows.\n" .
-            "- If the findings show violations, summarise what fails and roughly how widespread it is.\n" .
+            // The rules below are drawn from a corpus of published conformance
+            // reports. See reference/vpat-remark-patterns.md, which records
+            // what the corpus does at each of these decisions and how often.
+            //
+            // Grouped and made conditional on purpose. Sixteen equal-looking
+            // bullets, a third of them about a situation this row is not in,
+            // is a worse instruction than eight that all apply.
+            "SHAPE\n" .
+            "- Plain text. No markdown, no headings, no preamble.\n" .
+            '- ' . ($hasFindings
+                ? "Two to four sentences.\n"
+                : "One or two sentences.\n") .
+            ($hasFindings
+                ? "- Listing more than one place something fails: write a stem sentence, then one line per item beginning with a bullet character and a space. A single failure stays as prose.\n"
+                : '') .
+            "\nSUBSTANCE\n" .
+            "- Base every statement strictly on the material above.\n" .
+            ($hasFindings
+                ? "- Name what fails, say where, and say how much of it there is, all three. A count with nothing attached to it is a statistic; a named fault with no scale leaves the reader unable to judge severity. The material gives you the rule, the page and the occurrence count: use them together.\n"
+                . "- Lead with what does work, then the exception. That is how the strongest published reports read, and it stops one fault reading as a broken product.\n"
+                : '') .
+            ($hasNotes
+                ? "- The author's notes are the primary source. Keep their facts and their intent; tidy the wording.\n"
+                . "- Numbers in those notes may be stale, because they are stored text and the scans have moved on. Prefer any counts in the material above. Where it gives none, do not carry a count forward from the notes.\n"
+                : '') .
+            ($positionOnly
+                // Nothing found and nothing written, so the only honest remark
+                // is about coverage. Spelled out because the pull towards "no
+                // issues were found" is strong, and that sentence reads as a
+                // pass on a criterion no scanner can settle.
+                ? "- There are no findings and no notes, so write only what testing has and has not established: what the scan covered, over how many pages, and then plainly that the rest of this criterion is unassessed. Do not write that nothing was found or that no issues exist. An untested thing is untested, not passing.\n"
+                : '') .
+            "\nNEVER\n" .
+            "- Never state or suggest a conformance level. The person completing the report chooses it.\n" .
+            "- Never restate the success criterion. The reader has it in the next column.\n" .
+            "- Never describe testing tools or method. Those belong to the report as a whole, not to one row.\n" .
+            "- Never say how something was established unless the material says so. Do not write that anything was manually evaluated, audited, reviewed or tested by a person. That is the point at which an unattributed claim quietly acquires a provenance it never had.\n" .
+            "- Never hedge without something concrete beside it. \"Some pages\" alone is worthless; \"some\" with a number or a named component is fine.\n" .
+            "- Never describe what the product was designed or intended to do. Describe what it does.\n" .
+            "- Never offer a workaround, a setting or an add-on as though it settled the criterion. A fault that is worked around is still a fault.\n" .
+            '- Never commit to a fix or a date' . ($hasNotes ? " unless the author's notes give one.\n" : ".\n") .
+            "- Never push the problem onto whoever implements or configures the site.\n" .
+            "- Never use marketing language. This is a factual document a buyer will compare against a competitor's.\n\n" .
             'Respond with the remark text only.';
 
         try {
@@ -922,6 +1121,34 @@ class VpatService extends Component
     }
 
     // ─── Private ─────────────────────────────────────────────────────────────
+
+    /**
+     * Whether a saved remark was written against a different set of findings
+     * than the ones standing now.
+     *
+     * Only says so where it can be sure. A remark saved before the plugin
+     * started recording this carries no count, and guessing at one would put a
+     * warning on every row an author had already dealt with.
+     *
+     * @param array<string, mixed>|null $override The stored override, if any.
+     * @param array{checks: ?string, cannot: ?string, findings: int, pages: int}|null $evidence
+     *        The criterion's current evidence.
+     * @return bool Whether the wording predates the current findings.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _remarkIsStale(?array $override, ?array $evidence): bool
+    {
+        if ($override === null || $evidence === null) {
+            return false;
+        }
+
+        if (trim((string)($override['remarks'] ?? '')) === '' || !isset($override['remarkFindings'])) {
+            return false;
+        }
+
+        return (int)$override['remarkFindings'] !== (int)$evidence['findings'];
+    }
 
     /**
      * @throws Exception

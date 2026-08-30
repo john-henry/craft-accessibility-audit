@@ -13,6 +13,8 @@ use craft\helpers\App;
 use craft\web\Controller;
 use GuzzleHttp\Exception\ClientException;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\helpers\AltTextPrompt;
+use johnhenry\accessibilityaudit\helpers\VisionImage;
 use JsonException;
 use Throwable;
 use yii\base\InvalidConfigException;
@@ -107,38 +109,31 @@ class AltController extends Controller
 
         $imageSource = $this->resolveImageSource($asset);
         if (!$imageSource) {
-            return $this->asJson(['success' => false, 'error' => Craft::t('accessibility-audit', 'Could not read asset. Ensure the asset has a public URL or a supported filesystem.')]);
+            return $this->asJson([
+                'success' => false,
+                'error' => VisionImage::isVector($asset)
+                    ? $this->_vectorFailureMessage()
+                    : Craft::t('accessibility-audit', 'Could not read asset. Ensure the asset has a public URL or a supported filesystem.'),
+            ]);
         }
 
-        $language = trim($settings->altTextLanguage ?? 'English') ?: 'English';
-        $prompt = 'Write concise, descriptive alt text for this image. Return only the alt text: no quotes, no explanation, no trailing period. Maximum 125 characters. Respond in ' . $language . '.';
-        if (!empty($settings->altTextContext)) {
-            $prompt = 'Site context: ' . $settings->altTextContext . "\n\n" . $prompt;
-        }
+        $prompt = AltTextPrompt::build($asset, $settings);
 
         try {
             $client = Craft::createGuzzleClient();
-            $response = $client->post('https://api.anthropic.com/v1/messages', [
-                'headers' => [
-                    'x-api-key' => $apiKey,
-                    'anthropic-version' => '2023-06-01',
-                    'content-type' => 'application/json',
-                ],
-                'json' => [
-                    'model' => 'claude-haiku-4-5-20251001',
-                    'max_tokens' => 150,
-                    'messages' => [[
-                        'role' => 'user',
-                        'content' => [
-                            ['type' => 'image', 'source' => $imageSource],
-                            ['type' => 'text',  'text' => $prompt],
-                        ],
-                    ]],
-                ],
-            ]);
+            $altText = $this->_askClaude($client, $apiKey, $imageSource, $prompt);
 
-            $body = json_decode((string)$response->getBody(), true, 512, JSON_THROW_ON_ERROR);
-            $altText = trim($body['content'][0]['text'] ?? '');
+            // One more go when the model runs past the length it was asked
+            // for, then a trim.
+            if (AltTextPrompt::exceedsLimit($altText)) {
+                $altText = $this->_askClaude(
+                    $client,
+                    $apiKey,
+                    $imageSource,
+                    AltTextPrompt::retryPrompt($prompt, $altText),
+                );
+                $altText = AltTextPrompt::trimToLimit($altText);
+            }
 
             if (!$altText) {
                 return $this->asJson(['success' => false, 'error' => Craft::t('accessibility-audit', 'Empty response from API.')]);
@@ -394,8 +389,83 @@ class AltController extends Controller
      * @throws InvalidConfigException
      * @throws ImageTransformException
      */
+    /**
+     * One alt-text request to Claude, returning the text it came back with.
+     *
+     * @param \GuzzleHttp\Client $client The HTTP client.
+     * @param string $apiKey The resolved Anthropic key.
+     * @param array<string, mixed> $imageSource The image content block source.
+     * @param string $prompt The prompt to send.
+     * @return string The alt text, empty if the response carried none.
+     * @throws JsonException
+     */
+    private function _askClaude(\GuzzleHttp\Client $client, string $apiKey, array $imageSource, string $prompt): string
+    {
+        $response = $client->post('https://api.anthropic.com/v1/messages', [
+            'headers' => [
+                'x-api-key' => $apiKey,
+                'anthropic-version' => '2023-06-01',
+                'content-type' => 'application/json',
+            ],
+            'json' => [
+                'model' => 'claude-haiku-4-5-20251001',
+                'max_tokens' => 150,
+                'messages' => [[
+                    'role' => 'user',
+                    'content' => [
+                        ['type' => 'image', 'source' => $imageSource],
+                        ['type' => 'text',  'text' => $prompt],
+                    ],
+                ]],
+            ],
+        ]);
+
+        $body = json_decode((string)$response->getBody(), true, 512, JSON_THROW_ON_ERROR);
+
+        return trim($body['content'][0]['text'] ?? '');
+    }
+
+    /**
+     * Why a vector could not be described, in the terms that matter to whoever
+     * has to do something about it.
+     *
+     * Three separate problems land here, and one message about SVG support
+     * covers none of them on a server that already has it. The common case is
+     * a renderer that draws fills but not strokes, and the fix for that is a
+     * server package, so it is worth naming.
+     *
+     * @return string
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _vectorFailureMessage(): string
+    {
+        if (!VisionImage::canReadVectors()) {
+            return Craft::t('accessibility-audit', 'This server cannot read SVG files. Write this alt text by hand, or check that ImageMagick was built with SVG support.');
+        }
+
+        if (!VisionImage::rendersStrokes()) {
+            return Craft::t('accessibility-audit', 'This SVG is drawn with strokes, and the SVG renderer on this server drops them, so there was nothing to describe. Write this alt text by hand, or ask your host to install librsvg. SVGs drawn with fills still work.');
+        }
+
+        return Craft::t('accessibility-audit', 'This SVG came out blank when rendered, so there was nothing to describe. Write its alt text by hand.');
+    }
+
     private function resolveImageSource(Asset $asset): ?array
     {
+        // Oversized images are scaled down before the URL tier, which would
+        // otherwise hand over the full-size original.
+        $downscaled = VisionImage::downscaledSource($asset);
+        if ($downscaled !== null) {
+            return $downscaled;
+        }
+
+        // A vector that could not be rendered is never sent as-is: the API
+        // takes raster formats only and would refuse it.
+        if (VisionImage::isVector($asset)) {
+            return null;
+        }
+
         $url = $asset->getUrl();
         $mime = $asset->getMimeType() ?: 'image/jpeg';
 

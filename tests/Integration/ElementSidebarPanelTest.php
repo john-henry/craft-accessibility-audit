@@ -86,33 +86,55 @@ it('counts occurrences in the tab badge, not grouped rows', function() {
     expect($html)->toContain('accessibility-audit-panel__badge">7<');
 });
 
+// The body of registerElementSidebarPanel(), for the source assertions below.
+// Read from source rather than exercised, because the registration happens once
+// at plugin init and cannot be re-run inside a test.
+function sidebarPanelRegistration(): string
+{
+    $source = file_get_contents(dirname(__DIR__, 2) . '/src/AccessibilityAudit.php');
+    $start = strpos($source, 'registerElementSidebarPanel(): void');
+
+    if ($start === false) {
+        return '';
+    }
+
+    $end = strpos($source, "\n    private function ", $start);
+
+    return substr($source, $start, $end === false ? null : $end - $start);
+}
+
 it('registers for every element type the scanner covers, not just entries', function() {
     // It was bound to Entry, so categories and Commerce products were scanned
     // and reported on while their edit screens showed no panel at all. The
     // guards have to mirror AuditService::getUrlElementsQuery().
-    $source = file_get_contents(dirname(__DIR__, 2) . '/src/AccessibilityAudit.php');
+    $body = sidebarPanelRegistration();
 
-    preg_match(
-        '/registerElementSidebarPanel\(\): void.*?Event::on\((\w+)::class, Element::EVENT_DEFINE_SIDEBAR_HTML/s',
-        $source,
-        $m,
-    );
+    expect($body)
+        ->toContain('ScannableElementTypes::all()')
+        ->toContain('Element::EVENT_DEFINE_SIDEBAR_HTML');
+});
 
-    expect($m[1] ?? null)->toBe('Element');
+it('registers on the base Element too, as a net for unknown element types', function() {
+    // A type registered by a plugin this one cannot see still gets a panel.
+    expect(sidebarPanelRegistration())->toContain('$classes[] = Element::class;');
+});
+
+it('prepends its handler so the panel sits above other plugins panels', function() {
+    // Without append: false the panel lands under SEOmatic and anything else
+    // hooking the same event. It is a panel you act on, so it goes near the top.
+    expect(sidebarPanelRegistration())->toContain('append: false');
+});
+
+it('draws the panel only once when both registrations fire', function() {
+    // Concrete types and the base Element are both registered, so most types
+    // are offered the same event twice. The markup check is what stops it.
+    expect(sidebarPanelRegistration())->toContain("str_contains(\$e->html, 'accessibility-audit-panel')");
 });
 
 it('keeps assets out of the panel, as the scanner does', function() {
     // Assets are binary files: the scanner excludes them and they have their
     // own alt-text panel. Two panels on one screen would be worse than none.
-    $source = file_get_contents(dirname(__DIR__, 2) . '/src/AccessibilityAudit.php');
-
-    preg_match(
-        '/registerElementSidebarPanel\(\): void.*?if \((.*?)\) \{\s*return;/s',
-        $source,
-        $m,
-    );
-
-    expect($m[1] ?? '')->toContain('instanceof Asset');
+    expect(sidebarPanelRegistration())->toContain('instanceof Asset');
 });
 
 it('asks for no variable the event handler does not supply', function() {

@@ -7,6 +7,7 @@
 namespace johnhenry\accessibilityaudit\variables;
 
 use Craft;
+use craft\elements\Asset;
 use craft\elements\Entry;
 use craft\errors\SiteNotFoundException;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
@@ -28,6 +29,48 @@ class AccessibilityVariable
 {
     // Public Methods
     // =========================================================================
+
+    /**
+     * Whether an image is marked decorative, so a template can render an empty
+     * alt rather than repeating a filename or leaving the attribute off.
+     *
+     * ```twig
+     * <img src="{{ image.url }}" alt="{{ craft.a11y.isDecorative(image) ? '' : image.alt }}"
+     *     {{ craft.a11y.isDecorative(image) ? 'role="presentation"' : '' }}>
+     * ```
+     *
+     * The flag set is loaded once per request and answered from memory after
+     * that, so calling this per image in a loop costs one query for the page
+     * rather than one per image.
+     *
+     * @param Asset|int|null $asset The asset, or its id.
+     * @return bool True when the image is marked decorative.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function isDecorative(Asset|int|null $asset): bool
+    {
+        $assetId = $asset instanceof Asset ? (int)$asset->id : (int)$asset;
+
+        if ($assetId === 0) {
+            return false;
+        }
+
+        return AccessibilityAudit::getInstance()->getAssets()->isDecorative($assetId);
+    }
+
+    /**
+     * Every decorative asset id on the site, for a template that would rather
+     * hold the set itself than ask per image.
+     *
+     * @return array<int, true> Decorative asset ids as keys.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function decorativeAssetIds(): array
+    {
+        return AccessibilityAudit::getInstance()->getAssets()->allDecorativeIds();
+    }
 
     /**
      * Get the latest scan for an entry.
@@ -219,7 +262,21 @@ class AccessibilityVariable
      * inherits the surrounding page; point the Statement Template setting at
      * your own template to replace it entirely.
      *
+     * The statement's own title renders as an `h1` by default. Where it is
+     * dropped into a page that already has one, pass a `headingLevel` so it
+     * nests under the page's heading instead of competing with it; the
+     * subheadings step down from whatever level you set. `title` replaces the
+     * title text:
+     *
+     * ```twig
+     * {{ craft.a11y.accessibilityStatementHtml(null, {
+     *     headingLevel: 2,
+     *     title: 'How accessible this site is',
+     * }) }}
+     * ```
+     *
      * @param int|null $siteId The site, or null for the current one.
+     * @param array<string, mixed> $options `headingLevel` (1 to 6) and `title`.
      * @return Markup|null
      * @throws LoaderError
      * @throws RuntimeError
@@ -227,7 +284,7 @@ class AccessibilityVariable
      * @throws \yii\base\Exception
      * @throws \Exception
      */
-    public function accessibilityStatementHtml(?int $siteId = null): ?Markup
+    public function accessibilityStatementHtml(?int $siteId = null, array $options = []): ?Markup
     {
         $statement = $this->accessibilityStatement($siteId);
 
@@ -238,6 +295,6 @@ class AccessibilityVariable
         $plugin = AccessibilityAudit::getInstance();
         $resolved = $plugin->resolveSiteId($siteId ?? Craft::$app->getSites()->getCurrentSite()->id);
 
-        return new Markup($plugin->statement->render($resolved), Craft::$app->charset);
+        return new Markup($plugin->statement->render($resolved, $options), Craft::$app->charset);
     }
 }

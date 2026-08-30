@@ -25,7 +25,10 @@ use yii\db\Exception;
  * Rulings are kept in their own table rather than on the issue rows, because
  * issue rows are rebuilt on every scan and a verdict stored there would be
  * wiped by the next one. They are keyed by the things that survive a re-scan:
- * the element, the site, the rule, and a hash of the offending markup. The
+ * the site, the page, the rule, and a hash of the offending markup. The page is
+ * an element, or a URL for one Craft does not back with an element, and both
+ * reduce to a single non-null targetHash so the index enforcing one ruling per
+ * question actually holds either way. The
  * matching issue rows carry a copy so the scoring and listing queries stay
  * join-free; this service keeps that copy in step.
  *
@@ -58,6 +61,29 @@ class VerdictService extends Component
     // =========================================================================
 
     /**
+     * Identifies the page a ruling belongs to: an element, or a URL for a page
+     * Craft does not back with one.
+     *
+     * A single non-null value rather than a nullable elementId beside a
+     * nullable url, because the unique index that stops one question being
+     * answered twice is built on it, and both MySQL and Postgres treat nulls
+     * in a unique index as distinct. Keyed on a nullable column the index
+     * would enforce nothing on exactly the rows that need it.
+     *
+     * @param int|null $elementId The element, when there is one.
+     * @param string|null $url The scanned URL, when there is not.
+     * @return string A 40-character hash.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function targetHash(?int $elementId, ?string $url = null): string
+    {
+        return $elementId !== null && $elementId > 0
+            ? sha1('element:' . $elementId)
+            : sha1('url:' . (string)$url);
+    }
+
+    /**
      * Hashes the markup an occurrence was found in, so two occurrences of the
      * same rule on the same page can be ruled on separately.
      *
@@ -72,6 +98,43 @@ class VerdictService extends Component
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
      */
+    /**
+     * @var string[] Attributes holding an element id, or a reference to one.
+     *
+     *      Some form builders mint a fresh token into every id on the page at
+     *      each render, Formie among them: the same textarea comes back as
+     *      "fui-support-kqjyvj-fields-details", then "-jbuoir-", then
+     *      "-jhaqor-". Keyed on anything carrying that, an occurrence is a new
+     *      occurrence every scan, and every ruling made on it is orphaned.
+     */
+    private const IDREF_ATTRIBUTES = [
+        'id', 'for', 'form', 'list', 'headers', 'aria-labelledby', 'aria-describedby',
+        'aria-controls', 'aria-owns', 'aria-activedescendant', 'aria-flowto',
+        'aria-details', 'aria-errormessage',
+    ];
+
+    /**
+     * The hash an occurrence is keyed on, ignoring anything that changes
+     * between two renders of the same page.
+     *
+     * No attempt is made to tell a generated id from a hand-written one. There
+     * is no reliable test for it: "kqjyvj" and "submit" are both six lowercase
+     * letters, and guessing wrong the other way is worse than the problem,
+     * because two genuinely separate occurrences would collapse into one and a
+     * ruling on either would silently answer both. So no id is trusted at all,
+     * and identity comes from what is left: the tag, its classes, the field
+     * name, and the text.
+     *
+     * @param string|null $context The occurrence's context snippet.
+     * @return string
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function stableContextHash(?string $context): string
+    {
+        return sha1($this->_normalisedContext($context));
+    }
+
     public function contextHash(?string $context): string
     {
         // Line endings are normalised before hashing: the browser's form
@@ -87,11 +150,18 @@ class VerdictService extends Component
      * stored issue rows into line so the change shows without a re-scan.
      *
      * @param int $siteId The site the issue belongs to.
-     * @param int $elementId The element the issue was found on.
+     * @param int|null $elementId The element the issue was found on, or null
+     *                            for a page scanned by URL.
      * @param string $ruleId The potential rule, e.g. `potential:decorative-image`.
      * @param string|null $context The occurrence's context snippet.
      * @param string|null $verdict One of self::VERDICTS, or null to clear.
      * @param string|null $note The author's reasoning, kept for the audit trail.
+     * @param string|null $url The scanned URL, when there is no element.
+     * @param bool $deferScoring Skip the score recalculation and hand back the
+     *                           scans that need one. A caller ruling on fifty
+     *                           occurrences at once would otherwise recompute
+     *                           the same scan fifty times.
+     * @return int[] The scans whose scores are now out of date.
      * @throws Exception
      * @throws \Exception
      * @author JohnHenry <info@johnhenry.ie>
@@ -99,19 +169,24 @@ class VerdictService extends Component
      */
     public function setVerdict(
         int $siteId,
-        int $elementId,
+        ?int $elementId,
         string $ruleId,
         ?string $context,
         ?string $verdict,
         ?string $note = null,
-    ): void {
+        ?string $url = null,
+        bool $deferScoring = false,
+    ): array {
         $db = Craft::$app->getDb();
-        $hash = $this->contextHash($context);
+        $hash = $this->stableContextHash($context);
         $now = Db::prepareDateForDb(new DateTime());
+        $elementId = $elementId !== null && $elementId > 0 ? $elementId : null;
 
+        // Matched on the target hash, not on elementId and url separately: it
+        // is the one column that is never null and the unique index is on it.
         $match = [
             'siteId' => $siteId,
-            'elementId' => $elementId,
+            'targetHash' => $this->targetHash($elementId, $url),
             'ruleId' => $ruleId,
             'contextHash' => $hash,
         ];
@@ -134,6 +209,8 @@ class VerdictService extends Component
                 ], ['id' => $existing])->execute();
             } else {
                 $db->createCommand()->insert('{{%accessibilityaudit_verdicts}}', $match + [
+                    'elementId' => $elementId,
+                    'url' => $elementId === null ? $url : null,
                     'verdict' => $verdict,
                     'note' => $note,
                     'userId' => Craft::$app->getUser()->getId(),
@@ -144,7 +221,7 @@ class VerdictService extends Component
             }
         }
 
-        $this->applyToIssues($siteId, $elementId, $ruleId, $hash, $verdict);
+        return $this->applyToIssues($siteId, $elementId, $ruleId, $hash, $verdict, $url, $deferScoring);
     }
 
     /**
@@ -155,33 +232,60 @@ class VerdictService extends Component
      * row, so no schema is spent on a value that is derivable.
      *
      * @param int $siteId The site.
-     * @param int $elementId The element.
+     * @param int|null $elementId The element, or null for a URL page.
      * @param string $ruleId The potential rule.
      * @param string $hash The context hash the ruling applies to.
      * @param string|null $verdict The ruling, or null to clear it.
+     * @param string|null $url The scanned URL, when there is no element.
+     * @param bool $deferScoring Whether to leave the recalculation to the caller.
+     * @return int[] The scans whose scores are now out of date.
      * @throws Exception
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function applyToIssues(int $siteId, int $elementId, string $ruleId, string $hash, ?string $verdict): void
-    {
-        $rows = (new Query())
-            ->select(['id', 'context', 'scanId'])
-            ->from('{{%accessibilityaudit_issues}}')
-            ->where(['siteId' => $siteId, 'elementId' => $elementId, 'ruleId' => $ruleId])
-            ->all();
+    public function applyToIssues(
+        int $siteId,
+        ?int $elementId,
+        string $ruleId,
+        string $hash,
+        ?string $verdict,
+        ?string $url = null,
+        bool $deferScoring = false,
+    ): array {
+        $query = (new Query())
+            ->select(['i.id', 'i.context', 'i.scanId'])
+            ->from(['i' => '{{%accessibilityaudit_issues}}'])
+            ->where(['i.siteId' => $siteId, 'i.ruleId' => $ruleId]);
+
+        if ($elementId !== null && $elementId > 0) {
+            $query->andWhere(['i.elementId' => $elementId]);
+        } else {
+            // A URL page's issue rows carry no element, so they are reached
+            // through the scan that holds the URL.
+            $query
+                ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], '[[s.id]] = [[i.scanId]]')
+                ->andWhere(['s.url' => $url]);
+        }
+
+        $rows = $query->all();
 
         $ids = [];
         $scanIds = [];
         foreach ($rows as $row) {
-            if ($this->contextHash($row['context']) === $hash) {
+            // Compared on the stable hash, and on the two older forms as
+            // well: a ruling made before this changed is still that ruling.
+            if (
+                $this->stableContextHash($row['context']) === $hash
+                || $this->contextHash($row['context']) === $hash
+                || $this->_legacyContextHash($row['context']) === $hash
+            ) {
                 $ids[] = (int)$row['id'];
                 $scanIds[(int)$row['scanId']] = true;
             }
         }
 
         if (empty($ids)) {
-            return;
+            return [];
         }
 
         Craft::$app->getDb()->createCommand()->update('{{%accessibilityaudit_issues}}', [
@@ -189,29 +293,38 @@ class VerdictService extends Component
             'dateUpdated' => Db::prepareDateForDb(new DateTime()),
         ], ['id' => $ids])->execute();
 
+        $affected = array_map('intval', array_keys($scanIds));
+
         // Confirming promotes the issue into a real failure, so the score has
         // to be redone. Clearing or dismissing can equally take one back out.
-        foreach (array_keys($scanIds) as $scanId) {
+        if ($deferScoring) {
+            return $affected;
+        }
+
+        foreach ($affected as $scanId) {
             AccessibilityAudit::getInstance()->audit->recalculateScoreForScan($scanId);
         }
+
+        return $affected;
     }
 
     /**
      * Every ruling recorded for an element, keyed so a scan can stamp its fresh
      * issue rows in one pass instead of a query per issue.
      *
-     * @param int $elementId The element.
+     * @param int|null $elementId The element, or null for a URL page.
      * @param int $siteId The site.
+     * @param string|null $url The scanned URL, when there is no element.
      * @return array<string, string> "ruleId|contextHash" => verdict.
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function mapForElement(int $elementId, int $siteId): array
+    public function mapForElement(?int $elementId, int $siteId, ?string $url = null): array
     {
         $rows = (new Query())
             ->select(['ruleId', 'contextHash', 'verdict'])
             ->from('{{%accessibilityaudit_verdicts}}')
-            ->where(['elementId' => $elementId, 'siteId' => $siteId])
+            ->where(['targetHash' => $this->targetHash($elementId, $url), 'siteId' => $siteId])
             ->all();
 
         $map = [];
@@ -223,7 +336,7 @@ class VerdictService extends Component
     }
 
     /**
-     * Who recorded each ruling, and when, for a batch of elements.
+     * Who recorded each ruling, and when, for a batch of pages.
      *
      * Attribution lives only on the verdicts table: the copy stamped onto the
      * issues row carries the ruling but not its author. There is no join to be
@@ -231,28 +344,29 @@ class VerdictService extends Component
      * that keys a verdict is derived in PHP, so a listing resolves the two in
      * one batched query and matches in memory rather than querying per row.
      *
-     * @param int[] $elementIds The elements on the current page of results.
+     * @param string[] $targetHashes The pages on the current page of results,
+     *                                from {@see self::targetHash()}.
      * @param int $siteId The site.
      * @return array<string, array{userId: int|null, date: string|null}> Keyed
-     *         "elementId|ruleId|contextHash".
+     *         "targetHash|ruleId|contextHash".
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function metaForElements(array $elementIds, int $siteId): array
+    public function metaForTargets(array $targetHashes, int $siteId): array
     {
-        if (empty($elementIds)) {
+        if (empty($targetHashes)) {
             return [];
         }
 
         $rows = (new Query())
-            ->select(['elementId', 'ruleId', 'contextHash', 'userId', 'dateUpdated'])
+            ->select(['targetHash', 'ruleId', 'contextHash', 'userId', 'dateUpdated'])
             ->from('{{%accessibilityaudit_verdicts}}')
-            ->where(['elementId' => $elementIds, 'siteId' => $siteId])
+            ->where(['targetHash' => $targetHashes, 'siteId' => $siteId])
             ->all();
 
         $map = [];
         foreach ($rows as $row) {
-            $key = $row['elementId'] . '|' . $row['ruleId'] . '|' . $row['contextHash'];
+            $key = $row['targetHash'] . '|' . $row['ruleId'] . '|' . $row['contextHash'];
             $map[$key] = [
                 'userId' => $row['userId'] !== null ? (int)$row['userId'] : null,
                 'date' => $row['dateUpdated'] ?? null,
@@ -267,25 +381,24 @@ class VerdictService extends Component
      * {@see self::metaForElements()}.
      *
      * @param array<string, array{userId: int|null, date: string|null}> $map The batch.
-     * @param int $elementId The element.
+     * @param string $targetHash The page, from {@see self::targetHash()}.
      * @param string $ruleId The rule.
      * @param string|null $context The occurrence's context snippet.
      * @return array{userId: int|null, date: string|null}|null Null when nothing was recorded.
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function lookupMeta(array $map, int $elementId, string $ruleId, ?string $context): ?array
+    public function lookupMeta(array $map, string $targetHash, string $ruleId, ?string $context): ?array
     {
-        $meta = $map[$elementId . '|' . $ruleId . '|' . $this->contextHash($context)] ?? null;
-        if ($meta !== null) {
-            return $meta;
+        foreach ($this->_candidateHashes($context) as $hash) {
+            $meta = $map[$targetHash . '|' . $ruleId . '|' . $hash] ?? null;
+
+            if ($meta !== null) {
+                return $meta;
+            }
         }
 
-        $legacy = $this->_legacyContextHash($context);
-
-        return $legacy !== null
-            ? ($map[$elementId . '|' . $ruleId . '|' . $legacy] ?? null)
-            : null;
+        return null;
     }
 
     /**
@@ -301,16 +414,15 @@ class VerdictService extends Component
      */
     public function lookup(array $map, string $ruleId, ?string $context): ?string
     {
-        $verdict = $map[$ruleId . '|' . $this->contextHash($context)] ?? null;
-        if ($verdict !== null) {
-            return $verdict;
+        foreach ($this->_candidateHashes($context) as $hash) {
+            $verdict = $map[$ruleId . '|' . $hash] ?? null;
+
+            if ($verdict !== null) {
+                return $verdict;
+            }
         }
 
-        $legacy = $this->_legacyContextHash($context);
-
-        return $legacy !== null
-            ? ($map[$ruleId . '|' . $legacy] ?? null)
-            : null;
+        return null;
     }
 
     // Private Methods
@@ -320,12 +432,11 @@ class VerdictService extends Component
      * The hash a pre-1.0.11 scan would have stored for this context, or null
      * when the two could not differ.
      *
-     * Image contexts used to be capped at 150 characters; they now keep 300
-     * so the src URL survives (see PotentialScanner). A ruling made before
-     * the change is keyed on the shorter snippet, so a longer context also
-     * tries the reconstruction: the first 150 characters plus the truncation
-     * ellipsis, exactly what the old builder produced. Without this, every
-     * dismissed image question would come straight back after the upgrade.
+     * Image contexts were capped at 150 characters before 1.0.11 and keep 300
+     * now, so the src URL survives (see PotentialScanner). Rulings stored
+     * against the shorter snippet are still keyed on it, so a longer context
+     * also tries the reconstruction: the first 150 characters plus the
+     * truncation ellipsis. Without it every dismissed image question returns.
      *
      * @param string|null $context The current (longer) context snippet.
      * @return string|null The legacy hash, or null when the context is short
@@ -333,16 +444,101 @@ class VerdictService extends Component
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
      */
+    /**
+     * The context with every id, and every reference to one, taken out.
+     *
+     * @param string|null $context The occurrence's context snippet.
+     * @return string
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    /**
+     * Every hash a ruling on this occurrence could have been stored under,
+     * newest form first.
+     *
+     * Rulings are written under the stable hash now. Anything decided before
+     * that was stored under the raw context, and before that under a shorter
+     * snippet again, so both are still tried on the way past. A reader who has
+     * already answered a question should never be asked it twice because the
+     * key changed underneath them.
+     *
+     * @param string|null $context The occurrence's context snippet.
+     * @return string[]
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _candidateHashes(?string $context): array
+    {
+        $hashes = [$this->stableContextHash($context), $this->contextHash($context)];
+        $legacy = $this->_legacyContextHash($context);
+
+        if ($legacy !== null) {
+            $hashes[] = $legacy;
+        }
+
+        return array_values(array_unique($hashes));
+    }
+
+    private function _normalisedContext(?string $context): string
+    {
+        $context = trim(str_replace(["\r\n", "\r"], "\n", (string)$context));
+
+        if ($context === '') {
+            return '';
+        }
+
+        // Contrast findings store JSON carrying a CSS path built from ids,
+        // alongside the markup. The path is for highlighting, never for
+        // identity, so it comes out whole. Keys are sorted so two encodings of
+        // the same data cannot hash differently.
+        $decoded = json_decode($context, true);
+
+        if (is_array($decoded) && array_key_exists('html', $decoded)) {
+            unset($decoded['selector']);
+            $decoded['html'] = $this->_stripIdReferences((string)$decoded['html']);
+            ksort($decoded);
+
+            return (string)json_encode($decoded);
+        }
+
+        return $this->_stripIdReferences($context);
+    }
+
+    /**
+     * Strips id-bearing attributes from a markup snippet.
+     *
+     * Matched on whitespace before the attribute name, so "data-id" and the
+     * like are left alone: only the attribute itself goes, never a fragment of
+     * a longer name.
+     *
+     * @param string $html The snippet.
+     * @return string
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _stripIdReferences(string $html): string
+    {
+        $names = implode('|', array_map(
+            static fn(string $name): string => preg_quote($name, '/'),
+            self::IDREF_ATTRIBUTES,
+        ));
+
+        return (string)preg_replace(
+            '/\s+(?:' . $names . ')\s*=\s*(["\'])(?:(?!\g{1}).)*\g{1}/i',
+            '',
+            $html,
+        );
+    }
+
     private function _legacyContextHash(?string $context): ?string
     {
         // Same line-ending normalisation as contextHash(), before measuring:
-        // the reconstruction must cut at the position the old builder did.
+        // the reconstruction must cut at the same position.
         $context = trim(str_replace(["\r\n", "\r"], "\n", (string)$context));
 
-        // At 150 or under the old builder stored the identical string, so
-        // there is no second hash. From 151 up the two can differ: a 151-char
-        // snippet fit the new cap untouched, but the old builder truncated it
-        // to 150 plus the ellipsis.
+        // At 150 or under both forms are identical, so there is no second
+        // hash. From 151 up they differ: the shorter form cut at 150 plus the
+        // ellipsis where the current one keeps the snippet whole.
         if (mb_strlen($context) <= 150) {
             return null;
         }

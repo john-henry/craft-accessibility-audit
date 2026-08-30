@@ -277,3 +277,240 @@ describe('ContentScanner severities and ignore list', function() {
         expect($dupes)->toHaveCount(1);
     });
 });
+
+// ---------------------------------------------------------------------------
+// link-generic and the new-tab notice
+//
+// Judging the accessible name stopped "View" with a descriptive aria-label
+// being called vague, which was the point. It also let through the opposite
+// case: "here (opens in new tab)" is the word "here" carrying a courtesy
+// notice, and judged whole it looked specific enough to pass. The notice
+// describes behaviour, not destination, so it comes off before the check.
+// ---------------------------------------------------------------------------
+
+function genericLinkIssues(string $body): array
+{
+    $html = '<!DOCTYPE html><html lang="en"><head><title>T</title>'
+        . '<meta name="description" content="d"></head><body>'
+        . '<a href="#main">Skip to main content</a><main id="main">' . $body . '</main></body></html>';
+
+    return array_values(array_filter(
+        (new ContentScanner())->scan($html),
+        fn($i) => $i->ruleId === 'link-generic',
+    ));
+}
+
+it('flags a vague link whose label only adds a new-tab notice', function(string $label) {
+    $body = '<a href="/x" target="_blank" aria-label="' . $label . '">here</a>';
+
+    expect(genericLinkIssues($body))->toHaveCount(1);
+})->with([
+    'parenthesised' => 'here (opens in new tab)',
+    'bracketed'     => 'here [opens in a new window]',
+    'trailing'      => 'here, opens in a new tab',
+    'external'      => 'here (external)',
+]);
+
+it('leaves a label that names the destination alone', function() {
+    // Issue #7: the whole reason the accessible name is consulted at all.
+    $body = '<a href="/x" target="_blank" aria-label="Full recipe at ohmydish.com (opens in new tab)">View</a>';
+
+    expect(genericLinkIssues($body))->toBeEmpty();
+});
+
+it('still flags a bare generic link', function() {
+    expect(genericLinkIssues('<a href="/x">click here</a>'))->toHaveCount(1);
+});
+
+it('leaves genuinely descriptive link text alone', function() {
+    expect(genericLinkIssues('<a href="/x">Read the full accessibility statement</a>'))->toBeEmpty();
+});
+
+it('reports every vague link on the page, not just the unlabelled one', function() {
+    // The reported case: two labelled "here (opens in new tab)", one bare.
+    $body = '<a href="https://a.example/x" target="_blank" aria-label="here (opens in new tab)">here</a>'
+        . '<a href="https://b.example/x">here</a>'
+        . '<a href="https://c.example/x" target="_blank" aria-label="here (opens in new tab)">here</a>';
+
+    expect(genericLinkIssues($body))->toHaveCount(3);
+});
+
+// ---------------------------------------------------------------------------
+// Alt text that is the filename by another name
+//
+// Craft derives an asset title from its filename, so a template reaching for
+// the title ships "Asset7623" for asset7623.jpg. The asset can hold good alt
+// text while the page shows none of it, which asset-level checks cannot see.
+// ---------------------------------------------------------------------------
+
+function filenameAltIssues(string $body): array
+{
+    $html = '<!DOCTYPE html><html lang="en"><head><title>T</title>'
+        . '<meta name="description" content="d"></head><body>'
+        . '<a href="#main">Skip to main content</a><main id="main">' . $body . '</main></body></html>';
+
+    return array_values(array_filter(
+        (new ContentScanner())->scan($html),
+        fn($i) => $i->ruleId === 'img-alt-filename',
+    ));
+}
+
+it('flags alt text that is the filename', function(string $src, string $alt) {
+    expect(filenameAltIssues('<img src="' . $src . '" alt="' . $alt . '">'))->toHaveCount(1);
+})->with([
+    'with the extension'   => ['/uploads/hero-shot.jpg', 'hero-shot.jpg'],
+    'title-derived'        => ['/uploads/asset7623.jpg', 'Asset7623'],
+    'underscores and digits' => ['/uploads/IMG_20260817.jpg', 'IMG 20260817'],
+    'through a transform url' => ['/transforms/_800x600/dsc01234.jpg', 'DSC01234'],
+]);
+
+it('leaves alt text alone that only happens to match a well-named file', function() {
+    // A descriptive sentence is not a filename just because the file was
+    // named after it too.
+    $body = '<img src="/uploads/roasted-garlic-focaccia.jpg" alt="Roasted garlic focaccia">';
+
+    expect(filenameAltIssues($body))->toBeEmpty();
+});
+
+it('leaves genuinely descriptive alt alone', function() {
+    $body = '<img src="/uploads/asset7623.jpg" alt="A bowl of aubergine curry with fresh coriander">';
+
+    expect(filenameAltIssues($body))->toBeEmpty();
+});
+
+it('ignores a data uri, which has no filename to match', function() {
+    expect(filenameAltIssues('<img src="data:image/png;base64,AAAA" alt="Chart">'))->toBeEmpty();
+});
+
+// ---------------------------------------------------------------------------
+// link-new-window and the announced name
+// ---------------------------------------------------------------------------
+
+function newWindowIssues(string $body): array
+{
+    $html = '<!DOCTYPE html><html lang="en"><head><title>T</title>'
+        . '<meta name="description" content="d"></head><body>'
+        . '<a href="#main">Skip to main content</a><main id="main">' . $body . '</main></body></html>';
+
+    return array_values(array_filter(
+        (new ContentScanner())->scan($html),
+        fn($i) => $i->ruleId === 'link-new-window',
+    ));
+}
+
+it('counts a new-tab warning carried in visually hidden text', function() {
+    // The pattern the plugin's own templates use: the warning is in the link,
+    // just not on screen, and a screen reader announces it either way.
+    $body = '<a href="https://x.example/" target="_blank">Our partner site'
+        . '<span class="visually-hidden"> (opens in new tab)</span></a>';
+
+    expect(newWindowIssues($body))->toBeEmpty();
+});
+
+it('still flags a new-tab link that warns nowhere', function() {
+    expect(newWindowIssues('<a href="https://x.example/" target="_blank">Our partner site</a>'))
+        ->toHaveCount(1);
+});
+
+it('flags a link whose aria-label replaces the hidden warning', function() {
+    // An aria-label replaces the content, so the hidden span is never
+    // announced and the label has to carry the warning itself.
+    $body = '<a href="https://x.example/" target="_blank" aria-label="Our partner site">Our partner site'
+        . '<span class="visually-hidden"> (opens in new tab)</span></a>';
+
+    expect(newWindowIssues($body))->toHaveCount(1);
+});
+
+it('reports a decorative image that is the only content of a link', function() {
+    // Marking an image decorative is right until it is the whole of a link,
+    // at which point the link has no name at all.
+    $html = '<!DOCTYPE html><html lang="en"><head><title>T</title>'
+        . '<meta name="description" content="d"></head><body>'
+        . '<a href="#main">Skip to main content</a><main id="main">'
+        . '<a href="/somewhere"><img src="/i/icon.svg" alt=""></a></main></body></html>';
+
+    $found = array_values(array_filter(
+        (new ContentScanner())->scan($html),
+        fn($i) => $i->ruleId === 'link-name',
+    ));
+
+    expect($found)->toHaveCount(1);
+});
+
+// ---------------------------------------------------------------------------
+// Block content inside a paragraph
+// ---------------------------------------------------------------------------
+
+/**
+ * Counts block-in-paragraph findings for a body snippet.
+ */
+function blockInParagraphIssues(string $body): int
+{
+    return count(array_filter(
+        (new ContentScanner())->scan(a11yCleanPage($body)),
+        static fn($issue): bool => $issue->ruleId === 'block-in-paragraph',
+    ));
+}
+
+describe('block-in-paragraph', function() {
+    it('flags a paragraph wrapping a paragraph', function() {
+        expect(blockInParagraphIssues('<p class="x"><p>text</p></p>'))->toBe(1);
+    });
+
+    it('flags a div inside a paragraph', function() {
+        expect(blockInParagraphIssues('<p><div>x</div></p>'))->toBe(1);
+    });
+
+    it('flags a list inside a paragraph', function() {
+        expect(blockInParagraphIssues('<p><ul><li>x</li></ul></p>'))->toBe(1);
+    });
+
+    it('leaves inline content alone', function() {
+        $body = '<p>text <strong>bold</strong> <a href="/somewhere">a real link</a></p>';
+
+        expect(blockInParagraphIssues($body))->toBe(0);
+    });
+
+    it('leaves a line break alone', function() {
+        expect(blockInParagraphIssues('<p>text<br>more</p>'))->toBe(0);
+    });
+
+    it('ignores markup the parser never treats as markup', function() {
+        $body = '<template><p><div>x</div></p></template>'
+            . '<!-- <p><div>x</div></p> -->';
+
+        expect(blockInParagraphIssues($body))->toBe(0);
+    });
+
+    it('names the offending tag and carries the markup as context', function() {
+        $found = array_values(array_filter(
+            (new ContentScanner())->scan(a11yCleanPage('<p class="wrap"><div>x</div></p>')),
+            static fn($issue): bool => $issue->ruleId === 'block-in-paragraph',
+        ));
+
+        expect($found)->toHaveCount(1)
+            ->and($found[0]->message)->toContain('<div>')
+            ->and($found[0]->context)->toContain('class="wrap"')
+            ->and($found[0]->severity)->toBe('warning')
+            // WCAG 4.1.1 was removed in 2.2, so this maps to no criterion.
+            ->and($found[0]->wcagCriterion)->toBeNull();
+    });
+
+    it('is invisible to XPath, which is why the rule reads the raw string', function() {
+        // If anyone ever "simplifies" the rule into a DOM query it will keep
+        // passing while detecting nothing. The parser repairs the nesting on
+        // load, so by the time there is a document the evidence is gone.
+        $html = a11yCleanPage('<p class="x"><p>text</p></p><p><div>x</div></p>');
+
+        $dom = new DOMDocument('1.0', 'utf-8');
+        libxml_use_internal_errors(true);
+        $dom->loadHTML($html, LIBXML_NOWARNING | LIBXML_NOERROR);
+        libxml_clear_errors();
+        $xpath = new DOMXPath($dom);
+
+        expect($xpath->query('//p//p')->length)->toBe(0)
+            ->and($xpath->query('//p//div')->length)->toBe(0)
+            // Same fixture, raw string: both are found.
+            ->and(blockInParagraphIssues('<p class="x"><p>text</p></p><p><div>x</div></p>'))->toBe(2);
+    });
+});

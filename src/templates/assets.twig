@@ -18,6 +18,12 @@
             <button type="submit" class="btn">{{ 'Scan all assets'|t('accessibility-audit') }}</button>
         </form>
     {% endif %}
+    {% if assetIssues|length > 0 and activeFilter != 'decorative' %}
+    <button id="accessibility-audit-save-all" class="btn" hidden>
+        {{ 'Save all drafts'|t('accessibility-audit') }}
+        (<span id="accessibility-audit-save-all-count">0</span>)
+    </button>
+    {% endif %}
     {% if assetIssues|length > 0 and hasApiKey and activeFilter != 'decorative' %}
     <button id="accessibility-audit-generate-all" class="btn submit">
         <span class="cp-icon small" aria-hidden="true">{{ iconSvg('sparkles') }}</span>
@@ -289,6 +295,12 @@
   const csrfName    = window.Craft ? Craft.csrfTokenName  : (window.csrfTokenName  || 'CRAFT_CSRF_TOKEN');
   const csrfValue   = window.Craft ? Craft.csrfTokenValue : (window.csrfTokenValue || '');
   const sparkleIcon = {{ iconSvg('sparkles')|json_encode|raw }};
+
+  // The length the long-alt check reports on, so the field counts against the
+  // number the report will quote back. Not a cap: Craft's own alt field sets
+  // no limit, and truncating an editor mid-description to a number the rule
+  // does not even use would be its own bug.
+  const ALT_GUIDELINE = {{ altGuideline|json_encode|raw }};
   const checkIcon   = {{ iconSvg('check')|json_encode|raw }};
   const activeView = {{ activeFilter|json_encode|raw }};
   const emptyAllHaveAlt   = {{ 'All images now have alt text, nice work!'|t('accessibility-audit')|json_encode|raw }};
@@ -327,6 +339,23 @@
     const out    = document.getElementById('accessibility-audit-asset-draft-count');
     if (out) out.textContent = String(count);
     if (stat) stat.hidden = count === 0;
+
+    // Save all only exists while there is something to save, so the action bar
+    // does not carry a dead button on a page with no open editors.
+    const saveAll      = document.getElementById('accessibility-audit-save-all');
+    const saveAllCount = document.getElementById('accessibility-audit-save-all-count');
+    const saveable     = draftRows().length;
+    if (saveAllCount) saveAllCount.textContent = String(saveable);
+    if (saveAll) saveAll.hidden = saveable === 0;
+  }
+
+  /* Rows with an open editor holding text worth saving. An editor left empty
+     is skipped: saving it would write a blank alt over whatever is there. */
+  function draftRows() {
+    return [...document.querySelectorAll('.accessibility-audit-asset-item')].filter((row) => {
+      const input = row.querySelector('.accessibility-audit-alt-input');
+      return input && input.value.trim() !== '';
+    });
   }
 
   const hasApiKey = {{ hasApiKey ? 'true' : 'false' }};
@@ -344,8 +373,10 @@
     const labelId = 'accessibility-audit-alt-' + esc(String(assetId));
     altCell.innerHTML =
       '<label for="' + labelId + '" class="visually-hidden">{{ 'Alt text'|t('accessibility-audit') }}</label>' +
-      '<input type="text" id="' + labelId + '" class="text accessibility-audit-alt-input accessibility-audit-alt-input--pending" maxlength="125" ' +
-      'placeholder="{{ 'Describe what the image shows…'|t('accessibility-audit') }}" value="' + esc(value || '') + '">';
+      '<input type="text" id="' + labelId + '" class="text accessibility-audit-alt-input accessibility-audit-alt-input--pending" ' +
+      'aria-describedby="' + labelId + '-count" ' +
+      'placeholder="{{ 'Describe what the image shows…'|t('accessibility-audit') }}" value="' + esc(value || '') + '">' +
+      '<span class="accessibility-audit-alt-count light" id="' + labelId + '-count" role="status" aria-live="polite"></span>';
 
     actCell.innerHTML =
       (hasApiKey
@@ -354,7 +385,25 @@
       '<button type="button" class="btn submit accessibility-audit-save-btn">{{ 'Save'|t('app') }}</button>' +
       '<button type="button" class="btn accessibility-audit-icon-btn accessibility-audit-cancel-btn" title="{{ 'Cancel'|t('app') }}" aria-label="{{ 'Cancel'|t('app') }}"><span data-icon="remove" aria-hidden="true"></span></button>';
 
-    altCell.querySelector('.accessibility-audit-alt-input').focus();
+    const altInput = altCell.querySelector('.accessibility-audit-alt-input');
+    const altCount = altCell.querySelector('.accessibility-audit-alt-count');
+
+    // Counts up rather than down. There is no ceiling to run out of, and the
+    // useful number when trimming is how far past the guideline the text sits,
+    // which is what the report quotes.
+    const renderAltCount = () => {
+      const n = [...altInput.value].length;
+      const over = n - ALT_GUIDELINE;
+
+      altCount.textContent = over > 0
+        ? Craft.t('accessibility-audit', '{n} characters, {over} over', { n: n, over: over })
+        : Craft.t('accessibility-audit', '{n} characters', { n: n });
+      altCount.classList.toggle('accessibility-audit-alt-count--low', over > 0);
+    };
+
+    altInput.addEventListener('input', renderAltCount);
+    renderAltCount();
+    altInput.focus();
     updateDraftCount();
   }
 
@@ -379,6 +428,15 @@
     }
   }
 
+  /* The save request itself, shared by the per-row Save button and Save all so
+     the two cannot drift on what they send. */
+  function postAlt(row) {
+    const input = row.querySelector('.accessibility-audit-alt-input');
+    if (!input) return Promise.resolve({ success: false, error: '' });
+
+    return post(saveUrl, { assetId: row.dataset.assetId, altText: input.value.trim() });
+  }
+
   async function saveAlt(row) {
     const input   = row.querySelector('.accessibility-audit-alt-input');
     const saveBtn = row.querySelector('.accessibility-audit-save-btn');
@@ -386,7 +444,7 @@
     saveBtn.textContent = '{{ 'Saving…'|t('accessibility-audit') }}';
     saveBtn.disabled    = true;
 
-    const data = await post(saveUrl, { assetId: row.dataset.assetId, altText: input.value.trim() });
+    const data = await postAlt(row);
     if (data.success) {
       if (window.Craft && Craft.cp) {
         (Craft.cp.displaySuccess || Craft.cp.displayNotice).call(Craft.cp, '{{ 'Alt text saved.'|t('accessibility-audit') }}');
@@ -621,8 +679,79 @@
 
       if (progressEl) progressEl.hidden = true;
       generateAllBtn.disabled = false;
+      updateDraftCount();
     });
   }
+
+  // ── Save all ──────────────────────────────────────────────────────────────
+
+  const saveAllBtn = document.getElementById('accessibility-audit-save-all');
+
+  /* Typing into an editor can turn a row into a draft worth saving (or back
+     again), which no open/close hook would catch. */
+  document.addEventListener('input', (e) => {
+    if (e.target.classList && e.target.classList.contains('accessibility-audit-alt-input')) {
+      updateDraftCount();
+    }
+  });
+
+  if (saveAllBtn) {
+    saveAllBtn.addEventListener('click', async () => {
+      const rows = draftRows();
+      if (!rows.length) return;
+
+      saveAllBtn.disabled = true;
+      if (generateAllBtn) generateAllBtn.disabled = true;
+      if (progressEl) progressEl.hidden = false;
+
+      let saved  = 0;
+      let failed = 0;
+      let lastError = '';
+
+      /* One at a time: each save is an element save on the server, and a
+         hundred at once would only queue behind each other anyway. */
+      for (const [i, row] of rows.entries()) {
+        if (progressEl) {
+          progressEl.textContent =
+            '{{ 'Saving'|t('accessibility-audit') }} ' + (i + 1) + ' / ' + rows.length + '…';
+        }
+
+        const data = await postAlt(row);
+
+        if (data.success) {
+          saved++;
+          removeRow(row, emptyAllHaveAlt);
+        } else {
+          failed++;
+          lastError = data.error || lastError;
+        }
+      }
+
+      if (progressEl) progressEl.hidden = true;
+      saveAllBtn.disabled = false;
+      if (generateAllBtn) generateAllBtn.disabled = false;
+      updateDraftCount();
+
+      /* One summary rather than a notice per row: fifty of them would bury
+         whatever else the page had to say. */
+      if (window.Craft && Craft.cp) {
+        if (failed === 0) {
+          (Craft.cp.displaySuccess || Craft.cp.displayNotice).call(
+            Craft.cp,
+            '{{ 'Saved {count} alt texts.'|t('accessibility-audit') }}'.replace('{count}', saved),
+          );
+        } else {
+          Craft.cp.displayError(
+            '{{ 'Saved {count}, {failed} could not be saved.'|t('accessibility-audit') }}'
+              .replace('{count}', saved)
+              .replace('{failed}', failed) + (lastError ? ' ' + lastError : ''),
+          );
+        }
+      }
+    });
+  }
+
+  updateDraftCount();
 
 })();
 {% endjs %}

@@ -52,12 +52,39 @@ class RuleRegistry
         'meta-description' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Page',           'abilities' => ['cognition']],
         'aria-hidden-focus' => ['difficulty' => 'advanced',     'responsibility' => 'development', 'elementType' => 'Interactive',    'abilities' => ['vision']],
         'list-structure' => ['difficulty' => 'beginner',     'responsibility' => 'development', 'elementType' => 'Lists',          'abilities' => ['cognition']],
+        'contrast-hover' => ['difficulty' => 'beginner',     'responsibility' => 'design',      'elementType' => 'Text',           'abilities' => ['vision']],
+        'contrast-focus' => ['difficulty' => 'beginner',     'responsibility' => 'design',      'elementType' => 'Text',           'abilities' => ['vision']],
+        'contrast-selection' => ['difficulty' => 'beginner',     'responsibility' => 'design',      'elementType' => 'Text',           'abilities' => ['vision']],
+        'unescaped-markup-in-code' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Page structure', 'abilities' => ['vision', 'cognition']],
+        'block-in-paragraph' => ['difficulty' => 'intermediate', 'responsibility' => 'development', 'elementType' => 'Page structure', 'abilities' => ['cognition']],
         'input-type' => ['difficulty' => 'intermediate', 'responsibility' => 'development', 'elementType' => 'Forms',          'abilities' => ['motor']],
 
         // Potential issue rules
         'potential:short-alt' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Images',   'abilities' => ['vision']],
         'potential:long-alt' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Images',   'abilities' => ['vision', 'cognition']],
-        'potential:identical-links' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Links',    'abilities' => ['cognition']],
+        'potential:identical-links' => [
+            'difficulty' => 'beginner',
+            'responsibility' => 'content',
+            'elementType' => 'Links',
+            'abilities' => ['cognition'],
+            'description' => 'Two or more links on a page read the same but go to different places. Someone '
+                . 'moving through a list of links in a screen reader sees the same words twice with nothing '
+                . 'to choose between them. Whether it fails WCAG 2.4.4 at level A or is a 2.4.9 improvement '
+                . 'at AAA depends on what surrounds each link, so every occurrence is judged on its own and '
+                . 'says which it is.',
+        ],
+        'symbol-only-content' => [
+            'difficulty' => 'beginner',
+            'responsibility' => 'development',
+            'elementType' => 'Text',
+            'abilities' => ['vision', 'cognition'],
+            'description' => 'A cell, link or button whose whole announced name is a symbol: a tick, a '
+                . 'cross, an arrow, or a dash standing in for "not applicable". The shape carries the '
+                . 'meaning and the character does not, so a screen reader announces "check mark" or, '
+                . 'depending on how the reader has symbol verbosity set, nothing at all. The fix is '
+                . 'visually hidden text saying what the symbol means, with the symbol itself marked '
+                . 'aria-hidden.',
+        ],
         'potential:url-as-link-text' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Links',    'abilities' => ['cognition']],
         'potential:decorative-image' => ['difficulty' => 'beginner',     'responsibility' => 'development', 'elementType' => 'Images',   'abilities' => ['vision']],
         'potential:possible-heading' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Headings', 'abilities' => ['cognition']],

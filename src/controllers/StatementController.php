@@ -312,14 +312,30 @@ class StatementController extends Controller
         $plugin = AccessibilityAudit::getInstance();
 
         foreach ($plugin->statement->deriveSuggestions($plugin->requestedSiteId()) as $suggestion) {
-            if ($suggestion['criterion'] === $criterion) {
-                return StatementExclusionModel::fromArray([
-                    'category' => StatementExclusionModel::CATEGORY_NON_COMPLIANCE,
-                    'content' => $suggestion['name'],
-                    'reason' => $suggestion['reason'],
-                    'criterion' => $criterion,
-                ]);
+            if ($suggestion['criterion'] !== $criterion) {
+                continue;
             }
+
+            return StatementExclusionModel::fromArray([
+                'category' => StatementExclusionModel::CATEGORY_NON_COMPLIANCE,
+                // Left for the author. The field asks what a member of the
+                // public would recognise, and a criterion name ("On Input") is
+                // the opposite of that: it names the rule, not the thing on the
+                // page somebody cannot use.
+                'content' => '',
+                // What the scan actually established, and nothing beyond it.
+                // The criterion's own wording states the condition for passing,
+                // so putting it here would publish a description of the site
+                // behaving correctly underneath a heading that says it does
+                // not. This document carries legal weight; it says what is
+                // known and leaves the rest to a person.
+                'reason' => Craft::t(
+                    'accessibility-audit',
+                    'Automated testing found {count} issues affecting this criterion.',
+                    ['count' => (int)$suggestion['occurrences']],
+                ),
+                'criterion' => $criterion,
+            ]);
         }
 
         return StatementExclusionModel::fromArray(['criterion' => $criterion, 'content' => '']);

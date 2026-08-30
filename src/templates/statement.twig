@@ -105,6 +105,15 @@
         </div>
     </div>
 
+    {% if lastScanned %}
+        <p class="light accessibility-audit-statfoot">
+            {{ 'Worked out from the scan of {date}. Fixing a page does not move these figures until it is scanned again.'|t('accessibility-audit', {
+                date: lastScanned|datetime('short'),
+            }) }}
+            <a class="go" href="{{ cpUrl('accessibility-audit', { site: siteHandle }) }}">{{ 'Scan again'|t('accessibility-audit') }}</a>
+        </p>
+    {% endif %}
+
     {% if not derivation.hasScanData %}
         <blockquote class="note warning">
             <p>{{ 'Nothing has been scanned for this site yet, so the compliance status below is not based on any evidence. Run a scan before publishing.'|t('accessibility-audit') }}</p>
@@ -356,7 +365,18 @@
 
         <div class="accessibility-audit-col accessibility-audit-col--g10">
             {% for i, entry in statement.entries %}
+                {% set entryCriterion = entry.criterion ?? '' %}
+                {% set entryName = entryCriterion ? (criteriaNames[entryCriterion] ?? '') : '' %}
                 <div class="accessibility-audit-subcard">
+                    <h3 class="accessibility-audit-subcard__title">
+                        {% if entryName %}
+                            {{ entryName }} <span class="light">({{ entryCriterion }})</span>
+                        {% elseif entryCriterion %}
+                            {{ 'WCAG'|t('accessibility-audit') }} {{ entryCriterion }}
+                        {% else %}
+                            {{ 'Entry {n}'|t('accessibility-audit', { n: i + 1 }) }}
+                        {% endif %}
+                    </h3>
                     {{ forms.selectField({
                         label: 'Category'|t('accessibility-audit'),
                         name: 'entries[' ~ i ~ '][category]',
@@ -371,9 +391,10 @@
 
                     {{ forms.textField({
                         label: 'What is affected'|t('accessibility-audit'),
-                        instructions: 'Describe it the way a member of the public would recognise it.'|t('accessibility-audit'),
+                        instructions: 'Describe it the way a member of the public would recognise it. Name the content, not the rule: the next field is where the failure goes.'|t('accessibility-audit'),
                         name: 'entries[' ~ i ~ '][content]',
                         id: 'entry-' ~ i ~ '-content',
+                        placeholder: affectedExamples[entryCriterion] ?? affectedExamples['*'],
                         value: entry.content ?? '',
                     }) }}
 

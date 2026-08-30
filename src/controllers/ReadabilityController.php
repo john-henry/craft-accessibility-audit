@@ -68,9 +68,15 @@ class ReadabilityController extends Controller
         // stats/results queries only run when they'll actually be shown.
         $isPro = AccessibilityAudit::getInstance()->isPro();
 
+        // Analysing fetches a page and can reach the Anthropic API, so the
+        // controls for it are shown only to whoever is allowed to do that.
+        // Reading the results stays on the viewing permission.
+        $canRunScans = Craft::$app->getUser()->checkPermission('accessibility-audit:runScans');
+
         if (!$isPro) {
             return $this->renderTemplate('accessibility-audit/readability', [
                 'isPro' => false,
+                'canRunScans' => $canRunScans,
                 'siteId' => $siteId,
                 'siteHandle' => $siteHandle,
                 'sites' => $sites,
@@ -83,10 +89,12 @@ class ReadabilityController extends Controller
 
         return $this->renderTemplate('accessibility-audit/readability', [
             'isPro' => true,
+            'canRunScans' => $canRunScans,
             'hasApiKey' => $hasApiKey,
             'stats' => $service->getStats($siteId),
             'results' => $service->getResults(elementId: $elementId, siteId: $siteId),
             'filteredElementId' => $elementId,
+            'prefillUrl' => $this->_elementUrl($elementId, $siteId),
             'siteId' => $siteId,
             'siteHandle' => $siteHandle,
             'sites' => $sites,
@@ -101,8 +109,14 @@ class ReadabilityController extends Controller
      */
     public function actionAnalyse(): Response
     {
+        $this->requirePostRequest();
         $this->requireAcceptsJson();
-        $this->requirePermission('accessibility-audit:viewReports');
+
+        // runScans, not viewReports: this fetches a URL from the server and can
+        // reach the Anthropic API, so it spends the site's outbound requests
+        // and the account's budget. That is the scanning tier's authority, not
+        // the reading tier's, whatever the results are used for afterwards.
+        $this->requirePermission('accessibility-audit:runScans');
 
         if (($refusal = $this->requireProJson('Readability analysis')) !== null) {
             return $refusal;
@@ -142,13 +156,10 @@ class ReadabilityController extends Controller
         try {
             $service = AccessibilityAudit::getInstance()->readability;
 
-            /* Fetch once, reuse for title extraction and analysis. The redirect
-               config re-validates each hop's host to block redirect-based SSRF. */
-            $client = Craft::createGuzzleClient(array_merge(
-                ['timeout' => 15],
-                UrlSafety::guzzleRedirectConfig(),
-            ));
-            $response = $client->get($url);
+            /* Fetched once and reused for the title and the analysis. The
+               guard validates every redirect hop and connects only to the
+               addresses it validated. */
+            $response = UrlSafety::fetch($url, ['timeout' => 15]);
             $html = (string) $response->getBody();
 
             $result = $service->analyseHtml($html, $url, $withClaude);
@@ -181,8 +192,11 @@ class ReadabilityController extends Controller
      */
     public function actionAnalyseEntry(): Response
     {
+        $this->requirePostRequest();
         $this->requireAcceptsJson();
-        $this->requirePermission('accessibility-audit:viewReports');
+
+        // Same tier as actionAnalyse, and for the same reason.
+        $this->requirePermission('accessibility-audit:runScans');
 
         if (($refusal = $this->requireProJson('Readability analysis')) !== null) {
             return $refusal;
@@ -244,6 +258,30 @@ class ReadabilityController extends Controller
      * @return int The remaining wait time in seconds, or 0 when permitted.
      * @throws ForbiddenHttpException If no user is logged in.
      */
+    /**
+     * The public URL of the element the page was opened for, used to prefill
+     * the analyse field so arriving from an element's sidebar does not mean
+     * pasting the URL back in by hand.
+     *
+     * @param int|null $elementId The element the page was opened for.
+     * @param int $siteId The site being viewed.
+     * @return string|null The element's URL, or null if there isn't one.
+     */
+    private function _elementUrl(?int $elementId, int $siteId): ?string
+    {
+        if ($elementId === null) {
+            return null;
+        }
+
+        $element = Craft::$app->getElements()->getElementById($elementId, null, $siteId);
+
+        if ($element === null || !Craft::$app->getElements()->canView($element)) {
+            return null;
+        }
+
+        return $element->getUrl();
+    }
+
     private function _rateLimitWait(): int
     {
         $userId = Craft::$app->getUser()->getId();

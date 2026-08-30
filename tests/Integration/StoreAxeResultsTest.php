@@ -636,9 +636,11 @@ describe('AuditService::storeAxeIssues undecided contrast', function() {
             ->and($rows[0]['wcagCriterion'])->toBe('1.4.3')
             ->and($rows[0]['wcagLevel'])->toBe('AA')
             ->and($rows[0]['source'])->toBe('axe')
-            // Bare markup, not JSON: the report prints it and matches the
-            // element by it, and the verdict is keyed to its hash.
-            ->and($rows[0]['context'])->toBe('<p class="over-img">Hello</p>')
+            // The opening tag alone, not JSON: the report prints it and
+            // matches the element by it, and the verdict is keyed to its
+            // hash, so it has to be the same string whichever engine found
+            // it and whenever it ran.
+            ->and($rows[0]['context'])->toBe('<p class="over-img">')
             ->and($rows[0]['message'])->toContain('another element sits over it');
     });
 
@@ -689,8 +691,8 @@ describe('AuditService::storeAxeIssues undecided contrast', function() {
         $byViewport = array_column($rows, 'context', 'viewport');
 
         expect($rows)->toHaveCount(2)
-            ->and($byViewport[AuditService::VIEWPORT_DESKTOP])->toBe('<p class="over-img">Hello</p>')
-            ->and($byViewport[AuditService::VIEWPORT_MOBILE])->toBe('<p class="narrow">Hi</p>');
+            ->and($byViewport[AuditService::VIEWPORT_DESKTOP])->toBe('<p class="over-img">')
+            ->and($byViewport[AuditService::VIEWPORT_MOBILE])->toBe('<p class="narrow">');
     });
 
     it('drops a node with no markup, since the report matches elements by it', function() {

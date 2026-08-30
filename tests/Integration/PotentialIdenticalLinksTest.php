@@ -56,3 +56,38 @@ describe('PotentialScanner::checkIdenticalLinks', function() {
         ))->toHaveCount(1);
     });
 });
+
+describe('identical links judged on the announced name', function() {
+    it('leaves two "Visit Website" links alone when their labels name the destination', function() {
+        // The real case this came from: a client list where every entry has a
+        // "Visit Website" button, each with an aria-label naming the client. A
+        // screen reader user hears two distinct names, so 2.4.4 is satisfied
+        // and there is nothing to ask about.
+        expect(identicalLinkHits(
+            '<a href="https://naturalhealthstore.ie/" aria-label="Visit Website, Natural Health Store (opens in new tab)">Visit Website</a>'
+            . '<a href="https://ourbodiesourselves.org/" aria-label="Visit Website, Our Bodies Ourselves (opens in new tab)">Visit Website</a>'
+        ))->toBeEmpty();
+    });
+
+    it('still flags two links that are identical to a screen reader as well', function() {
+        expect(identicalLinkHits(
+            '<a href="/news/one" aria-label="Read more">Read more</a>'
+            . '<a href="/news/two" aria-label="Read more">Read more</a>'
+        ))->toHaveCount(1);
+    });
+
+    it('tells two links apart by their visually hidden text', function() {
+        expect(identicalLinkHits(
+            '<a href="/news/one">Read more<span class="sr-only"> about the first story</span></a>'
+            . '<a href="/news/two">Read more<span class="sr-only"> about the second story</span></a>'
+        ))->toBeEmpty();
+    });
+
+    it('ignores an aria-hidden decoration when comparing names', function() {
+        // The arrow is decoration; it must not make two links look distinct.
+        expect(identicalLinkHits(
+            '<a href="/news/one">Read more<span aria-hidden="true"> →</span></a>'
+            . '<a href="/news/two">Read more</a>'
+        ))->toHaveCount(1);
+    });
+});

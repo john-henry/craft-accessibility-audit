@@ -206,6 +206,52 @@
     </p>
 {% endif %}
 
+{% set sweeping = coverage.sweeping ?? false %}
+{% set settled = (coverage.scanned ?? 0) > 0 and not sweeping %}
+{% set allClear = openTotal == 0 and (pendingPotential ?? 0) == 0 and summary.avgScore >= 100 and settled %}
+
+{% if sweeping %}
+    <div class="accessibility-audit-panelnote accessibility-audit-panelnote--waiting">
+        <div class="accessibility-audit-panelnote__text">
+            <p class="accessibility-audit-panelnote__lead">
+                {{ 'A scan is running. {n} of {total} pages so far.'|t('accessibility-audit', { n: coverage.scanned, total: coverage.scannable }) }}
+            </p>
+            <p class="accessibility-audit-panelnote__body">
+                {{ 'Everything above is worked out from the pages done so far, so it will move as the scan works through the rest.'|t('accessibility-audit') }}
+                <a href="{{ cpUrl('accessibility-audit/issues', { site: siteHandle, tab: 'pages' }) }}">{{ 'See which pages have been scanned'|t('accessibility-audit') }}</a>
+            </p>
+        </div>
+    </div>
+{% endif %}
+
+{% if (pendingPotential ?? 0) > 0 %}
+    <div class="accessibility-audit-panelnote accessibility-audit-panelnote--waiting">
+        <div class="accessibility-audit-panelnote__text">
+            <p class="accessibility-audit-panelnote__lead">
+                {{ '{n} questions across {p} pages are still waiting on a person.'|t('accessibility-audit', { n: pendingPotential, p: potentialPages }) }}
+            </p>
+            <p class="accessibility-audit-panelnote__body">
+                {{ 'They do not count against the score either way until you answer them, so the number above is not the whole picture yet.'|t('accessibility-audit') }}
+                <a href="{{ cpUrl('accessibility-audit/potential', { site: siteHandle }) }}">{{ 'Review them'|t('accessibility-audit') }}</a>
+            </p>
+        </div>
+    </div>
+{% elseif allClear %}
+    <div class="accessibility-audit-panelnote accessibility-audit-panelnote--good">
+        <svg class="accessibility-audit-panelnote__tick" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+            <path d="M3 13 L9 19 L21 5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <p class="accessibility-audit-panelnote__lead">
+            {{ 'Nothing failing and nothing left to answer. Every question has been through a person, so there is nothing sitting behind that score.'|t('accessibility-audit') }}
+        </p>
+        <button type="button" class="btn small accessibility-audit-panelnote__flourish" data-accessibility-audit-confetti hidden>
+            {{ 'Celebrate'|t('accessibility-audit') }}
+        </button>
+    </div>
+{% endif %}
+
+
+
 
     {% if scoreHistory|length > 1 %}
         <div class="pane accessibility-audit-score-history">
@@ -284,9 +330,13 @@
 
     {% if assetStats %}
         {% if assetStats.withIssues == 0 %}
-            <div class="accessibility-audit-callout accessibility-audit-callout--success">
-                <span style="color:var(--aa-pass);font-size:15px;font-weight:800" aria-hidden="true">✓</span>
-                <span><strong>{{ 'All {n} images'|t('accessibility-audit', {n: assetStats.total}) }}</strong> {{ 'in the library have alt text.'|t('accessibility-audit') }}</span>
+            <div class="accessibility-audit-panelnote accessibility-audit-panelnote--good">
+                <svg class="accessibility-audit-panelnote__tick" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+                    <path d="M3 13 L9 19 L21 5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <p class="accessibility-audit-panelnote__lead">
+                    {{ 'All {n} images'|t('accessibility-audit', {n: assetStats.total}) }} {{ 'in the library have alt text.'|t('accessibility-audit') }}
+                </p>
             </div>
         {% else %}
             {% set missingCount = assetStats.byRule['asset-alt-missing'] ?? 0 %}
@@ -317,9 +367,19 @@
 
 
     <div class="pane" style="position:relative">
-        <h2 style="margin:0">{{ 'Fix these 10 issues to improve your score'|t('accessibility-audit') }}</h2>
+        <h2 style="margin:0">
+            {%- if byImpact|length == 1 -%}
+                {{ 'Fix this rule to improve your score'|t('accessibility-audit') }}
+            {%- elseif byImpact|length > 1 -%}
+                {{ 'Fix these {n} rules to improve your score'|t('accessibility-audit', {n: byImpact|length}) }}
+            {%- else -%}
+                {{ 'Rules to fix'|t('accessibility-audit') }}
+            {%- endif -%}
+        </h2>
         <p class="light" style="margin:2px 0 12px">
-            {% if byImpactAll|length > byImpact|length %}
+            {% if byImpact|length == 0 %}
+                {{ 'Nothing here at the moment.'|t('accessibility-audit') }}
+            {% elseif byImpactAll|length > byImpact|length %}
                 {{ 'Top rules by points to gain · '|t('accessibility-audit', {n: byImpact|length}) }}<a href="{{ cpUrl('accessibility-audit/issues', {site: siteHandle}) }}">{{ 'all {total} rules'|t('accessibility-audit', {total: byImpactAll|length}) }}</a>
             {% else %}
                 {{ 'Grouped by severity · sorted by points to gain'|t('accessibility-audit') }}
@@ -329,7 +389,10 @@
         {% include 'accessibility-audit/_includes/grouped-issues' with { rows: byImpact, allRows: byImpactAll, siteHandle: siteHandle, filterCorner: true } only %}
         <p class="accessibility-audit-cta-right"><a class="go" href="{{ cpUrl('accessibility-audit/issues', {site: siteHandle}) }}">{{ 'View issues by page'|t('accessibility-audit') }}</a></p>
         {% else %}
-            <p class="light">{{ 'No issues found.'|t('accessibility-audit') }}</p>
+            <p class="light accessibility-audit-emptyok">
+                <span class="accessibility-audit-resolved-check" data-icon="check" aria-hidden="true"></span>
+                {{ 'No issues found.'|t('accessibility-audit') }}
+            </p>
         {% endif %}
     </div>
 
@@ -372,7 +435,10 @@
         <p class="light">{{ 'These rules appear on 5+ pages, likely a template or layout issue.'|t('accessibility-audit') }}</p>
         {{ macros.conformanceLegend() }}
         {% else %}
-            <p class="light">{{ 'No template-level issues detected.'|t('accessibility-audit') }}</p>
+            <p class="light accessibility-audit-emptyok">
+                <span class="accessibility-audit-resolved-check" data-icon="check" aria-hidden="true"></span>
+                {{ 'No template-level issues detected.'|t('accessibility-audit') }}
+            </p>
         {% endif %}
     </div>
 

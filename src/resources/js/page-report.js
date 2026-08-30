@@ -60,6 +60,9 @@
         'accesskey':             '[accesskey]',
         /* axe-core rules */
         'color-contrast':        'p, h1, h2, h3, h4, h5, h6, a, li, td, th, label, span, div',
+        'contrast-hover':        'p, h1, h2, h3, h4, h5, h6, a, li, td, th, label, span, div, button',
+        'contrast-focus':        'a, button, input, select, textarea, summary, [tabindex]',
+        'contrast-selection':    'p, h1, h2, h3, h4, h5, h6, a, li, td, th, label, span, div',
         /* Contrast axe couldn't measure, stored as a needs-review item. Same
            candidate elements as color-contrast, since it is the same rule. */
         'potential:contrast-unmeasurable': 'p, h1, h2, h3, h4, h5, h6, a, li, td, th, label, span, div',
@@ -153,9 +156,19 @@
             return !(img && img.getAttribute('alt').trim());
         },
         'link-name': function (el) {
-            if (visibleText(el) || el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || el.getAttribute('title')) return false;
-            var img = el.querySelector('img[alt]');
-            return !(img && img.getAttribute('alt').trim());
+            return !accessibleName(el);
+        },
+        'link-text': function (el) {
+            return GENERIC_LINK_TEXTS.indexOf(accessibleName(el).toLowerCase()) !== -1;
+        },
+        'link-generic': function (el) {
+            return GENERIC_LINK_TEXTS.indexOf(accessibleName(el).toLowerCase()) !== -1;
+        },
+        /* Mirrors ContentScanner::checkLinkNewWindow. */
+        'link-new-window': function (el) {
+            var label = ((el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || '')).toLowerCase();
+            return !(label.indexOf('new') !== -1 || label.indexOf('opens') !== -1 ||
+                     label.indexOf('window') !== -1 || label.indexOf('tab') !== -1);
         },
         'empty-heading': function (el) {
             return !visibleText(el);
@@ -206,6 +219,21 @@
         if (!iframe) return null;
         try { return iframe.contentDocument || iframe.contentWindow.document; }
         catch (e) { return null; }
+    }
+
+    /* Whether the preview holds a loaded page rather than a frame still
+       navigating. axe on about:blank reports no title, no lang, no main and no
+       h1, none of it about the page. Bailing loses nothing: the frame's load
+       event runs the pass properly afterwards. */
+    function iframeReady() {
+        var doc = iframeDoc();
+        if (!doc || !doc.body) return false;
+
+        var href = '';
+        try { href = doc.location ? doc.location.href : ''; } catch (_) { return false; }
+        if (!href || href === 'about:blank') return false;
+
+        return doc.readyState === 'complete' && doc.body.children.length > 0;
     }
 
     function ensureHighlightStyles(doc) {
@@ -405,11 +433,22 @@
         '</div>';
     }
 
+    /* Every rule whose occurrences carry the JSON contrast context: the two
+       axe ones, and the three read from the stylesheet for states the page is
+       never in while it is scanned. */
+    var CONTRAST_RULE_IDS = [
+        'color-contrast',
+        'color-contrast-enhanced',
+        'contrast-hover',
+        'contrast-focus',
+        'contrast-selection',
+    ];
+
     function renderExpandPanel(body, issue, occurrences) {
         var lvl = issue.wcagLevel ? '<span class="accessibility-audit-level">' + escHtml(issue.wcagLevel) + '</span>' : '<span class="accessibility-audit-level accessibility-audit-level--bp">BP</span>';
         var criterion = issue.wcagCriterion ? '<span class="light" style="font-size:11px;margin-left:4px">' + escHtml(issue.wcagCriterion) + '</span>' : '';
         var helpLink  = issue.helpUrl ? '<a href="' + escHtml(issue.helpUrl) + '" target="_blank" rel="noopener" class="accessibility-audit-pr-help-link">How to fix ↗</a>' : '';
-        var isContrast = issue.ruleId === 'color-contrast' || issue.ruleId === 'color-contrast-enhanced';
+        var isContrast = CONTRAST_RULE_IDS.indexOf(issue.ruleId) !== -1;
 
         var occHtml = '';
         if (occurrences && occurrences.length) {
@@ -668,7 +707,7 @@
            fell inside one) and parse again. */
         var repaired = html;
         if (!el && repaired.charAt(0) === '<') {
-            if (repaired.slice(-1) === '…') repaired = repaired.slice(0, -1);
+            while (repaired.slice(-1) === '…') repaired = repaired.slice(0, -1);
             if (repaired.indexOf('>') === -1) {
                 repaired += ((repaired.match(/"/g) || []).length % 2 === 1) ? '">' : '>';
                 parsed = new DOMParser().parseFromString(repaired, 'text/html');
@@ -703,8 +742,22 @@
         /* Attributes can be shared (a nav link and a CTA with the same href),
            so among candidates the one also matching the stored element's
            classes and text wins; a lone candidate is trusted as-is. */
-        var wantClass = (el.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean).sort().join(' ');
+        /* A capped context has whatever attribute the cut landed in surviving
+           only as a prefix, so compare it as one. Two shapes reach here: the
+           PHP rules mark the cut with an ellipsis, while axe's snippets are
+           capped bare and give themselves away by stopping short of a closing
+           '>'. Missing the second shape means an exact class match against a
+           half-read class list, which a Tailwind element never satisfies. */
+        var truncated = html.slice(-1) === '…' || !/>\s*$/.test(html);
+        var wantClassRaw = (el.getAttribute('class') || '').trim();
+        var wantClass = wantClassRaw.split(/\s+/).filter(Boolean).sort().join(' ');
         var wantText = el.textContent.trim();
+        function classMatchesWant(candClassRaw) {
+            if (!wantClassRaw) return false;
+            var cand = (candClassRaw || '').trim();
+            if (truncated) return cand.indexOf(wantClassRaw) === 0;
+            return cand.split(/\s+/).filter(Boolean).sort().join(' ') === wantClass;
+        }
         /* A stored text preview is capped with a trailing ellipsis, so a
            capped want means prefix comparison, not equality. */
         function textMatchesWant(candText) {
@@ -717,16 +770,21 @@
             if (cands.length === 1) return cands[0];
             var best = cands[0];
             var bestScore = -1;
+            var bestTies = 0;
             for (var c = 0; c < cands.length; c++) {
                 var score = 0;
-                var candClass = (cands[c].getAttribute('class') || '').trim().split(/\s+/).filter(Boolean).sort().join(' ');
-                if (wantClass && candClass === wantClass) score += 4;
+                if (classMatchesWant(cands[c].getAttribute('class'))) score += 4;
                 if (textMatchesWant(cands[c].textContent.trim())) score += 2;
                 /* Visibility as the tiebreak: an equally good hidden twin
                    (a cloned slide, an off-state menu) loses to one on screen. */
                 if (!hiddenInPage(cands[c], doc)) score += 1;
-                if (score > bestScore) { bestScore = score; best = cands[c]; }
+                if (score > bestScore) { bestScore = score; best = cands[c]; bestTies = 1; }
+                else if (score === bestScore) { bestTies++; }
             }
+            /* Nothing left to tell the candidates apart, the class and text
+               having been cut off by the length cap. Say so rather than pick
+               one by document order. */
+            if (bestTies > 1 && bestScore <= 1) return null;
             return best;
         }
         function attrCandidates(attrSelector) {
@@ -744,6 +802,13 @@
             var hrefCands = [];
             for (var i = 0; i < links.length; i++) {
                 if (links[i].getAttribute('href') === href) hrefCands.push(links[i]);
+            }
+            /* The cut can land inside the href itself, leaving a value no link
+               equals. What survived is still a prefix worth matching on. */
+            if (!hrefCands.length && truncated) {
+                for (var ip = 0; ip < links.length; ip++) {
+                    if ((links[ip].getAttribute('href') || '').indexOf(href) === 0) hrefCands.push(links[ip]);
+                }
             }
             var byHref = pickCandidate(hrefCands);
             if (byHref) return byHref;
@@ -794,10 +859,26 @@
            ambiguous class can never frame the wrong element. */
         if (el.classList && el.classList.length) {
             try {
+                var classes = Array.prototype.slice.call(el.classList);
+
+                /* Utility-class markup puts a very long attribute at the
+                   front of the tag, so the length cap lands inside it more
+                   often than anywhere else. The token it lands in survives as
+                   a fragment ("sm:text-") that selects nothing, which would
+                   make a selector built from every token match nothing at all.
+                   Dropped here; the full class string is still compared as a
+                   prefix below, which is what tells the survivors apart. */
+                if (truncated && classes.length > 1) classes.pop();
+
                 var classSel = tag;
-                el.classList.forEach(function (cls) { classSel += '.' + CSS.escape(cls); });
+                classes.forEach(function (cls) { classSel += '.' + CSS.escape(cls); });
                 var byClass = doc.querySelectorAll(classSel);
                 if (byClass.length === 1) return byClass[0];
+
+                if (byClass.length > 1) {
+                    var byClassPick = pickCandidate(Array.prototype.slice.call(byClass));
+                    if (byClassPick) return byClassPick;
+                }
             } catch (_) {}
         }
 
@@ -1045,12 +1126,51 @@
         return clone.textContent.trim();
     }
 
+    /* An element's accessible name, in accessible-name order. Mirrors
+       ContentScanner::_accessibleName so the filters agree with the scanner. */
+    function accessibleName(el) {
+        var labelledBy = (el.getAttribute('aria-labelledby') || '').trim();
+        if (labelledBy) {
+            var referenced = labelledBy.split(/\s+/).map(function (id) {
+                var ref = el.ownerDocument.getElementById(id);
+                return ref ? visibleText(ref) : '';
+            }).filter(Boolean).join(' ').trim();
+            if (referenced) return referenced;
+        }
+
+        var label = (el.getAttribute('aria-label') || '').trim();
+        if (label) return label;
+
+        var text = visibleText(el);
+        if (text) return text;
+
+        var img = el.querySelector('img[alt], area[alt]');
+        var alt = img ? img.getAttribute('alt').trim() : '';
+        if (alt) return alt;
+
+        var svgTitle = el.querySelector('svg > title');
+        if (svgTitle && svgTitle.textContent.trim()) return svgTitle.textContent.trim();
+
+        return (el.getAttribute('title') || '').trim();
+    }
+
+    /* Mirrors ContentScanner::GENERIC_LINK_TEXTS. */
+    var GENERIC_LINK_TEXTS = [
+        'click here', 'click', 'here', 'read more', 'more', 'learn more',
+        'this', 'link', 'details', 'info', 'information', 'go', 'continue',
+        'next', 'previous', 'page', 'article', 'post', 'open', 'view',
+    ];
+
     /* Highlights the exact element(s) a potential issue asks about: the broad
        rule selector answers nothing here (e.g. `a[href]` lights up every
        link on the page). Context comes as markup, quoted "text" plus urls, or
        plain text depending on the rule; each is resolved to real elements,
        with the broad selector kept only as a last resort. */
-    function highlightPotential(ruleId, context) {
+    /* append: add to what is already framed rather than replacing it, for a
+       cluster boxing every occurrence it stands for. An appended call that
+       finds nothing stays quiet: one notice for the cluster, not one per
+       occurrence that has since moved. */
+    function highlightPotential(ruleId, context, append) {
         var doc = iframeDoc();
         var selector = selectorFor(ruleId);
         if (!doc || !selector) return;
@@ -1095,6 +1215,8 @@
         }
 
         if (found.length === 0) {
+            if (append) { return; }
+
             /* No identifying signal survived in the snippet, or the element
                is gone: say so rather than box the broad selector. */
             clearHighlights(doc);
@@ -1105,12 +1227,16 @@
         }
 
         ensureHighlightStyles(doc);
-        clearHighlights(doc);
+        if (!append) { clearHighlights(doc); }
 
         found.forEach(function (el, i) {
             ensureLazyLoaded(el);
-            el.setAttribute('data-accessibility-audit-hl', i === 0 ? 'first' : 'other');
-            if (el.tagName.toLowerCase() !== 'html') {
+            el.setAttribute('data-accessibility-audit-hl', i === 0 && !append ? 'first' : 'other');
+
+            /* An appended element gets no counter badge: the numbering would
+               restart at 1 for every occurrence in the cluster and read as
+               nonsense next to the others. */
+            if (!append && el.tagName.toLowerCase() !== 'html') {
                 var badge = doc.createElement('span');
                 badge.className = 'accessibility-audit-hl-badge';
                 badge.textContent = (i + 1) + '/' + found.length;
@@ -1120,6 +1246,9 @@
 
         if (paneContent && paneContent.hidden) switchToView('content');
 
+        /* One notice for the whole cluster, not one per occurrence. */
+        if (append) { return; }
+
         noticeIfAllHidden(found, doc);
 
         /* Scroll now for responsiveness, then again once a just-loaded image
@@ -1127,6 +1256,7 @@
            offset and the page lands in the wrong place. Scroll to the first
            VISIBLE match: travelling to a hidden twin looks like nothing
            happened. */
+
         var first = found[0];
         for (var fv = 0; fv < found.length; fv++) {
             if (!hiddenInPage(found[fv], doc)) { first = found[fv]; break; }
@@ -1404,7 +1534,8 @@
 
     function collectContrastOccurrences(doc) {
         if (!doc || !doc.body) return null;
-        return AccessibilityAuditShared.collectContrastFailures(doc, {
+
+        var opts = {
             limit: 150,
             htmlLength: 200,
             /* Skip anything this tool injected or is currently decorating:
@@ -1415,7 +1546,13 @@
                 if (el.closest && el.closest('[data-accessibility-audit-hl], .accessibility-audit-hl-badge')) return true;
                 return inExcluded(el);
             },
-        });
+        };
+
+        /* Resting-state failures, then the ones only a hover, focus or text
+           selection would reveal. Both shapes travel together: the state ones
+           carry a `state` and the server routes on that. */
+        return AccessibilityAuditShared.collectContrastFailures(doc, opts)
+            .concat(AccessibilityAuditShared.collectStateContrastFailures(doc, opts));
     }
 
     /* Human-readable explanation of why the background colour is indeterminate */
@@ -1561,8 +1698,11 @@
     var _contrastStored = {}; /* per-viewport: run once per page load each */
     var _contrastNeedsReview = null; /* elements where bg colour is indeterminate */
 
-    function contrastSessionKey() {
-        return 'accessibility-audit-contrast-stored-' + CFG.scanId + '-' + activeViewport;
+    /* Takes the viewport rather than reading the live one: the caller
+       snapshots it before awaiting, and a switch mid-await must not have the
+       guard check one width's key against another width's results. */
+    function contrastSessionKey(viewport) {
+        return 'accessibility-audit-contrast-stored-' + CFG.scanId + '-' + (viewport || activeViewport);
     }
 
     /* Inject the needs-review section into the contrast expand panel if it is currently open.
@@ -1570,8 +1710,9 @@
     function _injectNeedsReviewIfOpen() {
         if (!_contrastNeedsReview || !_contrastNeedsReview.length) return;
         var activeRow = document.querySelector(
-            '.accessibility-audit-pr-issue-row--active[data-rule-id="color-contrast"],' +
-            '.accessibility-audit-pr-issue-row--active[data-rule-id="color-contrast-enhanced"]'
+            CONTRAST_RULE_IDS.map(function (id) {
+                return '.accessibility-audit-pr-issue-row--active[data-rule-id="' + id + '"]';
+            }).join(',')
         );
         if (!activeRow) return;
         var item = activeRow.closest('.accessibility-audit-pr-issue-item');
@@ -1587,19 +1728,48 @@
        stylesheets present in the HTML; one injected by the page's own JS
        lands after load, and sampling before it applies reads UA defaults.
        Capped at ~3s so a broken stylesheet reference cannot stall the pass. */
+    /* Waits until the page has stopped acquiring styles.
+     *
+     * Deferred links count as pending, since a preload-and-swap sheet carries
+     * no rel="stylesheet" until the swap lands. The sheet count is watched too,
+     * for CSS injected from JavaScript after the load event.
+     *
+     * Colours read too early fall back to browser defaults, because a palette
+     * held in custom properties is only as good as the theme layer that
+     * defines it. */
     function stylesheetsSettled(doc) {
         return new Promise(function (resolve) {
             var tries = 0;
+            var lastCount = -1;
+            var stableFor = 0;
+
             (function check() {
                 var pending = false;
+                var count = 0;
+
                 try {
-                    var links = doc.querySelectorAll('link[rel="stylesheet"]');
+                    var links = doc.querySelectorAll(
+                        'link[rel="stylesheet"], link[rel~="preload"][as="style"], link[rel~="alternate"][as="style"]'
+                    );
                     for (var i = 0; i < links.length; i++) {
                         if (!links[i].disabled && !links[i].sheet) { pending = true; break; }
                     }
+                    count = doc.styleSheets.length;
                 } catch (_) {}
-                if (!pending || tries++ >= 10) { resolve(); return; }
-                setTimeout(check, 300);
+
+                if (count === lastCount) {
+                    stableFor++;
+                } else {
+                    stableFor = 0;
+                    lastCount = count;
+                }
+
+                /* The cap still resolves rather than giving up: a page really
+                   without stylesheets is unusual but legitimate, and it should
+                   be scanned rather than skipped. */
+                if ((!pending && count > 0 && stableFor >= 2) || tries++ >= 20) { resolve(); return; }
+
+                setTimeout(check, 150);
             })();
         });
     }
@@ -1611,7 +1781,12 @@
         if (_contrastStored[viewport]) return;
         var doc = iframeDoc();
         if (!doc) return; /* cross-origin: skip silently */
+        if (!iframeReady()) return; /* still navigating: the load event retries */
 
+        /* The same settle the axe pass takes. Waiting on stylesheets alone
+           cannot cover CSS injected from JavaScript, since there is nothing
+           outstanding to wait on until the injection happens. */
+        await new Promise(function (resolve) { setTimeout(resolve, 2000); });
         await stylesheetsSettled(doc);
 
         /* Always collect needs-review items: needed for the expand panel regardless of
@@ -1619,7 +1794,7 @@
         _contrastNeedsReview = collectContrastNeedsReview(doc);
 
         /* Skip the server POST if we already stored violations in this browser session */
-        if (sessionStorage.getItem(contrastSessionKey())) {
+        if (sessionStorage.getItem(contrastSessionKey(viewport))) {
             _injectNeedsReviewIfOpen();
             return;
         }
@@ -1656,7 +1831,7 @@
 
             if (data.success) {
                 /* Always mark as done for this scan + viewport: prevents repeated checks on passes */
-                sessionStorage.setItem('accessibility-audit-contrast-stored-' + CFG.scanId + '-' + viewport, String(data.stored || 0));
+                sessionStorage.setItem(contrastSessionKey(viewport), String(data.stored || 0));
                 if (data.stored > 0) {
                     /* Reload so the Twig-rendered sidebar reflects the new issues */
                     window.location.reload();
@@ -1688,9 +1863,12 @@
            it, and a mid-await switch must not mislabel the results. */
         var viewport = activeViewport;
         var doc = iframeDoc();
-        if (!doc || _axeRunning) return;
+        if (!doc || _axeRunning || !iframeReady()) return;
         if (sessionStorage.getItem(axeSessionKey(viewport))) return;
 
+        /* A pass that changes the totals reloads and the sweep resumes on the
+           next load; one that changes nothing has to carry it on from here. */
+        var reloading = false;
         var scanId    = CFG.scanId;
         var elementId = CFG.elementId;
         if (scanId === 0 && elementId === 0) return;
@@ -1785,6 +1963,7 @@
                     ? [data.scan.score, data.scan.errorCount, data.scan.warningCount, data.scan.noticeCount]
                     : null;
                 if (next && JSON.stringify(next) !== JSON.stringify(current)) {
+                    reloading = true;
                     window.location.reload();
                 }
             }
@@ -1796,6 +1975,10 @@
                _axeRunning guard: pick it up now so the new bucket still runs. */
             if (activeViewport !== viewport) {
                 autoRunAxeInIframe();
+            } else if (!reloading) {
+                /* After the guard is cleared, not before: the next leg starts
+                   its own pass. */
+                resumeViewportSweep();
             }
         }
     }
@@ -1810,7 +1993,12 @@
        only the overlay reflects the admin's actual window, which is its job. */
     var previewPane = document.getElementById('accessibility-audit-pane-content');
     var VIEWPORT_WIDTHS = { desktop: 1280, mobile: 375 };
-    var _viewportSessionKey = 'a11y_pr_viewport_' + CFG.elementId + '_' + CFG.siteId;
+    /* Every URL scan has an element id of 0, so keying per-page state on that
+       alone would have them all share one slot: the viewport chosen on one
+       would follow you to the next. A URL page is keyed by its scan instead. */
+    var _targetKey = CFG.elementId ? String(CFG.elementId) : 's' + CFG.scanId;
+
+    var _viewportSessionKey = 'a11y_pr_viewport_' + _targetKey + '_' + CFG.siteId;
     var activeViewport = (function () {
         /* Survives the post-store reload, so a switch to Mobile isn't undone
            when the sidebar refreshes with the recalculated scan. */
@@ -1866,7 +2054,7 @@
         });
     }
 
-    function setViewport(viewport) {
+    async function setViewport(viewport) {
         if (!VIEWPORT_WIDTHS[viewport] || viewport === activeViewport) return;
         activeViewport = viewport;
         try { sessionStorage.setItem(_viewportSessionKey, viewport); } catch (_) {}
@@ -1876,8 +2064,100 @@
         /* The iframe reflows to the new width in place: run this viewport's
            browser passes against the fresh layout. Each pass is session-keyed
            per scan + viewport, so already-stored buckets don't re-run. */
-        autoStoreContrastResults();
-        autoRunAxeInIframe();
+        await Promise.resolve(autoStoreContrastResults());
+        await autoRunAxeInIframe();
+    }
+
+    /* A re-scan here suppresses the queued headless pass so the preview is the
+       only engine writing this scan, so the preview has to cover both viewports
+       itself and return to the width it started on.
+
+       Driven through sessionStorage rather than a loop: a pass that changes the
+       totals reloads the page, which would cut an in-page sweep short. Each
+       load moves the sweep on one step until both buckets are stored. */
+    var _sweepFlagKey   = 'a11y_sweep_viewports';
+    var _sweepOriginKey = 'a11y_sweep_origin_' + _targetKey + '_' + CFG.siteId;
+    var _sweepTriesKey  = 'a11y_sweep_tries_' + _targetKey + '_' + CFG.siteId;
+    var _sweepLastKey   = 'a11y_sweep_last_' + _targetKey + '_' + CFG.siteId;
+    var SWEEP_MAX_TRIES = 5;
+
+    /* The preview jumps to the other width mid-sweep, so say what is going on.
+       Announced as well as shown, since the pane is what changes. */
+    function setSweepNote(viewport) {
+        var note = document.getElementById('accessibility-audit-pr-sweep-note');
+        if (!note) return;
+        note.textContent = viewport === 'mobile'
+            ? Craft.t('accessibility-audit', 'Checking mobile…')
+            : Craft.t('accessibility-audit', 'Checking desktop…');
+        note.hidden = false;
+    }
+
+    function clearSweepNote() {
+        var note = document.getElementById('accessibility-audit-pr-sweep-note');
+        if (!note) return;
+        note.textContent = '';
+        note.hidden = true;
+    }
+
+    function endViewportSweep() {
+        try {
+            sessionStorage.removeItem(_sweepFlagKey);
+            sessionStorage.removeItem(_sweepOriginKey);
+            sessionStorage.removeItem(_sweepTriesKey);
+            sessionStorage.removeItem(_sweepLastKey);
+        } catch (_) {}
+        clearSweepNote();
+    }
+
+    function resumeViewportSweep() {
+        var flag = null;
+        try { flag = sessionStorage.getItem(_sweepFlagKey); } catch (_) { return; }
+        if (!flag) return;
+
+        var origin = null;
+        try { origin = sessionStorage.getItem(_sweepOriginKey); } catch (_) {}
+        if (!origin) {
+            origin = activeViewport;
+            try { sessionStorage.setItem(_sweepOriginKey, origin); } catch (_) {}
+        }
+
+        /* A pass that cannot complete would otherwise bounce the preview back
+           and forth on every load. A few goes, then back to the origin. */
+        var tries = 0;
+        try { tries = parseInt(sessionStorage.getItem(_sweepTriesKey) || '0', 10) + 1; } catch (_) {}
+        if (tries > SWEEP_MAX_TRIES) {
+            endViewportSweep();
+            if (activeViewport !== origin) setViewport(origin);
+            return;
+        }
+        try { sessionStorage.setItem(_sweepTriesKey, String(tries)); } catch (_) {}
+
+        var haveDesktop = !!sessionStorage.getItem(axeSessionKey('desktop'));
+        var haveMobile  = !!sessionStorage.getItem(axeSessionKey('mobile'));
+
+        if (haveDesktop && haveMobile) {
+            endViewportSweep();
+            if (activeViewport !== origin) setViewport(origin);
+            return;
+        }
+
+        /* Sit on whichever width has not been measured yet. When that is
+           already the one on screen its own pass runs on this load anyway. */
+        var missing = haveDesktop ? 'mobile' : 'desktop';
+
+        /* Back to the same width with its bucket still empty means that leg
+           ran and stored nothing. Give up rather than wait on it again. */
+        var last = null;
+        try { last = sessionStorage.getItem(_sweepLastKey); } catch (_) {}
+        if (last === missing) {
+            endViewportSweep();
+            if (activeViewport !== origin) setViewport(origin);
+            return;
+        }
+        try { sessionStorage.setItem(_sweepLastKey, missing); } catch (_) {}
+
+        setSweepNote(missing);
+        if (activeViewport !== missing) setViewport(missing);
     }
 
     document.querySelectorAll('[data-pr-viewport]').forEach(function (btn) {
@@ -1886,6 +2166,7 @@
 
     paintViewportButtons();
     fitPreviewScale();
+    resumeViewportSweep();
     if (previewPane && typeof ResizeObserver !== 'undefined') {
         new ResizeObserver(fitPreviewScale).observe(previewPane);
     } else {
@@ -2075,6 +2356,23 @@
            clicking the card is just a mouse shortcut and must not fire when a
            verdict button was the target. */
         wrap.addEventListener('click', function (e) {
+            /* A cluster frames every occurrence it stands for, so its own
+               button is handled before the card underneath it. */
+            var clusterBtn = e.target.closest('[data-highlight-cluster]');
+            if (clusterBtn) {
+                var cluster = clusterBtn.closest('[data-accessibility-audit-cluster]');
+                if (!cluster) { return; }
+
+                var contexts;
+                try { contexts = JSON.parse(cluster.dataset.contexts || '[]'); } catch (_) { return; }
+
+                contexts.forEach(function (context, i) {
+                    /* The first clears what was framed before; the rest add to it. */
+                    highlightPotential(cluster.dataset.ruleId, context || '', i > 0);
+                });
+                return;
+            }
+
             var card = e.target.closest('[data-accessibility-audit-review]');
             if (!card) { return; }
 
@@ -2100,6 +2398,9 @@
             var body = new FormData();
             body.append(token.name, token.value);
             body.append('elementId', CFG.elementId);
+            /* A page with no element behind it names itself by URL; the server
+               only accepts one it has actually scanned. */
+            if (CFG.pageUrl) { body.append('url', CFG.pageUrl); }
             body.append('siteId', CFG.siteId);
             body.append('ruleId', row.dataset.ruleId || '');
             body.append('context', row.dataset.context || '');
@@ -2129,6 +2430,73 @@
                         Craft.cp.displayError(Craft.t('accessibility-audit', 'Could not save that. Try again.'));
                     }
                 });
+        });
+
+        /* Answering a cluster answers its members. The verdict is still
+           recorded against each occurrence's own context, so this is the
+           same as working through them one at a time, only without the
+           scrolling. */
+        wrap.addEventListener('click', function (e) {
+            var btn = e.target.closest('[data-cluster-verdict]');
+            if (!btn) return;
+
+            var cluster = btn.closest('[data-accessibility-audit-cluster]');
+            if (!cluster || !bulkEndpoint) return;
+
+            var contexts;
+            try { contexts = JSON.parse(cluster.dataset.contexts || '[]'); } catch (_) { return; }
+            if (!contexts.length) return;
+
+            var ruleId = cluster.dataset.ruleId || '';
+            var status = cluster.querySelector('.accessibility-audit-pr-review__status');
+            var buttons = cluster.querySelectorAll('[data-cluster-verdict]');
+            buttons.forEach(function (b) { b.disabled = true; });
+            if (status) { status.textContent = Craft.t('accessibility-audit', 'Saving…'); }
+
+            var token = csrf();
+            var body = new FormData();
+            body.append(token.name, token.value);
+            body.append('elementId', CFG.elementId);
+            if (CFG.pageUrl) { body.append('url', CFG.pageUrl); }
+            body.append('siteId', CFG.siteId);
+            body.append('verdict', btn.dataset.clusterVerdict || 'dismissed');
+            body.append('items', JSON.stringify(contexts.map(function (context) {
+                return { ruleId: ruleId, context: context };
+            })));
+
+            fetch(endpoint, {
+                method: 'POST',
+                body: body,
+                headers: { 'Accept': 'application/json' },
+                credentials: 'same-origin',
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data || !data.success) {
+                        throw new Error((data && data.error) || 'failed');
+                    }
+                    window.location.reload();
+                })
+                .catch(function () {
+                    buttons.forEach(function (b) { b.disabled = false; });
+                    if (status) { status.textContent = ''; }
+                    if (window.Craft && Craft.cp) {
+                        Craft.cp.displayError(Craft.t('accessibility-audit', 'Could not save that. Try again.'));
+                    }
+                });
+        });
+
+        /* The cluster's own checkbox stands for the cards inside it. */
+        wrap.addEventListener('change', function (e) {
+            if (!e.target.matches('[data-bulk-pick-cluster]')) return;
+
+            var cluster = e.target.closest('[data-accessibility-audit-cluster]');
+            if (!cluster) return;
+
+            cluster.querySelectorAll('[data-bulk-pick]').forEach(function (box) {
+                box.checked = e.target.checked;
+            });
+            refreshBulk();
         });
 
         /* Bulk dismissal: one judgment repeated fifty times deserves one
@@ -2182,6 +2550,7 @@
                 var body = new FormData();
                 body.append(token.name, token.value);
                 body.append('elementId', CFG.elementId);
+                if (CFG.pageUrl) { body.append('url', CFG.pageUrl); }
                 body.append('siteId', CFG.siteId);
                 body.append('verdict', 'dismissed');
                 body.append('items', JSON.stringify(items));

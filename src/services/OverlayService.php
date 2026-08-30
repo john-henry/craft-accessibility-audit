@@ -216,7 +216,12 @@ class OverlayService extends Component
         $elementType = '';
         $storedScan = null;
 
-        if ($element && $element->id) {
+        // A draft or revision is what Craft hands over inside a preview pane.
+        // The overlay still runs so the markup can be checked, but nothing it
+        // finds is stored against a draft.
+        $isDerivative = $element !== null && $element->getIsDerivative();
+
+        if ($element && $element->id && !$isDerivative) {
             $elementId = (int)$element->id;
             $elementType = get_class($element);
             $siteId = (int)$element->siteId;
@@ -247,8 +252,11 @@ class OverlayService extends Component
             ? $this->absoluteFromRequest('/accessibility-audit/overlay/page-issues')
             : UrlHelper::actionUrl('accessibility-audit/dashboard/page-issues');
 
-        $reportUrl = $elementId > 0
-            ? UrlHelper::cpUrl('accessibility-audit/page-report', ['elementId' => $elementId, 'siteId' => $siteId])
+        // The report belongs to the canonical element even in a preview.
+        $reportElementId = $isDerivative ? (int)$element->getCanonicalId() : $elementId;
+
+        $reportUrl = $reportElementId > 0
+            ? UrlHelper::cpUrl('accessibility-audit/page-report', ['elementId' => $reportElementId, 'siteId' => $siteId])
             : UrlHelper::cpUrl('accessibility-audit');
         if ($absoluteUrls) {
             $reportUrl = $this->absoluteFromRequest($reportUrl);
@@ -277,6 +285,8 @@ class OverlayService extends Component
             'storedScan' => $storedScan,
             'pageIssuesUrl' => $pageIssuesUrl,
             'useShapes' => $useShapes,
+            // False inside a preview pane: scan and show, but post nothing.
+            'storeResults' => !$isDerivative,
         ];
     }
 

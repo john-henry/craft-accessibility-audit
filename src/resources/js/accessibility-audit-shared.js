@@ -198,23 +198,61 @@
      page report's needs-review paths): nearest id wins, else up to three
      tag.class segments. Stored with each failure so the report can highlight
      the exact element instead of guessing from its colours. */
+  /* A selector that resolves to the one element it was built from. Tag and
+     classes alone do not manage that on repeated markup, so each step carries
+     its position among matching siblings and the path is only shortened as
+     far as it stays unique. */
   function cssPath(el, doc) {
+    var esc = (window.CSS && CSS.escape) ? CSS.escape : function (s) { return s; };
     var parts = [];
     var cur = el;
+
     while (cur && cur.nodeType === 1 && cur !== doc.body) {
       var part = cur.tagName.toLowerCase();
+
       if (cur.id) {
-        parts.unshift('#' + cur.id);
+        parts.unshift('#' + esc(cur.id));
         break;
       }
+
       if (cur.className && typeof cur.className === 'string') {
         var cls = cur.className.trim().split(/\s+/).filter(Boolean).slice(0, 2);
-        if (cls.length) part += '.' + cls.join('.');
+        if (cls.length) part += '.' + cls.map(esc).join('.');
       }
+
+      var parent = cur.parentElement;
+      if (parent) {
+        var same = 0;
+        var nth = 0;
+        for (var i = 0; i < parent.children.length; i++) {
+          if (parent.children[i].tagName === cur.tagName) {
+            same++;
+            if (parent.children[i] === cur) nth = same;
+          }
+        }
+        if (same > 1 && nth > 0) part += ':nth-of-type(' + nth + ')';
+      }
+
       parts.unshift(part);
       cur = cur.parentElement;
     }
-    return parts.slice(-3).join(' > ');
+
+    if (!parts.length) return '';
+
+    /* Shortest tail that still picks out this element and nothing else. The
+       old three-level cap is kept as the floor, so paths do not get longer
+       than they were unless being unique demands it. */
+    for (var take = Math.min(3, parts.length); take <= parts.length; take++) {
+      var candidate = parts.slice(-take).join(' > ');
+      try {
+        var found = doc.querySelectorAll(candidate);
+        if (found.length === 1 && found[0] === el) return candidate;
+      } catch (_) {
+        break;
+      }
+    }
+
+    return parts.join(' > ');
   }
 
   function collectContrastFailures(doc, opts) {
@@ -237,16 +275,9 @@
       parents.forEach(function (el) {
         if (results.length >= limit) return;
         if (opts.skipEl && opts.skipEl(el)) return;
+        if (!isPaintedText(el, win)) return;
+
         var style = win.getComputedStyle(el);
-        if (style.display === 'none' || style.visibility === 'hidden') return;
-        if (!el.offsetWidth && !el.offsetHeight) return;
-        /* Skip aria-hidden subtrees: axe-core ignores these for contrast too,
-           since screen readers don't read them. */
-        var cur = el;
-        while (cur && cur.nodeType === 1) {
-          if (cur.getAttribute('aria-hidden') === 'true') return;
-          cur = cur.parentElement;
-        }
         var fg = parseRgb(style.color);
         if (!fg) return;
         var bg = effectiveBg(el, doc);
@@ -269,6 +300,287 @@
     return results;
   }
 
+  /* ── Contrast in states the page is not currently in ──────────────────── */
+
+  /* Hover, focus and selection colours never appear in a resting page, so no
+     engine that reads the rendered DOM can see them: axe measures what is on
+     screen, and what is on screen is the resting state. The declarations are
+     in the stylesheet all the same, so they are read from there and measured
+     against the background the element actually sits on.
+
+     Deliberately conservative. A rule whose colours cannot be resolved to
+     actual values (a var() this pass cannot evaluate, a shorthand it does not
+     read) is skipped whole rather than measured half-known: a state failure
+     the reader cannot reproduce is worse than one not reported, because they
+     cannot even check it by hovering. */
+
+  var STATE_PATTERNS = [
+    { key: 'hover', re: /:hover\b/ },
+    { key: 'focus', re: /:focus(?:-visible|-within)?\b/ },
+    { key: 'selection', re: /::selection\b/ },
+  ];
+
+  /* Walks every style rule in the document, descending into @media, @supports
+     and @layer blocks. Tailwind 4 puts the whole framework inside layers, so a
+     pass that only reads top-level rules sees nothing on a modern site. */
+  function eachStyleRule(node, win, fn, parentSel) {
+    var rules;
+
+    /* A cross-origin stylesheet throws on access and cannot be read at all. */
+    try { rules = node.cssRules; } catch (_) { return; }
+    if (!rules) return;
+
+    for (var i = 0; i < rules.length; i++) {
+      var rule = rules[i];
+      var resolved = null;
+
+      /* Style rules first, and never as an either/or with the recursion
+         below. Browsers that support nested CSS give a CSSStyleRule its own
+         cssRules list, so treating "has cssRules" as "is a grouping rule"
+         walks straight past every declaration on the page. */
+      if (rule.selectorText && rule.style) {
+        resolved = resolveSelector(rule.selectorText, parentSel);
+        fn(rule, parentSel);
+      }
+
+      if (rule.cssRules) {
+        /* A media block that does not apply at this width is not part of what
+           the reader sees, so its colours are not what they would get. */
+        var mediaText = rule.media && rule.media.mediaText;
+        if (mediaText && win.matchMedia && !win.matchMedia(mediaText).matches) continue;
+
+        eachStyleRule(rule, win, fn, resolved || parentSel);
+      }
+    }
+  }
+
+  /* A nested rule's selectorText is relative to the rule it sits in: "& a" or,
+     with the ampersand implied, "a". Neither means anything on its own, and
+     handing "& a" to querySelectorAll is worse than useless, because the
+     ampersand resolves to :scope and quietly matches every element in the
+     document. A colour declared for one component is then measured against
+     every element on the page.
+
+     So each rule is resolved against the chain it is nested in before anything
+     queries it. :is() carries a comma-separated parent through as one unit. */
+  function resolveSelector(sel, parentSel) {
+    if (!parentSel) return sel;
+
+    return sel.split(',').map(function (part) {
+      part = part.trim();
+
+      return part.indexOf('&') === -1
+        ? parentSel + ' ' + part
+        : part.replace(/&/g, ':is(' + parentSel + ')');
+    }).join(', ');
+  }
+
+  /* The element a state rule paints, as a selector: the state pseudo removed,
+     everything else left alone. `.btn:hover .icon` styles `.icon` while `.btn`
+     is hovered, so dropping the pseudo names the right target. */
+  function baseSelectorFor(part, stateKey) {
+    var base = part
+      .replace(/::selection\b/g, '')
+      .replace(/:hover\b/g, '')
+      .replace(/:focus(?:-visible|-within)?\b/g, '')
+      .trim();
+
+    /* Another pseudo-element in the same compound (`a:hover::after`) styles
+       generated content, which has no element to query and no text of its own
+       that this pass can read. */
+    if (base.indexOf('::') !== -1) return null;
+
+    if (base === '') return stateKey === 'selection' ? 'body' : null;
+
+    return base;
+  }
+
+  /* A colour a state rule declares, or null when it declares none. Returns
+     false when it declares one that cannot be resolved, which is the caller's
+     signal to skip the rule rather than guess. */
+  function declaredColour(rule, property) {
+    var raw = (rule.style.getPropertyValue(property) || '').trim();
+    if (raw === '' || raw === 'inherit' || raw === 'currentColor') return null;
+    if (raw === 'transparent') return null;
+
+    var parsed = parseRgb(raw);
+
+    return parsed || false;
+  }
+
+  /**
+   * Contrast failures in hover, focus and selection states.
+   *
+   * @param {Document} doc
+   * @param {Object} [opts] limit, htmlLength, perRule, skipEl
+   * @returns {Array} occurrences, each carrying the state it was found in
+   */
+  function collectStateContrastFailures(doc, opts) {
+    opts = opts || {};
+    var limit = opts.limit || 40;
+    var htmlLength = opts.htmlLength || 200;
+    var perRule = opts.perRule || 30;
+    var results = [];
+    var seen = {};
+
+    if (!doc || !doc.body) return results;
+    var win = doc.defaultView;
+    if (!win) return results;
+
+    try {
+      var sheets = doc.styleSheets;
+
+      for (var s = 0; s < sheets.length && results.length < limit; s++) {
+        eachStyleRule(sheets[s], win, function (rule, parentSel) {
+          if (results.length >= limit) return;
+
+          /* Split before resolving, never after: a resolved part can carry a
+             comma inside :is(), and splitting that again produces two broken
+             halves. */
+          var parts = rule.selectorText.split(',');
+
+          for (var p = 0; p < parts.length; p++) {
+            var part = resolveSelector(parts[p].trim(), parentSel);
+            var state = null;
+
+            for (var st = 0; st < STATE_PATTERNS.length; st++) {
+              if (STATE_PATTERNS[st].re.test(part)) { state = STATE_PATTERNS[st]; break; }
+            }
+            if (!state) continue;
+
+            var base = baseSelectorFor(part, state.key);
+            if (!base) continue;
+
+            var fgDecl = declaredColour(rule, 'color');
+            var bgDecl = declaredColour(rule, 'background-color');
+
+            /* Declared but unreadable: skip rather than measure against a
+               colour that is not the one the reader will see. */
+            if (fgDecl === false || bgDecl === false) continue;
+
+            /* A rule that changes neither colour cannot fail on contrast. */
+            if (!fgDecl && !bgDecl) continue;
+
+            var els;
+            try { els = doc.querySelectorAll(base); } catch (_) { continue; }
+
+            for (var e = 0; e < els.length && e < perRule && results.length < limit; e++) {
+              var el = els[e];
+              if (opts.skipEl && opts.skipEl(el)) continue;
+              if (!isPaintedText(el, win)) continue;
+
+              /* No text, nothing to measure the colour of. */
+              if (!(el.textContent || '').trim()) continue;
+
+              var style = win.getComputedStyle(el);
+              var fg = fgDecl || parseRgb(style.color);
+              if (!fg) continue;
+
+              var beneath = effectiveBg(el, doc);
+              if (!beneath) continue;
+
+              var bg = bgDecl ? blendOver(bgDecl, beneath) : beneath;
+              var ratio = Math.round(wcagRatio(fg.r, fg.g, fg.b, bg.r, bg.g, bg.b) * 100) / 100;
+              var fs = parseFloat(style.fontSize);
+              var fw = parseInt(style.fontWeight, 10) || 400;
+              var isLarge = fs >= 24 || (fs >= 18.67 && fw >= 700);
+
+              if (ratio >= (isLarge ? 3 : 4.5)) continue;
+
+              /* One finding per distinct colour pair per rule, not one per
+                 element: a hover colour on fifty nav links is one thing to
+                 fix, and fifty identical cards is a queue nobody reads. */
+              var key = state.key + '|' + rgbToHex(fg.r, fg.g, fg.b) + '|'
+                + rgbToHex(bg.r, bg.g, bg.b) + '|' + base;
+              if (seen[key]) break;
+              seen[key] = true;
+
+              results.push({
+                state: state.key,
+                fg: rgbToHex(fg.r, fg.g, fg.b),
+                bg: rgbToHex(bg.r, bg.g, bg.b),
+                ratio: ratio,
+                expected: isLarge ? '3:1' : '4.5:1',
+                /* A selection colour is usually declared once for the whole
+                   page, so the rule that declares it says more than whichever
+                   element happened to match it first. */
+                html: state.key === 'selection'
+                  ? part.slice(0, htmlLength)
+                  : (el.outerHTML ? el.outerHTML.slice(0, htmlLength) : ''),
+                selector: cssPath(el, doc) || 'body',
+              });
+              break;
+            }
+          }
+        });
+      }
+    } catch (_) { /* collection must never break the caller's render */ }
+
+    return results;
+  }
+
+  /* A state background may be translucent, in which case what the reader sees
+     is it composited over whatever is already there. */
+  function blendOver(top, beneath) {
+    var a = top.a === undefined ? 1 : top.a;
+    if (a >= 1) return top;
+
+    return {
+      r: Math.round(top.r * a + beneath.r * (1 - a)),
+      g: Math.round(top.g * a + beneath.g * (1 - a)),
+      b: Math.round(top.b * a + beneath.b * (1 - a)),
+      a: 1,
+    };
+  }
+
+  /* Whether an element's text is actually painted for a reader to see.
+     Shared by both contrast passes so they can never disagree about what
+     counts. aria-hidden goes because a screen reader never reads it and axe
+     skips it too; fully transparent goes because hover-revealed text is not in
+     the state being measured and its background is whatever it will eventually
+     appear over. */
+  function isPaintedText(el, win) {
+    var style = win.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    if (isVisuallyHidden(el, style)) return false;
+
+    var cur = el;
+    while (cur && cur.nodeType === 1) {
+      if (cur.getAttribute('aria-hidden') === 'true') return false;
+      var curStyle = win.getComputedStyle(cur);
+      if (parseFloat(curStyle.opacity) === 0) return false;
+      if (cur !== el && isVisuallyHidden(cur, curStyle)) return false;
+      cur = cur.parentElement;
+    }
+
+    return true;
+  }
+
+  /* Text put where a screen reader will read it and an eye will never see it:
+     sr-only, visually-hidden, whatever the class is called. It is announced,
+     so it belongs in the accessibility tree, but there is no contrast question
+     because nothing is on screen to have contrast with.
+
+     Three shapes cover every version of the idiom in the wild. A box of a
+     pixel or less, which no glyph fits in; a clip-path collapsed to nothing,
+     which is how Tailwind does it; and the older clip rect, which is how
+     nearly everything before it did. Checked on ancestors too, since the class
+     usually sits on a wrapper rather than on the element holding the text. */
+  function isVisuallyHidden(el, style) {
+    if (el.offsetWidth <= 1 && el.offsetHeight <= 1) return true;
+
+    var clipPath = style.clipPath || '';
+    if (/^inset\(\s*(?:50|[6-9]\d|100)(?:\.\d+)?%/.test(clipPath)) return true;
+    if (/^circle\(\s*0(?:px|%)?/.test(clipPath)) return true;
+
+    // rect(0px, 0px, 0px, 0px) and rect(1px, 1px, 1px, 1px), in the comma and
+    // space-separated forms browsers report.
+    var clip = (style.clip || '').replace(/,/g, ' ');
+    if (/^rect\(\s*[01]px\s+[01]px\s+[01]px\s+[01]px\s*\)$/.test(clip)) return true;
+
+    return false;
+  }
+
   /* ── Small shared utilities ──────────────────────────────────────────── */
 
   function escHtml(str) {
@@ -285,6 +597,8 @@
   }
 
   window.AccessibilityAuditShared = {
+    isPaintedText: isPaintedText,
+    isVisuallyHidden: isVisuallyHidden,
     parseRgb: parseRgb,
     rgbToHex: rgbToHex,
     lum: lum,
@@ -292,6 +606,7 @@
     effectiveBg: effectiveBg,
     cssPath: cssPath,
     collectContrastFailures: collectContrastFailures,
+    collectStateContrastFailures: collectStateContrastFailures,
     escHtml: escHtml,
     scoreClass: scoreClass,
   };

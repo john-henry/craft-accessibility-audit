@@ -207,6 +207,14 @@ class SettingsModel extends Model
     public array $excludedUriPatterns = [];
 
     /**
+     * @var string Extra URLs to scan, one per line, for pages Craft routes
+     * without backing them with an element: search results, filtered listings,
+     * paginated archives. Absolute or site-relative, and a query string is
+     * kept, so one named example of a dynamic page can be audited.
+     */
+    public string $customUrls = '';
+
+    /**
      * @var string Extra CSS selectors excluded from every scan surface, one
      * per line, merged with [[DEFAULT_EXCLUDED_SELECTORS]]. For page furniture
      * whose markup the site does not control: chat widgets, embedded players,
@@ -354,6 +362,30 @@ class SettingsModel extends Model
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
      */
+    /**
+     * The additional URLs to scan, one per line, cleaned up and de-duplicated.
+     *
+     * @return string[] Absolute URLs.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function resolvedCustomUrls(): array
+    {
+        $urls = [];
+
+        foreach (preg_split('/\R+/u', $this->customUrls) ?: [] as $line) {
+            $line = trim($line);
+
+            if ($line === '' || str_starts_with($line, '#')) {
+                continue;
+            }
+
+            $urls[] = $line;
+        }
+
+        return array_values(array_unique($urls));
+    }
+
     public function resolvedScannedElementTypes(): array
     {
         $chosen = $this->scannedElementTypes ?? ScannableElementTypes::native();
@@ -497,7 +529,7 @@ class SettingsModel extends Model
             [['altTextField', 'anthropicApiKey', 'altTextContext', 'altTextLanguage', 'chromePath', 'chromeWsEndpoint', 'vpatExportTemplate'], 'string'],
             [['statementTemplate'], 'string'],
             [['notifyEmailRecipients', 'notifySlackWebhookUrl', 'ciApiToken', 'scannerUserAgent'], 'string'],
-            [['overlayApiToken', 'overlayAllowedOrigins', 'excludedSelectors'], 'string'],
+            [['overlayApiToken', 'overlayAllowedOrigins', 'excludedSelectors', 'customUrls'], 'string'],
         ];
     }
 
@@ -520,6 +552,7 @@ class SettingsModel extends Model
             'chromeNoSandbox' => 'Launch Chrome Without Sandbox',
             'browserSettleMs' => 'Browser Settle Time (ms)',
             'scannerUserAgent' => 'Scanner User-Agent',
+            'customUrls' => 'Additional URLs',
             'ignoreRules' => 'Ignored Rules',
             'excludedUriPatterns' => 'Excluded URI Patterns',
             'excludedSelectors' => 'Excluded Elements (CSS selectors)',

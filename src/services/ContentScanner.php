@@ -9,6 +9,7 @@ namespace johnhenry\accessibilityaudit\services;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
+use johnhenry\accessibilityaudit\helpers\AccessibleName;
 use johnhenry\accessibilityaudit\helpers\ExcludedElements;
 use johnhenry\accessibilityaudit\models\IssueModel;
 use yii\base\Component;
@@ -23,6 +24,63 @@ class ContentScanner extends Component
         'click here', 'click', 'here', 'read more', 'more', 'learn more',
         'this', 'link', 'details', 'info', 'information', 'go', 'continue',
         'next', 'previous', 'page', 'article', 'post', 'open', 'view',
+    ];
+
+    /**
+     * @var string Tags whose opening auto-closes an open paragraph, per the
+     *             HTML parsing spec. Alternated into a pattern below.
+     */
+    private const P_CLOSING_TAGS = 'address|article|aside|blockquote|details|div|dl|fieldset'
+        . '|figcaption|figure|footer|form|h1|h2|h3|h4|h5|h6|header|hgroup|hr|main'
+        . '|menu|nav|ol|p|pre|section|table|ul';
+
+    /**
+     * @var string Characters that carry meaning by their shape rather than by
+     *      what they say: ticks, crosses, arrows, dashes standing in for "no
+     *      value", bullets and stars. Deliberately a fixed list rather than
+     *      "anything that is not a letter or a digit", which would sweep up
+     *      currency, maths and punctuation that read perfectly well.
+     *      Variation selectors and joiners ride along with the emoji forms.
+     */
+    private const MEANING_BY_SHAPE = '\x{2713}\x{2714}\x{2611}\x{2705}'
+        . '\x{2717}\x{2718}\x{2715}\x{2716}\x{274C}\x{00D7}\x{2612}'
+        . '\x{2192}\x{2190}\x{2191}\x{2193}\x{27F6}\x{2794}\x{279C}\x{27A1}'
+        . '\x{2014}\x{2013}\x{2012}\x{2015}\x{2212}\x{002D}'
+        . '\x{2022}\x{00B7}\x{25CF}\x{25CB}\x{2605}\x{2606}'
+        . '\x{2731}\x{2020}\x{2021}\x{FE0F}\x{FE0E}\x{200D}';
+
+    /**
+     * @var array<string, array{0: string, 1: string}> Which criterion a
+     *      symbol-only element fails, by tag. A link that announces "right
+     *      arrow" has a name that does not describe where it goes, which is
+     *      2.4.4. A cell holding a lone tick has a picture sitting in the
+     *      place of text, which is 1.1.1.
+     */
+    private const SYMBOL_ONLY_CRITERIA = [
+        'a' => ['2.4.4', 'link-purpose-in-context'],
+        'button' => ['1.1.1', 'non-text-content'],
+        'td' => ['1.1.1', 'non-text-content'],
+        'th' => ['1.1.1', 'non-text-content'],
+    ];
+
+    /**
+     * @var string[] Tags that are not void, so a browser hands one everything
+     *      that follows as its content until a closing tag that never comes.
+     *      Left unescaped in prose, these delete the rest of the page.
+     */
+    private const SWALLOWING_TAGS = [
+        'iframe', 'script', 'style', 'textarea', 'title', 'select', 'noscript',
+    ];
+
+    /**
+     * @var string[] Tags that belong inside a code sample. Highlighters wrap
+     *      tokens in spans, renderers nest pre and code, and a link to an API
+     *      page is deliberate. Anything else in there could only have come
+     *      from markup that was meant to be shown and was not escaped.
+     */
+    private const CODE_PRESENTATION_TAGS = [
+        'span', 'a', 'br', 'em', 'strong', 'b', 'i', 'code', 'pre',
+        'mark', 'small', 'sub', 'sup', 'wbr', 'var', 'samp', 'kbd', 'abbr',
     ];
 
     private const WCAG_HELP_BASE = 'https://www.w3.org/WAI/WCAG22/Understanding/';
@@ -45,6 +103,8 @@ class ContentScanner extends Component
         ExcludedElements::removeFrom($xpath);
 
         $checks = [
+            'block-in-paragraph' => fn() => $this->checkBlockInParagraph($html),
+            'unescaped-markup-in-code' => fn() => $this->checkUnescapedMarkupInCode($xpath, $html),
             'img-alt' => fn() => $this->checkImgAlt($dom, $xpath),
             'img-alt-filename' => fn() => $this->checkImgAltFilename($dom, $xpath),
             'heading-order' => fn() => $this->checkHeadingOrder($dom, $xpath),
@@ -52,6 +112,7 @@ class ContentScanner extends Component
             'multiple-h1' => fn() => $this->checkMultipleH1($dom, $xpath),
             'link-name' => fn() => $this->checkLinkName($dom, $xpath),
             'link-generic' => fn() => $this->checkLinkGeneric($dom, $xpath),
+            'symbol-only-content' => fn() => $this->checkSymbolOnlyContent($xpath),
             'link-new-window' => fn() => $this->checkLinkNewWindow($dom, $xpath),
             'button-name' => fn() => $this->checkButtonName($dom, $xpath),
             'form-label' => fn() => $this->checkFormLabels($dom, $xpath),
@@ -84,6 +145,206 @@ class ContentScanner extends Component
         return $issues;
     }
 
+    // ─── Markup shown as text ────────────────────────────────────────────────
+
+    /**
+     * Markup rendering inside a `<code>` where it was meant to be read.
+     *
+     * Documentation writes about HTML, and `<code>` is where it goes. But
+     * `<code>` is presentational: it does not escape anything, so
+     * `<code><iframe src></code>` puts a real iframe on the page rather than
+     * the three words the author typed. The resulting document is perfectly
+     * valid, which is why no validator and no other checker says a word.
+     *
+     * What it costs depends on the tag. A void one such as `<img>` takes the
+     * sentence with it. A tag that is not void takes the rest of the page: the
+     * parser gives it everything up to a closing tag that never arrives, so
+     * paragraphs, tables and whole sections stop existing while the page still
+     * returns 200 and looks fine until somebody scrolls.
+     *
+     * @param DOMXPath $xpath The parsed page.
+     * @param string $html The raw source, for measuring what a tag swallowed.
+     * @return IssueModel[]
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function checkUnescapedMarkupInCode(DOMXPath $xpath, string $html): array
+    {
+        $issues = [];
+        $seen = [];
+
+        foreach ($xpath->query('//code | //pre') as $holder) {
+            if (!$holder instanceof DOMElement) {
+                continue;
+            }
+
+            foreach ($xpath->query('.//*', $holder) as $child) {
+                if (!$child instanceof DOMElement) {
+                    continue;
+                }
+
+                $tag = strtolower($child->nodeName);
+
+                if (in_array($tag, self::CODE_PRESENTATION_TAGS, true)) {
+                    continue;
+                }
+
+                // One report per sample per tag: the same mistake nested three
+                // deep is still one thing to fix.
+                $key = spl_object_id($holder) . '|' . $tag;
+
+                if (isset($seen[$key])) {
+                    continue;
+                }
+
+                $seen[$key] = true;
+                $swallowed = $this->_swallowedLength($html, $tag);
+
+                $issues[] = IssueModel::make(
+                    'unescaped-markup-in-code',
+                    $swallowed > 0 ? 'error' : 'warning',
+                    $swallowed > 0
+                        ? sprintf(
+                            'A <%s> is rendering inside a code sample instead of being shown as text, and '
+                            . 'because that tag is not self-closing the browser has given it the rest of the '
+                            . 'page: roughly %s characters after it never render. Wrapping markup in <code> '
+                            . 'does not escape it. Write the angle brackets as &lt; and &gt;.',
+                            $tag,
+                            number_format($swallowed),
+                        )
+                        : sprintf(
+                            'A <%s> is rendering inside a code sample instead of being shown as text, so the '
+                            . 'reader sees the tag act rather than read it. Wrapping markup in <code> does not '
+                            . 'escape it. Write the angle brackets as &lt; and &gt;.',
+                            $tag,
+                        ),
+                    // No WCAG criterion: content that never renders is a
+                    // content-integrity problem, not a failure of a success
+                    // criterion, and claiming one would be wrong.
+                    null, null,
+                    $this->outerHtml($holder),
+                    null,
+                    'php',
+                );
+            }
+        }
+
+        return $issues;
+    }
+
+    /**
+     * How much of the source a tag absorbs because nothing ever closes it.
+     *
+     * Counted on the raw string rather than the parsed tree: libxml recovers
+     * from an unclosed tag differently from a browser, and it is the browser's
+     * reading that decides what a reader is left with.
+     *
+     * @param string $html The raw page source.
+     * @param string $tag The tag found rendering inside a code sample.
+     * @return int Characters swallowed, or 0 when the tag is closed or void.
+     */
+    private function _swallowedLength(string $html, string $tag): int
+    {
+        if (!in_array($tag, self::SWALLOWING_TAGS, true)) {
+            return 0;
+        }
+
+        $opens = preg_match_all('/<' . $tag . '[\s>\/]/i', $html);
+        $closes = preg_match_all('/<\/' . $tag . '\s*>/i', $html);
+
+        if ($opens === false || $closes === false || $opens <= $closes) {
+            return 0;
+        }
+
+        $at = strripos($html, '<' . $tag);
+
+        return $at === false ? 0 : strlen($html) - $at;
+    }
+
+    // ─── Paragraph nesting ───────────────────────────────────────────────────
+
+    /**
+     * Block content inside a paragraph, read from the raw HTML.
+     *
+     * Deliberately not an XPath query, and it must not be turned into one. The
+     * browser closes the paragraph the moment it meets block content, and
+     * libxml does the same on load, so by the time there is a DOM the nesting
+     * is gone: `//p//p` and `//p//div` both return nothing on markup that is
+     * plainly wrong. The evidence only exists in the string.
+     *
+     * What the reader sees is the wrapper's attributes going with it. A Twig
+     * template wrapping a rich-text field in a styled paragraph produces
+     * `<p class="text-base"><p>…</p></p>`, the outer paragraph is closed and
+     * discarded, and the text is left bare to inherit whatever the surrounding
+     * prose sets. Nothing is missing and nothing is mislabelled, so no engine
+     * working from the DOM reports a thing.
+     *
+     * @param string $html The raw page source, before parsing.
+     * @return IssueModel[]
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function checkBlockInParagraph(string $html): array
+    {
+        $issues = [];
+        $masked = $this->_maskUnparsedRegions($html);
+        $offset = 0;
+
+        // Adjacency only: the next token after the opening tag. Anything looser
+        // catches `<p>One<p>Two`, where the first paragraph is closed
+        // implicitly. That is legal HTML and loses nothing.
+        $pattern = '/<p\b[^>]*>\s*<(' . self::P_CLOSING_TAGS . ')\b[^>]*>/i';
+
+        while (preg_match($pattern, $masked, $m, PREG_OFFSET_CAPTURE, $offset) === 1) {
+            $at = (int)$m[0][1];
+            $offset = $at + strlen($m[0][0]);
+
+            $issues[] = IssueModel::make(
+                'block-in-paragraph', 'warning',
+                'A <' . strtolower($m[1][0]) . '> is nested inside a <p>. The browser will close the '
+                . 'paragraph early, discarding its attributes and any styling that depended on them. '
+                . 'Either unwrap the injected rich text (retconChange the "p" tag to false on the field) '
+                . 'or change the wrapper from <p> to <div>.',
+                // Not WCAG 4.1.1: that criterion was removed in WCAG 2.2, so
+                // reporting against it would be wrong.
+                null, null,
+                substr($html, $at, 300),
+                null,
+                'php',
+            );
+        }
+
+        return $issues;
+    }
+
+    /**
+     * Blanks out regions the parser never treats as markup, keeping the string
+     * the same length so reported offsets still line up with the original.
+     *
+     * @param string $html The raw page source.
+     * @return string The source with comments, templates, scripts and styles
+     *                replaced by spaces.
+     */
+    private function _maskUnparsedRegions(string $html): string
+    {
+        $patterns = [
+            '/<!--.*?-->/s',
+            '/<template\b[^>]*>.*?<\/template\s*>/is',
+            '/<script\b[^>]*>.*?<\/script\s*>/is',
+            '/<style\b[^>]*>.*?<\/style\s*>/is',
+        ];
+
+        foreach ($patterns as $pattern) {
+            $html = preg_replace_callback(
+                $pattern,
+                static fn(array $m): string => str_repeat(' ', strlen($m[0])),
+                $html,
+            ) ?? $html;
+        }
+
+        return $html;
+    }
+
     // ─── Images ──────────────────────────────────────────────────────────────
 
     /** WCAG 1.1.1 (A): images must have alt text */
@@ -112,7 +373,14 @@ class ContentScanner extends Component
         foreach ($xpath->query('//img[@alt]') as $img) {
             /** @var DOMElement $img */
             $alt = trim($img->getAttribute('alt'));
-            if ($alt !== '' && preg_match('/\.(jpe?g|png|gif|webp|svg|bmp|tiff?)$/i', $alt)) {
+            if ($alt === '') {
+                continue;
+            }
+
+            $looksLikeFilename = preg_match('/\.(jpe?g|png|gif|webp|svg|bmp|tiff?)$/i', $alt) === 1
+                || $this->_altMatchesFilename($alt, $img->getAttribute('src'));
+
+            if ($looksLikeFilename) {
                 $issues[] = IssueModel::make(
                     'img-alt-filename', 'warning',
                     'Image alt text appears to be a filename: "' . htmlspecialchars($alt) . '".',
@@ -194,27 +462,14 @@ class ContentScanner extends Component
         $issues = [];
         foreach ($xpath->query('//a[@href]') as $a) {
             /** @var DOMElement $a */
-            $text = trim($a->textContent);
-            $ariaLabel = trim($a->getAttribute('aria-label'));
-            $title = trim($a->getAttribute('title'));
-            $ariaLabelledBy = $a->getAttribute('aria-labelledby');
-
-            if ($text === '' && $ariaLabel === '' && $title === '' && $ariaLabelledBy === '') {
-                // Check for image with alt
-                $imgAlt = '';
-                foreach ($xpath->query('.//img[@alt]', $a) as $img) {
-                    /** @var DOMElement $img */
-                    $imgAlt = trim($img->getAttribute('alt'));
-                }
-                if ($imgAlt === '') {
-                    $issues[] = IssueModel::make(
-                        'link-name', 'error',
-                        'Link has no discernible name (no text, aria-label, title, or image alt).',
-                        '4.1.2', 'A',
-                        $this->outerHtml($a),
-                        self::WCAG_HELP_BASE . 'name-role-value'
-                    );
-                }
+            if (AccessibleName::for($a, $xpath) === '') {
+                $issues[] = IssueModel::make(
+                    'link-name', 'error',
+                    'Link has no discernible name (no text, aria-label, title, or image alt).',
+                    '4.1.2', 'A',
+                    $this->outerHtml($a),
+                    self::WCAG_HELP_BASE . 'name-role-value'
+                );
             }
         }
         return $issues;
@@ -226,7 +481,9 @@ class ContentScanner extends Component
         $issues = [];
         foreach ($xpath->query('//a[@href]') as $a) {
             /** @var DOMElement $a */
-            $text = strtolower(trim($a->textContent));
+            // The announced name, not the visible text, with the new-tab
+            // notice stripped so it cannot make a vague label look specific.
+            $text = $this->_linkPurposeText(AccessibleName::for($a, $xpath));
             if (in_array($text, self::GENERIC_LINK_TEXTS, true)) {
                 $issues[] = IssueModel::make(
                     'link-generic', 'warning',
@@ -240,13 +497,79 @@ class ContentScanner extends Component
         return $issues;
     }
 
+    /**
+     * Cells, links and buttons whose whole announced name is a symbol.
+     *
+     * A tick in a comparison table is a picture doing the work of a word. The
+     * shape says "supported"; the character says nothing of the sort. Screen
+     * readers announce it as "check mark", or as nothing at all depending on
+     * how the reader has punctuation and symbol verbosity set, and either way
+     * the meaning a sighted reader takes from the column is lost. A lone dash
+     * standing in for "not applicable" is the same bargain, and an arrow as a
+     * link name leaves the destination unsaid.
+     *
+     * Read off the announced name rather than the visible text, so anything
+     * that already fixes it (a label, a title, visually hidden text beside the
+     * glyph) takes the element out of scope without needing a second rule.
+     *
+     * @param DOMXPath $xpath The document to search.
+     * @return IssueModel[]
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function checkSymbolOnlyContent(DOMXPath $xpath): array
+    {
+        $issues = [];
+        $pattern = '/^[' . self::MEANING_BY_SHAPE . '\s\x{00A0}]+$/u';
+
+        foreach ($xpath->query('//td | //th | //button | //a[@href]') as $node) {
+            /** @var DOMElement $node */
+            // Out of the accessibility tree altogether: what gets announced in
+            // its place is another element's business.
+            if (strtolower($node->getAttribute('aria-hidden')) === 'true') {
+                continue;
+            }
+
+            $name = trim(AccessibleName::for($node, $xpath));
+
+            // An empty cell is a different question, and not this one.
+            if ($name === '' || preg_match($pattern, $name) !== 1) {
+                continue;
+            }
+
+            $tag = strtolower($node->nodeName);
+            [$criterion, $help] = self::SYMBOL_ONLY_CRITERIA[$tag] ?? self::SYMBOL_ONLY_CRITERIA['td'];
+
+            $issues[] = IssueModel::make(
+                'symbol-only-content',
+                'warning',
+                $tag === 'a'
+                    ? 'This link announces only "' . htmlspecialchars($name) . '", which does not say where it '
+                        . 'goes. Give it real text, or add visually hidden text inside the link.'
+                    : 'This ' . ($tag === 'button' ? 'button' : 'cell') . ' holds only "'
+                        . htmlspecialchars($name) . '". The shape carries the meaning, the character does not, '
+                        . 'and some screen readers skip it entirely. Add visually hidden text saying what it '
+                        . 'means and mark the symbol aria-hidden.',
+                $criterion,
+                'A',
+                $this->outerHtml($node),
+                self::WCAG_HELP_BASE . $help
+            );
+        }
+
+        return $issues;
+    }
+
     /** Best practice: links opening in new tab should warn users */
     private function checkLinkNewWindow(DOMDocument $dom, DOMXPath $xpath): array
     {
         $issues = [];
         foreach ($xpath->query('//a[@target="_blank"]') as $a) {
             /** @var DOMElement $a */
-            $label = strtolower($a->getAttribute('aria-label') . ' ' . $a->getAttribute('title'));
+            // The announced name, so a warning carried in visually hidden text
+            // inside the link counts. An aria-label replaces that text, so when
+            // one is set it is the label that has to carry the warning.
+            $label = strtolower(AccessibleName::for($a, $xpath) . ' ' . $a->getAttribute('title'));
             $hasWarning = str_contains($label, 'new') || str_contains($label, 'opens') || str_contains($label, 'window') || str_contains($label, 'tab');
             if (!$hasWarning) {
                 $issues[] = IssueModel::make(
@@ -701,6 +1024,79 @@ class ContentScanner extends Component
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
+
+    /**
+     * Whether the alt text is the image's own filename in disguise.
+     *
+     * Craft derives an asset title from its filename, so a template reaching
+     * for the title instead of the alt field ships "Asset7623" for
+     * asset7623.jpg. The asset itself can hold perfectly good alt text while
+     * the page shows none of it, which asset-level checks cannot see.
+     *
+     * Only flagged when the alt also reads as machine-derived: a run of digits
+     * or a single unspaced token. A descriptive alt that happens to match a
+     * well-named file is left alone.
+     *
+     * @param string $alt The alt text as rendered.
+     * @param string $src The image's src attribute.
+     * @return bool True when the alt is the filename by another name.
+     */
+    private function _altMatchesFilename(string $alt, string $src): bool
+    {
+        $src = trim($src);
+        if ($src === '' || str_starts_with($src, 'data:')) {
+            return false;
+        }
+
+        $basename = pathinfo(parse_url($src, PHP_URL_PATH) ?: $src, PATHINFO_FILENAME);
+        if ($basename === '') {
+            return false;
+        }
+
+        $normalise = static function(string $value): string {
+            $value = mb_strtolower(rawurldecode($value));
+            $value = preg_replace('/[\-_.]+/u', ' ', $value) ?? $value;
+
+            return trim(preg_replace('/\s+/u', ' ', $value) ?? $value);
+        };
+
+        if ($normalise($alt) !== $normalise($basename)) {
+            return false;
+        }
+
+        return preg_match('/\d{2,}/', $alt) === 1 || !preg_match('/\s/u', trim($alt));
+    }
+
+    /**
+     * An accessible name with the new-tab notice taken off, leaving only what
+     * the name says about where the link goes. The notice describes what the
+     * link does to the browser, not where it goes.
+     *
+     * @param string $name The accessible name.
+     * @return string The name reduced to its purpose, lowercased.
+     */
+    private function _linkPurposeText(string $name): string
+    {
+        $text = mb_strtolower(trim($name));
+
+        // Parenthesised or bracketed: "(opens in a new tab)", "[external]".
+        $text = preg_replace(
+            '/[(\[{][^)\]}]*\b(?:opens?|new\s+(?:tab|window)|external)\b[^)\]}]*[)\]}]/u',
+            ' ',
+            $text,
+        ) ?? $text;
+
+        // Trailing clause: "read more, opens in a new window".
+        $text = preg_replace(
+            '/[,;:\-]?\s*\b(?:opens?|will\s+open)\b[^,;.]*?\b(?:tab|window)\b/u',
+            ' ',
+            $text,
+        ) ?? $text;
+
+        $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
+
+        return trim($text, " \t\n\r\0\x0B.,;:!?-");
+    }
 
     private function outerHtml(DOMElement $el): string
     {

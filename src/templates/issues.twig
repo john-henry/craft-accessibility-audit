@@ -44,9 +44,11 @@
 
     {% if byRule|length == 0 %}
         <div class="zilch">
-        
-            <p>{{ 'Run a scan to check every page against WCAG and list what needs fixing here.'|t('accessibility-audit') }}</p>
-           
+            {% if scannedCount %}
+                <p>{{ 'Nothing failing across {n} scanned pages.'|t('accessibility-audit', { n: scannedCount }) }}</p>
+            {% else %}
+                <p>{{ 'Run a scan to check every page against WCAG and list what needs fixing here.'|t('accessibility-audit') }}</p>
+            {% endif %}
         </div>
     {% else %}
   
@@ -76,8 +78,7 @@
             if (!p) { return ''; }
             // The title is the page it names, not a link; the row's own action
             // is an explicit "View report" so nothing pretends to be the live
-            // page. (The old title link wore an external-link arrow but opened
-            // the internal report, which read as "go to the live site".)
+            // page.
             const title = '<span class="accessibility-audit-page-name">' + Craft.escapeHtml(p.title) + '</span>';
             const urlLine = p.url
                 ? '<div class="light code" style="font-size:11px;margin-top:2px">' + Craft.escapeHtml(p.url) + '</div>'

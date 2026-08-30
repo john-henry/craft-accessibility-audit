@@ -874,7 +874,7 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
    matters is the one the eye lands on first. Uses box-shadow rather than a
    border so the card doesn't shift by a pixel against its unhighlighted siblings. */
 .accessibility-audit-kpi__cell--target {
-  box-shadow: inset 0 0 0 2px var(--aa-warning-marker);
+  box-shadow: inset 0 0 0 2px var(--aa-target-marker);
 }
 
 .accessibility-audit-kpi__badge {
@@ -886,8 +886,8 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--aa-warning-strong);
-  background: var(--aa-warning-bg);
+  color: var(--aa-target);
+  background: var(--aa-target-bg);
   vertical-align: 1px;
 }
 
@@ -982,11 +982,12 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
 
 /* ---- Entry sidebar panel (Access panel, like the SEO preview) ---- */
 
-/* Full-bleed to the sidebar edges, matching Craft's own .meta panels (which
-   negative-margin past the details pane's 24px padding). */
+/* Full-bleed to the sidebar edges, matching Craft's own .meta panels. Craft
+   sizes that padding responsively, so the bleed tracks --neg-padding. */
 .accessibility-audit-panel {
   overflow: hidden;
-  margin: 0 -24px;
+  margin-block: 0;
+  margin-inline: var(--neg-padding, -24px);
 }
 
 /* .accessibility-audit-panel__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 12px 18px 0; }
@@ -1390,6 +1391,14 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
   background: var(--aa-pass-bg);
   color: var(--aa-pass);
   font-size: 9px;
+}
+
+/* Empty states that are good news rather than missing data, so they carry the
+   same circled tick as a resolved row. */
+.accessibility-audit-emptyok {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .accessibility-audit-legend__dot--error {
@@ -1941,6 +1950,44 @@ body.use-shapes .accessibility-audit-pr-dot--error {
   line-height: 1.35;
 }
 
+/* What the scans cover for a criterion, and what is left for a person. Sits
+   under the criterion name, quieter than it and never competing with the
+   conformance control that carries the actual decision. */
+.accessibility-audit-vpat-evidence {
+  margin-top: 6px;
+  font-weight: 400;
+}
+
+.accessibility-audit-vpat-evidence__line {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--medium-text-color);
+}
+
+.accessibility-audit-vpat-evidence__line--gap {
+  margin-top: 3px;
+}
+
+.accessibility-audit-vpat-evidence__tag {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--aa-pass-bg);
+  color: var(--aa-pass);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* The half a scanner cannot reach takes the neutral marker, not a severity:
+   it is work outstanding, not a finding. */
+.accessibility-audit-vpat-evidence__tag--gap {
+  background: var(--aa-target-bg);
+  color: var(--aa-target);
+}
+
 /* .accessibility-audit-vpat-select is a real <select> inside Craft's own
    `.select` wrapper, so it takes the CP's dropdown chrome and needs no styling
    of its own. It carried a pill/badge rule here (flex, 700 weight, padding)
@@ -2027,8 +2074,7 @@ body.use-shapes .accessibility-audit-pr-dot--error {
   color: var(--text-color);
 }
 
-/* Focus ring only while the field is actually focused (it was a static class
-   before, so the foreground hex box always looked focused). */
+/* Focus ring only while the field is actually focused. */
 .accessibility-audit-hexbox:focus-visible {
   border: var(--aa-focus-border);
   box-shadow: var(--aa-focus-halo);
@@ -2176,6 +2222,15 @@ body.use-shapes .accessibility-audit-pr-dot--error {
 
 .accessibility-audit-tool__head p {
   margin: 0;
+}
+
+/* Names the entry it heads, so a list of them is navigable. Editor chrome
+   only: the published statement is built from the fields below it. */
+.accessibility-audit-subcard__title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--aa-text, #3f4d5a);
 }
 
 .accessibility-audit-subcard {
@@ -3227,6 +3282,35 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   cursor: pointer;
 }
 
+/* Repeated markup gathered into one question. The cluster card looks like an
+   ordinary review card; what marks it out is the disclosure underneath, which
+   holds the individual occurrences for anyone who wants them one at a time. */
+.accessibility-audit-pr-cluster {
+  margin-bottom: 6px;
+}
+
+.accessibility-audit-pr-cluster .accessibility-audit-pr-review {
+  margin-bottom: 0;
+}
+
+.accessibility-audit-pr-cluster__each > summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--aa-text-muted, #596673);
+}
+
+.accessibility-audit-pr-cluster__each > summary:hover {
+  color: var(--aa-text, #3f4d5a);
+}
+
+/* Indented so an occurrence reads as belonging to the cluster above it. */
+.accessibility-audit-pr-cluster__each[open] {
+  padding-left: 14px;
+  border-left: 2px solid var(--aa-border-section);
+  margin-top: 4px;
+}
+
 /* Bulk dismissal: the selection bar above the queue, and a pick box on the
    top-right corner of each card. */
 .accessibility-audit-pr-bulk {
@@ -3287,10 +3371,156 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   overflow-wrap: break-word;
 }
 
-.accessibility-audit-pr-review__msg {
+/* The address of the page being reported on, under its title. Titles repeat
+   across a site: a plugin's landing page and its support page share one, and
+   share a layout, so they throw up the same findings. Without the address
+   there is nothing on screen to tell you which of the two you are looking at. */
+/* Which scan the report is drawn from, beside the address. Every question
+   about a finding that will not clear comes down to this: the data can be
+   right and the page still be showing an older scan, and without the id on
+   screen there is no way to tell those apart from outside. */
+.accessibility-audit-pr-scanref {
+  margin-left: 8px;
+  opacity: 0.75;
+}
+
+.accessibility-audit-pr-pageurl {
+  /* Sits under the heading, inside the page title block, so it reads as the
+     subtitle it is rather than as stray output in the content below. Kept to
+     one clipped line so a long docs URL cannot push the header open; the
+     whole address is on the title attribute. */
+  margin: 1px 0 0;
+  max-width: 100%;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The notices sitting under the score cards. One container, one border, so
+   they read as part of the same panel run as the cards above them rather than
+   as loose text on the page background. The accent on the left is the only
+   thing that changes between them: amber where something is waiting on a
+   person, green where there is nothing left to do. */
+.accessibility-audit-panelnote {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline-color, #d9d9d9);
+  border-left-width: 3px;
+  border-radius: var(--large-border-radius, 6px);
+  background: var(--white, #fff);
+  color: var(--text-color);
+}
+
+.accessibility-audit-panelnote--waiting {
+  border-left-color: var(--warning-color, #cb6e17);
+}
+
+.accessibility-audit-panelnote--good {
+  border-left-color: var(--success-color, #1f7a44);
+}
+
+.accessibility-audit-panelnote__tick {
+  flex: none;
+  margin-top: 1px;
+  color: var(--success-color, #1f7a44);
+}
+
+/* The note is a row so a tick can sit beside the words. Without this wrapper a
+   note with two paragraphs puts them in that row as well, side by side, and a
+   14px lead and a 13px body on one line never share a baseline. */
+.accessibility-audit-panelnote__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.accessibility-audit-panelnote__lead {
   margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* Shown only once the script that drives it has loaded, and taken away again
+   for anyone who has asked for less motion. `.btn` sets its own display, so the
+   hidden attribute needs saying explicitly or it does nothing. */
+.accessibility-audit-panelnote__flourish {
+  flex: none;
+  align-self: center;
+  margin-inline-start: auto;
+}
+
+.accessibility-audit-panelnote__flourish[hidden] {
+  display: none;
+}
+
+.accessibility-audit-panelnote__body {
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* The tick draws itself once, and the whole flourish is dropped for anyone who
+   has asked for less motion: a tool that argues for accessibility should not be
+   the thing on the page ignoring the setting. */
+@media (prefers-reduced-motion: no-preference) {
+  .accessibility-audit-panelnote__tick path {
+    stroke-dasharray: 36;
+    stroke-dashoffset: 36;
+    animation: accessibility-audit-tick 620ms cubic-bezier(0.65, 0, 0.35, 1) 180ms forwards;
+  }
+
+  @keyframes accessibility-audit-tick {
+    to { stroke-dashoffset: 0; }
+  }
+}
+
+/* How much room is left in an alt field, beside the field itself. Turns red
+   for the last stretch, where a description is about to get cut short. */
+.accessibility-audit-alt-count {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.accessibility-audit-alt-count--low {
+  color: var(--error-color, #cf1124);
+  font-weight: 600;
+}
+
+/* The reason a question was asked, under the markup it is about. Needs the
+   gap: run straight on from a monospace snippet it reads as more of the
+   snippet. Line breaks are kept because the longer explanations are written
+   as a headline, the places involved, then a numbered list of fixes, and
+   collapsing that gives a paragraph nobody finishes. */
+.accessibility-audit-pr-review__msg {
+  margin: 6px 0 0;
   font-size: 11px;
   line-height: 1.45;
+  white-space: pre-line;
+}
+
+/* Which width the question came from, when it came from only one. Reads as a
+   badge rather than more prose: the reader is usually looking at the desktop
+   preview, and needs to know at a glance that what they are being asked about
+   is not on the screen in front of them. */
+.accessibility-audit-pr-review__vp {
+  margin: 6px 0 0;
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--text-color);
+  background: var(--gray-100, #f3f4f6);
+  border: 1px solid var(--hairline-color, #d9d9d9);
 }
 
 .accessibility-audit-pr-review__actions {
@@ -3745,4 +3975,12 @@ fieldset.accessibility-audit-readonly input,
 fieldset.accessibility-audit-readonly select,
 fieldset.accessibility-audit-readonly textarea {
   opacity: 0.75;
+}
+
+/* Provenance line under the statement's summary pane: says which scan the
+   figures above came from. Sits outside the pane so the tile grid and its
+   dividers are unaffected. */
+.accessibility-audit-statfoot {
+  margin: -8px 0 16px;
+  font-size: 12px;
 }

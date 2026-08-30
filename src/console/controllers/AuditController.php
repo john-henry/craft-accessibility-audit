@@ -59,6 +59,12 @@ class AuditController extends Controller
      */
     public int $days = 90;
 
+    /**
+     * @var string|null A single URL to scan, for pages with no element behind
+     *                  them.
+     */
+    public ?string $url = null;
+
     // Public Methods
     // =========================================================================
 
@@ -70,6 +76,7 @@ class AuditController extends Controller
         return array_merge(parent::options($actionID), match ($actionID) {
             'scan-all' => ['site'],
             'scan-element' => ['elementId', 'site'],
+            'scan-url' => ['url', 'site'],
             'prune' => ['days'],
             'report' => ['site'],
             default => [],
@@ -88,7 +95,9 @@ class AuditController extends Controller
         $audit = AccessibilityAudit::getInstance()->audit;
         $urlRows = $audit->getUrlElements($siteId);
 
-        if (empty($urlRows)) {
+        // Configured URLs are scanned even when nothing else is, so a site
+        // that routes everything through templates is not turned away here.
+        if (empty($urlRows) && empty(AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls())) {
             $this->stdout("No URL-bearing elements found for this site.\n", BaseConsole::FG_YELLOW);
             return ExitCode::OK;
         }
@@ -120,12 +129,50 @@ class AuditController extends Controller
 
             try {
                 $result = $audit->scanElement($element);
+
+                // A page that could not be read has no score, and printing one
+                // for it reads as a verdict on a page nobody opened.
+                if (($result['error'] ?? null) !== null) {
+                    $this->stdout('skipped: ' . $result['error'] . PHP_EOL, BaseConsole::FG_YELLOW);
+                    continue;
+                }
+
                 $score = $result['score'];
                 $colour = $score >= 80 ? BaseConsole::FG_GREEN : ($score >= 50 ? BaseConsole::FG_YELLOW : BaseConsole::FG_RED);
                 $this->stdout("score: {$score} (issues: " . count($result['issues']) . ")\n", $colour);
             } catch (Throwable $e) {
                 $this->stdout("FAILED: " . $e->getMessage() . "\n", BaseConsole::FG_RED);
                 $errors++;
+            }
+        }
+
+        // Configured URLs last: pages Craft routes without an element behind
+        // them, which the sweep above has no way of finding.
+        $customUrls = AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls();
+
+        if (!empty($customUrls)) {
+            $count = count($customUrls);
+            $this->stdout("\nScanning {$count} additional URL(s)...\n", BaseConsole::FG_GREEN);
+
+            foreach ($customUrls as $i => $customUrl) {
+                $this->stdout(sprintf("  [%d/%d] %s ... ", $i + 1, $count, $customUrl));
+
+                try {
+                    $result = $audit->scanUrl($customUrl, $siteId);
+
+                    if ($result['scanId'] === 0) {
+                        $this->stdout('SKIPPED: ' . ($result['error'] ?? 'scan limit reached') . "\n", BaseConsole::FG_YELLOW);
+                        continue;
+                    }
+
+                    $score = (int)$result['score'];
+                    $scoreColour = $score >= 80 ? BaseConsole::FG_GREEN : ($score >= 50 ? BaseConsole::FG_YELLOW : BaseConsole::FG_RED);
+                    $this->stdout("score: {$score}\n", $scoreColour);
+                    $total++;
+                } catch (Throwable $e) {
+                    $this->stdout('FAILED: ' . $e->getMessage() . "\n", BaseConsole::FG_RED);
+                    $errors++;
+                }
             }
         }
 
@@ -176,6 +223,48 @@ class AuditController extends Controller
             $wcag = $issue->wcagCriterion ? " [WCAG {$issue->wcagCriterion}]" : '';
             $this->stdout("  [{$issue->severity}]{$wcag} {$issue->message}\n", $colour);
         }
+
+        return ExitCode::OK;
+    }
+
+    /**
+     * Scan a single URL that has no element behind it, such as a search results
+     * or filtered listing page.
+     *
+     * @return int
+     * @throws SiteNotFoundException
+     * @throws \Exception
+     */
+    public function actionScanUrl(): int
+    {
+        if (!$this->url) {
+            $this->stderr("--url is required.
+", BaseConsole::FG_RED);
+            return ExitCode::USAGE;
+        }
+
+        $siteId = $this->resolveSiteId();
+        $this->stdout("Scanning {$this->url}...
+");
+
+        $result = AccessibilityAudit::getInstance()->audit->scanUrl($this->url, $siteId);
+
+        if (!empty($result['error'])) {
+            $this->stderr($result['error'] . "
+", BaseConsole::FG_RED);
+            return ExitCode::DATAERR;
+        }
+
+        if (!empty($result['limitReached'])) {
+            $this->stderr("Scan limit reached for this edition.
+", BaseConsole::FG_RED);
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        $this->stdout("Score: {$result['score']}/100
+");
+        $this->stdout("Scan ID: {$result['scanId']}
+");
 
         return ExitCode::OK;
     }

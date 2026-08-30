@@ -62,6 +62,15 @@
   --aa-pass-bg: #e7f4eb;
   --aa-pass-edge: #1e7a3c;
 
+  /* ---- Target marker ----------------------------------------------------- */
+  /* Which level you are aiming at is not a severity, so it takes no severity
+     colour. Amber said "something needs attention" on a card reading 100% with
+     nothing failing, and blue is already spoken for by notice. Neutral ink
+     marks the card without claiming anything about its state. */
+  --aa-target: #45525f;
+  --aa-target-bg: #eceff3;
+  --aa-target-marker: #7d8a97;
+
   /* ---- Misc chips -------------------------------------------------------- */
   --aa-owner-design: #4a3fa3; /* Design chip (purple) */
   --aa-owner-design-bg: #edecf8;

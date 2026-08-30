@@ -136,6 +136,12 @@ describe('StatementController::actionSaveMeta', function() {
 describe('StatementController entries', function() {
     beforeEach(function() {
         $this->actingAs(UserFactory::factory()->admin(true)->create());
+
+        // Every test here counts the rows it expects to find afterwards, which
+        // only means anything from a known-empty record. Its siblings above and
+        // below already do this; these did not, and were reading whatever the
+        // record happened to hold.
+        resetStatementRecord((int) Craft::$app->getSites()->getPrimarySite()->id);
     });
 
     it('saves entries posted with the form', function() {
@@ -231,9 +237,13 @@ describe('StatementController entries', function() {
 
         $stored = AccessibilityAudit::getInstance()->statement->getRecord($siteId)['exclusions'];
 
+        // The row carries the criterion and a factual note about the scan.
+        // "What is affected" stays empty on purpose: it asks for what a member
+        // of the public would recognise, which only a person can write.
         expect($stored)->toHaveCount(1)
             ->and($stored[0]['criterion'])->toBe($suggestions[0]['criterion'])
-            ->and($stored[0]['content'])->not->toBeEmpty();
+            ->and($stored[0]['content'])->toBe('')
+            ->and($stored[0]['reason'])->not->toBeEmpty();
     });
 });
 
@@ -299,5 +309,71 @@ describe('StatementController add buttons on an empty list', function() {
 
         expect($stored)->toHaveCount(1)
             ->and($stored[0]['criterion'])->toBe('1.4.3');
+    });
+
+    it('never pre-fills the public description or restates the criterion as the reason', function() {
+        // This ends up in a published legal document. "What is affected" asks
+        // for what a member of the public would recognise, so a criterion name
+        // is exactly the wrong thing to put there. And a criterion's own
+        // wording states the condition for passing: printed under "Does not
+        // comply" it describes the site working correctly, which is worse than
+        // saying nothing.
+        $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
+        $criteria = AccessibilityAudit::getInstance()->vpat->getCriteria();
+
+        $this->post('actions/accessibility-audit/statement/save-meta', [
+            'siteId' => $siteId,
+            'productName' => 'Acme Council',
+            'addSuggestion' => '3.2.2',
+        ]);
+
+        $stored = AccessibilityAudit::getInstance()->statement->getRecord($siteId)['exclusions'];
+
+        expect($stored)->toHaveCount(1)
+            ->and($stored[0]['content'])->toBe('')
+            ->and($stored[0]['reason'])->not->toBe((string) ($criteria['3.2.2']['desc'] ?? 'x'))
+            ->and($stored[0]['reason'])->not->toContain((string) ($criteria['3.2.2']['name'] ?? 'x'));
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Guidance for "what is affected"
+// ---------------------------------------------------------------------------
+
+describe('affected-content examples', function() {
+    it('offers an example for every criterion the scanners can raise', function() {
+        // The criteria this plugin's own rules attach to. A reader who lands on
+        // one of these has a fair chance of needing help writing the sentence.
+        foreach (['1.1.1', '1.2.2', '1.2.5', '1.3.1', '1.3.5', '1.3.6', '1.4.2',
+                  '1.4.3', '2.4.1', '2.4.2', '2.4.4', '2.4.6', '3.1.1', '3.2.2',
+                  '4.1.1', '4.1.2'] as $criterion) {
+            expect(\johnhenry\accessibilityaudit\helpers\AffectedExample::for($criterion))
+                ->toStartWith('For example:');
+        }
+    });
+
+    it('falls back to a generic example for anything else', function() {
+        expect(\johnhenry\accessibilityaudit\helpers\AffectedExample::for('9.9.9'))
+            ->toStartWith('For example:')
+            ->and(\johnhenry\accessibilityaudit\helpers\AffectedExample::for(''))
+            ->toStartWith('For example:');
+    });
+
+    it('names content rather than restating the rule', function() {
+        // The field asks what a member of the public would recognise. An
+        // example that repeats the criterion teaches the wrong answer.
+        $example = \johnhenry\accessibilityaudit\helpers\AffectedExample::for('2.4.4');
+
+        expect($example)->not->toContain('2.4.4')
+            ->and($example)->not->toContain('Link Purpose')
+            ->and($example)->toContain('Read more');
+    });
+
+    it('is only ever a placeholder, never a stored value', function() {
+        // A default value would be published verbatim by somebody in a hurry.
+        $template = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/statement.twig');
+
+        expect($template)->toContain('placeholder: affectedExamples[')
+            ->and($template)->toContain("value: entry.content ?? ''");
     });
 });

@@ -132,6 +132,7 @@
     </div>
     {% endif %}
 
+    {% if canRunScans %}
     <div>
         <h2>{{ 'Analyse a page'|t('accessibility-audit') }}</h2>
         <p class="light">
@@ -145,6 +146,7 @@
                    class="text"
                    style="flex:1 1 260px;min-width:0"
                    placeholder="https://example.com/about"
+                   value="{{ prefillUrl ?? '' }}"
                    autocomplete="off"
                    spellcheck="false">
             {% if hasApiKey %}
@@ -160,6 +162,7 @@
         <p id="accessibility-audit-rl-error" class="error" role="alert" hidden></p>
         <div id="accessibility-audit-rl-empty" class="accessibility-audit-emptybox">{{ 'Analyse a page to see its reading ease, grade level, longest sentences, and plain-language AI suggestions here.'|t('accessibility-audit') }}</div>
     </div>
+    {% endif %}
 
     <div id="accessibility-audit-rl-results" class="accessibility-audit-col accessibility-audit-col--g14" aria-live="polite" hidden>
 
@@ -261,8 +264,10 @@
                 ? '<span class="accessibility-audit-badge-pass">' + Craft.t('accessibility-audit', 'Pass') + '</span>'
                 : '<span class="accessibility-audit-badge-fail">' + Craft.t('accessibility-audit', 'Fail') + '</span>';
 
+            const canRunScans = {{ canRunScans ? 'true' : 'false' }};
+
             const reanalyseCell = (v) => {
-                if (!v) { return ''; }
+                if (!v || !canRunScans) { return ''; }
                 const target = v.elementId
                     ? 'data-element-id="' + v.elementId + '" data-site-id="' + (v.siteId || siteId) + '"'
                     : 'data-url="' + Craft.escapeHtml(v.url) + '"';

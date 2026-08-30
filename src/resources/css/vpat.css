@@ -203,6 +203,14 @@
   color: var(--aa-warning-strong);
 }
 
+/* A saved remark counting findings that have since moved. Not a failure and
+   not the author's mistake, so it takes the neutral marker rather than the
+   warning colour the empty-remark nudge uses. */
+.accessibility-audit-vpat-remark-stale {
+  font-size: 11px;
+  color: var(--aa-target);
+}
+
 .accessibility-audit-vpat-scope-actions {
   margin-top: 8px;
   display: flex;

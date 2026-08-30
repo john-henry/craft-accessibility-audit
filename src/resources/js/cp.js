@@ -136,12 +136,18 @@
 
     bindScanButtons() {
       document.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-accessibility-audit-scan-entry]');
+        const btn = e.target.closest('[data-accessibility-audit-scan-entry], [data-accessibility-audit-scan-url]');
         if (btn) {
           e.preventDefault();
-          const entryId = btn.dataset.accessibilityAuditScanEntry;
-          const siteId  = btn.dataset.siteId || '';
-          this.scanEntry(entryId, siteId, btn);
+          const siteId = btn.dataset.siteId || '';
+          // A page with no element behind it is re-scanned by its URL, which
+          // the server only accepts if it is one this site already scans.
+          const url = btn.dataset.accessibilityAuditScanUrl;
+          this.scanEntry(
+            url ? { url } : { entryId: btn.dataset.accessibilityAuditScanEntry },
+            siteId,
+            btn,
+          );
         }
       });
     },
@@ -156,7 +162,7 @@
       });
     },
 
-    async scanEntry(entryId, siteId, triggerEl) {
+    async scanEntry(target, siteId, triggerEl) {
       // The buttons follow Craft's own queue-button pattern: data-icon on the
       // button draws the refresh glyph as a :before, and the spin class animates
       // that pseudo-element while the scan runs. Table buttons wrap their label
@@ -174,7 +180,7 @@
       try {
         const fd = new FormData();
         csrfAppend(fd);
-        fd.append('entryId', entryId);
+        if (target.url) { fd.append('url', target.url); } else { fd.append('entryId', target.entryId); }
         if (siteId) fd.append('siteId', siteId);
         // On the Inspect page the preview iframe runs the browser pass itself
         // after the reload; skip the queued headless pass so exactly one
@@ -183,7 +189,8 @@
           fd.append('skipHeadless', '1');
         }
 
-        const res  = await fetch(getActionUrl('accessibility-audit/audit/scan-entry'), { method: 'POST', body: fd, headers: { 'Accept': 'application/json' } });
+        const action = target.url ? 'accessibility-audit/audit/scan-url' : 'accessibility-audit/audit/scan-entry';
+        const res  = await fetch(getActionUrl(action), { method: 'POST', body: fd, headers: { 'Accept': 'application/json' } });
         const data = await res.json();
 
         if (data.limitReached) {
@@ -199,6 +206,14 @@
         }
 
         if (data.success) {
+          /* The queued headless pass was skipped above, and that pass is the
+             one covering both viewports. Ask the preview to sweep them itself
+             after the reload, so a re-scan means a re-scan of the page rather
+             than of whichever width happens to be on screen. */
+          if (document.getElementById('accessibility-audit-preview-iframe')) {
+            try { sessionStorage.setItem('a11y_sweep_viewports', '1'); } catch (_) {}
+          }
+
           /* Reload rather than patching the markup in place: the new scan ID has
              to be the one Twig rendered, or the contrast auto-store cycle writes
              against the previous scan. The sidebar panel deliberately does not
@@ -206,8 +221,9 @@
           window.location.reload();
           return;
         } else {
+          const failure = data.error || Craft.t('accessibility-audit', 'Scan failed');
           setText(Craft.t('accessibility-audit', 'Scan failed'));
-          if (window.Craft && Craft.cp) { Craft.cp.displayError(Craft.t('accessibility-audit', 'Scan failed')); }
+          if (window.Craft && Craft.cp) { Craft.cp.displayError(failure); }
         }
       } catch (err) {
         console.error('[a11y]', err);
@@ -530,6 +546,9 @@
           const fd = new FormData();
           csrfAppend(fd);
           fd.append('elementId', btn.dataset.elementId);
+          /* A dismissal made on a page with no element behind it is keyed to
+             the URL, so restoring it has to name the same page. */
+          if (btn.dataset.url) { fd.append('url', btn.dataset.url); }
           fd.append('ruleId', btn.dataset.ruleId);
           fd.append('context', btn.dataset.context || '');
           fd.append('siteId', btn.dataset.siteId);
@@ -733,14 +752,38 @@ window.AccessibilityAuditInjectAltBtn = (function () {
       return;
     }
 
+    // Counted here as well as on the Assets page, because this is the screen
+    // most alt text actually gets written on. Counts up against the guideline
+    // the long-alt check reports on: there is no cap to run out of, and the
+    // useful number is how far past it the description sits.
+    const guideline = Number(cfg.altGuideline) || 0;
+    const count = document.createElement('span');
+    count.className = 'light accessibility-audit-alt-count';
+    count.setAttribute('role', 'status');
+    count.setAttribute('aria-live', 'polite');
+
+    const renderCount = () => {
+      if (!guideline) return;
+      const n = [...textarea.value].length;
+      const over = n - guideline;
+
+      count.textContent = over > 0
+        ? Craft.t('accessibility-audit', '{n} characters, {over} over', { n: n, over: over })
+        : Craft.t('accessibility-audit', '{n} characters', { n: n });
+      count.classList.toggle('accessibility-audit-alt-count--low', over > 0);
+    };
+
     const btn = document.createElement('button');
     btn.type      = 'button';
     btn.className = 'btn small accessibility-audit-gen-alt-btn';
     btn.textContent = Craft.t('accessibility-audit', 'Generate Alt Text');
     btn.style.cssText = 'margin-top:6px;display:block;';
 
-    textarea.closest('.input') && textarea.closest('.input').after(btn)
-      || textarea.parentElement.appendChild(btn);
+    const anchor = textarea.closest('.input') || textarea.parentElement;
+    anchor.after ? anchor.after(count, btn) : anchor.appendChild(count);
+
+    textarea.addEventListener('input', renderCount);
+    renderCount();
 
     btn.addEventListener('click', async () => {
       btn.textContent = Craft.t('accessibility-audit', 'Generating…');
@@ -756,6 +799,7 @@ window.AccessibilityAuditInjectAltBtn = (function () {
 
         if (data.success) {
           textarea.value = data.alt;
+          renderCount();
           textarea.dispatchEvent(new Event('input', { bubbles: true }));
           textarea.dispatchEvent(new Event('change', { bubbles: true }));
           btn.textContent = Craft.t('accessibility-audit', 'Regenerate');
