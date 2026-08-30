@@ -8,17 +8,27 @@ use craft\elements\User;
 use craft\helpers\Db;
 use craft\helpers\StringHelper;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\services\AuditService;
 use markhuot\craftpest\factories\User as UserFactory;
 
 // ---------------------------------------------------------------------------
-// The Overview reports on the pages it has scanned, not on the site.
+// Two different facts, and reading one as the other gets both wrong.
 //
-// Every figure there comes from the latest scan of each page that has one, so a
-// site part-way through a sweep reports on the handful done so far with exactly
-// the confidence of a finished sweep. Purge the history, start a scan, look at
-// the Overview three pages in: 100 out of 100, nothing failing, all clear. Each
-// of those numbers is true of the three pages and none of them is true of the
-// site, and nothing on the screen said which it meant.
+// The Overview reports on the pages it has scanned. Part-way through a sweep
+// that is a handful of them, reported with exactly the confidence of a finished
+// sweep: clear the history, start a scan, and three pages in the site reads 100
+// out of 100 with nothing failing.
+//
+// The obvious guard is to compare pages scanned against pages scannable and
+// call the difference "still to do". It is wrong, and on a real site it is
+// wrong permanently. A finished sweep leaves pages unscanned by design: an
+// address that redirects belongs to the page it lands on, an excluded page is
+// meant to be missed, and one that 404s or times out has nothing to score. A
+// real site sat at 342 of 389 with the queue empty, so an all-clear gated on
+// that count could never appear again.
+//
+// So the job says when it starts and when it finishes, and the count is only
+// ever shown as progress, never read as it.
 // ---------------------------------------------------------------------------
 
 function coverageScan(int $elementId, int $siteId): void
@@ -34,17 +44,28 @@ function coverageScan(int $elementId, int $siteId): void
     ])->execute();
 }
 
+function clearSweepFlag(int $siteId): void
+{
+    Craft::$app->getCache()->delete(AuditService::sweepKey($siteId));
+}
+
 beforeEach(function() {
     $this->siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
     $this->audit = AccessibilityAudit::getInstance()->audit;
+
+    clearSweepFlag($this->siteId);
+});
+
+afterEach(function() {
+    clearSweepFlag($this->siteId);
 });
 
 describe('AuditService::getCoverage', function() {
-    it('counts the pages a full sweep would cover, not just the ones done', function() {
+    it('reports pages scanned, pages a sweep would consider, and whether one is running', function() {
         $coverage = $this->audit->getCoverage($this->siteId);
 
-        expect($coverage)->toHaveKeys(['scanned', 'scannable'])
-            ->and($coverage['scannable'])->toBeGreaterThanOrEqual($coverage['scanned']);
+        expect($coverage)->toHaveKeys(['scanned', 'scannable', 'sweeping'])
+            ->and($coverage['sweeping'])->toBeFalse();
     });
 
     it('counts each scanned page once however many times it has been scanned', function() {
@@ -57,7 +78,7 @@ describe('AuditService::getCoverage', function() {
         expect($this->audit->getCoverage($this->siteId)['scanned'])->toBe($before + 1);
     });
 
-    it('includes the URLs configured by hand in what a sweep covers', function() {
+    it('includes the URLs configured by hand in what a sweep would consider', function() {
         $settings = AccessibilityAudit::getInstance()->getSettings();
         $was = $settings->customUrls;
 
@@ -74,31 +95,77 @@ describe('AuditService::getCoverage', function() {
     });
 });
 
-describe('the Overview', function() {
-    it('says how much of the site the figures cover while a sweep is short', function() {
-        $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/index.twig');
-
-        expect($twig)->toContain('{% if unscanned > 0 %}')
-            ->and($twig)->toContain('{n} of {total} pages have been scanned.');
+describe('AuditService::isSweepRunning', function() {
+    it('is false when nothing is sweeping', function() {
+        expect($this->audit->isSweepRunning($this->siteId))->toBeFalse();
     });
 
-    it('holds the all-clear back until every page has actually been scanned', function() {
-        // Otherwise the one message on the screen that promises there is
-        // nothing behind the score is the one making a claim about pages it
-        // has never looked at.
+    it('is true while the flag the job sets is in place', function() {
+        Craft::$app->getCache()->set(AuditService::sweepKey($this->siteId), true, 60);
+
+        expect($this->audit->isSweepRunning($this->siteId))->toBeTrue();
+    });
+
+    it('answers per site, so one site sweeping does not mute another', function() {
+        Craft::$app->getCache()->set(AuditService::sweepKey($this->siteId), true, 60);
+
+        expect($this->audit->isSweepRunning($this->siteId + 1000))->toBeFalse();
+    });
+});
+
+describe('the sweep job', function() {
+    it('says when it starts and when it is finished', function() {
+        $source = (string) file_get_contents(
+            (new ReflectionClass(\johnhenry\accessibilityaudit\jobs\ScanElements::class))->getFileName(),
+        );
+
+        expect($source)->toContain('protected function before(): void')
+            ->and($source)->toContain('protected function after(): void')
+            ->and($source)->toContain('->set(AuditService::sweepKey($this->siteId), true, self::SWEEP_TTL)')
+            ->and($source)->toContain('->delete(AuditService::sweepKey($this->siteId))');
+    });
+
+    it('lets the flag expire, so a sweep that dies does not wedge the Overview', function() {
+        // A failed job or a restarted worker never reaches after().
+        $source = (string) file_get_contents(
+            (new ReflectionClass(\johnhenry\accessibilityaudit\jobs\ScanElements::class))->getFileName(),
+        );
+
+        expect($source)->toContain('private const SWEEP_TTL =');
+    });
+});
+
+describe('the Overview', function() {
+    it('says a scan is running rather than implying the remainder is pending', function() {
+        $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/index.twig');
+
+        expect($twig)->toContain('{% if sweeping %}')
+            ->and($twig)->toContain('A scan is running. {n} of {total} pages so far.');
+    });
+
+    it('holds the all-clear back while a sweep is moving the figures', function() {
         $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/index.twig');
 
         expect($twig)->toContain(
-            "{% set allClear = openTotal == 0 and (pendingPotential ?? 0) == 0 and summary.avgScore >= 100 and fullyCovered %}",
+            "{% set allClear = openTotal == 0 and (pendingPotential ?? 0) == 0 and summary.avgScore >= 100 and settled %}",
         );
     });
 
-    it('does not call an empty site fully covered', function() {
-        // Nothing scanned and nothing scannable is zero of zero, which is not
-        // an all-clear: it is a site the plugin has never looked at.
+    it('never gates the all-clear on every page having a scan', function() {
+        // A finished sweep leaves pages unscanned by design, so that gate would
+        // never open again on a site with a redirect or an excluded page in it.
         $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/index.twig');
 
-        expect($twig)->toContain('{% set fullyCovered = (coverage.scanned ?? 0) > 0 and unscanned <= 0 %}');
+        expect($twig)->not->toContain('unscanned <= 0')
+            ->and($twig)->toContain('{% set settled = (coverage.scanned ?? 0) > 0 and not sweeping %}');
+    });
+
+    it('does not call a site nobody has scanned settled', function() {
+        // Nothing scanned and no sweep running is not an all-clear: it is a
+        // site the plugin has never looked at.
+        $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/index.twig');
+
+        expect($twig)->toContain('(coverage.scanned ?? 0) > 0 and not sweeping');
     });
 
     it('hands the template the coverage it needs to decide', function() {

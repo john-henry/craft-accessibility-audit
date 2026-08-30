@@ -206,18 +206,18 @@
     </p>
 {% endif %}
 
-{% set unscanned = (coverage.scannable ?? 0) - (coverage.scanned ?? 0) %}
-{% set fullyCovered = (coverage.scanned ?? 0) > 0 and unscanned <= 0 %}
-{% set allClear = openTotal == 0 and (pendingPotential ?? 0) == 0 and summary.avgScore >= 100 and fullyCovered %}
+{% set sweeping = coverage.sweeping ?? false %}
+{% set settled = (coverage.scanned ?? 0) > 0 and not sweeping %}
+{% set allClear = openTotal == 0 and (pendingPotential ?? 0) == 0 and summary.avgScore >= 100 and settled %}
 
-{% if unscanned > 0 %}
+{% if sweeping %}
     <div class="accessibility-audit-panelnote accessibility-audit-panelnote--waiting">
         <div class="accessibility-audit-panelnote__text">
             <p class="accessibility-audit-panelnote__lead">
-                {{ '{n} of {total} pages have been scanned.'|t('accessibility-audit', { n: coverage.scanned, total: coverage.scannable }) }}
+                {{ 'A scan is running. {n} of {total} pages so far.'|t('accessibility-audit', { n: coverage.scanned, total: coverage.scannable }) }}
             </p>
             <p class="accessibility-audit-panelnote__body">
-                {{ 'Everything above is worked out from those alone, so it is not the whole site yet. If a scan is running, the figures will move as it works through the rest.'|t('accessibility-audit') }}
+                {{ 'Everything above is worked out from the pages done so far, so it will move as the scan works through the rest.'|t('accessibility-audit') }}
                 <a href="{{ cpUrl('accessibility-audit/issues', { site: siteHandle, tab: 'pages' }) }}">{{ 'See which pages have been scanned'|t('accessibility-audit') }}</a>
             </p>
         </div>

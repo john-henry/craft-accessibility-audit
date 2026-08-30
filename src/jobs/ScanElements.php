@@ -11,6 +11,7 @@ use craft\base\Batchable;
 use craft\db\QueryBatcher;
 use craft\queue\BaseBatchedJob;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\services\AuditService;
 use Throwable;
 use yii\queue\Queue;
 
@@ -30,6 +31,17 @@ use yii\queue\Queue;
  */
 class ScanElements extends BaseBatchedJob
 {
+    // Constants
+    // =========================================================================
+
+    /**
+     * How long the "a sweep is running" flag survives without the job clearing
+     * it. A sweep that dies mid-run, a failed job or a worker restarted under
+     * it, never reaches after(), and a flag with no expiry would leave the
+     * Overview saying a scan is running for good.
+     */
+    private const SWEEP_TTL = 21600;
+
     // Public Properties
     // =========================================================================
 
@@ -70,6 +82,26 @@ class ScanElements extends BaseBatchedJob
         }
 
         AccessibilityAudit::getInstance()->audit->scanElement($element);
+    }
+
+    /**
+     * @inheritdoc
+     *
+     * Marks the sweep as under way so the Overview can say its figures are
+     * still moving. A finished sweep leaves pages unscanned by design, so the
+     * page count cannot be read as progress.
+     */
+    protected function before(): void
+    {
+        Craft::$app->getCache()->set(AuditService::sweepKey($this->siteId), true, self::SWEEP_TTL);
+    }
+
+    /**
+     * @inheritdoc
+     */
+    protected function after(): void
+    {
+        Craft::$app->getCache()->delete(AuditService::sweepKey($this->siteId));
     }
 
     /**

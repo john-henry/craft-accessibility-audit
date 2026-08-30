@@ -1285,7 +1285,45 @@ class AuditService extends Component
             'scanned' => count($this->getLatestScanIds($siteId)),
             'scannable' => (int)$this->getUrlElementsQuery($siteId)->count()
                 + count(AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls()),
+            'sweeping' => $this->isSweepRunning($siteId),
         ];
+    }
+
+    /**
+     * The cache key holding the fact that a site-wide sweep is under way.
+     *
+     * @param int $siteId The site being swept.
+     * @return string The key.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public static function sweepKey(int $siteId): string
+    {
+        return 'accessibility-audit:sweeping:' . $siteId;
+    }
+
+    /**
+     * Whether a site-wide sweep is working through its pages right now.
+     *
+     * Counting pages cannot answer this. A sweep never scans every candidate:
+     * addresses that redirect belong to the page they land on, pages that are
+     * excluded are meant to be missed, and one that 404s or times out has
+     * nothing to score. Those gaps are permanent, so treating an incomplete
+     * count as "still going" would leave the Overview waiting on pages that are
+     * never coming. The job says when it starts and when it finishes instead.
+     *
+     * The flag expires on its own so a sweep killed mid-run, by a failed job or
+     * a restarted worker, does not leave the Overview claiming a scan is
+     * running for the rest of the site's life.
+     *
+     * @param int $siteId The site to ask about.
+     * @return bool Whether a sweep is under way.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function isSweepRunning(int $siteId): bool
+    {
+        return (bool)Craft::$app->getCache()->get(self::sweepKey($siteId));
     }
 
     public function getSiteSummary(int $siteId): array
