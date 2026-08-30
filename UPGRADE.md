@@ -10,7 +10,7 @@ Versions are listed newest first.
 
 Scan history older than your **Retain Scan Results** setting is deleted the first time Craft runs garbage collection after this update. That setting never deleted anything before, so there is probably more history sitting there than it allows, and the default is 90 days. Raise it, or set it to 0 to keep everything (Pro), before you update if that history matters to you.
 
-Four migrations run on update. Two of them delete rows:
+Five migrations run on update. Two of them delete rows, and one re-keys existing rulings:
 
 | Migration | What it does |
 |---|---|
@@ -18,6 +18,7 @@ Four migrations run on update. Two of them delete rows:
 | `m260827_120000_add_url_scans` | Makes `elementId` and `elementType` nullable on scans and issues, and adds `url` and `title` to scans |
 | `m260827_140000_url_verdicts` | Makes `elementId` nullable on verdicts, adds `url` and `targetHash`, backfills `targetHash`, and moves the unique index onto it |
 | `m260827_160000_clear_decorative_contrast_findings` | Deletes contrast findings recorded against `aria-hidden="true"` markup |
+| `m260830_090000_restable_verdict_keys` | Moves existing rulings onto the id-independent key, recovering the original markup from the scan history. Merges a stale row into a newer answer for the same question rather than colliding with it |
 
 Both deletions are of findings that were wrong, and both recalculate the scores that were affected. Anything genuinely failing comes back on the next scan.
 
