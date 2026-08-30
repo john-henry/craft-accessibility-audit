@@ -1264,6 +1264,30 @@ class AuditService extends Component
 
     // ─── Site-wide summary ───────────────────────────────────────────────────
 
+    /**
+     * How much of the site the figures on the Overview actually cover.
+     *
+     * Every number there is worked out from the latest scan of each page that
+     * has one, so a site part-way through its first sweep reports on the
+     * handful done so far with exactly the confidence of a finished sweep. A
+     * purge followed by a scan is the clearest case: three pages in, the site
+     * reads 100 out of 100 with nothing failing.
+     *
+     * @param int $siteId The site to measure.
+     * @return array{scanned: int, scannable: int} Pages with a scan, and pages
+     *                                             a full sweep would cover.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function getCoverage(int $siteId): array
+    {
+        return [
+            'scanned' => count($this->getLatestScanIds($siteId)),
+            'scannable' => (int)$this->getUrlElementsQuery($siteId)->count()
+                + count(AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls()),
+        ];
+    }
+
     public function getSiteSummary(int $siteId): array
     {
         $latestIds = $this->getLatestScanIds($siteId);

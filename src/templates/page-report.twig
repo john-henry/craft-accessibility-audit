@@ -61,9 +61,9 @@
         <p class="light code accessibility-audit-pr-pageurl" title="{{ pageUrl }}">
             {{ pageUrl }}
             {% if scan is defined and scan %}
-                <span class="accessibility-audit-pr-scanref">{{ 'scan #{id}, {date}'|t('accessibility-audit', {
-                    id: scan.id,
+                <span class="accessibility-audit-pr-scanref">{{ 'Last scanned {date} · #{id}'|t('accessibility-audit', {
                     date: scan.dateScanned ? scan.dateScanned|date('d M H:i:s') : '—',
+                    id: scan.id,
                 }) }}</span>
             {% endif %}
         </p>

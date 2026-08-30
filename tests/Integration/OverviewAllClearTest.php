@@ -31,8 +31,10 @@ it('stacks the lead above the body rather than beside it', function() {
     $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/index.twig');
     $css = (string) file_get_contents(dirname(__DIR__, 2) . '/src/resources/css/accessibility-audit.css');
 
-    $start = (int) strpos($twig, 'accessibility-audit-panelnote--waiting');
+    $start = (int) strpos($twig, '{% if (pendingPotential ?? 0) > 0 %}');
     $note = substr($twig, $start, (int) strpos($twig, '{% elseif allClear %}', $start) - $start);
+
+    expect($note)->toContain('accessibility-audit-panelnote--waiting');
 
     expect($note)->toContain('accessibility-audit-panelnote__text')
         ->and(substr_count($note, 'accessibility-audit-panelnote__lead'))->toBe(1)
@@ -44,13 +46,12 @@ it('stacks the lead above the body rather than beside it', function() {
 });
 
 it('holds the all-clear back until the questions are answered too', function() {
-    // Three conditions, not one. Any of them missing and the message is a
-    // claim the scan cannot support.
+    // Every condition earns its place. Any of them dropped and the message is
+    // a claim the scan cannot support. The coverage half of that line is
+    // pinned in OverviewCoverageTest, which owns the reasoning behind it.
     $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/index.twig');
 
-    expect($twig)->toContain(
-        "{% set allClear = openTotal == 0 and (pendingPotential ?? 0) == 0 and summary.avgScore >= 100 %}",
-    );
+    expect($twig)->toContain("{% set allClear = openTotal == 0 and (pendingPotential ?? 0) == 0 and");
 });
 
 // ---------------------------------------------------------------------------

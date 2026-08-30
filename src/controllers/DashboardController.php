@@ -114,6 +114,7 @@ class DashboardController extends Controller
 
         return $this->renderTemplate('accessibility-audit/index', [
             'summary' => $summary,
+            'coverage' => $plugin->audit->getCoverage($siteId),
             'pendingPotential' => $pendingPotential,
             'potentialPages' => $potentialPages,
             'byImpact' => $byImpact,
