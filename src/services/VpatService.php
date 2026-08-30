@@ -506,6 +506,81 @@ class VpatService extends Component
      */
     private const BROWSER_VERIFIED_CRITERIA = ['1.4.11', '2.5.8'];
 
+    /**
+     * @var array<string, array{checks: string, cannot: string}> What the
+     *      scanner tests for a criterion, and what it cannot establish.
+     *
+     *      Most of a VPAT is signed off by a person, and a row offering no
+     *      more than a dropdown makes that person go and work out what has
+     *      already been tested before they can answer. Both halves are needed:
+     *      what was covered says the work is smaller than it looks, and what
+     *      was not says where to actually go looking. A criterion missing from
+     *      this list is one no scanner contributes to at all, which is worth
+     *      saying too rather than leaving blank.
+     */
+    private const EVIDENCE = [
+        '1.1.1' => [
+            'checks' => 'every image, input and area for a missing or empty alt attribute, and flags alt text that is only a filename',
+            'cannot' => 'whether the alt text describes the image, or whether an image left with an empty alt is genuinely decorative',
+        ],
+        '1.2.2' => [
+            'checks' => 'video elements for a captions track',
+            'cannot' => 'whether the captions are accurate, complete or in step with the audio',
+        ],
+        '1.3.1' => [
+            'checks' => 'heading order, empty headings, table headers, form and select labels, and list structure',
+            'cannot' => 'whether the structure in the markup matches the structure a sighted reader sees',
+        ],
+        '1.3.5' => [
+            'checks' => 'input fields for an autocomplete attribute',
+            'cannot' => 'whether the autocomplete value is the right one for that field',
+        ],
+        '1.4.2' => [
+            'checks' => 'media elements set to play on load',
+            'cannot' => 'whether a way to pause or stop the audio is provided',
+        ],
+        '1.4.3' => [
+            'checks' => 'the computed text and background colour of every element, at both viewports, including hover, focus and selection states',
+            'cannot' => 'text baked into an image',
+        ],
+        '1.4.11' => [
+            'checks' => 'the contrast of interface components and graphics in a real browser, at both viewports',
+            'cannot' => 'components that only appear part way through an interaction',
+        ],
+        '2.4.1' => [
+            'checks' => 'each page for a skip link and for landmark regions',
+            'cannot' => 'whether the skip link goes anywhere useful when it is used',
+        ],
+        '2.4.2' => [
+            'checks' => 'every page for a title element that is not empty',
+            'cannot' => 'whether the title describes that page rather than repeating the site name',
+        ],
+        '2.4.4' => [
+            'checks' => 'links whose text is generic, a bare URL, or repeated on the same page while going somewhere else',
+            'cannot' => 'whether a link makes sense where a reader meets it',
+        ],
+        '2.4.6' => [
+            'checks' => 'headings for emptiness and for skipped levels',
+            'cannot' => 'whether a heading or a label describes what comes after it',
+        ],
+        '2.5.8' => [
+            'checks' => 'the size and spacing of every touch target in a real browser, at both viewports',
+            'cannot' => 'targets that only appear part way through an interaction',
+        ],
+        '3.1.1' => [
+            'checks' => 'every page for a lang attribute on the html element',
+            'cannot' => 'whether the language declared is the language actually written',
+        ],
+        '3.3.2' => [
+            'checks' => 'form fields for a label that is properly associated with them',
+            'cannot' => 'whether the label or the instructions are clear enough to work from',
+        ],
+        '4.1.2' => [
+            'checks' => 'buttons, links, iframes and form controls for an accessible name',
+            'cannot' => 'widgets built in script, or whether a name matches the label a reader can see',
+        ],
+    ];
+
     // ─── Public API ──────────────────────────────────────────────────────────
 
     /** Returns the full hardcoded criteria list. */
@@ -625,6 +700,61 @@ class VpatService extends Component
      *
      * @return array<string, array{level: string, basis: string}>
      */
+    /**
+     * What the scans can say about each criterion, for a person deciding how
+     * to sign it off.
+     *
+     * The level suggestion answers "what did the scanner conclude". This
+     * answers the question in front of it: what was actually looked at, over
+     * how many pages, and what is left for a person. Most criteria are signed
+     * off by hand, and without this every one of those rows is a blank box
+     * with no way of telling a five-second decision from an afternoon's work.
+     *
+     * @param int $siteId The site to report on.
+     * @return array<string, array{checks: ?string, cannot: ?string, findings: int, pages: int}>
+     *         Keyed by criterion number. checks and cannot are null where no
+     *         scanner contributes to that criterion at all.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function getEvidence(int $siteId): array
+    {
+        $latestScanIds = (new Query())
+            ->select(['MAX(id)'])
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where(['siteId' => $siteId])
+            ->groupBy(['elementId', 'url'])
+            ->column();
+
+        $counts = [];
+
+        if (!empty($latestScanIds)) {
+            $counts = (new Query())
+                ->select(['wcagCriterion', 'COUNT(*) as n'])
+                ->from('{{%accessibilityaudit_issues}}')
+                ->where(['scanId' => $latestScanIds, 'isResolved' => false])
+                ->andWhere(AccessibilityAudit::getInstance()->audit->definiteCondition())
+                ->andWhere(['not', ['wcagCriterion' => null]])
+                ->groupBy(['wcagCriterion'])
+                ->indexBy('wcagCriterion')
+                ->column();
+        }
+
+        $pages = count($latestScanIds);
+        $evidence = [];
+
+        foreach (array_keys(self::CRITERIA) as $num) {
+            $evidence[(string)$num] = [
+                'checks' => self::EVIDENCE[$num]['checks'] ?? null,
+                'cannot' => self::EVIDENCE[$num]['cannot'] ?? null,
+                'findings' => (int)($counts[$num] ?? 0),
+                'pages' => $pages,
+            ];
+        }
+
+        return $evidence;
+    }
+
     public function getAutoConformance(int $siteId): array
     {
         $audit = AccessibilityAudit::getInstance()->audit;
@@ -708,6 +838,7 @@ class VpatService extends Component
     {
         $record = $this->getRecord($siteId);
         $auto = $this->getAutoConformance($siteId);
+        $evidence = $this->getEvidence($siteId);
         $overrides = $record['overrides'];
 
         $levelA = [];
@@ -729,6 +860,7 @@ class VpatService extends Component
                 'overrideRemarks' => $override['remarks'] ?? '',
                 'effectiveLevel' => $effectiveLevel,
                 'effectiveRemarks' => $effectiveRemarks,
+                'evidence' => $evidence[$num] ?? null,
             ]);
 
             if ($criterion['level'] === 'A') {

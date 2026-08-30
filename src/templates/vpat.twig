@@ -429,6 +429,31 @@
                             </td>
                             <td class="accessibility-audit-vpat-name">
                                 {{ row.name }}
+                                {% if row.evidence %}
+                                    <div class="accessibility-audit-vpat-evidence">
+                                        {% if row.evidence.checks %}
+                                            <p class="accessibility-audit-vpat-evidence__line">
+                                                <span class="accessibility-audit-vpat-evidence__tag">{{ 'Scanned'|t('accessibility-audit') }}</span>
+                                                {%- if row.evidence.findings > 0 -%}
+                                                    {{ ' ' }}{{ 'Checked {what} across {pages} pages, and found {n} still open.'|t('accessibility-audit', { what: row.evidence.checks, pages: row.evidence.pages, n: row.evidence.findings }) }}
+                                                {%- elseif row.evidence.pages > 0 -%}
+                                                    {{ ' ' }}{{ 'Checked {what} across {pages} pages, and found nothing.'|t('accessibility-audit', { what: row.evidence.checks, pages: row.evidence.pages }) }}
+                                                {%- else -%}
+                                                    {{ ' ' }}{{ 'Checks {what}, once pages have been scanned.'|t('accessibility-audit', { what: row.evidence.checks }) }}
+                                                {%- endif -%}
+                                            </p>
+                                            <p class="accessibility-audit-vpat-evidence__line accessibility-audit-vpat-evidence__line--gap">
+                                                <span class="accessibility-audit-vpat-evidence__tag accessibility-audit-vpat-evidence__tag--gap">{{ 'For you'|t('accessibility-audit') }}</span>
+                                                {{ ' ' }}{{ 'No scanner can tell {what}.'|t('accessibility-audit', { what: row.evidence.cannot }) }}
+                                            </p>
+                                        {% else %}
+                                            <p class="accessibility-audit-vpat-evidence__line accessibility-audit-vpat-evidence__line--gap">
+                                                <span class="accessibility-audit-vpat-evidence__tag accessibility-audit-vpat-evidence__tag--gap">{{ 'For you'|t('accessibility-audit') }}</span>
+                                                {{ ' ' }}{{ 'Nothing here can be established by a scanner. It needs a person.'|t('accessibility-audit') }}
+                                            </p>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
                             </td>
                             <td class="accessibility-audit-vpat-level-cell">
                                 {% if row.autoLevel and not row.overrideLevel %}

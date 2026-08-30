@@ -1950,6 +1950,44 @@ body.use-shapes .accessibility-audit-pr-dot--error {
   line-height: 1.35;
 }
 
+/* What the scans cover for a criterion, and what is left for a person. Sits
+   under the criterion name, quieter than it and never competing with the
+   conformance control that carries the actual decision. */
+.accessibility-audit-vpat-evidence {
+  margin-top: 6px;
+  font-weight: 400;
+}
+
+.accessibility-audit-vpat-evidence__line {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--medium-text-color);
+}
+
+.accessibility-audit-vpat-evidence__line--gap {
+  margin-top: 3px;
+}
+
+.accessibility-audit-vpat-evidence__tag {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--aa-pass-bg);
+  color: var(--aa-pass);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* The half a scanner cannot reach takes the neutral marker, not a severity:
+   it is work outstanding, not a finding. */
+.accessibility-audit-vpat-evidence__tag--gap {
+  background: var(--aa-target-bg);
+  color: var(--aa-target);
+}
+
 /* .accessibility-audit-vpat-select is a real <select> inside Craft's own
    `.select` wrapper, so it takes the CP's dropdown chrome and needs no styling
    of its own. It carried a pill/badge rule here (flex, 700 weight, padding)
