@@ -104,6 +104,52 @@ it('marks the target level without claiming anything about its state', function(
     }
 });
 
+// ---------------------------------------------------------------------------
+// The flourish is the one place the plugin gets to be daft, so it is the place
+// it has to be most careful. A decoration in a control panel must not reach out
+// to a CDN, must not sit over the page taking clicks, and must not run at all
+// for somebody who asked for less motion.
+// ---------------------------------------------------------------------------
+
+describe('the all-clear flourish', function() {
+    it('carries its own confetti rather than fetching somebody else s', function() {
+        $bundle = (string) file_get_contents(dirname(__DIR__, 2) . '/src/assets/AccessibilityAuditAsset.php');
+        $js = (string) file_get_contents(dirname(__DIR__, 2) . '/src/resources/js/confetti.js');
+
+        expect($bundle)->toContain("'js/confetti.js',")
+            ->and($js)->not->toContain('//cdn')
+            ->and($js)->not->toContain('http')
+            ->and($js)->not->toContain('import ');
+    });
+
+    it('is not offered to anyone who asked for less motion', function() {
+        $js = (string) file_get_contents(dirname(__DIR__, 2) . '/src/resources/js/confetti.js');
+
+        expect($js)->toContain("'(prefers-reduced-motion: reduce)'")
+            // Taken away, not left sitting there doing nothing when clicked.
+            ->and($js)->toContain('button.remove();');
+    });
+
+    it('keeps the canvas out of the way of the page and of a screen reader', function() {
+        $js = (string) file_get_contents(dirname(__DIR__, 2) . '/src/resources/js/confetti.js');
+
+        expect($js)->toContain('pointer-events:none')
+            ->and($js)->toContain("setAttribute('aria-hidden', 'true')")
+            // Nothing it does outlives the burst.
+            ->and($js)->toContain('stage.canvas.remove();');
+    });
+
+    it('gives the button real text and hides it until the script is there', function() {
+        $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/index.twig');
+        $css = (string) file_get_contents(dirname(__DIR__, 2) . '/src/resources/css/accessibility-audit.css');
+
+        expect($twig)->toContain('data-accessibility-audit-confetti hidden')
+            ->and($twig)->toContain("{{ 'Celebrate'|t('accessibility-audit') }}")
+            // .btn sets its own display, so the attribute needs saying in CSS.
+            ->and($css)->toContain('.accessibility-audit-panelnote__flourish[hidden] {');
+    });
+});
+
 it('counts only questions nobody has answered', function() {
     // Dismissed and confirmed ones are answered. Counting them would leave the
     // notice up permanently and teach people to ignore it.

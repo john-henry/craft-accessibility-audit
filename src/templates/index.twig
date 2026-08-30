@@ -226,8 +226,11 @@
             <path d="M3 13 L9 19 L21 5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
         <p class="accessibility-audit-panelnote__lead">
-            {{ 'Nothing failing and nothing left to answer. Every question has been through a human. That is the whole of it.'|t('accessibility-audit') }}
+            {{ 'Nothing failing and nothing left to answer. Every question has been through a person, so there is nothing sitting behind that score.'|t('accessibility-audit') }}
         </p>
+        <button type="button" class="btn small accessibility-audit-panelnote__flourish" data-accessibility-audit-confetti hidden>
+            {{ 'Celebrate'|t('accessibility-audit') }}
+        </button>
     </div>
 {% endif %}
 

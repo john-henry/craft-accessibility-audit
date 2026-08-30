@@ -39,6 +39,7 @@ class AccessibilityAuditAsset extends AssetBundle
             'js/accessibility-audit-shared.js',
             'js/accessibility-audit-table.js',
             'js/cp.js',
+            'js/confetti.js',
         ];
 
 
