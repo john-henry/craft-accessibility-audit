@@ -974,7 +974,7 @@ class AuditService extends Component
 
                     $target = $node['target'][0] ?? null;
                     $context = Json::encode([
-                        'html' => mb_substr($node['html'] ?? '', 0, 300),
+                        'html' => self::openingTagOf(mb_substr($node['html'] ?? '', 0, 300)),
                         'fg' => $fg,
                         'bg' => $bg,
                         'ratio' => $ratio,
@@ -3360,7 +3360,7 @@ class AuditService extends Component
             $bg = trim((string)$occ['bg']);
             $ratio = isset($occ['ratio']) ? round((float)$occ['ratio'], 2) : null;
             $expected = trim((string)($occ['expected'] ?? '4.5:1'));
-            $html = mb_substr(trim((string)($occ['html'] ?? '')), 0, 300);
+            $html = self::openingTagOf(mb_substr(trim((string)($occ['html'] ?? '')), 0, 300));
 
             if ($fg === '' || $bg === '') {
                 continue;
@@ -3445,6 +3445,40 @@ class AuditService extends Component
      * @param string $viewport The viewport bucket these results belong to.
      * @return void
      */
+    /**
+     * An element's opening tag, which is all a contrast occurrence is keyed on.
+     *
+     * axe hands back the whole element when its markup is short and only the
+     * opening tag once it runs past axe's own limit. Which side of that limit
+     * an element falls on depends on how much of the page has rendered when
+     * the check runs: a code block that a highlighter expands to nine lines is
+     * under the limit before the highlighter finishes and over it after. Keyed
+     * on what axe happened to return, the same element is two occurrences and
+     * an answer given to one never reaches the other.
+     *
+     * The opening tag is the part that does not move. Everything identifying
+     * about the element is in it, and the text that follows adds nothing a
+     * reader is being asked about.
+     *
+     * @param string $markup The element's markup as an engine reported it.
+     * @return string The opening tag alone, or the markup unchanged when it
+     *                is not an element.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public static function openingTagOf(string $markup): string
+    {
+        $markup = trim($markup);
+
+        if (!str_starts_with($markup, '<')) {
+            return $markup;
+        }
+
+        $end = strpos($markup, '>');
+
+        return $end === false ? $markup : substr($markup, 0, $end + 1);
+    }
+
     private function _storeContrastNeedsReview(int $scanId, array $scan, array $axeIncomplete, string $viewport): void
     {
         // These rows are rebuilt from scratch on every browser pass, so an
@@ -3466,7 +3500,10 @@ class AuditService extends Component
             $wcag = $this->extractWcagFromAxe($result);
 
             foreach ($result['nodes'] ?? [] as $node) {
-                $html = mb_substr($node['html'] ?? '', 0, 300);
+                // Keyed on the opening tag alone, so the same element is the
+                // same occurrence whichever engine found it and whenever it
+                // ran. See openingTagOf().
+                $html = self::openingTagOf(mb_substr($node['html'] ?? '', 0, 300));
                 $data = $node['any'][0]['data'] ?? [];
 
                 // "Element is hidden" is axe saying there was nothing on

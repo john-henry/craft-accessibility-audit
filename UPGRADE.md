@@ -10,7 +10,7 @@ Versions are listed newest first.
 
 Scan history older than your **Retain Scan Results** setting is deleted the first time Craft runs garbage collection after this update. That setting never deleted anything before, so there is probably more history sitting there than it allows, and the default is 90 days. Raise it, or set it to 0 to keep everything (Pro), before you update if that history matters to you.
 
-Five migrations run on update. Two of them delete rows, and one re-keys existing rulings:
+Six migrations run on update. Two of them delete rows, and two re-key existing rulings:
 
 | Migration | What it does |
 |---|---|
@@ -19,6 +19,7 @@ Five migrations run on update. Two of them delete rows, and one re-keys existing
 | `m260827_140000_url_verdicts` | Makes `elementId` nullable on verdicts, adds `url` and `targetHash`, backfills `targetHash`, and moves the unique index onto it |
 | `m260827_160000_clear_decorative_contrast_findings` | Deletes contrast findings recorded against `aria-hidden="true"` markup |
 | `m260830_090000_restable_verdict_keys` | Moves existing rulings onto the id-independent key, recovering the original markup from the scan history. Merges a stale row into a newer answer for the same question rather than colliding with it |
+| `m260830_100000_collapse_contrast_context_keys` | Shortens stored contrast occurrences to their opening tag and moves any ruling made against the longer form onto that key. Where both forms were ruled on, the later answer is kept |
 
 Both deletions are of findings that were wrong, and both recalculate the scores that were affected. Anything genuinely failing comes back on the next scan.
 
@@ -137,6 +138,14 @@ This is for pages whose ids change per render. Formie mints a fresh token into e
 `contextHash()` is unchanged and still public. Lookups try the stable hash first, then the raw hash, then the older short-snippet form, so nothing already dismissed comes back. If you compare hashes yourself, use `stableContextHash()`.
 
 No attempt is made to detect a generated id, and none should be added: "kqjyvj" and "submit" are both six lowercase letters, and a false positive collapses two separate occurrences into one, so a ruling on either would silently answer both.
+
+### Contrast occurrences are keyed on the opening tag
+
+`AuditService::openingTagOf()` reduces a markup snippet to its opening tag, and the three places a contrast occurrence is stored now pass through it.
+
+The engines report an element's markup in full when it is short and as the bare opening tag once it passes their own length limit. Which side of that limit an element falls on depends on how much of the page has rendered when the check runs, so one element could be stored two ways and counted as two occurrences.
+
+If you read `accessibilityaudit_issues.context` for a contrast rule, expect the opening tag rather than the whole element. Several elements sharing one opening tag on a page now collapse to a single occurrence, which is deliberate: they are the same question with the same answer.
 
 ### New helpers
 

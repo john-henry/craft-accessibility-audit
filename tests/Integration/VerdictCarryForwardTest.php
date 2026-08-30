@@ -56,9 +56,16 @@ it('keeps a dismissed contrast question dismissed after the browser pass runs ag
     $audit->storeAxeIssues($scanId, [], 'desktop', $incomplete);
     expect($audit->getPendingPotentialForScan($scanId))->toHaveCount(1);
 
-    // The author answers it.
+    // The author answers it. The report posts back the context as stored,
+    // which is the opening tag, so the ruling is keyed on that and not on
+    // whatever the engine happened to hand over.
+    $posted = (new Query())->select(['context'])->from('{{%accessibilityaudit_issues}}')
+        ->where(['scanId' => $scanId, 'ruleId' => 'potential:contrast-unmeasurable'])->scalar();
+
+    expect($posted)->toBe('<span class="badge">');
+
     AccessibilityAudit::getInstance()->verdicts->setVerdict(
-        $siteId, $elementId, 'potential:contrast-unmeasurable', $html, 'dismissed',
+        $siteId, $elementId, 'potential:contrast-unmeasurable', $posted, 'dismissed',
     );
     expect($audit->getPendingPotentialForScan($scanId))->toHaveCount(0);
 
