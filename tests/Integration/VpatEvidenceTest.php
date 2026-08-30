@@ -185,6 +185,47 @@ describe('VpatService::getEvidence', function() {
 // weakest documents in that corpus.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// A criterion nothing was found against still has something honest to say.
+//
+// Most of the report is signed off by a person, so most rows carry no findings.
+// Requiring notes before drafting anything left the button inert on the great
+// majority of the report. Where the scans cover part of a criterion there is a
+// real statement to write: what was tested, over how many pages, and what is
+// left unassessed. It is a statement of the testing position, not a conformance
+// claim, and the wording has to keep that distinction: "no issues were found"
+// reads as a pass on a criterion no scanner can settle.
+// ---------------------------------------------------------------------------
+
+describe('drafting with no findings', function() {
+    it('still drafts where the scans cover part of the criterion', function() {
+        $source = (string) file_get_contents(
+            (new ReflectionClass(\johnhenry\accessibilityaudit\services\VpatService::class))->getFileName(),
+        );
+
+        expect($source)->toContain('$hasCoverage = isset(self::EVIDENCE[$criterion]) && !empty($latestScanIds);')
+            // The nudge is now only for criteria no scanner touches at all.
+            ->and($source)->toContain("if (empty(\$evidence) && \$notes === '' && !\$hasCoverage) {");
+    });
+
+    it('writes a testing position rather than a pass', function() {
+        $source = (string) file_get_contents(
+            (new ReflectionClass(\johnhenry\accessibilityaudit\services\VpatService::class))->getFileName(),
+        );
+
+        expect($source)->toContain('An untested thing is untested, not passing.')
+            ->and($source)->toContain('Do not write that nothing was found or that no issues exist')
+            // The material handed to the model must not invite it either.
+            ->and($source)->toContain('unassessed rather than passing');
+    });
+
+    it('says on the button what it will draft from', function() {
+        $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/vpat.twig');
+
+        expect($twig)->toContain("'from scan coverage'|t('accessibility-audit')");
+    });
+});
+
 it('tells the model to name the fault, its place and its scale together', function() {
     // The sharpest finding in the corpus: published reports name what fails or
     // count it, and almost never do both with a location as well. The plugin
@@ -276,7 +317,7 @@ it('does not let a redraft invent a provenance for what it found', function() {
         (new ReflectionClass(\johnhenry\accessibilityaudit\services\VpatService::class))->getFileName(),
     );
 
-    expect($source)->toContain('never describe how something was established unless the material says so')
+    expect($source)->toContain('Never say how something was established unless the material says so')
         ->and($source)->toContain('manually evaluated, audited, reviewed or tested by a person');
 });
 
@@ -285,7 +326,7 @@ it('prefers live counts over whatever the box still says', function() {
         (new ReflectionClass(\johnhenry\accessibilityaudit\services\VpatService::class))->getFileName(),
     );
 
-    expect($source)->toContain('do not carry a count forward from the box');
+    expect($source)->toContain('do not carry a count forward from the notes');
 });
 
 it('lists several failures as bullets, the way published reports do', function() {
@@ -293,7 +334,7 @@ it('lists several failures as bullets, the way published reports do', function()
         (new ReflectionClass(\johnhenry\accessibilityaudit\services\VpatService::class))->getFileName(),
     );
 
-    expect($source)->toContain('one line per item starting with a bullet character');
+    expect($source)->toContain('one line per item beginning with a bullet character');
 });
 
 it('renders those newlines rather than running the list together', function() {
@@ -322,8 +363,8 @@ it('keeps the conventions the whole corpus agrees on', function() {
 
     // Not one of the eleven restates the criterion or puts test method in a
     // remark. Method belongs to the report, not to a row.
-    expect($source)->toContain('Do not restate the success criterion')
-        ->and($source)->toContain('Do not describe testing tools or method');
+    expect($source)->toContain('Never restate the success criterion')
+        ->and($source)->toContain('Never describe testing tools or method');
 });
 
 it('bars the weak patterns the corpus is full of', function() {
@@ -333,12 +374,12 @@ it('bars the weak patterns the corpus is full of', function() {
 
     expect($source)
         // Hedging with nothing behind it is the commonest failure in the corpus.
-        ->toContain('No hedging unless something concrete sits beside it')
+        ->toContain('Never hedge without something concrete beside it')
         // Design intent is not testable behaviour.
-        ->and($source)->toContain('not what it was designed or intended to do')
+        ->and($source)->toContain('Never describe what the product was designed or intended to do')
         // The trap a component vendor falls into: qualify everything by saying
         // it depends on the implementer, and the report has said nothing.
-        ->and($source)->toContain('Do not push the problem onto whoever is implementing');
+        ->and($source)->toContain('Never push the problem onto whoever implements');
 });
 
 it('drafts remarks from the findings the rest of the plugin recognises', function() {

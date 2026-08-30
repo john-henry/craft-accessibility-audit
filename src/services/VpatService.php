@@ -972,15 +972,24 @@ class VpatService extends Component
 
         $notes = trim($notes);
 
-        // Nothing recorded and no author notes: there is no honest basis for a
-        // draft, so make the human evaluate first. A clean scan is not a basis
-        // on its own. No criterion is settled end to end by this plugin, so
-        // "the sweep found nothing" is evidence towards an answer rather than
-        // the answer, and drafting a conformance claim off it would put words
-        // in the mouth of somebody who has not looked yet.
+        // Whether the scans have anything to say about this criterion at all,
+        // as opposed to anything to report against it.
+        $hasCoverage = isset(self::EVIDENCE[$criterion]) && !empty($latestScanIds);
+
+        // No findings and no notes, but the scans did cover part of this
+        // criterion. There is something honest to write: what was tested and
+        // what was not. It is a statement of the testing position and not a
+        // conformance claim, and the author still picks the level.
+        $positionOnly = empty($evidence) && $notes === '' && $hasCoverage;
+        $hasFindings = !empty($evidence);
+        $hasNotes = $notes !== '';
+
+        // Nothing recorded, no notes, and nothing the scans cover: the only
+        // material left is the criterion's own name, and a remark written from
+        // that is invented. Make the person evaluate first.
         // `hint` marks this as guidance rather than a failure, so the editor
         // can style it as a nudge instead of an error.
-        if (empty($evidence) && $notes === '') {
+        if (empty($evidence) && $notes === '' && !$hasCoverage) {
             return [
                 'success' => false,
                 'hint' => true,
@@ -1009,7 +1018,8 @@ class VpatService extends Component
             // written notes to get this far; this tells the model what the
             // scans can and cannot back those notes up with.
             $sources[] = sprintf(
-                'The scanner checked %s across %d scanned page(s) and found nothing. It cannot establish %s, which is why this criterion still rests on the author.',
+                'Scan coverage: the scanner checked %s across %d scanned page(s) and recorded no findings against this criterion. '
+                . 'It cannot establish %s, so that part of the criterion is unassessed rather than passing.',
                 self::EVIDENCE[$criterion]['checks'],
                 count($latestScanIds),
                 self::EVIDENCE[$criterion]['cannot'],
@@ -1031,24 +1041,46 @@ class VpatService extends Component
             // The rules below are drawn from a corpus of published conformance
             // reports. See reference/vpat-remark-patterns.md, which records
             // what the corpus does at each of these decisions and how often.
-            "Rules:\n" .
-            "- Plain text only: no markdown, no headings, no preamble. One or two sentences where there is nothing failing, two to four where there is.\n" .
-            "- Where you are listing more than one place a thing fails, write a stem sentence, then one line per item starting with a bullet character and a space. That is how nearly every published report handles a list of exceptions, and it beats a sentence with four clauses in it. One failure stays as prose.\n" .
-            "- Name what fails, say where, and say how much of it there is. Published reports do one of those and almost never all three: a count with nothing attached to it is a statistic, and a named fault with no scale leaves the reader unable to judge severity. Where the material gives you a rule, a page and an occurrence count, use them together.\n" .
-            "- Where something is failing, lead with what does work, then the exception. That is how the strongest reports read, and it stops a single fault reading as a broken product.\n" .
+            //
+            // Grouped and made conditional on purpose. Sixteen equal-looking
+            // bullets, a third of them about a situation this row is not in,
+            // is a worse instruction than eight that all apply.
+            "SHAPE\n" .
+            "- Plain text. No markdown, no headings, no preamble.\n" .
+            '- ' . ($hasFindings
+                ? "Two to four sentences.\n"
+                : "One or two sentences.\n") .
+            ($hasFindings
+                ? "- Listing more than one place something fails: write a stem sentence, then one line per item beginning with a bullet character and a space. A single failure stays as prose.\n"
+                : '') .
+            "\nSUBSTANCE\n" .
+            "- Base every statement strictly on the material above.\n" .
+            ($hasFindings
+                ? "- Name what fails, say where, and say how much of it there is, all three. A count with nothing attached to it is a statistic; a named fault with no scale leaves the reader unable to judge severity. The material gives you the rule, the page and the occurrence count: use them together.\n"
+                . "- Lead with what does work, then the exception. That is how the strongest published reports read, and it stops one fault reading as a broken product.\n"
+                : '') .
+            ($hasNotes
+                ? "- The author's notes are the primary source. Keep their facts and their intent; tidy the wording.\n"
+                . "- Numbers in those notes may be stale, because they are stored text and the scans have moved on. Prefer any counts in the material above. Where it gives none, do not carry a count forward from the notes.\n"
+                : '') .
+            ($positionOnly
+                // Nothing found and nothing written, so the only honest remark
+                // is about coverage. Spelled out because the pull towards "no
+                // issues were found" is strong, and that sentence reads as a
+                // pass on a criterion no scanner can settle.
+                ? "- There are no findings and no notes, so write only what testing has and has not established: what the scan covered, over how many pages, and then plainly that the rest of this criterion is unassessed. Do not write that nothing was found or that no issues exist. An untested thing is untested, not passing.\n"
+                : '') .
+            "\nNEVER\n" .
+            "- Never state or suggest a conformance level. The person completing the report chooses it.\n" .
+            "- Never restate the success criterion. The reader has it in the next column.\n" .
+            "- Never describe testing tools or method. Those belong to the report as a whole, not to one row.\n" .
+            "- Never say how something was established unless the material says so. Do not write that anything was manually evaluated, audited, reviewed or tested by a person. That is the point at which an unattributed claim quietly acquires a provenance it never had.\n" .
+            "- Never hedge without something concrete beside it. \"Some pages\" alone is worthless; \"some\" with a number or a named component is fine.\n" .
+            "- Never describe what the product was designed or intended to do. Describe what it does.\n" .
             "- Never offer a workaround, a setting or an add-on as though it settled the criterion. A fault that is worked around is still a fault.\n" .
-            "- Base every statement strictly on the material above. Do not invent features, testing activity, or fixes that are not in it.\n" .
-            "- When the author's notes are present, treat them as the primary source: keep their facts and intent, tidy the wording.\n" .
-            "- That said, never describe how something was established unless the material says so. Do not write that anything was manually evaluated, audited, reviewed or tested by a person. The box may hold an earlier draft rather than notes, and rewriting one is the point at which an unattributed claim quietly acquires a provenance it never had.\n" .
-            "- Counts and findings in the box may be out of date, because they are stored text and the scans have moved on. Where the material above gives you numbers, prefer those. Where it gives you none, do not carry a count forward from the box.\n" .
-            "- Do not state or suggest a conformance level; describe the situation the material shows. The person completing the report chooses the level.\n" .
-            "- Do not restate the success criterion. The reader has it in the next column.\n" .
-            "- Do not describe testing tools or method. Those belong to the report as a whole, not to one row.\n" .
-            "- No hedging unless something concrete sits beside it. \"Some pages\" on its own is worthless; \"some\" with a number or a named component is fine.\n" .
-            "- Describe what the product does, not what it was designed or intended to do.\n" .
-            "- No commitments to fix anything, and no dates, unless the author's notes give them.\n" .
-            "- Do not push the problem onto whoever is implementing or configuring the site. Describe what was found.\n" .
-            "- No marketing language. This is a factual document a buyer will compare against a competitor's.\n" .
+            '- Never commit to a fix or a date' . ($hasNotes ? " unless the author's notes give one.\n" : ".\n") .
+            "- Never push the problem onto whoever implements or configures the site.\n" .
+            "- Never use marketing language. This is a factual document a buyer will compare against a competitor's.\n\n" .
             'Respond with the remark text only.';
 
         try {

@@ -489,14 +489,18 @@
                                                 data-criterion="{{ num }}"
                                                 title="{{ row.autoLevel
                                                     ? 'Draft from the scanner’s findings'|t('accessibility-audit')
-                                                    : 'Tidy your rough notes into VPAT wording'|t('accessibility-audit') }}"
+                                                    : (row.evidence.checks and row.evidence.pages > 0
+                                                        ? 'Draft what the scans covered and what is left for you, or tidy notes you have typed'|t('accessibility-audit')
+                                                        : 'Tidy your rough notes into VPAT wording'|t('accessibility-audit')) }}"
                                                 aria-label="Draft remarks for {{ row.name }} with AI">
                                             {{ 'Draft with AI'|t('accessibility-audit') }}
                                         </button>
                                         <span class="accessibility-audit-vpat-draft-mode">
                                             {{ row.autoLevel
                                                 ? 'from scan findings'|t('accessibility-audit')
-                                                : 'from your notes'|t('accessibility-audit') }}
+                                                : (row.evidence.checks and row.evidence.pages > 0
+                                                    ? 'from scan coverage'|t('accessibility-audit')
+                                                    : 'from your notes'|t('accessibility-audit')) }}
                                         </span>
                                     {% endif %}
                                     {% set rowNeedsRemark = row.effectiveLevel in ['Not Applicable', 'Partially Supports', 'Does Not Support']

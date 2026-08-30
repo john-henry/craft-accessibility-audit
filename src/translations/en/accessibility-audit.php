@@ -744,6 +744,8 @@ return [
     'Fix these {n} rules to improve your score' => 'Fix these {n} rules to improve your score',
     'Fix this rule to improve your score' => 'Fix this rule to improve your score',
     'Written against {was} findings, there are now {now}. Check it still reads true.' => 'Written against {was} findings, there are now {now}. Check it still reads true.',
+    'Draft what the scans covered and what is left for you, or tidy notes you have typed' => 'Draft what the scans covered and what is left for you, or tidy notes you have typed',
+    'from scan coverage' => 'from scan coverage',
     'Scanned' => 'Scanned',
     'For you' => 'For you',
     'Checked {what} across {pages} pages, and found {n} still open.' => 'Checked {what} across {pages} pages, and found {n} still open.',
