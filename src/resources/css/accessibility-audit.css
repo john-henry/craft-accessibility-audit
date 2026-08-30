@@ -3329,6 +3329,15 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
    across a site: a plugin's landing page and its support page share one, and
    share a layout, so they throw up the same findings. Without the address
    there is nothing on screen to tell you which of the two you are looking at. */
+/* Which scan the report is drawn from, beside the address. Every question
+   about a finding that will not clear comes down to this: the data can be
+   right and the page still be showing an older scan, and without the id on
+   screen there is no way to tell those apart from outside. */
+.accessibility-audit-pr-scanref {
+  margin-left: 8px;
+  opacity: 0.75;
+}
+
 .accessibility-audit-pr-pageurl {
   /* Sits under the heading, inside the page title block, so it reads as the
      subtitle it is rather than as stray output in the content below. Kept to

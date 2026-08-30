@@ -58,7 +58,15 @@
 {% block pageTitle %}
     {{ parent() }}
     {% if pageUrl %}
-        <p class="light code accessibility-audit-pr-pageurl" title="{{ pageUrl }}">{{ pageUrl }}</p>
+        <p class="light code accessibility-audit-pr-pageurl" title="{{ pageUrl }}">
+            {{ pageUrl }}
+            {% if scan is defined and scan %}
+                <span class="accessibility-audit-pr-scanref">{{ 'scan #{id}, {date}'|t('accessibility-audit', {
+                    id: scan.id,
+                    date: scan.dateScanned ? scan.dateScanned|date('d M H:i:s') : '—',
+                }) }}</span>
+            {% endif %}
+        </p>
     {% endif %}
 {% endblock %}
 

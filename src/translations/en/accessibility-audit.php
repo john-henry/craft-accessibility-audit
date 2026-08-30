@@ -917,4 +917,5 @@ return [
     'They do not count against the score either way until you answer them, so the number above is not the whole picture yet.' => 'They do not count against the score either way until you answer them, so the number above is not the whole picture yet.',
     '{n} questions across {p} pages are still waiting on a person.' => '{n} questions across {p} pages are still waiting on a person.',
     'This address redirects to {url}, which is scanned as its own page.' => 'This address redirects to {url}, which is scanned as its own page.',
+    'scan #{id}, {date}' => 'scan #{id}, {date}',
 ];
