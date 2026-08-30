@@ -742,6 +742,7 @@ return [
     'Go Pro' => 'Go Pro',
     'Standard edition. Upgrade to Pro.' => 'Standard edition. Upgrade to Pro.',
     'Fix these {n} rules to improve your score' => 'Fix these {n} rules to improve your score',
+    'Fix this rule to improve your score' => 'Fix this rule to improve your score',
     'Rules to fix' => 'Rules to fix',
     'Nothing here at the moment.' => 'Nothing here at the moment.',
     'Top rules by points to gain · ' => 'Top rules by points to gain · ',

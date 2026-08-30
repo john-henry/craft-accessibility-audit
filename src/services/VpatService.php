@@ -627,21 +627,30 @@ class VpatService extends Component
      */
     public function getAutoConformance(int $siteId): array
     {
+        $audit = AccessibilityAudit::getInstance()->audit;
+
         $latestScanIds = (new Query())
             ->select(['MAX(id)'])
             ->from('{{%accessibilityaudit_scans}}')
             ->where(['siteId' => $siteId])
-            ->groupBy(['elementId'])
+            // Grouped by url as well as elementId: every URL scan shares a null
+            // elementId, so grouping on that alone folds the lot into one row.
+            ->groupBy(['elementId', 'url'])
             ->column();
 
         if (empty($latestScanIds)) {
             return [];
         }
 
+        // Read the same way every other report does. A question the author has
+        // dismissed is answered, and a fixed issue is fixed: counting either
+        // one puts a criterion on the statement with nothing behind it on the
+        // Issues screen, and no way to work out where it came from.
         $rows = (new Query())
             ->select(['wcagCriterion', 'severity'])
             ->from('{{%accessibilityaudit_issues}}')
-            ->where(['scanId' => $latestScanIds])
+            ->where(['scanId' => $latestScanIds, 'isResolved' => false])
+            ->andWhere($audit->definiteCondition())
             ->andWhere(['not', ['wcagCriterion' => null]])
             ->all();
 

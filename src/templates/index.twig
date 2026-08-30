@@ -368,7 +368,9 @@
 
     <div class="pane" style="position:relative">
         <h2 style="margin:0">
-            {%- if byImpact|length > 0 -%}
+            {%- if byImpact|length == 1 -%}
+                {{ 'Fix this rule to improve your score'|t('accessibility-audit') }}
+            {%- elseif byImpact|length > 1 -%}
                 {{ 'Fix these {n} rules to improve your score'|t('accessibility-audit', {n: byImpact|length}) }}
             {%- else -%}
                 {{ 'Rules to fix'|t('accessibility-audit') }}
