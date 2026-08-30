@@ -10,7 +10,7 @@ Versions are listed newest first.
 
 Scan history older than your **Retain Scan Results** setting is deleted the first time Craft runs garbage collection after this update. That setting never deleted anything before, so there is probably more history sitting there than it allows, and the default is 90 days. Raise it, or set it to 0 to keep everything (Pro), before you update if that history matters to you.
 
-Six migrations run on update. Two of them delete rows, and two re-key existing rulings:
+Seven migrations run on update. Two of them delete rows, and three re-key existing rulings:
 
 | Migration | What it does |
 |---|---|
@@ -20,6 +20,7 @@ Six migrations run on update. Two of them delete rows, and two re-key existing r
 | `m260827_160000_clear_decorative_contrast_findings` | Deletes contrast findings recorded against `aria-hidden="true"` markup |
 | `m260830_090000_restable_verdict_keys` | Moves existing rulings onto the id-independent key, recovering the original markup from the scan history. Merges a stale row into a newer answer for the same question rather than colliding with it |
 | `m260830_100000_collapse_contrast_context_keys` | Shortens stored contrast occurrences to their opening tag and moves any ruling made against the longer form onto that key. Where both forms were ruled on, the later answer is kept |
+| `m260830_110000_strip_own_marks_from_contexts` | Removes the plugin's own `data-accessibility-audit-*` marks from stored occurrences and moves rulings made against a marked form onto the clean key |
 
 Both deletions are of findings that were wrong, and both recalculate the scores that were affected. Anything genuinely failing comes back on the next scan.
 
@@ -144,6 +145,8 @@ No attempt is made to detect a generated id, and none should be added: "kqjyvj" 
 `AuditService::openingTagOf()` reduces a markup snippet to its opening tag, and the three places a contrast occurrence is stored now pass through it.
 
 The engines report an element's markup in full when it is short and as the bare opening tag once it passes their own length limit. Which side of that limit an element falls on depends on how much of the page has rendered when the check runs, so one element could be stored two ways and counted as two occurrences.
+
+`openingTagOf()` also strips the plugin's own `data-accessibility-audit-*` attributes. The report stamps those onto elements in its preview to highlight them, and the browser pass reads that same preview, so without this an element that had been highlighted was recorded as a different element.
 
 If you read `accessibilityaudit_issues.context` for a contrast rule, expect the opening tag rather than the whole element. Several elements sharing one opening tag on a page now collapse to a single occurrence, which is deliberate: they are the same question with the same answer.
 

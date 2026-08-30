@@ -3475,8 +3475,18 @@ class AuditService extends Component
         }
 
         $end = strpos($markup, '>');
+        $tag = $end === false ? $markup : substr($markup, 0, $end + 1);
 
-        return $end === false ? $markup : substr($markup, 0, $end + 1);
+        // The report marks elements in its own preview to highlight them, and
+        // the browser pass then reads the page back with those marks on it. An
+        // element carrying one is the same element, so its own fingerprints
+        // must never reach the identity: leave them in and clicking "Show on
+        // page" quietly turns a question you have answered into a new one.
+        return (string)preg_replace(
+            '/\s+data-accessibility-audit[a-z-]*(?:\s*=\s*(["\'])[^"\']*\1)?/i',
+            '',
+            $tag,
+        );
     }
 
     private function _storeContrastNeedsReview(int $scanId, array $scan, array $axeIncomplete, string $viewport): void
