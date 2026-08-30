@@ -504,23 +504,6 @@ class VpatService extends Component
     ];
 
     /**
-     * @var string[] Criteria a fleet-wide headless browser pass genuinely
-     * verifies. When server-side browser scanning is active and the sweep
-     * finds nothing against them, they're auto-marked "Supports".
-     *
-     * Target Size (2.5.8) qualifies because every headless scan renders the
-     * page at both the desktop and mobile viewports
-     * (HeadlessScanner::VIEWPORTS), so a clean sweep is evidence the
-     * touch-sized layout passes too, not an inference from a desktop-only
-     * render.
-     *
-     * Deliberately NOT here:
-     * - Focus Visible (2.4.7): a static pass can't truly exercise focus
-     *   states, so it stays a human judgement no matter what tooling says.
-     */
-    private const BROWSER_VERIFIED_CRITERIA = ['1.4.11', '2.5.8'];
-
-    /**
      * @var array<string, array{checks: string, cannot: string}> What the
      *      scanner tests for a criterion, and what it cannot establish.
      *
@@ -826,17 +809,6 @@ class VpatService extends Component
             }
         }
 
-        // With server-side browser scanning active, every queued scan carries a
-        // full axe pass, so a clean fleet-wide result for the browser-verified
-        // criteria is real evidence rather than "probably never checked".
-        if (AccessibilityAudit::getInstance()->headless->isAvailable()) {
-            foreach (self::BROWSER_VERIFIED_CRITERIA as $num) {
-                if (!isset($result[$num])) {
-                    $result[$num] = ['level' => 'Supports', 'basis' => 'automated'];
-                }
-            }
-        }
-
         return $result;
     }
 
@@ -986,19 +958,15 @@ class VpatService extends Component
 
         $notes = trim($notes);
 
-        // A clean fleet-wide browser pass is real scan evidence for the
-        // browser-verified criteria, matching getAutoConformance(): the row's
-        // "From scans: Supports" pill and this button must agree on whether
-        // there is anything to draft from.
-        $browserVerified = in_array($criterion, self::BROWSER_VERIFIED_CRITERIA, true)
-            && !empty($latestScanIds)
-            && AccessibilityAudit::getInstance()->headless->isAvailable();
-
-        // Nothing recorded, not machine-testable, and no author notes: there
-        // is no honest basis for an AI draft, so make the human evaluate first.
+        // Nothing recorded and no author notes: there is no honest basis for a
+        // draft, so make the human evaluate first. A clean scan is not a basis
+        // on its own. No criterion is settled end to end by this plugin, so
+        // "the sweep found nothing" is evidence towards an answer rather than
+        // the answer, and drafting a conformance claim off it would put words
+        // in the mouth of somebody who has not looked yet.
         // `hint` marks this as guidance rather than a failure, so the editor
         // can style it as a nudge instead of an error.
-        if (empty($evidence) && $meta['auto'] !== 'automated' && !$browserVerified && $notes === '') {
+        if (empty($evidence) && $notes === '') {
             return [
                 'success' => false,
                 'hint' => true,
@@ -1021,15 +989,16 @@ class VpatService extends Component
                 $evidence,
             );
             $sources[] = "Scanner findings for this criterion (latest scans):\n" . implode("\n", $lines);
-        } elseif ($meta['auto'] === 'automated') {
+        } elseif (isset(self::EVIDENCE[$criterion]) && !empty($latestScanIds)) {
+            // What the sweep covered, stated as coverage rather than as a
+            // verdict, and paired with what it could not reach. The author has
+            // written notes to get this far; this tells the model what the
+            // scans can and cannot back those notes up with.
             $sources[] = sprintf(
-                'The scanner fully automates this check and found no violations across %d scanned page(s).',
+                'The scanner checked %s across %d scanned page(s) and found nothing. It cannot establish %s, which is why this criterion still rests on the author.',
+                self::EVIDENCE[$criterion]['checks'],
                 count($latestScanIds),
-            );
-        } elseif ($browserVerified) {
-            $sources[] = sprintf(
-                'Server-side browser scanning runs the full axe-core checks for this criterion at both desktop and mobile viewports, and found no violations across %d scanned page(s).',
-                count($latestScanIds),
+                self::EVIDENCE[$criterion]['cannot'],
             );
         }
 

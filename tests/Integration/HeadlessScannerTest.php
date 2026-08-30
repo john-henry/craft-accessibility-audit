@@ -142,9 +142,15 @@ describe('HeadlessScanner::scanUrl', function() {
         expect(AccessibilityAudit::getInstance()->headless->scanUrl('https://example.com/'))->toBeNull();
     });
 
-    it('unlocks browser-verified VPAT auto-conformance only when available', function() {
-        // Target Size (2.5.8) and Non-text Contrast (1.4.11) auto-mark
-        // "Supports" only when a fleet-wide browser pass backs the claim.
+    it('never signs off a VPAT criterion on the strength of a clean sweep', function() {
+        // Target Size (2.5.8) and Non-text Contrast (1.4.11) used to auto-mark
+        // "Supports" whenever a fleet-wide browser pass came back clean. No
+        // criterion is settled end to end by this plugin: both of these have
+        // work a browser pass cannot reach, components that only appear part
+        // way through an interaction, and a VPAT is a public claim. A clean
+        // sweep is shown beside the row as evidence and the answer stays with
+        // the person. Target Size makes the case on its own, since a real
+        // violation sat on the Overview while the VPAT called it Supports.
         AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
 
         // Wipe scan data inside this test's transaction (rolled back on
@@ -174,18 +180,19 @@ describe('HeadlessScanner::scanUrl', function() {
 
         headlessSetChromePath('');
         $off = AccessibilityAudit::getInstance()->vpat->getAutoConformance(1);
-        expect($off)->not->toHaveKey('1.4.11')
-            ->and($off)->not->toHaveKey('2.5.8');
 
         headlessSetChromePath('/bin/sh');
         $on = AccessibilityAudit::getInstance()->vpat->getAutoConformance(1);
-        expect($on['1.4.11']['level'] ?? null)->toBe('Supports')
-            // Target Size is mobile-critical; it only auto-claims because the
-            // headless sweep now renders every page at the mobile viewport as
-            // well as desktop, so a clean pass covers the touch-sized layout.
-            ->and($on['2.5.8']['level'] ?? null)->toBe('Supports')
-            // Focus Visible must never be auto-claimed, headless or not.
-            ->and($on)->not->toHaveKey('2.4.7');
+
+        // Having a browser changes what gets measured, never what gets claimed.
+        foreach (['1.4.11', '2.5.8', '2.4.7'] as $criterion) {
+            expect($off)->not->toHaveKey($criterion)
+                ->and($on)->not->toHaveKey($criterion);
+        }
+
+        // A clean sweep against a criterion says nothing at all here, so the
+        // two answers are identical whether Chrome is there or not.
+        expect($on)->toBe($off);
     });
 
     it('runs a real axe pass in headless Chrome when a browser is installed', function() {
