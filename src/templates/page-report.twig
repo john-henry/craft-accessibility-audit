@@ -55,6 +55,13 @@
 </div>
 {% endblock %}
 
+{% block pageTitle %}
+    {{ parent() }}
+    {% if pageUrl %}
+        <p class="light code accessibility-audit-pr-pageurl" title="{{ pageUrl }}">{{ pageUrl }}</p>
+    {% endif %}
+{% endblock %}
+
 {% block content %}
 {% set severityLabels = {
     error: 'Error'|t('accessibility-audit'),
@@ -109,9 +116,6 @@
         {% if scan %}
         {% set scoreClass = macros.scoreClass(scan.score) %}
         {% set scoreNumClass = {good: 'pass', fair: 'warn', poor: 'error'}[scoreClass] %}
-        {% if pageUrl %}
-            <p class="light code accessibility-audit-pr-pageurl" title="{{ pageUrl }}">{{ pageUrl }}</p>
-        {% endif %}
         <div class="accessibility-audit-pr-score-row">
             <span class="accessibility-audit-num--{{ scoreNumClass }} accessibility-audit-pr-score-num">{{ scan.score }}</span>
             <span class="light accessibility-audit-note">/100</span>

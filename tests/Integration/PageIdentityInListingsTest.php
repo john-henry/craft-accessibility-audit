@@ -46,29 +46,41 @@ it('shows the address on the page report itself', function() {
         ->and($css)->toContain('.accessibility-audit-pr-pageurl {');
 });
 
-it('keeps the address in the sidebar, beside the score', function() {
-    // Loose in the content area it reads as stray output: the title sits in
-    // the header bar, so a line under it in the white area below belongs to
-    // neither. Beside the score it is part of this page's summary.
+it('puts the address under the heading, not loose in the content', function() {
+    // Craft draws the title in its own header bar. A line below that bar, in
+    // the white content area, belongs to neither the title nor the report and
+    // reads as stray output. Overriding the page title block puts it where a
+    // subtitle goes.
     $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/page-report.twig');
 
-    $sidebar = strpos($twig, 'accessibility-audit-pr-sidebar');
-    $url = strpos($twig, 'accessibility-audit-pr-pageurl');
-    $score = strpos($twig, 'accessibility-audit-pr-score-row');
+    expect($twig)->toContain('{% block pageTitle %}')
+        ->and($twig)->toContain('{{ parent() }}');
 
-    expect($url)->toBeGreaterThan($sidebar)
-        ->and($url)->toBeLessThan($score);
+    $title = strpos($twig, '{% block pageTitle %}');
+    $url = strpos($twig, 'accessibility-audit-pr-pageurl');
+    $content = strpos($twig, '{% block content %}');
+
+    expect($url)->toBeGreaterThan($title)
+        ->and($url)->toBeLessThan($content);
 });
 
-it('clips a long address rather than pushing the score down', function() {
-    // Docs URLs run long and the sidebar is narrow. The whole address stays
-    // on the title attribute.
+it('keeps the heading Craft would have drawn', function() {
+    // parent() rather than a copy of Craft's markup, so the h1, its id and the
+    // revision indicators keep working when Craft changes them.
+    $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/page-report.twig');
+
+    expect($twig)->not->toContain('<h1 id="page-heading"');
+});
+
+it('clips a long address to one line', function() {
+    // Docs URLs run long and the header is not a place to wrap. The whole
+    // address stays on the title attribute.
     $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/page-report.twig');
     $css = (string) file_get_contents(dirname(__DIR__, 2) . '/src/resources/css/accessibility-audit.css');
 
     expect($twig)->toContain('title="{{ pageUrl }}"')
-        ->and(substr($css, strpos($css, '.accessibility-audit-pr-pageurl {'), 420))
-        ->toContain('-webkit-line-clamp: 2;');
+        ->and(substr($css, strpos($css, '.accessibility-audit-pr-pageurl {'), 500))
+        ->toContain('white-space: nowrap;');
 });
 
 it('renders both templates without a Twig error', function() {

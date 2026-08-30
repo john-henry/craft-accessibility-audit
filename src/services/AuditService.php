@@ -827,7 +827,7 @@ class AuditService extends Component
             ->from('{{%accessibilityaudit_scans}}')
             ->where(['elementId' => $elementId, 'siteId' => $siteId])
             ->andWhere(['>=', 'dateScanned', Db::prepareDateForDb((new DateTime())->modify('-24 hours'))])
-            ->orderBy(['dateScanned' => SORT_DESC])
+            ->orderBy(['dateScanned' => SORT_DESC, 'id' => SORT_DESC])
             ->scalar();
 
         if ($existing) {
@@ -1010,11 +1010,17 @@ class AuditService extends Component
 
     public function getLatestScan(int $elementId, int $siteId): ?array
     {
+        // Ordered on the id as well as the date. dateScanned is stored to the
+        // second, and a re-scan writes its own row while the queued browser
+        // pass is still working on the page, so two scans of one page land in
+        // the same second routinely. On a tie the database is free to hand
+        // back either, and the older one predates whatever was answered since:
+        // the report then shows a question that has already been settled.
         return (new Query())
             ->select(self::SCAN_REPORT_COLUMNS)
             ->from('{{%accessibilityaudit_scans}}')
             ->where(['elementId' => $elementId, 'siteId' => $siteId])
-            ->orderBy(['dateScanned' => SORT_DESC])
+            ->orderBy(['dateScanned' => SORT_DESC, 'id' => SORT_DESC])
             ->one() ?: null;
     }
 
@@ -1064,7 +1070,7 @@ class AuditService extends Component
             ->select(self::SCAN_REPORT_COLUMNS)
             ->from('{{%accessibilityaudit_scans}}')
             ->where(['url' => $url, 'siteId' => $siteId])
-            ->orderBy(['dateScanned' => SORT_DESC])
+            ->orderBy(['dateScanned' => SORT_DESC, 'id' => SORT_DESC])
             ->one() ?: null;
     }
 
@@ -2364,7 +2370,7 @@ class AuditService extends Component
             ->select(['id', 'score'])
             ->from('{{%accessibilityaudit_scans}}')
             ->where(['elementId' => $elementId, 'siteId' => $siteId])
-            ->orderBy(['dateScanned' => SORT_DESC])
+            ->orderBy(['dateScanned' => SORT_DESC, 'id' => SORT_DESC])
             ->one();
 
         if (!$scan) {
@@ -2493,7 +2499,7 @@ class AuditService extends Component
                 ->select(['id'])
                 ->from('{{%accessibilityaudit_scans}}')
                 ->where(['elementId' => $elementId, 'siteId' => $siteId])
-                ->orderBy(['dateScanned' => SORT_DESC])
+                ->orderBy(['dateScanned' => SORT_DESC, 'id' => SORT_DESC])
                 ->one();
 
             $errorCount = count(array_filter($issues, fn($i) => $i->severity === 'error'));
