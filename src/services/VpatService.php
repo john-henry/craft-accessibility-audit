@@ -169,7 +169,11 @@ class VpatService extends Component
             'level' => 'A',
             'principle' => 'Operable',
             'url' => 'https://www.w3.org/WAI/WCAG22/Understanding/page-titled',
-            'auto' => 'automated',
+            // Partial, not automated: the scan establishes that a title exists
+            // and is not empty. The criterion asks for one that describes the
+            // page, and a site where every title is the site name passes the
+            // scan while failing the criterion outright.
+            'auto' => 'partial',
             'desc' => 'Web pages have titles that describe topic or purpose.',
         ],
         '2.4.3' => [
@@ -228,7 +232,12 @@ class VpatService extends Component
             'level' => 'A',
             'principle' => 'Understandable',
             'url' => 'https://www.w3.org/WAI/WCAG22/Understanding/language-of-page',
-            'auto' => 'automated',
+            // Partial, not automated: the scan establishes that a lang
+            // attribute is present and well formed. Whether it names the
+            // language the page is actually written in is not something any
+            // scanner can settle, and lang="en" on a page of Irish is the
+            // common way this fails.
+            'auto' => 'partial',
             'desc' => 'The default human language of each web page can be programmatically determined.',
         ],
         '3.2.1' => [
@@ -332,7 +341,12 @@ class VpatService extends Component
             'level' => 'AA',
             'principle' => 'Perceivable',
             'url' => 'https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum',
-            'auto' => 'automated',
+            // Partial, not automated: the pass measures computed colours, which
+            // is as thorough as this plugin gets, and text drawn into an image
+            // has no computed colour to measure. The criterion covers images of
+            // text as well, so a clean pass is strong evidence rather than a
+            // finished answer.
+            'auto' => 'partial',
             'desc' => 'The visual presentation of text and images of text has a contrast ratio of at least 4.5:1, except for large text (3:1), incidental, or logotype text.',
         ],
         '1.4.4' => [
@@ -947,15 +961,23 @@ class VpatService extends Component
             ->select(['MAX(id)'])
             ->from('{{%accessibilityaudit_scans}}')
             ->where(['siteId' => $siteId])
-            ->groupBy(['elementId'])
+            // Grouped by url as well as elementId: every URL scan shares a null
+            // elementId, so grouping on that alone folds the lot into one row.
+            ->groupBy(['elementId', 'url'])
             ->column();
 
         $evidence = [];
         if (!empty($latestScanIds)) {
+            // Read the same way the rest of the plugin reads findings. A
+            // question the author has dismissed is answered, and handing it to
+            // the model as evidence puts a count in the remark that appears
+            // nowhere else on the site: the draft says four instances were
+            // found while the row beside it says nothing was.
             $evidence = (new Query())
                 ->select(['ruleId', 'severity', 'MIN(message) as message', 'COUNT(*) as occurrences', 'COUNT(DISTINCT elementId) as pages'])
                 ->from('{{%accessibilityaudit_issues}}')
                 ->where(['scanId' => $latestScanIds, 'wcagCriterion' => $criterion, 'isResolved' => false])
+                ->andWhere(AccessibilityAudit::getInstance()->audit->definiteCondition())
                 ->groupBy(['ruleId', 'severity'])
                 ->orderBy(['occurrences' => SORT_DESC])
                 ->limit(8)

@@ -97,6 +97,40 @@ describe('VpatService::getEvidence', function() {
         }
     });
 
+    it('does not call a criterion automated when the scan only checks half of it', function() {
+        // Page Titled and Language of Page were marked fully automated, so a
+        // clean scan set them to Supports with nobody asked. The scan
+        // establishes that a title exists and that html carries a lang
+        // attribute. The criteria ask for a title that describes the page and
+        // a lang value naming the language actually written, and neither is
+        // something a scanner can settle: a site titling every page with the
+        // site name, or serving lang="en" on a page of Irish, passed both.
+        $criteria = $this->vpat->getCriteria();
+
+        expect($criteria['2.4.2']['auto'])->toBe('partial')
+            ->and($criteria['3.1.1']['auto'])->toBe('partial')
+            // Contrast is the most thorough pass in the plugin and still only
+            // measures computed colour. Text drawn into an image has none.
+            ->and($criteria['1.4.3']['auto'])->toBe('partial');
+    });
+
+    it('claims full automation only where the scan settles the whole criterion', function() {
+        // No criterion currently qualifies, and the tier is kept rather than
+        // removed: it is the mechanism for saying so when one does. A criterion
+        // whose evidence names something a scanner cannot reach is not one of
+        // them, which is what this guards.
+        $evidence = $this->vpat->getEvidence($this->siteId);
+        $overclaiming = [];
+
+        foreach ($this->vpat->getCriteria() as $num => $criterion) {
+            if (($criterion['auto'] ?? '') === 'automated' && $evidence[$num]['cannot'] !== null) {
+                $overclaiming[] = (string) $num;
+            }
+        }
+
+        expect($overclaiming)->toBe([]);
+    });
+
     it('leaves a criterion no scanner contributes to blank rather than inventing coverage', function() {
         // 2.4.7 Focus Visible: a static pass cannot exercise focus states, so
         // the plugin deliberately makes no claim about it.
@@ -130,6 +164,28 @@ describe('VpatService::getEvidence', function() {
     it('reports how many pages the evidence came from', function() {
         expect($this->vpat->getEvidence($this->siteId)['1.3.1']['pages'])->toBeGreaterThan(0);
     });
+});
+
+// ---------------------------------------------------------------------------
+// Three screens read the findings, and they have to agree.
+//
+// The AI draft was the third place reading that table its own way. It filtered
+// resolved issues but not verdicts, so it handed the model four dismissed
+// identical-link questions as evidence, and wrote a remark saying the scanner
+// had identified four instances into a row whose own evidence line, two inches
+// to the left, said it found nothing. Both came from the same table.
+// ---------------------------------------------------------------------------
+
+it('drafts remarks from the findings the rest of the plugin recognises', function() {
+    $source = (string) file_get_contents(
+        (new ReflectionClass(\johnhenry\accessibilityaudit\services\VpatService::class))->getFileName(),
+    );
+
+    $start = (int) strpos($source, 'public function draftRemark(');
+    $body = substr($source, $start, 2600);
+
+    expect($body)->toContain('definiteCondition()')
+        ->and($body)->toContain("->groupBy(['elementId', 'url'])");
 });
 
 it('hands the evidence to the report so the screen can show it', function() {
