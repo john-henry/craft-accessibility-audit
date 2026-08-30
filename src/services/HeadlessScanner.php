@@ -550,6 +550,12 @@ class HeadlessScanner extends Component
                                 html: (n.html || '').slice(0, {$maxHtml}),
                                 target: n.target,
                                 any: (n.any && n.any[0]) ? [{ data: n.any[0].data }] : [],
+                                // Why this element failed, as opposed to what
+                                // the rule checks. One target-size violation
+                                // can mean too small, too close to its
+                                // neighbours, or covered by something else,
+                                // and those are three different jobs.
+                                failureSummary: (n.failureSummary || '').slice(0, 400),
                             };
                         }),
                     };

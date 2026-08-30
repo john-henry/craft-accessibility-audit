@@ -1009,7 +1009,10 @@ class AuditService extends Component
                 // ("Ensures <dl> elements are structured correctly"), which
                 // reads as a question, not a finding. The overlay makes the
                 // same choice when it renders live results.
-                message: $violation['help'] ?? $violation['description'] ?? 'Accessibility issue detected by axe-core.',
+                message: self::axeMessage(
+                    $violation['help'] ?? $violation['description'] ?? 'Accessibility issue detected by axe-core.',
+                    $nodes[0] ?? [],
+                ),
                 wcagCriterion: $wcag['criterion'] ?? null,
                 wcagLevel: $wcag['level'] ?? null,
                 context: !empty($nodes[0]['html']) ? mb_substr($nodes[0]['html'], 0, 200) : null,
@@ -3528,6 +3531,54 @@ class AuditService extends Component
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.2.0
      */
+    /**
+     * The finding sentence for an axe violation: what the rule requires, then
+     * why this element in particular did not meet it.
+     *
+     * axe's `help` is the rule's statement and is the same on every occurrence.
+     * The reason sits on the node, and for several rules it is the only thing
+     * that says what the work actually is: one target-size violation can mean
+     * the target is too small, that it sits too close to its neighbours, or
+     * that something else covers part of it. Three different jobs, reported
+     * until now with one sentence that distinguished none of them.
+     *
+     * @param string $help The rule-level statement from axe.
+     * @param array<string, mixed> $node The failing node, as slimmed by the
+     *                                   browser pass.
+     * @return string The sentence to store.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public static function axeMessage(string $help, array $node): string
+    {
+        $summary = trim((string)($node['failureSummary'] ?? ''));
+
+        if ($summary === '') {
+            return $help;
+        }
+
+        $reasons = [];
+
+        foreach (preg_split('/\R/', $summary) ?: [] as $line) {
+            $line = trim($line);
+
+            // axe heads each group with "Fix any of the following:" or "Fix all
+            // of the following:". That is scaffolding for a list, and the list
+            // is the part worth keeping.
+            if ($line === '' || str_starts_with($line, 'Fix ')) {
+                continue;
+            }
+
+            $reasons[] = rtrim($line, '.');
+        }
+
+        if ($reasons === []) {
+            return $help;
+        }
+
+        return rtrim($help, '.') . '. ' . implode('. ', $reasons) . '.';
+    }
+
     public static function openingTagOf(string $markup): string
     {
         $markup = trim($markup);
