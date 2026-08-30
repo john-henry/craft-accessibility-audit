@@ -3392,6 +3392,15 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   color: var(--success-color, #1f7a44);
 }
 
+/* The note is a row so a tick can sit beside the words. Without this wrapper a
+   note with two paragraphs puts them in that row as well, side by side, and a
+   14px lead and a 13px body on one line never share a baseline. */
+.accessibility-audit-panelnote__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .accessibility-audit-panelnote__lead {
   margin: 0;
   font-size: 14px;

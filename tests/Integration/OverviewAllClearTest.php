@@ -24,6 +24,25 @@ it('says when questions are still waiting', function() {
         ->and($twig)->toContain('still waiting on a person');
 });
 
+it('stacks the lead above the body rather than beside it', function() {
+    // The note is a flex row so a tick can sit beside the words, which put two
+    // paragraphs side by side instead: a 14px lead and a 13px body on one line,
+    // sharing no baseline.
+    $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/index.twig');
+    $css = (string) file_get_contents(dirname(__DIR__, 2) . '/src/resources/css/accessibility-audit.css');
+
+    $start = (int) strpos($twig, 'accessibility-audit-panelnote--waiting');
+    $note = substr($twig, $start, (int) strpos($twig, '{% elseif allClear %}', $start) - $start);
+
+    expect($note)->toContain('accessibility-audit-panelnote__text')
+        ->and(substr_count($note, 'accessibility-audit-panelnote__lead'))->toBe(1)
+        ->and(substr_count($note, 'accessibility-audit-panelnote__body'))->toBe(1);
+
+    $rule = substr($css, (int) strpos($css, '.accessibility-audit-panelnote__text {'), 120);
+
+    expect($rule)->toContain('flex-direction: column');
+});
+
 it('holds the all-clear back until the questions are answered too', function() {
     // Three conditions, not one. Any of them missing and the message is a
     // claim the scan cannot support.

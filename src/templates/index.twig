@@ -210,13 +210,15 @@
 
 {% if (pendingPotential ?? 0) > 0 %}
     <div class="accessibility-audit-panelnote accessibility-audit-panelnote--waiting">
-        <p class="accessibility-audit-panelnote__lead">
-            {{ '{n} questions across {p} pages are still waiting on a person.'|t('accessibility-audit', { n: pendingPotential, p: potentialPages }) }}
-        </p>
-        <p class="accessibility-audit-panelnote__body">
-            {{ 'They do not count against the score either way until you answer them, so the number above is not the whole picture yet.'|t('accessibility-audit') }}
-            <a href="{{ cpUrl('accessibility-audit/potential', { site: siteHandle }) }}">{{ 'Review them'|t('accessibility-audit') }}</a>
-        </p>
+        <div class="accessibility-audit-panelnote__text">
+            <p class="accessibility-audit-panelnote__lead">
+                {{ '{n} questions across {p} pages are still waiting on a person.'|t('accessibility-audit', { n: pendingPotential, p: potentialPages }) }}
+            </p>
+            <p class="accessibility-audit-panelnote__body">
+                {{ 'They do not count against the score either way until you answer them, so the number above is not the whole picture yet.'|t('accessibility-audit') }}
+                <a href="{{ cpUrl('accessibility-audit/potential', { site: siteHandle }) }}">{{ 'Review them'|t('accessibility-audit') }}</a>
+            </p>
+        </div>
     </div>
 {% elseif allClear %}
     <div class="accessibility-audit-panelnote accessibility-audit-panelnote--good">
