@@ -1085,6 +1085,13 @@ class DashboardController extends Controller
                 'id' => (int)$row['id'],
                 'page' => [
                     'title' => ScanTarget::label($row, $element),
+                    // Titles are not unique. A plugin's landing page and its
+                    // support page carry the same one, share the same layout,
+                    // and so throw up the same findings: without the address
+                    // beside it there is no telling two rows apart, and a
+                    // ruling made on one looks like a ruling that did not hold
+                    // on the other.
+                    'url' => ScanTarget::url($row, $element),
                     // The row's own id is the issue's, so the scan id is put in
                     // its place before the target is read off it.
                     'inspectUrl' => UrlHelper::cpUrl(

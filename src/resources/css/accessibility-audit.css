@@ -3325,6 +3325,17 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   overflow-wrap: break-word;
 }
 
+/* The address of the page being reported on, under its title. Titles repeat
+   across a site: a plugin's landing page and its support page share one, and
+   share a layout, so they throw up the same findings. Without the address
+   there is nothing on screen to tell you which of the two you are looking at. */
+.accessibility-audit-pr-pageurl {
+  margin: 0 0 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 /* The notices sitting under the score cards. One container, one border, so
    they read as part of the same panel run as the cards above them rather than
    as loose text on the page background. The accent on the left is the only

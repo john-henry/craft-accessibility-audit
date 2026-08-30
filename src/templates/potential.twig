@@ -167,9 +167,16 @@
         const siteId = {{ siteId }};
         const canRestore = {{ canRunScans ? 'true' : 'false' }};
 
-        const pageCell = (p) => p
-            ? '<a href="' + p.inspectUrl + '">' + Craft.escapeHtml(p.title) + '</a>'
-            : '';
+        const pageCell = (p) => {
+            if (!p) { return ''; }
+            const title = '<a href="' + p.inspectUrl + '">' + Craft.escapeHtml(p.title) + '</a>';
+            // Titles repeat across a site. The address is what tells two rows
+            // apart when the same component appears on both pages.
+            const urlLine = p.url
+                ? '<div class="light code" style="font-size:11px;margin-top:2px">' + Craft.escapeHtml(p.url) + '</div>'
+                : '';
+            return title + urlLine;
+        };
 
         
         const questionCell = (q) => {
