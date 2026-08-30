@@ -3330,9 +3330,16 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
    share a layout, so they throw up the same findings. Without the address
    there is nothing on screen to tell you which of the two you are looking at. */
 .accessibility-audit-pr-pageurl {
-  margin: 0 0 10px;
+  margin: 0 0 8px;
   font-size: 11px;
   line-height: 1.4;
+  /* Clipped rather than wrapped: a long docs URL would otherwise push the
+     score down the sidebar. The whole address is on the title attribute. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow-wrap: anywhere;
 }
 

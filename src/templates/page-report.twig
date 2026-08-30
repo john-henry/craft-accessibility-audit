@@ -99,7 +99,6 @@
 </script>
 
 {% if pageUrl %}
-<p class="light code accessibility-audit-pr-pageurl">{{ pageUrl }}</p>
 <p class="accessibility-audit-callout accessibility-audit-callout--notice accessibility-audit-pr-mobile-note">
     {{ 'The issues list works fine at this size, but the live preview and highlighting need more room. For the full report, use a wider screen.'|t('accessibility-audit') }}
 </p>
@@ -110,6 +109,9 @@
         {% if scan %}
         {% set scoreClass = macros.scoreClass(scan.score) %}
         {% set scoreNumClass = {good: 'pass', fair: 'warn', poor: 'error'}[scoreClass] %}
+        {% if pageUrl %}
+            <p class="light code accessibility-audit-pr-pageurl" title="{{ pageUrl }}">{{ pageUrl }}</p>
+        {% endif %}
         <div class="accessibility-audit-pr-score-row">
             <span class="accessibility-audit-num--{{ scoreNumClass }} accessibility-audit-pr-score-num">{{ scan.score }}</span>
             <span class="light accessibility-audit-note">/100</span>
