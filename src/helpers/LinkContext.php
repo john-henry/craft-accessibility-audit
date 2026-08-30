@@ -86,6 +86,95 @@ class LinkContext
     }
 
     /**
+     * @var string A landmark carrying its own accessible name. A reader hears
+     *      "navigation, Main" before the link, which is context anybody can
+     *      act on.
+     */
+    public const STRENGTH_STRONG = 'strong';
+
+    /**
+     * @var string An unnamed landmark, with a heading above the link that says
+     *      something the link text does not. Weaker: the heading has to be
+     *      reached to be any use, and a links list never reaches it.
+     */
+    public const STRENGTH_WEAK = 'weak';
+
+    /**
+     * @var string Nothing that separates this link from another reading the
+     *      same. No landmark, no name, or a heading that only repeats the link.
+     */
+    public const STRENGTH_NONE = 'none';
+
+    /**
+     * How much the surroundings actually tell a reader about where this link
+     * goes.
+     *
+     * 2.4.4 asks whether the context distinguishes the link, and "is in some
+     * landmark" is not the same question. An unnamed region announces its role
+     * and nothing else, so two links in two unnamed regions are two links a
+     * reader cannot tell apart, whatever the markup says.
+     *
+     * A heading that repeats the link text is the case worth naming: context
+     * restating the link is not context. A "Services" link under a "Services"
+     * heading is exactly as ambiguous as it was before the heading.
+     *
+     * @param array{name: string, heading: string, landmark: DOMElement|null} $context
+     *        The link's resolved context, from {@see self::for()}.
+     * @param string $linkName The link's own announced name.
+     * @return string One of the STRENGTH_* constants.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public static function strength(array $context, string $linkName): string
+    {
+        // Read off the computed name, not the presence of an attribute: an
+        // aria-labelledby pointing at something empty names nothing.
+        if (trim($context['name']) !== '') {
+            return self::STRENGTH_STRONG;
+        }
+
+        $heading = trim($context['heading']);
+
+        if ($heading === '' || $context['landmark'] === null) {
+            return self::STRENGTH_NONE;
+        }
+
+        if (mb_strtolower($heading) === mb_strtolower(trim($linkName))) {
+            return self::STRENGTH_NONE;
+        }
+
+        return self::STRENGTH_WEAK;
+    }
+
+    /**
+     * The landmark named the way somebody has to find it in a template: its
+     * tag and whatever classes are on it.
+     *
+     * A report saying "the landmark is unnamed" is no use on a page with four
+     * of them. This is what turns the advice into an edit.
+     *
+     * @param DOMElement|null $landmark The landmark, if the link is in one.
+     * @return string
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public static function describe(?DOMElement $landmark): string
+    {
+        if ($landmark === null) {
+            return '';
+        }
+
+        $tag = strtolower($landmark->nodeName);
+        $classes = trim($landmark->getAttribute('class'));
+
+        if ($classes === '') {
+            return '<' . $tag . '>';
+        }
+
+        return '<' . $tag . ' class="' . $classes . '">';
+    }
+
+    /**
      * Whether a link is hidden in a way a server-side scan can see.
      *
      * Responsive markup often ships a desktop rail and a mobile drawer, both in

@@ -49,7 +49,7 @@ describe('identical links judged by context', function() {
             ->and($found[0]->wcagLevel)->toBe('A')
             ->and($found[0]->severity)->toBe('warning')
             ->and($found[0]->message)->toContain('nav[unnamed')
-            ->and($found[0]->message)->toContain('has no name');
+            ->and($found[0]->message)->toContain('no name on the region');
     });
 
     it('advises rather than fails when both landmarks are named', function() {
@@ -109,9 +109,39 @@ describe('identical links judged by context', function() {
 
         expect($message)->toContain('Change the visible text')
             ->and($message)->toContain('sr-only')
-            ->and($message)->toContain('aria-label on the surrounding landmark')
             ->and($message)->toContain('2.5.3 Label in Name')
             ->and($message)->toContain('Do not reach for aria-label on the link itself');
+    });
+
+    it('offers naming the region second, ahead of editing each link', function() {
+        // One attribute settles every ambiguous link inside the region at once
+        // and changes nothing about what any link announces. On a real page
+        // that beats editing them one by one, so it comes before the sr-only
+        // suffix rather than after it.
+        $message = identicalLinkFindings(docsPage())[0]->message;
+
+        $naming = strpos($message, 'Give the unnamed region a name');
+        $suffix = strpos($message, 'sr-only');
+
+        expect($naming)->not->toBeFalse()
+            ->and($suffix)->toBeGreaterThan($naming);
+    });
+
+    it('names the region so it can be found in a template', function() {
+        // "The region has no name" is no use on a page with four of them.
+        $message = identicalLinkFindings(
+            docsPage('class="docs-sidebar sticky"'),
+        )[0]->message;
+
+        expect($message)->toContain('<nav class="docs-sidebar sticky">')
+            ->and($message)->toContain('1 flagged link in here');
+    });
+
+    it('drops the naming advice when every region already has one', function() {
+        $message = identicalLinkFindings(docsPage('aria-label="Documentation"'))[0]->message;
+
+        expect($message)->not->toContain('Give the unnamed region a name')
+            ->and($message)->toContain('aria-label on the surrounding landmark');
     });
 
     it('ignores a pair that cannot both be reached', function() {
@@ -288,4 +318,83 @@ it('passes the criterion through from the listing', function() {
     );
 
     expect($source)->toContain("\$this->_potentialQuestion(\$ruleId, \$row['wcagCriterion'] ?? null)");
+});
+
+// ---------------------------------------------------------------------------
+// How strong the context actually is.
+//
+// "Is in some landmark" is not the question 2.4.4 asks. An unnamed region
+// announces its role and nothing else, so two links in two unnamed regions are
+// two links a reader cannot tell apart, whatever the markup says. And a
+// heading that repeats the link text is not context at all: a "Services" link
+// under a "Services" heading is exactly as ambiguous as it was before.
+//
+// Graded by the weaker of the two, because a pair is only as distinguishable
+// as its weaker side.
+// ---------------------------------------------------------------------------
+
+/** A page whose second link sits in an unnamed region under a given heading. */
+function pageWithHeading(string $heading, string $navAttrs = ''): string
+{
+    return <<<HTML
+        <!DOCTYPE html><html lang="en"><head><title>T</title>
+        <meta name="description" content="d"></head><body>
+        <header><nav aria-label="Main"><a href="/services">Services</a></nav></header>
+        <main id="main">
+            <section {$navAttrs}>
+                <h2>{$heading}</h2>
+                <a href="/plugins/x/docs/api/services">Services</a>
+            </section>
+        </main>
+        </body></html>
+        HTML;
+}
+
+describe('the strength of a link context', function() {
+    it('passes at AA only when both sides carry a real name', function() {
+        $found = identicalLinkFindings(docsPage('aria-label="Documentation"'));
+
+        expect($found[0]->wcagCriterion)->toBe('2.4.9')
+            ->and($found[0]->wcagLevel)->toBe('AAA')
+            ->and($found[0]->severity)->toBe('notice');
+    });
+
+    it('asks for a fix when one side leans on a heading instead of a name', function() {
+        // Weaker than it looks: a heading has to be reached to be any use, and
+        // a reader moving link to link never reaches it.
+        $found = identicalLinkFindings(pageWithHeading('Developer reference'));
+
+        expect($found)->toHaveCount(1)
+            ->and($found[0]->wcagCriterion)->toBe('2.4.4')
+            ->and($found[0]->wcagLevel)->toBe('A')
+            ->and($found[0]->severity)->toBe('warning')
+            ->and($found[0]->message)->toContain('leans on the heading');
+    });
+
+    it('treats a heading that repeats the link text as no context at all', function() {
+        // The case from the specification, and a common one: the heading found
+        // was itself "Services", so it restates the link rather than
+        // distinguishing it.
+        $found = identicalLinkFindings(pageWithHeading('Services'));
+
+        expect($found)->toHaveCount(1)
+            ->and($found[0]->wcagCriterion)->toBe('2.4.4')
+            ->and($found[0]->message)->toContain('no name on the region');
+    });
+
+    it('compares the heading to the link without minding case or spacing', function() {
+        $found = identicalLinkFindings(pageWithHeading('  SERVICES  '));
+
+        expect($found[0]->message)->toContain('no name on the region');
+    });
+
+    it('reads the name off what is announced, not off the attribute', function() {
+        // An aria-labelledby pointing at nothing names nothing, however much
+        // markup is involved.
+        $found = identicalLinkFindings(
+            pageWithHeading('Developer reference', 'aria-labelledby="missing-id"'),
+        );
+
+        expect($found[0]->wcagCriterion)->toBe('2.4.4');
+    });
 });

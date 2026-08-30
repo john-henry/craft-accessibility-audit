@@ -283,7 +283,8 @@ class PotentialScanner extends Component
     {
         $lines = [];
         $places = [];
-        $anyUnnamed = false;
+        $strengths = [];
+        $contexts = [];
 
         // Do the destinations differ in the way that matters? Two links to
         // different sections of one document are a tidiness question, not
@@ -297,21 +298,26 @@ class PotentialScanner extends Component
 
         foreach ($links as $link) {
             $context = LinkContext::for($link['node'], $xpath);
+            $contexts[] = $context;
+            $strengths[] = LinkContext::strength($context, $name);
             $lines[] = '  ' . $context['label'] . ' → ' . $link['href'];
 
             // Identity of the place, for deciding whether anything separates
             // them: the landmark element itself, plus the heading above.
             $places[] = ($context['landmark'] !== null ? spl_object_id($context['landmark']) : 0)
                 . '|' . $context['heading'];
-
-            // A landmark with no name announces nothing, and no landmark at all
-            // with no heading above it is the same problem by another route.
-            if ($context['name'] === '' && $context['heading'] === '') {
-                $anyUnnamed = true;
-            }
         }
 
         $separated = count(array_unique($places)) === count($places);
+
+        // A pair is only as distinguishable as its weaker side. One link under
+        // a named landmark and one under an unnamed region is not two links a
+        // reader can tell apart: it is one they can and one they cannot.
+        $weakest = in_array(LinkContext::STRENGTH_NONE, $strengths, true)
+            ? LinkContext::STRENGTH_NONE
+            : (in_array(LinkContext::STRENGTH_WEAK, $strengths, true)
+                ? LinkContext::STRENGTH_WEAK
+                : LinkContext::STRENGTH_STRONG);
 
         if ($sameDocument) {
             $verdict = 'These go to the same page, different sections. Nobody is sent anywhere they did '
@@ -328,10 +334,18 @@ class PotentialScanner extends Component
             $criterion = '2.4.4';
             $level = 'A';
             $severity = 'warning';
-        } elseif ($anyUnnamed) {
-            $verdict = 'These are in different parts of the page, but at least one of those parts has no '
-                . 'name, so there is nothing for a screen reader to announce that would separate them. '
-                . 'That leaves WCAG 2.4.4 Link Purpose (In Context) failing until the landmark is named.';
+        } elseif ($weakest === LinkContext::STRENGTH_NONE) {
+            $verdict = 'These are in different parts of the page, but at least one of those parts has '
+                . 'nothing to announce that separates them: no name on the region, and no heading above '
+                . 'the link that says anything the link text does not already say. That leaves WCAG 2.4.4 '
+                . 'Link Purpose (In Context) failing.';
+            $criterion = '2.4.4';
+            $level = 'A';
+            $severity = 'warning';
+        } elseif ($weakest === LinkContext::STRENGTH_WEAK) {
+            $verdict = 'One of these leans on the heading above it rather than on a named region. A '
+                . 'heading has to be reached to be any use, and a reader moving link to link never '
+                . 'reaches it, so this is weaker than it looks and worth fixing rather than passing.';
             $criterion = '2.4.4';
             $level = 'A';
             $severity = 'warning';
@@ -371,14 +385,32 @@ class PotentialScanner extends Component
             . implode("\n", $lines) . "\n\n"
             . $verdict . "\n\n"
             . "How to fix it, best first:\n"
-            . "  1. Change the visible text so the two read differently. Everyone benefits and no ARIA is involved.\n"
-            . '  2. If the visible text has to stay, add to the announced name inside the link with visually '
-            . 'hidden text: <a href="...">' . $name . '<span class="sr-only">, API reference</span></a>.' . "\n"
-            . '  3. Name the part of the page it sits in, with aria-label on the surrounding landmark.';
+            . "  1. Change the visible text so the two read differently. Everyone benefits and no ARIA is involved.\n";
 
-        if ($anyUnnamed) {
-            $message .= "\n\nOption 3 is the one to reach for here: a part of the page with no name is the "
-                . 'missing piece.';
+        // Where a side is weak because its region has no name, naming the
+        // region is one attribute and settles every ambiguous link inside it
+        // at once, without touching any link's announced name. On a real page
+        // that beats editing each link by a distance, so it goes second.
+        $unnamed = $this->unnamedLandmarks($contexts);
+
+        if ($unnamed !== []) {
+            $message .= '  2. Give the unnamed region a name, with aria-label on it. One attribute, and it '
+                . 'settles every ambiguous link inside that region at once, without changing what any link '
+                . "announces:\n";
+
+            foreach ($unnamed as $description => $count) {
+                $message .= '       ' . $description . ' — ' . $count . ' flagged link'
+                    . ($count === 1 ? '' : 's') . " in here\n";
+            }
+
+            $message .= '  3. If the visible text has to stay, add to the announced name inside the link '
+                . 'with visually hidden text: <a href="...">' . $name
+                . '<span class="sr-only">, API reference</span></a>.';
+        } else {
+            $message .= '  2. If the visible text has to stay, add to the announced name inside the link '
+                . 'with visually hidden text: <a href="...">' . $name
+                . '<span class="sr-only">, API reference</span></a>.' . "\n"
+                . '  3. Name the part of the page it sits in, with aria-label on the surrounding landmark.';
         }
 
         $message .= "\n\n" . 'Do not reach for aria-label on the link itself. It replaces the announced name '
@@ -396,6 +428,40 @@ class PotentialScanner extends Component
             helpUrl: null,
             source: 'php',
         );
+    }
+
+    /**
+     * The unnamed regions these links sit in, and how many are in each.
+     *
+     * A report saying "the region has no name" is no use on a page with four
+     * of them. Naming the element, and saying how many of the flagged links it
+     * holds, is what turns the advice into an edit somebody can make.
+     *
+     * @param array<int, array{name: string, heading: string, landmark: DOMElement|null}> $contexts
+     *        The resolved context of each link in the group.
+     * @return array<string, int> Keyed by the region's markup, valued by count.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function unnamedLandmarks(array $contexts): array
+    {
+        $found = [];
+
+        foreach ($contexts as $context) {
+            if ($context['landmark'] === null || trim($context['name']) !== '') {
+                continue;
+            }
+
+            $description = LinkContext::describe($context['landmark']);
+
+            if ($description === '') {
+                continue;
+            }
+
+            $found[$description] = ($found[$description] ?? 0) + 1;
+        }
+
+        return $found;
     }
 
     /**
