@@ -697,6 +697,24 @@ class AuditService extends Component
             return ['scanId' => 0, 'score' => 0, 'issues' => [], 'error' => $page['error']];
         }
 
+        // An entry whose address redirects has no page of its own: a section
+        // landing page sending readers to its first child is the usual shape.
+        // What comes back belongs to whichever entry owns that address, and
+        // that one is scanned in its own right, so storing it here files one
+        // page under two names. The findings double, both count against the
+        // edition's page limit, and answering a question on one leaves its
+        // twin asking.
+        if (!$this->_isSamePage($url, $page['url'])) {
+            return [
+                'scanId' => 0,
+                'score' => 0,
+                'issues' => [],
+                'error' => Craft::t('accessibility-audit', 'This address redirects to {url}, which is scanned as its own page.', [
+                    'url' => $page['url'],
+                ]),
+            ];
+        }
+
         $result = $this->processHtml($page['html'], $element->id, get_class($element), $element->siteId);
 
         // When server-side Chrome is configured (Pro), queue a full browser
@@ -3182,6 +3200,38 @@ class AuditService extends Component
 
             return $miss(Craft::t('accessibility-audit', 'The page could not be reached.'));
         }
+    }
+
+    /**
+     * Whether two addresses are the same page.
+     *
+     * Compared on host and path alone. A scheme change, a trailing slash or a
+     * query string added on the way through are all the same page arriving by
+     * a slightly different road, and treating any of them as a move would skip
+     * pages that are perfectly fine to scan.
+     *
+     * @param string $requested The address the scan asked for.
+     * @param string $landed The address the last hop ended on.
+     * @return bool
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _isSamePage(string $requested, string $landed): bool
+    {
+        $key = static function(string $url): string {
+            $parts = parse_url($url);
+
+            if ($parts === false) {
+                return $url;
+            }
+
+            $host = strtolower(trim((string)($parts['host'] ?? ''), '[]'));
+            $path = rtrim((string)($parts['path'] ?? ''), '/');
+
+            return $host . ($path === '' ? '/' : $path);
+        };
+
+        return $key($requested) === $key($landed);
     }
 
     /**
