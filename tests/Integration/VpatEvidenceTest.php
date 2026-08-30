@@ -196,6 +196,114 @@ it('tells the model to name the fault, its place and its scale together', functi
     expect($source)->toContain('Name what fails, say where, and say how much of it there is');
 });
 
+// ---------------------------------------------------------------------------
+// Redrafting a row must not launder what is already in the box.
+//
+// A remark is stored text. One written while four identical-link questions were
+// open stayed on the row after they were dismissed, because nothing recomputes
+// it. Redrafting that row fed the stale remark back as the author's notes, and
+// the rule that notes are the primary source did exactly what it says: it kept
+// the four instances. Worse, the rewrite promoted them, describing them as
+// found by manual evaluation, so a count with no live evidence behind it came
+// back wearing a provenance nobody had given it.
+// ---------------------------------------------------------------------------
+
+describe('a remark that has outlived its findings', function() {
+    it('records what the findings were when the wording was saved', function() {
+        evidenceIssue($this->scanId, $this->elementId, $this->siteId, [
+            'ruleId' => 'empty-heading', 'severity' => 'error',
+        ]);
+
+        $this->vpat->saveOverride($this->siteId, '1.3.1', 'Partially Supports', 'One heading is empty.');
+
+        $stored = $this->vpat->getRecord($this->siteId)['overrides']['1.3.1'];
+
+        expect($stored['remarkFindings'])->toBe(1)
+            ->and($stored['remarkSavedAt'])->not->toBeEmpty();
+    });
+
+    it('says so once the findings have moved under it', function() {
+        evidenceIssue($this->scanId, $this->elementId, $this->siteId, [
+            'ruleId' => 'empty-heading', 'severity' => 'error',
+        ]);
+
+        $this->vpat->saveOverride($this->siteId, '1.3.1', 'Partially Supports', 'One heading is empty.');
+
+        // The author fixes it, or answers the question behind it. The remark is
+        // stored text, so it still says one heading is empty.
+        Craft::$app->getDb()->createCommand()
+            ->delete('{{%accessibilityaudit_issues}}', ['scanId' => $this->scanId])
+            ->execute();
+
+        expect($this->vpat->getFullReport($this->siteId)['levelA']['1.3.1']['remarkStale'])->toBeTrue();
+    });
+
+    it('stays quiet while the findings still match', function() {
+        evidenceIssue($this->scanId, $this->elementId, $this->siteId, [
+            'ruleId' => 'empty-heading', 'severity' => 'error',
+        ]);
+
+        $this->vpat->saveOverride($this->siteId, '1.3.1', 'Partially Supports', 'One heading is empty.');
+
+        expect($this->vpat->getFullReport($this->siteId)['levelA']['1.3.1']['remarkStale'])->toBeFalse();
+    });
+
+    it('does not flag a remark saved before any of this was recorded', function() {
+        // Guessing a count for older rows would put a warning on every remark
+        // an author had already dealt with, which teaches people to ignore it.
+        $record = $this->vpat->getRecord($this->siteId);
+        $overrides = $record['overrides'];
+        $overrides['1.3.1'] = ['level' => 'Supports', 'remarks' => 'Written long ago.'];
+
+        Craft::$app->getDb()->createCommand()->update(
+            '{{%accessibilityaudit_vpat}}',
+            ['overrides' => \craft\helpers\Json::encode($overrides)],
+            ['siteId' => $this->siteId],
+        )->execute();
+
+        expect($this->vpat->getFullReport($this->siteId)['levelA']['1.3.1']['remarkStale'])->toBeFalse();
+    });
+
+    it('does not flag a row whose remark is empty', function() {
+        $this->vpat->saveOverride($this->siteId, '1.3.1', 'Supports', '');
+
+        expect($this->vpat->getFullReport($this->siteId)['levelA']['1.3.1']['remarkStale'])->toBeFalse();
+    });
+});
+
+it('does not let a redraft invent a provenance for what it found', function() {
+    $source = (string) file_get_contents(
+        (new ReflectionClass(\johnhenry\accessibilityaudit\services\VpatService::class))->getFileName(),
+    );
+
+    expect($source)->toContain('never describe how something was established unless the material says so')
+        ->and($source)->toContain('manually evaluated, audited, reviewed or tested by a person');
+});
+
+it('prefers live counts over whatever the box still says', function() {
+    $source = (string) file_get_contents(
+        (new ReflectionClass(\johnhenry\accessibilityaudit\services\VpatService::class))->getFileName(),
+    );
+
+    expect($source)->toContain('do not carry a count forward from the box');
+});
+
+it('lists several failures as bullets, the way published reports do', function() {
+    $source = (string) file_get_contents(
+        (new ReflectionClass(\johnhenry\accessibilityaudit\services\VpatService::class))->getFileName(),
+    );
+
+    expect($source)->toContain('one line per item starting with a bullet character');
+});
+
+it('renders those newlines rather than running the list together', function() {
+    // Both shipped renderers pass remarks through nl2br. A custom export
+    // template that does not will collapse a list into one run-on line.
+    $export = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/vpat-export.twig');
+
+    expect(substr_count($export, 'row.effectiveRemarks|nl2br'))->toBe(2);
+});
+
 it('will not let a workaround stand in for a fix', function() {
     // One report in the corpus marks contrast failures and notes they are
     // mitigated by an accessibility overlay. A buyer reads that as the fault

@@ -743,6 +743,7 @@ return [
     'Standard edition. Upgrade to Pro.' => 'Standard edition. Upgrade to Pro.',
     'Fix these {n} rules to improve your score' => 'Fix these {n} rules to improve your score',
     'Fix this rule to improve your score' => 'Fix this rule to improve your score',
+    'Written against {was} findings, there are now {now}. Check it still reads true.' => 'Written against {was} findings, there are now {now}. Check it still reads true.',
     'Scanned' => 'Scanned',
     'For you' => 'For you',
     'Checked {what} across {pages} pages, and found {n} still open.' => 'Checked {what} across {pages} pages, and found {n} still open.',

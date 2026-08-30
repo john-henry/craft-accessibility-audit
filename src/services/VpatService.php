@@ -671,6 +671,17 @@ class VpatService extends Component
             unset($overrides[$criterion]);
         } else {
             $overrides[$criterion] = ['level' => $level, 'remarks' => $remarks];
+
+            // What the findings looked like when this wording was written. A
+            // remark is stored text and nothing recomputes it, so one that
+            // counts four occurrences keeps saying four after they are fixed
+            // or the questions behind them are answered. Recorded here rather
+            // than when a draft is generated, because a remark typed by hand
+            // goes out of date exactly the same way.
+            if ($remarks !== '') {
+                $overrides[$criterion]['remarkFindings'] = $this->getEvidence($siteId)[$criterion]['findings'] ?? 0;
+                $overrides[$criterion]['remarkSavedAt'] = (new DateTime())->format('Y-m-d');
+            }
         }
 
         Craft::$app->getDb()->createCommand()
@@ -847,6 +858,9 @@ class VpatService extends Component
                 'effectiveLevel' => $effectiveLevel,
                 'effectiveRemarks' => $effectiveRemarks,
                 'evidence' => $evidence[$num] ?? null,
+                'remarkStale' => $this->_remarkIsStale($override, $evidence[$num] ?? null),
+                'remarkSavedAt' => $override['remarkSavedAt'] ?? null,
+                'remarkFindings' => $override['remarkFindings'] ?? null,
             ]);
 
             if ($criterion['level'] === 'A') {
@@ -1018,12 +1032,15 @@ class VpatService extends Component
             // reports. See reference/vpat-remark-patterns.md, which records
             // what the corpus does at each of these decisions and how often.
             "Rules:\n" .
-            "- Plain text only: no markdown, no lists, no preamble. One or two sentences where there is nothing failing, two to four where there is.\n" .
+            "- Plain text only: no markdown, no headings, no preamble. One or two sentences where there is nothing failing, two to four where there is.\n" .
+            "- Where you are listing more than one place a thing fails, write a stem sentence, then one line per item starting with a bullet character and a space. That is how nearly every published report handles a list of exceptions, and it beats a sentence with four clauses in it. One failure stays as prose.\n" .
             "- Name what fails, say where, and say how much of it there is. Published reports do one of those and almost never all three: a count with nothing attached to it is a statistic, and a named fault with no scale leaves the reader unable to judge severity. Where the material gives you a rule, a page and an occurrence count, use them together.\n" .
             "- Where something is failing, lead with what does work, then the exception. That is how the strongest reports read, and it stops a single fault reading as a broken product.\n" .
             "- Never offer a workaround, a setting or an add-on as though it settled the criterion. A fault that is worked around is still a fault.\n" .
             "- Base every statement strictly on the material above. Do not invent features, testing activity, or fixes that are not in it.\n" .
             "- When the author's notes are present, treat them as the primary source: keep their facts and intent, tidy the wording.\n" .
+            "- That said, never describe how something was established unless the material says so. Do not write that anything was manually evaluated, audited, reviewed or tested by a person. The box may hold an earlier draft rather than notes, and rewriting one is the point at which an unattributed claim quietly acquires a provenance it never had.\n" .
+            "- Counts and findings in the box may be out of date, because they are stored text and the scans have moved on. Where the material above gives you numbers, prefer those. Where it gives you none, do not carry a count forward from the box.\n" .
             "- Do not state or suggest a conformance level; describe the situation the material shows. The person completing the report chooses the level.\n" .
             "- Do not restate the success criterion. The reader has it in the next column.\n" .
             "- Do not describe testing tools or method. Those belong to the report as a whole, not to one row.\n" .
@@ -1066,6 +1083,34 @@ class VpatService extends Component
     }
 
     // ─── Private ─────────────────────────────────────────────────────────────
+
+    /**
+     * Whether a saved remark was written against a different set of findings
+     * than the ones standing now.
+     *
+     * Only says so where it can be sure. A remark saved before the plugin
+     * started recording this carries no count, and guessing at one would put a
+     * warning on every row an author had already dealt with.
+     *
+     * @param array<string, mixed>|null $override The stored override, if any.
+     * @param array{checks: ?string, cannot: ?string, findings: int, pages: int}|null $evidence
+     *        The criterion's current evidence.
+     * @return bool Whether the wording predates the current findings.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _remarkIsStale(?array $override, ?array $evidence): bool
+    {
+        if ($override === null || $evidence === null) {
+            return false;
+        }
+
+        if (trim((string)($override['remarks'] ?? '')) === '' || !isset($override['remarkFindings'])) {
+            return false;
+        }
+
+        return (int)$override['remarkFindings'] !== (int)$evidence['findings'];
+    }
 
     /**
      * @throws Exception

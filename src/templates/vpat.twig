@@ -504,6 +504,14 @@
                                     <span class="accessibility-audit-vpat-remark-nudge{% if not rowNeedsRemark %} hidden{% endif %}">
                                         {{ 'This level needs a remark: say why.'|t('accessibility-audit') }}
                                     </span>
+                                    {% if row.remarkStale %}
+                                        <span class="accessibility-audit-vpat-remark-stale">
+                                            {{ 'Written against {was} findings, there are now {now}. Check it still reads true.'|t('accessibility-audit', {
+                                                was: row.remarkFindings,
+                                                now: row.evidence.findings,
+                                            }) }}
+                                        </span>
+                                    {% endif %}
                                     <span class="accessibility-audit-vpat-row-status" aria-live="polite"></span>
                                 </div>
                             </td>
