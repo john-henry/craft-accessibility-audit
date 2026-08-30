@@ -1014,12 +1014,24 @@ class VpatService extends Component
             "Criterion description: {$meta['desc']}\n" .
             'Conformance level chosen for this row: ' . ($level !== '' ? $level : 'not yet selected') . "\n\n" .
             implode("\n\n", $sources) . "\n\n" .
+            // The rules below are drawn from a corpus of published conformance
+            // reports. See reference/vpat-remark-patterns.md, which records
+            // what the corpus does at each of these decisions and how often.
             "Rules:\n" .
-            "- 1 to 2 sentences, no preamble, professional VPAT register, plain text only (no markdown, no lists).\n" .
+            "- Plain text only: no markdown, no lists, no preamble. One or two sentences where there is nothing failing, two to four where there is.\n" .
+            "- Name what fails, say where, and say how much of it there is. Published reports do one of those and almost never all three: a count with nothing attached to it is a statistic, and a named fault with no scale leaves the reader unable to judge severity. Where the material gives you a rule, a page and an occurrence count, use them together.\n" .
+            "- Where something is failing, lead with what does work, then the exception. That is how the strongest reports read, and it stops a single fault reading as a broken product.\n" .
+            "- Never offer a workaround, a setting or an add-on as though it settled the criterion. A fault that is worked around is still a fault.\n" .
             "- Base every statement strictly on the material above. Do not invent features, testing activity, or fixes that are not in it.\n" .
             "- When the author's notes are present, treat them as the primary source: keep their facts and intent, tidy the wording.\n" .
-            "- Do not state or suggest a conformance level; describe the situation the material shows.\n" .
-            "- If the findings show violations, summarise what fails and roughly how widespread it is.\n" .
+            "- Do not state or suggest a conformance level; describe the situation the material shows. The person completing the report chooses the level.\n" .
+            "- Do not restate the success criterion. The reader has it in the next column.\n" .
+            "- Do not describe testing tools or method. Those belong to the report as a whole, not to one row.\n" .
+            "- No hedging unless something concrete sits beside it. \"Some pages\" on its own is worthless; \"some\" with a number or a named component is fine.\n" .
+            "- Describe what the product does, not what it was designed or intended to do.\n" .
+            "- No commitments to fix anything, and no dates, unless the author's notes give them.\n" .
+            "- Do not push the problem onto whoever is implementing or configuring the site. Describe what was found.\n" .
+            "- No marketing language. This is a factual document a buyer will compare against a competitor's.\n" .
             'Respond with the remark text only.';
 
         try {

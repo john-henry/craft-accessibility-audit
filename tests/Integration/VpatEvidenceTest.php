@@ -176,6 +176,63 @@ describe('VpatService::getEvidence', function() {
 // to the left, said it found nothing. Both came from the same table.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// The drafting rules come from real reports, not from taste.
+//
+// A corpus of 37 published conformance reports is recorded in
+// reference/vpat-remark-patterns.md. The findings below drive the prompt, and
+// each is here because dropping it would put the plugin's drafts back among the
+// weakest documents in that corpus.
+// ---------------------------------------------------------------------------
+
+it('tells the model to name the fault, its place and its scale together', function() {
+    // The sharpest finding in the corpus: published reports name what fails or
+    // count it, and almost never do both with a location as well. The plugin
+    // holds a rule, a page and an occurrence count for every finding, so it can.
+    $source = (string) file_get_contents(
+        (new ReflectionClass(\johnhenry\accessibilityaudit\services\VpatService::class))->getFileName(),
+    );
+
+    expect($source)->toContain('Name what fails, say where, and say how much of it there is');
+});
+
+it('will not let a workaround stand in for a fix', function() {
+    // One report in the corpus marks contrast failures and notes they are
+    // mitigated by an accessibility overlay. A buyer reads that as the fault
+    // standing and a script being asked to cover it.
+    $source = (string) file_get_contents(
+        (new ReflectionClass(\johnhenry\accessibilityaudit\services\VpatService::class))->getFileName(),
+    );
+
+    expect($source)->toContain('A fault that is worked around is still a fault');
+});
+
+it('keeps the conventions the whole corpus agrees on', function() {
+    $source = (string) file_get_contents(
+        (new ReflectionClass(\johnhenry\accessibilityaudit\services\VpatService::class))->getFileName(),
+    );
+
+    // Not one of the eleven restates the criterion or puts test method in a
+    // remark. Method belongs to the report, not to a row.
+    expect($source)->toContain('Do not restate the success criterion')
+        ->and($source)->toContain('Do not describe testing tools or method');
+});
+
+it('bars the weak patterns the corpus is full of', function() {
+    $source = (string) file_get_contents(
+        (new ReflectionClass(\johnhenry\accessibilityaudit\services\VpatService::class))->getFileName(),
+    );
+
+    expect($source)
+        // Hedging with nothing behind it is the commonest failure in the corpus.
+        ->toContain('No hedging unless something concrete sits beside it')
+        // Design intent is not testable behaviour.
+        ->and($source)->toContain('not what it was designed or intended to do')
+        // The trap a component vendor falls into: qualify everything by saying
+        // it depends on the implementer, and the report has said nothing.
+        ->and($source)->toContain('Do not push the problem onto whoever is implementing');
+});
+
 it('drafts remarks from the findings the rest of the plugin recognises', function() {
     $source = (string) file_get_contents(
         (new ReflectionClass(\johnhenry\accessibilityaudit\services\VpatService::class))->getFileName(),
