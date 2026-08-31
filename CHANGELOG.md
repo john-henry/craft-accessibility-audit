@@ -1,5 +1,11 @@
 # Release Notes for Accessibility Audit
 
+## Unreleased
+
+### Fixed
+- Markup inside a `<template>` is no longer scanned as though it were on the page. A template's children are not part of the document: the browser keeps them in a separate, inert fragment that is never rendered and carries no accessibility meaning at all. PHP's HTML parser has no such separation and was handing them to the rules as ordinary content. Anything doing client-side rendering was affected, which on a Craft site usually means Alpine, and Alpine's `x-for` has to sit on a `<template>` that is a direct child of the list, so a correctly built list was reported as having its items outside it. Headings, buttons and links waiting inside a template were being judged the same way, before a single one of them had rendered. Findings on the page itself are untouched: a list item genuinely sitting outside a list is still reported. ([#12](https://github.com/john-henry/craft-accessibility-audit/issues/12))
+- Words inside a `<template>` no longer count towards the readability score, for the same reason: nobody ever reads them.
+
 ## 1.2.0 - 2026-08-30
 
 > [!IMPORTANT]

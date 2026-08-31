@@ -11,6 +11,7 @@ use DOMElement;
 use DOMXPath;
 use johnhenry\accessibilityaudit\helpers\AccessibleName;
 use johnhenry\accessibilityaudit\helpers\ExcludedElements;
+use johnhenry\accessibilityaudit\helpers\InertMarkup;
 use johnhenry\accessibilityaudit\models\IssueModel;
 use yii\base\Component;
 
@@ -101,6 +102,11 @@ class ContentScanner extends Component
         // of the DOM before any check runs, mirroring the browser engines'
         // axe exclude context, so no engine reports what another skips.
         ExcludedElements::removeFrom($xpath);
+
+        // Template contents are not part of the document, and DOMDocument
+        // parses them as though they were. The source-level checks already
+        // mask them; the DOM checks need the same.
+        InertMarkup::removeFrom($xpath);
 
         $checks = [
             'block-in-paragraph' => fn() => $this->checkBlockInParagraph($html),
