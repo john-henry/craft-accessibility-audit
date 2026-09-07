@@ -43,8 +43,10 @@ class Install extends Migration
         if (!$this->db->tableExists('{{%accessibilityaudit_scans}}')) {
             $this->createTable('{{%accessibilityaudit_scans}}', [
                 'id' => $this->primaryKey(),
-                'elementId' => $this->integer()->notNull(),
-                'elementType' => $this->string(255)->notNull(),
+                'elementId' => $this->integer()->null(),
+                'elementType' => $this->string(255)->null(),
+                'url' => $this->string(2048)->null(),
+                'title' => $this->string(255)->null(),
                 'siteId' => $this->integer()->notNull(),
                 'score' => $this->smallInteger()->unsigned()->notNull()->defaultValue(100),
                 'scoreA' => $this->smallInteger()->unsigned()->notNull()->defaultValue(100),
@@ -64,8 +66,8 @@ class Install extends Migration
             $this->createTable('{{%accessibilityaudit_issues}}', [
                 'id' => $this->primaryKey(),
                 'scanId' => $this->integer()->notNull(),
-                'elementId' => $this->integer()->notNull(),
-                'elementType' => $this->string(255)->notNull(),
+                'elementId' => $this->integer()->null(),
+                'elementType' => $this->string(255)->null(),
                 'siteId' => $this->integer()->notNull(),
                 'ruleId' => $this->string(50)->notNull(),
                 'wcagCriterion' => $this->string(20)->null(),
@@ -224,6 +226,7 @@ class Install extends Migration
     {
         $this->createIndex(null, '{{%accessibilityaudit_scans}}', ['elementId', 'siteId', 'dateScanned']);
         $this->createIndex(null, '{{%accessibilityaudit_scans}}', ['siteId', 'score']);
+        $this->createIndex(null, '{{%accessibilityaudit_scans}}', ['siteId']);
         $this->createIndex(null, '{{%accessibilityaudit_vpat}}', ['siteId'], true);
         $this->createIndex(null, '{{%accessibilityaudit_organisation}}', ['siteId'], true);
         $this->createIndex(null, '{{%accessibilityaudit_statement}}', ['siteId'], true);
