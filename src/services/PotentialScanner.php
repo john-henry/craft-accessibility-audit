@@ -13,6 +13,7 @@ use DOMNode;
 use DOMXPath;
 use johnhenry\accessibilityaudit\helpers\AccessibleName;
 use johnhenry\accessibilityaudit\helpers\ExcludedElements;
+use johnhenry\accessibilityaudit\helpers\InertMarkup;
 use johnhenry\accessibilityaudit\helpers\LinkContext;
 use johnhenry\accessibilityaudit\models\IssueModel;
 use yii\base\Component;
@@ -37,6 +38,11 @@ class PotentialScanner extends Component
         // Same exclusions as ContentScanner and the browser engines: a
         // consent banner must not generate potential questions either.
         ExcludedElements::removeFrom($xpath);
+
+        // Nor should markup the browser never renders. An unrendered template
+        // asking a person a question is worse than a false positive: they
+        // cannot answer it by looking at the page.
+        InertMarkup::removeFrom($xpath);
 
         return array_merge(
             $this->checkShortAlt($xpath),

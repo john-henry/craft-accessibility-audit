@@ -460,7 +460,10 @@ class ReadabilityService extends Component
         $xpath = new \DOMXPath($dom);
 
         /* Remove non-content nodes */
-        $remove = $xpath->query('//script|//style|//nav|//header|//footer|//aside|//form|//noscript');
+        // `//template` for the same reason as the scanners: its contents are
+        // never rendered, so counting their words would score prose no reader
+        // is ever shown.
+        $remove = $xpath->query('//script|//style|//nav|//header|//footer|//aside|//form|//noscript|//template');
         foreach ($remove as $node) {
             $node->parentNode?->removeChild($node);
         }
