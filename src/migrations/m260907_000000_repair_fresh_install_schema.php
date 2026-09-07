@@ -22,7 +22,7 @@ use craft\db\Migration;
  * way to the same schema passes straight through.
  *
  * @author JohnHenry <info@johnhenry.ie>
- * @since 1.3.0
+ * @since 1.2.1
  */
 class m260907_000000_repair_fresh_install_schema extends Migration
 {
