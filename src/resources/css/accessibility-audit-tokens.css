@@ -71,6 +71,15 @@
   --aa-target-bg: #eceff3;
   --aa-target-marker: #7d8a97;
 
+  /* ---- Score history series ---------------------------------------------- */
+  /* The overall score is the hero line and takes the CP link colour. The two
+     conformance levels are context underneath it, so they take neutral inks:
+     neither "Level A" nor "Level AA" is a state, and a severity colour would
+     say one of them is failing. Same values as the target inks above, kept
+     separate because they are a different job. */
+  --aa-series-aa: #45525f;
+  --aa-series-a: #7d8a97;
+
   /* ---- Misc chips -------------------------------------------------------- */
   --aa-owner-design: #4a3fa3; /* Design chip (purple) */
   --aa-owner-design-bg: #edecf8;

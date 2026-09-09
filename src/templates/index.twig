@@ -228,13 +228,14 @@
     <div class="accessibility-audit-panelnote accessibility-audit-panelnote--waiting">
         <div class="accessibility-audit-panelnote__text">
             <p class="accessibility-audit-panelnote__lead">
-                {{ '{n} questions across {p} pages are still waiting on a person.'|t('accessibility-audit', { n: pendingPotential, p: potentialPages }) }}
+                {{ '{n, plural, =1{# question} other{# questions}} across {p, plural, =1{# page} other{# pages}} {n, plural, =1{is} other{are}} still waiting on a person.'|t('accessibility-audit', { n: pendingPotential, p: potentialPages }) }}
             </p>
             <p class="accessibility-audit-panelnote__body">
+                {{ 'These fall into {k, plural, =1{# kind of question} other{# kinds of question}} on the review screen.'|t('accessibility-audit', { k: potentialKinds }) }}
                 {{ 'They do not count against the score either way until you answer them, so the number above is not the whole picture yet.'|t('accessibility-audit') }}
-                <a href="{{ cpUrl('accessibility-audit/potential', { site: siteHandle }) }}">{{ 'Review them'|t('accessibility-audit') }}</a>
             </p>
         </div>
+        <a href="{{ cpUrl('accessibility-audit/potential', { site: siteHandle }) }}" class="go accessibility-audit-panelnote__action">{{ 'Review them'|t('accessibility-audit') }}</a>
     </div>
 {% elseif allClear %}
     <div class="accessibility-audit-panelnote accessibility-audit-panelnote--good">
@@ -249,85 +250,6 @@
         </button>
     </div>
 {% endif %}
-
-
-
-
-    {% if scoreHistory|length > 1 %}
-        <div class="pane accessibility-audit-score-history">
-            <span class="accessibility-audit-col-label">{{ 'Score history'|t('accessibility-audit') }}</span>
-            <div id="accessibility-audit-score-history-chart" style="margin-top:10px"></div>
-
-            {% js %}
-            (() => {
-                const history = {{ scoreHistory|json_encode|raw }};
-                const target = {{ targetScore }};
-                const chartEl = document.getElementById('accessibility-audit-score-history-chart');
-                if (!chartEl || !history || history.length < 2) { return; }
-
-                const H = 200;
-                const padL = 34, padR = 16, padT = 12;
-                const n = history.length;
-                const fmtDate = (s) => { const p = String(s).split('-'); return p[2] + '/' + p[1]; };
-
-              
-                let tbl = '<table class="visually-hidden"><caption>'
-                    + Craft.t('accessibility-audit', 'Accessibility score by date') + '</caption><thead><tr><th>'
-                    + Craft.t('accessibility-audit', 'Date') + '</th><th>'
-                    + Craft.t('accessibility-audit', 'Score') + '</th></tr></thead><tbody>';
-                history.forEach((d) => {
-                    tbl += '<tr><td>' + Craft.escapeHtml(String(d.day)) + '</td><td>' + (Number(d.avgScore) || 0) + '</td></tr>';
-                });
-                tbl += '</tbody></table>';
-
-                
-                const draw = () => {
-                    const W = Math.max(320, Math.round(chartEl.clientWidth) || 760);
-                    const plotW = W - padL - padR, plotH = H - padT - 26;
-
-                    const x = (i) => padL + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
-                    const y = (v) => padT + plotH - (Math.max(0, Math.min(100, v)) / 100) * plotH;
-                    const pts = history.map((d, i) => x(i) + ',' + y(Number(d.avgScore) || 0)).join(' ');
-
-                    const svg = ['<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="' + Craft.t('accessibility-audit', 'Accessibility score over time') + '">'];
-                    for (let g = 0; g <= 4; g++) {
-                        const gy = padT + (g / 4) * plotH;
-                        svg.push('<line x1="' + padL + '" y1="' + gy + '" x2="' + (W - padR) + '" y2="' + gy + '" stroke="var(--border-hairline)" stroke-width="1"/>');
-                        svg.push('<text x="' + (padL - 6) + '" y="' + (gy + 3) + '" text-anchor="end" font-size="9" fill="var(--medium-text-color)">' + Math.round(100 * (1 - g / 4)) + '</text>');
-                    }
-                    [0, Math.floor((n - 1) / 2), n - 1].forEach((i) => {
-                        svg.push('<text x="' + x(i) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="9" fill="var(--medium-text-color)">' + fmtDate(history[i].day) + '</text>');
-                    });
-                    if (target > 0) {
-                        const ty = y(target);
-                        svg.push('<line x1="' + padL + '" y1="' + ty + '" x2="' + (W - padR) + '" y2="' + ty + '" stroke="var(--aa-pass)" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.75"/>');
-                        svg.push('<text x="' + (W - padR) + '" y="' + (ty - 4) + '" text-anchor="end" font-size="9" fill="var(--aa-pass)">' + Craft.t('accessibility-audit', 'Target {n}', { n: target }) + '</text>');
-                    }
-                    const areaPts = padL + ',' + (padT + plotH) + ' ' + pts + ' ' + (W - padR) + ',' + (padT + plotH);
-                    svg.push('<polygon points="' + areaPts + '" fill="var(--link-color)" opacity="0.06"/>');
-                    svg.push('<polyline points="' + pts + '" fill="none" stroke="var(--link-color)" stroke-width="2"/>');
-                    history.forEach((d, i) => {
-                        svg.push('<circle cx="' + x(i) + '" cy="' + y(Number(d.avgScore) || 0) + '" r="2.5" fill="var(--link-color)"/>');
-                    });
-                    svg.push('</svg>');
-
-                    chartEl.innerHTML = svg.join('') + tbl;
-                };
-
-               
-                let queued = false;
-                const ro = new ResizeObserver(() => {
-                    if (queued) { return; }
-                    queued = true;
-                    requestAnimationFrame(() => { queued = false; draw(); });
-                });
-                ro.observe(chartEl);
-            })();
-            {% endjs %}
-        </div>
-    {% endif %}
-
-
     {% if assetStats %}
         {% if assetStats.withIssues == 0 %}
             <div class="accessibility-audit-panelnote accessibility-audit-panelnote--good">
@@ -346,22 +268,28 @@
             {% if missingCount > 0 %}{% set parts = parts|merge(['{n} missing'|t('accessibility-audit', {n: missingCount})]) %}{% endif %}
             {% if filenameCount > 0 %}{% set parts = parts|merge(['{n} filename as alt'|t('accessibility-audit', {n: filenameCount})]) %}{% endif %}
             {% if shortCount > 0 %}{% set parts = parts|merge(['{n} very short'|t('accessibility-audit', {n: shortCount})]) %}{% endif %}
-            <div class="accessibility-audit-banner--warning">
-                <span class="accessibility-audit-banner__stat">{{ assetStats.withIssues }} / {{ assetStats.total }}</span>
-                <span>
-                    <strong>{{ 'Images need alt text attention'|t('accessibility-audit') }}</strong>
-                    {% if parts|length %} · {{ parts|join(', ') }}{% endif %}
-                    · {{ 'last scanned {date}'|t('accessibility-audit', {date: assetStats.dateScanned|date('short')}) }}
-                </span>
-                <span class="accessibility-audit-spacer"></span>
-                <a href="{{ cpUrl('accessibility-audit/assets') }}" class="go">{{ 'Review and fix'|t('accessibility-audit') }}</a>
+            <div class="accessibility-audit-panelnote accessibility-audit-panelnote--alert accessibility-audit-panelnote--inline">
+                <span class="accessibility-audit-panelnote__stat">{{ assetStats.withIssues }} / {{ assetStats.total }}</span>
+                <p class="accessibility-audit-panelnote__lead">
+                    {{ 'Images need alt text attention'|t('accessibility-audit') }}
+                    <span class="accessibility-audit-panelnote__detail">
+                        {% if parts|length %}· {{ parts|join(', ') }} {% endif %}· {{ 'last scanned {date}'|t('accessibility-audit', {date: assetStats.dateScanned|date('short')}) }}
+                    </span>
+                </p>
+                <a href="{{ cpUrl('accessibility-audit/assets') }}" class="go accessibility-audit-panelnote__action">{{ 'Review and fix'|t('accessibility-audit') }}</a>
             </div>
         {% endif %}
     {% else %}
-        <div class="accessibility-audit-callout accessibility-audit-callout--notice">
-            <span>{{ 'The asset library has not been audited yet.'|t('accessibility-audit') }}</span>
-            <span class="accessibility-audit-spacer"></span>
-            <a href="{{ cpUrl('accessibility-audit/assets') }}" class="go">{{ 'Run the first scan'|t('accessibility-audit') }}</a>
+        <div class="accessibility-audit-panelnote accessibility-audit-panelnote--waiting">
+            <div class="accessibility-audit-panelnote__text">
+                <p class="accessibility-audit-panelnote__lead">
+                    {{ 'The asset library has not been audited yet.'|t('accessibility-audit') }}
+                </p>
+                <p class="accessibility-audit-panelnote__body">
+                    {{ 'Every image carries its own alt text and none of it has been through a scan, so the score above does not account for any of it.'|t('accessibility-audit') }}
+                </p>
+            </div>
+            <a href="{{ cpUrl('accessibility-audit/assets') }}" class="go accessibility-audit-panelnote__action">{{ 'Run the first scan'|t('accessibility-audit') }}</a>
         </div>
     {% endif %}
 
@@ -441,6 +369,120 @@
             </p>
         {% endif %}
     </div>
+
+
+    {% if scoreHistory|length > 1 %}
+        {% set firstDay = scoreHistory|first %}
+        {% set lastDay = scoreHistory|last %}
+        {% set scoreDelta = (lastDay.avgScore - firstDay.avgScore)|round %}
+        <div class="pane accessibility-audit-score-history">
+            <h2 style="margin:0">{{ 'Score history'|t('accessibility-audit') }}</h2>
+            <p class="accessibility-audit-score-history__delta">
+                {%- if scoreDelta > 0 -%}
+                    <strong class="accessibility-audit-score-history__delta-value accessibility-audit-score-history__delta-value--up">{{ 'Up {n, plural, =1{# point} other{# points}}'|t('accessibility-audit', { n: scoreDelta }) }}</strong>
+                {%- elseif scoreDelta < 0 -%}
+                    <strong class="accessibility-audit-score-history__delta-value accessibility-audit-score-history__delta-value--down">{{ 'Down {n, plural, =1{# point} other{# points}}'|t('accessibility-audit', { n: scoreDelta|abs }) }}</strong>
+                {%- else -%}
+                    <strong class="accessibility-audit-score-history__delta-value">{{ 'No change'|t('accessibility-audit') }}</strong>
+                {%- endif %}
+                {{ 'since {date}'|t('accessibility-audit', { date: firstDay.day|date('j F') }) }}
+            </p>
+            <ul class="accessibility-audit-score-history__legend">
+                <li><span class="accessibility-audit-score-history__key accessibility-audit-score-history__key--overall" aria-hidden="true"></span>{{ 'Overall'|t('accessibility-audit') }}</li>
+                <li><span class="accessibility-audit-score-history__key accessibility-audit-score-history__key--aa" aria-hidden="true"></span>{{ 'Level AA'|t('accessibility-audit') }}</li>
+                <li><span class="accessibility-audit-score-history__key accessibility-audit-score-history__key--a" aria-hidden="true"></span>{{ 'Level A'|t('accessibility-audit') }}</li>
+            </ul>
+            <div id="accessibility-audit-score-history-chart" style="margin-top:10px"></div>
+
+            {% js %}
+            (() => {
+                const history = {{ scoreHistory|json_encode|raw }};
+                const target = {{ targetScore }};
+                const chartEl = document.getElementById('accessibility-audit-score-history-chart');
+                if (!chartEl || !history || history.length < 2) { return; }
+
+                const H = 200;
+                const padL = 34, padR = 16, padT = 12;
+                const n = history.length;
+                const fmtDate = (s) => { const p = String(s).split('-'); return p[2] + '/' + p[1]; };
+
+              
+                let tbl = '<table class="visually-hidden"><caption>'
+                    + Craft.t('accessibility-audit', 'Accessibility score by date') + '</caption><thead><tr><th>'
+                    + Craft.t('accessibility-audit', 'Date') + '</th><th>'
+                    + Craft.t('accessibility-audit', 'Score') + '</th><th>'
+                    + Craft.t('accessibility-audit', 'Level AA') + '</th><th>'
+                    + Craft.t('accessibility-audit', 'Level A') + '</th></tr></thead><tbody>';
+                history.forEach((d) => {
+                    tbl += '<tr><td>' + Craft.escapeHtml(String(d.day)) + '</td><td>'
+                        + (Number(d.avgScore) || 0) + '</td><td>'
+                        + (Number(d.avgScoreAA) || 0) + '</td><td>'
+                        + (Number(d.avgScoreA) || 0) + '</td></tr>';
+                });
+                tbl += '</tbody></table>';
+
+                
+                const draw = () => {
+                    const W = Math.max(320, Math.round(chartEl.clientWidth) || 760);
+                    const plotW = W - padL - padR, plotH = H - padT - 26;
+
+                    const x = (i) => padL + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+                    const y = (v) => padT + plotH - (Math.max(0, Math.min(100, v)) / 100) * plotH;
+                    const series = (key) => history.map((d, i) => x(i) + ',' + y(Number(d[key]) || 0)).join(' ');
+                    const pts = series('avgScore');
+
+                    const svg = ['<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="' + Craft.t('accessibility-audit', 'Accessibility score over time') + '">'];
+                    for (let g = 0; g <= 4; g++) {
+                        const gy = padT + (g / 4) * plotH;
+                        svg.push('<line x1="' + padL + '" y1="' + gy + '" x2="' + (W - padR) + '" y2="' + gy + '" stroke="var(--border-hairline)" stroke-width="1"/>');
+                        svg.push('<text x="' + (padL - 6) + '" y="' + (gy + 3) + '" text-anchor="end" font-size="9" fill="var(--medium-text-color)">' + Math.round(100 * (1 - g / 4)) + '</text>');
+                    }
+                    [0, Math.floor((n - 1) / 2), n - 1].forEach((i) => {
+                        svg.push('<text x="' + x(i) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="9" fill="var(--medium-text-color)">' + fmtDate(history[i].day) + '</text>');
+                    });
+                    if (target > 0) {
+                        const ty = y(target);
+                        svg.push('<line x1="' + padL + '" y1="' + ty + '" x2="' + (W - padR) + '" y2="' + ty + '" stroke="var(--aa-pass)" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.75"/>');
+                        svg.push('<text x="' + (W - padR) + '" y="' + (ty - 4) + '" text-anchor="end" font-size="9" fill="var(--aa-pass)">' + Craft.t('accessibility-audit', 'Target {n}', { n: target }) + '</text>');
+                    }
+                    const areaPts = padL + ',' + (padT + plotH) + ' ' + pts + ' ' + (W - padR) + ',' + (padT + plotH);
+
+                    svg.push('<polygon points="' + areaPts + '" fill="var(--link-color)" opacity="0.05"/>');
+
+                    if (target > 0) {
+                        const ty = y(target);
+                        const bandPts = padL + ',' + ty + ' ' + pts + ' ' + (W - padR) + ',' + ty;
+                        svg.push('<defs>'
+                            + '<clipPath id="aa-sh-above"><rect x="' + padL + '" y="' + padT + '" width="' + plotW + '" height="' + Math.max(0, ty - padT) + '"/></clipPath>'
+                            + '<clipPath id="aa-sh-below"><rect x="' + padL + '" y="' + ty + '" width="' + plotW + '" height="' + Math.max(0, padT + plotH - ty) + '"/></clipPath>'
+                            + '</defs>');
+                        svg.push('<polygon points="' + bandPts + '" fill="var(--aa-pass)" opacity="0.22" clip-path="url(#aa-sh-above)"/>');
+                        svg.push('<polygon points="' + bandPts + '" fill="var(--aa-warning-marker)" opacity="0.22" clip-path="url(#aa-sh-below)"/>');
+                    }
+
+                    svg.push('<polyline points="' + series('avgScoreA') + '" fill="none" stroke="var(--aa-series-a)" stroke-width="1.25" stroke-dasharray="3 3"/>');
+                    svg.push('<polyline points="' + series('avgScoreAA') + '" fill="none" stroke="var(--aa-series-aa)" stroke-width="1.25" opacity="0.7"/>');
+                    svg.push('<polyline points="' + pts + '" fill="none" stroke="var(--link-color)" stroke-width="2"/>');
+                    history.forEach((d, i) => {
+                        svg.push('<circle cx="' + x(i) + '" cy="' + y(Number(d.avgScore) || 0) + '" r="2.5" fill="var(--link-color)"/>');
+                    });
+                    svg.push('</svg>');
+
+                    chartEl.innerHTML = svg.join('') + tbl;
+                };
+
+               
+                let queued = false;
+                const ro = new ResizeObserver(() => {
+                    if (queued) { return; }
+                    queued = true;
+                    requestAnimationFrame(() => { queued = false; draw(); });
+                });
+                ro.observe(chartEl);
+            })();
+            {% endjs %}
+        </div>
+    {% endif %}
 
 
 {% if resolvedIssues|length > 0 %}

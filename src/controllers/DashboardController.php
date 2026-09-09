@@ -112,11 +112,16 @@ class DashboardController extends Controller
             ? $plugin->audit->getPagesWithPotentialIssues($siteId, 1, 1)['total']
             : 0;
 
+        // The review screen counts one row per rule, this counts one per
+        // occurrence. The note names both so the two figures agree.
+        $potentialKinds = count($potentialRows);
+
         return $this->renderTemplate('accessibility-audit/index', [
             'summary' => $summary,
             'coverage' => $plugin->audit->getCoverage($siteId),
             'pendingPotential' => $pendingPotential,
             'potentialPages' => $potentialPages,
+            'potentialKinds' => $potentialKinds,
             'byImpact' => $byImpact,
             'byImpactAll' => $byImpactAll,
             'templateIssues' => $templateIssues,

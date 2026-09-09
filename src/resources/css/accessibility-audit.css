@@ -608,52 +608,6 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
   color: var(--text-color);
 }
 
-/* Summary stat banner: native surface/text (it is a summary, not a group
-   header); the red count chip carries the "needs attention" signal. */
-.accessibility-audit-banner--warning {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 17px;
-  background: var(--white);
-  border: 1px solid var(--gray-200);
-  border-radius: var(--aa-radius-card);
-  font-size: 13px;
-  color: var(--medium-text-color);
-}
-
-.accessibility-audit-banner--warning strong {
-  color: var(--text-color);
-}
-
-/* On narrower screens the one-line banner runs out of room (the date and the
-   go-link start wrapping mid-phrase), so it stacks: stat, then the summary,
-   then the link on its own line. */
-@media (width <= 1000px) {
-  .accessibility-audit-banner--warning {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
-  }
-
-  .accessibility-audit-banner--warning .accessibility-audit-spacer {
-    display: none;
-  }
-}
-
-.accessibility-audit-banner__stat {
-  font:
-    600 13px/1 ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Consolas,
-    monospace;
-  color: #fff;
-  background: var(--aa-error);
-  border-radius: var(--aa-radius-small);
-  padding: 4px 8px;
-}
-
 /* ---- Forms -------------------------------------------------------------------- */
 
 .accessibility-audit-label {
@@ -3402,32 +3356,104 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
    they read as part of the same panel run as the cards above them rather than
    as loose text on the page background. The accent on the left is the only
    thing that changes between them: amber where something is waiting on a
-   person, green where there is nothing left to do. */
+   person or has not been scanned at all, green where there is nothing left to
+   do, red where something is actually failing. */
 .accessibility-audit-panelnote {
+  --aa-panelnote-accent: var(--hairline-color, #d9d9d9);
+
   display: flex;
   align-items: flex-start;
   gap: 9px;
   margin: 14px 0 0;
-  padding: 12px 14px;
-  border: 1px solid var(--hairline-color, #d9d9d9);
-  border-left-width: 3px;
-  border-radius: var(--large-border-radius, 6px);
-  background: var(--white, #fff);
+
+  /* 17px on the left so the words start where they would on a note with no
+     accent: the stripe is drawn inside the box, not added to it. */
+  padding: 12px 14px 12px 17px;
+  border: var(--pane-border, none);
+  border-radius: var(--pane-border-radius, var(--large-border-radius, 6px));
+  background: var(--pane-bg, var(--white, #fff));
   color: var(--text-color);
+
+  /* Panes on this page take their edge from --pane-shadow, not a border. The
+     accent rides along as an inset stripe inside that same ring. */
+  box-shadow:
+    inset 3px 0 0 0 var(--aa-panelnote-accent),
+    var(--pane-shadow, 0 0 0 1px var(--gray-200, #cbd5e1));
 }
 
 .accessibility-audit-panelnote--waiting {
-  border-left-color: var(--warning-color, #cb6e17);
+  --aa-panelnote-accent: var(--warning-color, #cb6e17);
 }
 
 .accessibility-audit-panelnote--good {
-  border-left-color: var(--success-color, #1f7a44);
+  --aa-panelnote-accent: var(--success-color, #1f7a44);
+}
+
+.accessibility-audit-panelnote--alert {
+  --aa-panelnote-accent: var(--error-color, #cf1124);
 }
 
 .accessibility-audit-panelnote__tick {
   flex: none;
   margin-top: 1px;
   color: var(--success-color, #1f7a44);
+}
+
+/* The count chip that opens a note about something failing, sized to sit on
+   the lead's baseline rather than the note's top edge. */
+.accessibility-audit-panelnote__stat {
+  flex: none;
+  margin-top: 1px;
+  padding: 4px 8px;
+  font:
+    600 13px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  color: #fff;
+  background: var(--aa-error);
+  border-radius: var(--aa-radius-small);
+}
+
+/* A note whose whole message fits on one line: chip, words and link share
+   that line. */
+.accessibility-audit-panelnote--inline {
+  align-items: center;
+}
+
+.accessibility-audit-panelnote--inline .accessibility-audit-panelnote__stat {
+  margin-top: 0;
+}
+
+/* The supporting half of a one-line note: same line, quieter than the lead it
+   follows. */
+.accessibility-audit-panelnote__detail {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--medium-text-color);
+}
+
+/* Pushed to the far edge, and centred against the whole note so it sits level
+   whether the note runs to one line or two. */
+.accessibility-audit-panelnote__action {
+  flex: none;
+  align-self: center;
+  margin-left: auto;
+  padding-left: 14px;
+}
+
+/* Narrow panes run the words and the link into each other, so the link drops
+   onto its own line under them. */
+@media (width <= 1000px) {
+  .accessibility-audit-panelnote {
+    flex-wrap: wrap;
+  }
+
+  .accessibility-audit-panelnote__action {
+    margin-left: 0;
+    padding-left: 0;
+  }
 }
 
 /* The note is a row so a tick can sit beside the words. Without this wrapper a
@@ -3983,4 +4009,67 @@ fieldset.accessibility-audit-readonly textarea {
 .accessibility-audit-statfoot {
   margin: -8px 0 16px;
   font-size: 12px;
+}
+
+/* ---- Score history ------------------------------------------------------------ */
+
+/* An average over thirty days moves slowly, so the movement is stated in words
+   rather than left to be measured off the axis. */
+.accessibility-audit-score-history__delta {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--medium-text-color);
+}
+
+.accessibility-audit-score-history__delta-value {
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.accessibility-audit-score-history__delta-value--up {
+  color: var(--aa-pass);
+}
+
+.accessibility-audit-score-history__delta-value--down {
+  color: var(--aa-error);
+}
+
+.accessibility-audit-score-history__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--medium-text-color);
+}
+
+.accessibility-audit-score-history__legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Drawn as a line rather than a block so the dashed key reads as the dashed
+   series it stands for. */
+.accessibility-audit-score-history__key {
+  width: 16px;
+  height: 0;
+  border-top-width: 2px;
+  border-top-style: solid;
+}
+
+.accessibility-audit-score-history__key--overall {
+  border-top-color: var(--link-color);
+}
+
+.accessibility-audit-score-history__key--aa {
+  border-top-color: var(--aa-series-aa);
+  opacity: 0.7;
+}
+
+.accessibility-audit-score-history__key--a {
+  border-top-style: dashed;
+  border-top-color: var(--aa-series-a);
 }
