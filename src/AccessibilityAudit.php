@@ -157,6 +157,8 @@ class AccessibilityAudit extends BasePlugin
         'Issues',
         'Issues resolved over time, cumulative',
         'Last scanned',
+        'Level A',
+        'Level AA',
         'Limit reached',
         'Loading…',
         'Marked decorative, no alt text needed.',

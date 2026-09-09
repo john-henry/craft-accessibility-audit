@@ -11,6 +11,10 @@ use DOMXPath;
 /**
  * Removes markup the browser never renders from a parsed scan DOM.
  *
+ * Two elements qualify, for the same reason: PHP's HTML parser does not
+ * implement the separation that keeps either one's children out of the
+ * document.
+ *
  * A `<template>` element's children are not part of the document. The HTML
  * spec puts them in a separate, inert "template contents" fragment: never
  * rendered, never matched by CSS, carrying no accessibility semantics at all.
@@ -26,10 +30,23 @@ use DOMXPath;
  * `ul > template > li` is not sloppy markup, it is the required structure,
  * and reporting the `<li>` as outside a list is simply wrong.
  *
+ * A `<noscript>` element's contents are only parsed as markup when scripting
+ * is disabled. With scripting on, the browser holds the whole thing as one raw
+ * text node and no elements exist inside it. libxml has no scripting flag and
+ * parses those children every time, which puts analytics fallback in front of
+ * the rules as live content: Google Tag Manager's body snippet is a hidden,
+ * sizeless iframe carrying no title.
+ *
+ * [[ReadabilityService]] excludes both when it decides which words are on the
+ * page, so the rules and the readability score agree.
+ *
  * Applies to both scan modes, and must keep doing so. The browser pass renders
  * JavaScript first, so its templates have already been expanded into real DOM
  * by the time anything is serialised; any `<template>` still standing in that
- * output is genuinely unrendered and belongs out of the tree too.
+ * output is genuinely unrendered and belongs out of the tree too. Noscript
+ * elements survive serialisation as inert text and libxml parses them back
+ * into elements when that output is read here, so that path needs the same
+ * treatment as the source one.
  *
  * Kept apart from [[ExcludedElements]] on purpose. That one drops page
  * furniture somebody configured. This one drops markup the browser itself
@@ -44,16 +61,17 @@ final class InertMarkup
     // =========================================================================
 
     /**
-     * Removes every `<template>` element, and with it the whole inert subtree
-     * underneath, from the document behind the given XPath handle.
+     * Removes every `<template>` and `<noscript>` element, and with them the
+     * whole inert subtree underneath, from the document behind the given XPath
+     * handle.
      *
      * Removing the element itself rather than only its children is deliberate:
-     * a `<template>` renders nothing and announces nothing, so leaving an empty
+     * neither one renders anything or announces anything, so leaving an empty
      * shell behind would only give the structural rules a node to trip over.
      *
-     * Nested templates need no special handling. Removing an outer one takes
-     * its descendants with it, and the null-safe parent call covers the inner
-     * nodes whose parent has already gone.
+     * Nesting needs no special handling, in either direction. Removing an outer
+     * element takes its descendants with it, and the null-safe parent call
+     * covers the inner nodes whose parent has already gone.
      *
      * @param DOMXPath $xpath The scan document's XPath handle.
      * @author JohnHenry <info@johnhenry.ie>
@@ -61,7 +79,7 @@ final class InertMarkup
      */
     public static function removeFrom(DOMXPath $xpath): void
     {
-        foreach ($xpath->query('//template') ?: [] as $node) {
+        foreach ($xpath->query('//template|//noscript') ?: [] as $node) {
             $node->parentNode?->removeChild($node);
         }
     }

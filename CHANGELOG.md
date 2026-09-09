@@ -1,5 +1,54 @@
 # Release Notes for Accessibility Audit
 
+## Unreleased
+
+### Added
+- Findings now record whether the markup was written by hand or came from an accessible component
+  library, and the report shows the split. The two want different answers: a fault in your own markup
+  is fixed on the page it is on, while a fault inside a component is either the component's bug or
+  the way it is being used, and fixing it once fixes every page it appears on. Any component
+  rendering a `data-ui-` attribute on its outer element is recognised, which is what
+  [A11y Components](https://johnhenry.ie/plugins/a11y-components/) does; nothing needs installing for
+  the rest of the plugin to carry on as before.
+- Scans taken before this existed keep no origin and are reported as not recorded, rather than being
+  guessed at after the fact. They fill in the next time those pages are scanned.
+
+## 1.2.2 - 2026-09-09
+
+### Added
+- Score history now shows the two conformance levels as well as the overall score, so you can watch
+  Level AA move on its own instead of guessing at it from a blended average. The area between the
+  line and your target is shaded, green where you are above it and amber where you are below, and the
+  movement over the window is stated in words above the chart. An average across a whole site shifts
+  slowly, and "up 4 points since 13 August" says more at a glance than a line that looks flat.
+
+### Changed
+- The note about unanswered questions now says how many kinds of question they fall into, not just
+  how many there are in total. The review screen lists one row per kind, so a note counting tens of
+  thousands of occurrences led to a screen showing eight rows and no explanation of the difference.
+- The three states of the alt text panel now read as one thing rather than three: red where images
+  are actually failing, amber where the library has not been scanned at all, and green where there is
+  nothing left to do. Every one of them carries the same layout and the same link as the note above
+  it.
+- Score history sits further down the page, beside Resolved issues. Both are a record of what has
+  happened rather than something to act on, and the chart was pushing the ranked list of what to fix
+  below the fold.
+
+### Fixed
+- Markup inside a `<noscript>` is no longer scanned as though it were on the page. Those contents are
+  only ever read as markup when scripting is switched off; with it on, the browser treats the whole
+  thing as plain text and none of the elements in there exist at all. PHP's HTML parser has no such
+  separation and was handing them to the rules as ordinary content. What sits in a noscript on a real
+  site is nearly always analytics fallback, and Google Tag Manager's snippet is the common one: a
+  hidden, sizeless iframe with no title, reported as a missing iframe title on every single page of
+  every site running GTM, with nothing on the page to show for it. Anything genuinely on the page is
+  still reported, an untitled iframe included, and the words in a noscript already sat outside the
+  readability score, so the two now agree.
+  ([#13](https://github.com/john-henry/craft-accessibility-audit/issues/13))
+- The Score history panel was labelled with styled text rather than a real heading, so it was missing
+  from the page's heading outline and could not be jumped to the way every other section on the
+  Overview can. It is a heading now, like the rest.
+
 ## 1.2.1 - 2026-09-07
 
 ### Fixed
