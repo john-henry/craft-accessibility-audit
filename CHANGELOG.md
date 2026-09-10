@@ -45,6 +45,12 @@
   with your own template, nothing here changes for you.
 
 ### Fixed
+- Dev mode no longer writes its template markers into `{% css %}` and `{% js %}` output. A partial
+  included in a `{% css %}` block came out with an HTML comment at the top and the bottom of it, and
+  a stylesheet cannot carry one: the comment ran into the selector after it and the browser dropped
+  that whole rule. The first rule of the included file and the first rule of whatever followed the
+  include both went missing, on the local site only, which is exactly where you would be looking at
+  the CSS. Markers on templates that render markup are unchanged.
 - Scan All Pages now covers the Additional URLs listed under Settings. It only ever walked pages with
   an entry behind them, so a search results page or a paginated archive you had listed was left out
   of every scan started from the control panel, while the Overview still counted it as a page waiting
