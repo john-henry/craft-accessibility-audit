@@ -1042,4 +1042,5 @@ return [
     'There are no revisions recorded to remove.' => 'There are no revisions recorded to remove.',
     'That could not be removed. Try again.' => 'That could not be removed. Try again.',
     'Remove the most recently recorded revision? This cannot be undone.' => 'Remove the most recently recorded revision? This cannot be undone.',
+    '(opens in a new tab)' => '(opens in a new tab)',
 ];
