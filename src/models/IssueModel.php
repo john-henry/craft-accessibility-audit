@@ -60,6 +60,18 @@ class IssueModel extends Model
     public string $source = 'php';
 
     /**
+     * @var string|null Where the offending markup came from: `library` when it
+     * sits inside a component from an accessible component library, `authored`
+     * when it does not, and null when the scanner could not tell.
+     *
+     * Worth separating because the two need different answers. A fault in
+     * hand-written markup is fixed on the page it is on. A fault inside a
+     * component is either the component's bug or the way it is being used, and
+     * fixing it once fixes every page.
+     */
+    public ?string $origin = null;
+
+    /**
      * @var string|null The viewport bucket the issue belongs to (desktop,
      * mobile). Null for viewport-independent findings: the PHP scanner reads
      * static HTML, so its results hold at every width. Browser-sourced

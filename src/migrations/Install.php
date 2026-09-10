@@ -78,6 +78,7 @@ class Install extends Migration
                 'context' => $this->text()->null(),
                 'helpUrl' => $this->string(255)->null(),
                 'source' => $this->enum('source', ['php', 'axe', 'contrast'])->notNull()->defaultValue('php'),
+                'origin' => $this->string(50)->null(),
                 'viewport' => $this->string(10)->null(),
                 'firstDetected' => $this->dateTime()->null(),
                 'isResolved' => $this->boolean()->notNull()->defaultValue(false),
@@ -258,6 +259,7 @@ class Install extends Migration
         $this->createIndex(null, '{{%accessibilityaudit_asset_issues}}', ['ruleId']);
         $this->createIndex(null, '{{%accessibilityaudit_asset_flags}}', ['assetId'], true);
         $this->createIndex(null, '{{%accessibilityaudit_issues}}', ['verdict']);
+        $this->createIndex(null, '{{%accessibilityaudit_issues}}', ['origin']);
         // One ruling per target + rule + occurrence.
         $this->createIndex(null, '{{%accessibilityaudit_verdicts}}', ['siteId', 'targetHash', 'ruleId', 'contextHash'], true);
         $this->createIndex(null, '{{%accessibilityaudit_verdicts}}', ['siteId', 'targetHash']);
