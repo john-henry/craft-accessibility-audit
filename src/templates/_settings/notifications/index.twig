@@ -116,7 +116,8 @@
     
     {{ forms.selectField({
         label: 'Test'|t('accessibility-audit'),
-        instructions: 'The connection check confirms delivery works. The dummy options send sample content through the exact same formatting as a real alert, so you can see how each lands in the inbox or channel; dummy subjects carry a "[Test]" prefix so nobody mistakes one for a live regression. "Both together" mirrors a scan that trips both triggers at once: they arrive as two separate messages.'|t('accessibility-audit'),
+        instructions: 'The connection check confirms delivery works.'|t('accessibility-audit')
+            ~ ' <span class="info">' ~ 'The dummy options send sample content through the same formatting as a real alert, so you can see how each one lands in the inbox or the channel. Dummy subjects carry a "[Test]" prefix so nobody mistakes one for a live regression. "Both together" mirrors a scan that trips both triggers at once: they arrive as two separate messages.'|t('accessibility-audit') ~ '</span>',
         id: 'testPreview',
         name: 'preview',
         options: [

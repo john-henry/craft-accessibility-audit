@@ -183,7 +183,8 @@
 
     {{ forms.lightswitchField({
         label: 'Enable Decoupled Overlay'|t('accessibility-audit'),
-        instructions: 'Serve the overlay loader and answer its token-authenticated API calls. Independent of the Frontend Overlay toggle under General, which only controls injection on Craft-rendered pages.'|t('accessibility-audit'),
+        instructions: 'Serve the overlay loader and answer its token-authenticated API calls.'|t('accessibility-audit')
+            ~ ' <span class="info">' ~ 'This is independent of the Frontend Overlay switch under General, which only controls injection on pages Craft renders itself. Turn this on when the front end is served by something else and needs to load the overlay for itself.'|t('accessibility-audit') ~ '</span>',
         id: 'decoupledOverlay',
         name: 'settings[decoupledOverlay]',
         on: settings.decoupledOverlay,

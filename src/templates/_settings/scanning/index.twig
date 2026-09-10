@@ -30,7 +30,8 @@
 
     {{ forms.autosuggestField({
         label: 'Scanner User-Agent'|t('accessibility-audit'),
-        instructions: 'Sent with every scanner request against the site: the PHP scan fetch, the readability fetch, and the headless Chrome browser pass. By default the scanner already identifies itself with a <code>CraftAccessibilityAudit</code> token on all three, so a single WAF or firewall rule can allow-list it. Set this only to send your own identity instead. You can reference an environment variable: type $ to see suggestions.'|t('accessibility-audit'),
+        instructions: 'Sent with every scanner request against the site.'|t('accessibility-audit')
+            ~ ' <span class="info">' ~ 'That means the PHP scan fetch, the readability fetch and the headless Chrome pass. The scanner already identifies itself with a <code>CraftAccessibilityAudit</code> token on all three, so one WAF or firewall rule can allow-list it. Set this only to send your own identity instead. You can reference an environment variable: type $ to see suggestions.'|t('accessibility-audit') ~ '</span>',
         id: 'scannerUserAgent',
         name: 'settings[scannerUserAgent]',
         value: settings.scannerUserAgent,
@@ -45,7 +46,7 @@
     <h2>{{ 'Scheduled Scans'|t('accessibility-audit') }}</h2>
 
     <div class="readable">
-        <blockquote class="note">
+        <blockquote class="note tip">
             <p>{{ 'Scan-on-save keeps edited pages fresh; a scheduled full-site sweep catches everything else (template changes, expired entries, pages nobody has touched). Run it from cron:'|t('accessibility-audit') }}</p>
             <pre><code># Nightly at 2am
 0 2 * * * cd /path/to/site && php craft accessibility-audit/audit/scan-all</code></pre>
@@ -66,7 +67,8 @@
     {% else %}
     {{ forms.autosuggestField({
         label: 'Chrome Binary Path'|t('accessibility-audit'),
-        instructions: 'Path to a Chrome or Chromium binary on the server (e.g. /usr/bin/chromium). When set, every queued scan also runs the full axe-core browser checks in headless Chrome, covering contrast, focus, and touch targets site-wide. Leave empty to rely on the frontend overlay only. You can reference an environment variable: type $ to see suggestions.'|t('accessibility-audit'),
+        instructions: 'Path to a Chrome or Chromium binary on the server, e.g. /usr/bin/chromium.'|t('accessibility-audit')
+            ~ ' <span class="info">' ~ 'With this set, every queued scan also runs the full axe-core checks in headless Chrome, covering contrast, focus and touch targets across the whole site rather than only the page an administrator happens to be looking at. Leave it empty to rely on the frontend overlay alone. You can reference an environment variable: type $ to see suggestions.'|t('accessibility-audit') ~ '</span>',
         id: 'chromePath',
         name: 'settings[chromePath]',
         value: settings.chromePath,
@@ -88,7 +90,8 @@
 
     {{ forms.autosuggestField({
         label: 'Remote Chrome Endpoint'|t('accessibility-audit'),
-        instructions: 'Connect to a Chrome that is already running somewhere else, instead of launching one here. Point this at a browserless container, a Chrome sidecar, or any endpoint speaking the DevTools protocol. This is the only way to run browser scans on hosts where you cannot install a binary, such as Craft Cloud. When set, it is used instead of the binary path above. If the URI carries a token, store it in an environment variable: type $ to see suggestions.'|t('accessibility-audit'),
+        instructions: 'Connect to a Chrome running somewhere else, instead of launching one here.'|t('accessibility-audit')
+            ~ ' <span class="info">' ~ 'Point it at a browserless container, a Chrome sidecar, or anything speaking the DevTools protocol. This is the only way to run browser scans on a host where you cannot install a binary, Craft Cloud among them. When set it is used instead of the binary path above. If the URI carries a token, store it in an environment variable: type $ to see suggestions.'|t('accessibility-audit') ~ '</span>',
         id: 'chromeWsEndpoint',
         name: 'settings[chromeWsEndpoint]',
         value: settings.chromeWsEndpoint,
@@ -117,7 +120,8 @@
 
     {{ forms.textField({
         label: 'Browser Settle Time (ms)'|t('accessibility-audit'),
-        instructions: 'How long each browser pass waits after the page loads before running the checks, in milliseconds, so late-rendering JavaScript can finish. The wait is paid on every pass (twice per page, desktop and mobile), so on a large site it is one of the biggest levers on total scan time. Plenty of sites are fine at 500. Set 0 to skip the wait entirely; raise it if client-rendered content is being missed.'|t('accessibility-audit'),
+        instructions: 'How long each browser pass waits after the page loads before running the checks, in milliseconds.'|t('accessibility-audit')
+            ~ ' <span class="info">' ~ 'The wait gives late-rendering JavaScript time to finish, and it is paid on every pass, twice per page for desktop and mobile. On a large site it is one of the biggest levers on how long a scan takes. Plenty of sites are fine at 500. Set 0 to skip it, or raise it if client-rendered content is being missed.'|t('accessibility-audit') ~ '</span>',
         id: 'browserSettleMs',
         name: 'settings[browserSettleMs]',
         value: settings.browserSettleMs,
@@ -157,7 +161,8 @@
 
     {{ forms.editableTableField({
         label: 'Excluded URI Patterns'|t('accessibility-audit'),
-        instructions: 'Pages whose URI matches one of these regular expressions are excluded from every scan (PHP, browser pass, and overlay). Example: <code>^checkout</code>, <code>print$</code>, <code>^admin/</code>.'|t('accessibility-audit'),
+        instructions: 'Pages whose URI matches one of these regular expressions are excluded from every scan.'|t('accessibility-audit')
+            ~ ' <span class="info">' ~ 'The PHP scan, the browser pass and the overlay all honour them. One per line, for example <code>^checkout</code>, <code>print$</code> or <code>^admin/</code>.'|t('accessibility-audit') ~ '</span>',
         warning: config.excludedUriPatterns is defined ? 'Overridden by config file.'|t('accessibility-audit'),
         id: 'excludedUriPatterns',
         name: 'settings[excludedUriPatterns]',
@@ -172,9 +177,10 @@
 
     {{ forms.textareaField({
         label: 'Excluded Elements (CSS selectors)'|t('accessibility-audit'),
-        instructions: 'Elements matching these selectors are skipped by every scan surface: the PHP scan, the browser pass, the Inspect preview, and the overlay. One selector per line, e.g. {example}. The common consent-management banners (OneTrust, Cookiebot, Ketch and the rest) are always excluded; add anything else on the page you do not control, such as a chat widget.'|t('accessibility-audit', {
+        instructions: 'Elements matching these selectors are skipped by every scan. One selector per line, e.g. {example}.'|t('accessibility-audit', {
             example: '<code>#live-chat-widget</code>',
-        }),
+        })
+            ~ ' <span class="info">' ~ 'That means the PHP scan, the browser pass, the Inspect preview and the overlay, so no surface reports what another one skips. The common consent banners, OneTrust, Cookiebot, Ketch and the rest, are always excluded. Add anything else on the page you do not control, a chat widget for instance.'|t('accessibility-audit') ~ '</span>',
         id: 'excludedSelectors',
         name: 'settings[excludedSelectors]',
         value: settings.excludedSelectors,
@@ -187,9 +193,10 @@
 
     {{ forms.textareaField({
         label: 'Additional URLs'|t('accessibility-audit'),
-        instructions: 'Pages Craft routes without an entry behind them: search results, filtered listings, paginated archives. The scan follows element URLs, so these are never reached on their own, and a query string cannot be carried on an element URL at all. One URL per line, absolute or starting with a slash, e.g. {example}. Lines beginning with # are ignored.'|t('accessibility-audit', {
+        instructions: 'Pages Craft routes without an entry behind them. One URL per line, absolute or starting with a slash, e.g. {example}.'|t('accessibility-audit', {
             example: '<code>/search/results?q=craft</code>',
-        }),
+        })
+            ~ ' <span class="info">' ~ 'Search results, filtered listings and paginated archives are the usual ones. A scan follows element URLs, so a page with no element behind it is never reached on its own, and a query string cannot be carried on an element URL at all. Lines beginning with # are ignored.'|t('accessibility-audit') ~ '</span>',
         id: 'customUrls',
         name: 'settings[customUrls]',
         value: settings.customUrls,
@@ -211,7 +218,8 @@
     {% if elementTypeChoices|length %}
         {{ forms.checkboxSelectField({
             label: 'Scanned Element Types'|t('accessibility-audit'),
-            instructions: 'Tick the element types the content scanner should cover. Native Craft types (entries, categories) and first-party ones like Commerce products are on by default; a third-party plugin\'s custom element stays off until you tick it here. Unticking a type drops its stored pages and issues from every report.'|t('accessibility-audit'),
+            instructions: 'Tick the element types the content scanner should cover.'|t('accessibility-audit')
+                ~ ' <span class="info">' ~ 'Native Craft types, entries and categories, and first-party ones like Commerce products are on by default. A third-party plugin\'s custom element stays off until you tick it here. Unticking a type drops its stored pages and issues from every report, so the score moves with it.'|t('accessibility-audit') ~ '</span>',
             warning: config.scannedElementTypes is defined ? 'Overridden by config file.'|t('accessibility-audit'),
             id: 'scannedElementTypes',
             name: 'settings[scannedElementTypes]',
@@ -257,7 +265,7 @@
     }) }}
     
     <div class="readable">
-        <blockquote class="note">
+        <blockquote class="note tip">
             <p>{{ 'Full list of rule IDs:'|t('accessibility-audit') }}
                 <code>img-alt</code>, <code>img-alt-filename</code>, <code>block-in-paragraph</code>,
                 <code>unescaped-markup-in-code</code>,

@@ -48,6 +48,19 @@ class A11yTemplateNodeVisitor implements NodeVisitorInterface
             return $node;
         }
 
+        // Two kinds of template are left alone, both for the same reason:
+        // the marker would land in front of a doctype and put the browser into
+        // quirks mode.
+        //
+        // A template that opens a document itself, which is any layout.
+        //
+        // And a template that extends one. Its own body is empty and its output
+        // is really the parent's document, so a marker wrapped around it sits
+        // outside the whole page rather than around anything in it.
+        if ($node->hasNode('parent') || $this->_opensDocument($node->getNode('body'))) {
+            return $node;
+        }
+
         $line = $node->getTemplateLine();
         $open = new TextNode('<!-- accessibility-audit-tpl:' . $name . ' -->', $line);
         $close = new TextNode('<!-- /accessibility-audit-tpl -->', $line);
@@ -63,5 +76,41 @@ class A11yTemplateNodeVisitor implements NodeVisitorInterface
     public function getPriority(): int
     {
         return 0;
+    }
+
+    /**
+     * Whether the first thing a template writes is a doctype.
+     *
+     * Only leading text is considered. A template whose output begins with a
+     * tag, a variable or anything else is a fragment as far as this is
+     * concerned, even if a doctype appears further down, because a comment in
+     * front of that is harmless.
+     *
+     * @param Node $body The module's body node.
+     * @return bool
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    private function _opensDocument(Node $body): bool
+    {
+        foreach ($body as $child) {
+            if ($child instanceof TextNode) {
+                $text = ltrim((string)$child->getAttribute('data'));
+
+                if ($text === '') {
+                    continue;
+                }
+
+                return str_starts_with(strtolower($text), '<!doctype');
+            }
+
+            if ($child instanceof Node && iterator_count($child) > 0) {
+                return $this->_opensDocument($child);
+            }
+
+            return false;
+        }
+
+        return false;
     }
 }

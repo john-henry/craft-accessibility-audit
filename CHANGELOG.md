@@ -24,8 +24,10 @@
 - The exported VPAT carries a revision history: what changed since the revisions before it, criterion
   by criterion, with what each one was and what it became. Read on its own a conformance report says
   nothing about whether a site is getting better or worse. Wording changes are counted rather than
-  listed. Recording a revision is deliberate, on a button on the exported document, so opening the
-  export to see how something reads stays a preview.
+  listed. Recording a revision is deliberate, on a button in the VPAT editor, so exporting the report
+  to see how it reads stays a preview and does not quietly add a version you never gave anybody. It
+  sits in the editor rather than on the document so that replacing the export with a template of your
+  own does not take the control away with it.
 - The exported VPAT is translatable too, headings, terms, table columns and all the prose around
   them. It is written in the language of the site it describes rather than whichever language the
   person exporting it reads the control panel in, on the grounds that the report is handed to a
@@ -40,6 +42,11 @@
   with your own template, nothing here changes for you.
 
 ### Fixed
+- Scan All Pages now covers the Additional URLs listed under Settings. It only ever walked pages with
+  an entry behind them, so a search results page or a paginated archive you had listed was left out
+  of every scan started from the control panel, while the Overview still counted it as a page waiting
+  to be scanned. Coverage on those sites could never reach the whole site no matter how often you ran
+  it. Scanning from the command line always did cover them.
 - The published accessibility statement no longer reads "committed to making this website
   accessible,." on any site whose profile names no legislation, which is every site on the generic
   profile. A stray comma, sitting in a legal document with your name on it.

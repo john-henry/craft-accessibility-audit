@@ -583,6 +583,7 @@ class DashboardController extends Controller
                 'saveMetaUrl' => UrlHelper::actionUrl('accessibility-audit/vpat/save-meta'),
                 'saveCriterionUrl' => UrlHelper::actionUrl('accessibility-audit/vpat/save-criterion'),
                 'draftRemarkUrl' => UrlHelper::actionUrl('accessibility-audit/vpat/draft-remark'),
+                'recordRevisionUrl' => UrlHelper::actionUrl('accessibility-audit/vpat/record-revision'),
                 'scopeSuggestions' => $scopeSuggestions,
                 'savedMessage' => Craft::t('accessibility-audit', 'Product information saved.'),
             ]) . '});',

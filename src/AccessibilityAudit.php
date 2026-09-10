@@ -200,6 +200,7 @@ class AccessibilityAudit extends BasePlugin
         'Scanning…',
         'Score',
         'Show issues on this page',
+        'That could not be recorded. Try again.',
         'Target {n}',
         'Technical',
         'Verification failed.',
@@ -451,8 +452,13 @@ class AccessibilityAudit extends BasePlugin
         $this->registerAssetAuditSync();
         $this->registerScanPruning();
 
+        // Attached on every web request rather than control panel ones alone.
+        // The event only fires while the URL manager is building control panel
+        // rules, so nothing else pays for it, and gating it on the request
+        // leaves the control panel routes unreachable from a test.
+        $this->registerCpUrlRules();
+
         if (Craft::$app->getRequest()->getIsCpRequest()) {
-            $this->registerCpUrlRules();
             $this->registerWidgets();
             $this->registerPermissions();
             $this->registerCpAssets();

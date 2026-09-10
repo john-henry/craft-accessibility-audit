@@ -350,6 +350,22 @@ class VpatController extends Controller
      */
     private function _renderExportHtml(array $report): string
     {
+        // Everything this produces is read by somebody outside the
+        // organisation, which is why the export template carries no explanatory
+        // comments of its own and the reasoning for how it is built sits here
+        // instead:
+        //
+        //  - The toolbar is created in JavaScript rather than written into the
+        //    markup, so a saved copy of the page, or one run through an HTML to
+        //    PDF converter, holds no editor controls whether or not that
+        //    converter honours the print stylesheet.
+        //  - The CSRF token for the Record control is fetched when the button
+        //    is pressed rather than printed into the page, so it does not
+        //    travel with a document that is meant to be sent to a buyer.
+        //  - The conformance table breaks across pages and repeats its header,
+        //    because a table of fifty rows kept whole is pushed to a fresh page
+        //    and leaves the one before it empty.
+        //
         // The report is written in the language of the site it describes, not
         // the language whoever exported it happens to read the control panel
         // in. It is handed to a buyer, and an Irish admin exporting the report

@@ -67,7 +67,7 @@
     
     {% set pruneDays = settings.retainDays > 0 ? settings.retainDays : 90 %}
     <div class="readable">
-        <blockquote class="note">
+        <blockquote class="note tip">
             <p>{{ 'You can prune results manually via CLI:'|t('accessibility-audit') }}</p>
             <pre><code>php craft accessibility-audit/audit/prune --days={{ pruneDays }}</code></pre>
         </blockquote>

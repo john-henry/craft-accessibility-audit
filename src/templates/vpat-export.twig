@@ -26,10 +26,6 @@ a:hover { text-decoration: underline; }
     body { font-size: 11px; }
     .vpat-print-bar { display: none !important; }
 
-    /* A conformance table runs to fifty rows and will never fit a page, so it
-       breaks across them and repeats its header. Keeping the whole table
-       together pushes it to a fresh page and leaves the rest of the one before
-       it empty. Rows are what must stay intact. */
     thead { display: table-header-group; }
     tr { break-inside: avoid; page-break-inside: avoid; }
     h1, h2, h3 { break-after: avoid; page-break-after: avoid; }
@@ -51,7 +47,6 @@ a:hover { text-decoration: underline; }
 }
 .vpat-print-bar a { color: #7eb8f7; }
 .vpat-print-bar__actions { display: flex; gap: 12px; align-items: center; }
-.vpat-print-bar__status { font-size: 11px; color: #cfe2f8; max-width: 320px; }
 .vpat-print-bar button[disabled] { opacity: 0.55; cursor: default; }
 .vpat-print-bar button {
     background: #fff;
@@ -146,9 +141,6 @@ a:hover { text-decoration: underline; }
 }
 .vpat-criteria-table tr:nth-child(even) td { background: #f5f8fc; }
 
-/* Widths hang off classes rather than column position: the EN 301 549 column
-   appears only on reports that claim the standard, and counting from the left
-   would resize the wrong columns on the reports that do. */
 .vpat-col-crit { width: 100px; }
 .vpat-col-en { width: 90px; white-space: nowrap; }
 .vpat-col-level { width: 175px; }
@@ -238,10 +230,6 @@ a:hover { text-decoration: underline; }
 (function() {
     'use strict';
 
-    // Built here rather than sitting in the markup so it exists only in a
-    // browser. Saving this page, or running it through an HTML to PDF
-    // converter, leaves a document with no editor controls in it, whether or
-    // not that converter honours the print stylesheet.
     var mount = document.getElementById('vpat-print-bar-mount');
     if (!mount) { return; }
 
@@ -271,54 +259,6 @@ a:hover { text-decoration: underline; }
     print.addEventListener('click', function() { window.print(); });
 
     actions.appendChild(back);
-
-    {% if currentUser.can('accessibility-audit:manageVpat') %}
-        // Recording is deliberate: opening this document is a preview, and only
-        // the author knows when a version of it was actually issued to somebody.
-        var record = document.createElement('button');
-        record.type = 'button';
-        record.textContent = {{ 'Record this revision'|t('accessibility-audit')|json_encode(jsonFlags)|raw }};
-
-        var status = document.createElement('span');
-        status.className = 'vpat-print-bar__status';
-        status.setAttribute('role', 'status');
-
-        record.addEventListener('click', function() {
-            record.disabled = true;
-            status.textContent = {{ 'Recording…'|t('accessibility-audit')|json_encode(jsonFlags)|raw }};
-
-            // The token is asked for now rather than printed into the page.
-            // This document is meant to be saved and sent to somebody, and a
-            // CSRF token baked into the file would travel with it.
-            fetch({{ actionUrl('users/session-info')|json_encode(jsonFlags)|raw }}, {
-                headers: { 'Accept': 'application/json' },
-            })
-                .then(function(res) { return res.json(); })
-                .then(function(session) {
-                    var body = new FormData();
-                    body.append('siteId', {{ report.siteId|json_encode(jsonFlags)|raw }});
-                    body.append(session.csrfTokenName, session.csrfTokenValue);
-
-                    return fetch({{ actionUrl('accessibility-audit/vpat/record-revision')|json_encode(jsonFlags)|raw }}, {
-                        method: 'POST',
-                        headers: { 'Accept': 'application/json' },
-                        body: body,
-                    });
-                })
-                .then(function(res) { return res.json(); })
-                .then(function(data) {
-                    status.textContent = data.message || '';
-                    record.disabled = !!data.success;
-                })
-                .catch(function() {
-                    status.textContent = {{ 'That could not be recorded. Try again.'|t('accessibility-audit')|json_encode(jsonFlags)|raw }};
-                    record.disabled = false;
-                });
-        });
-
-        actions.appendChild(status);
-        actions.appendChild(record);
-    {% endif %}
 
     actions.appendChild(print);
     bar.appendChild(label);
