@@ -10,6 +10,7 @@ use Craft;
 use craft\console\Controller;
 use craft\errors\SiteNotFoundException;
 use craft\helpers\DateTimeHelper;
+use DateTime;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use yii\console\ExitCode;
 use yii\db\Exception;
@@ -93,7 +94,7 @@ class VpatController extends Controller
             $this->stdout(sprintf(
                 "%-8d %-22s %d\n",
                 $revision['id'],
-                DateTimeHelper::toDateTime($revision['dateCreated'])?->format('Y-m-d H:i:s') ?? $revision['dateCreated'],
+                $this->recordedAt($revision['dateCreated']),
                 $revision['answers'],
             ));
         }
@@ -143,7 +144,7 @@ class VpatController extends Controller
         $this->stdout(sprintf(
             "Revision %d, recorded %s.\n",
             $revision['id'],
-            DateTimeHelper::toDateTime($revision['dateCreated'])?->format('Y-m-d H:i:s') ?? $revision['dateCreated'],
+            $this->recordedAt($revision['dateCreated']),
         ), BaseConsole::FG_YELLOW);
 
         // Removing one from the middle changes what the revisions on either
@@ -199,6 +200,22 @@ class VpatController extends Controller
 
     // Private Methods
     // =========================================================================
+
+    /**
+     * A stored date as it reads on screen, falling back to the raw value.
+     *
+     * DateTimeHelper::toDateTime() answers false rather than null on anything
+     * it cannot read, so the check is for a DateTime rather than for null.
+     *
+     * @param string $date The stored date.
+     * @return string
+     */
+    private function recordedAt(string $date): string
+    {
+        $value = DateTimeHelper::toDateTime($date);
+
+        return $value instanceof DateTime ? $value->format('Y-m-d H:i:s') : $date;
+    }
 
     /**
      * Confirmation prompt, honouring non-interactive runs (--interactive=0),
