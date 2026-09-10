@@ -65,6 +65,24 @@ class ContentScanner extends Component
     ];
 
     /**
+     * @var string The attribute naming the component that rendered an element,
+     *      written once on the outermost element of every component.
+     *
+     * A cross-repository contract, not an implementation detail. It is written
+     * by johnhenry/craft-a11y-components and read here to tell library markup
+     * from markup written by hand. Nothing enforces the pair: rename it on one
+     * side and this side reports every finding as authored, with no error to
+     * say the classification has stopped working. Change it in both
+     * repositories or in neither.
+     *
+     * One attribute carrying the name, rather than a prefix shared with the
+     * component's styling hooks. A prefix cannot say which of the attributes on
+     * an element names the component and which mark its parts, and guessing at
+     * it misread every component whose own name contains a hyphen.
+     */
+    public const COMPONENT_ATTR = 'data-a11y-component';
+
+    /**
      * @var string[] Tags that are not void, so a browser hands one everything
      *      that follows as its content until a closing tag that never comes.
      *      Left unescaped in prose, these delete the rest of the page.
@@ -86,10 +104,17 @@ class ContentScanner extends Component
 
     private const WCAG_HELP_BASE = 'https://www.w3.org/WAI/WCAG22/Understanding/';
 
+    /**
+     * @var array<string, string> Where each context string's element came from,
+     * filled in as contexts are built and read back once the checks are done.
+     */
+    private array $_origins = [];
+
     /** @return IssueModel[] */
     public function scan(string $html, array $ignoreRules = []): array
     {
         $issues = [];
+        $this->forgetOrigins();
 
         $dom = new DOMDocument('1.0', 'utf-8');
         libxml_use_internal_errors(true);
@@ -145,6 +170,14 @@ class ContentScanner extends Component
                 if ($found) {
                     $issues = array_merge($issues, $found);
                 }
+            }
+        }
+
+        // Placed once at the end rather than by each check, so a rule added
+        // later gets this without its author having to remember.
+        foreach ($issues as $issue) {
+            if ($issue->context !== null) {
+                $issue->origin = $this->_origins[$issue->context] ?? null;
             }
         }
 
@@ -1104,7 +1137,76 @@ class ContentScanner extends Component
         return trim($text, " \t\n\r\0\x0B.,;:!?-");
     }
 
+    /**
+     * Clears what the previous scan learned about where its markup came from.
+     *
+     * A method rather than an assignment in `scan()` so that static analysis
+     * does not narrow the property to an empty array for the rest of the call.
+     *
+     * @return void
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    private function forgetOrigins(): void
+    {
+        $this->_origins = [];
+    }
+
+    /**
+     * Whether an element sits inside a component from an accessible component
+     * library, walking up until it finds one or runs out of ancestors.
+     *
+     * The marker looked for is [[COMPONENT_ATTR]], which
+     * johnhenry/craft-a11y-components writes on the outermost element of every
+     * component it renders, carrying the component's name as its value. Nothing
+     * here depends on that plugin being installed: a page with no such markup
+     * simply has no library issues.
+     *
+     * The nearest one wins, so a component nested inside another is named as
+     * itself rather than as its container.
+     *
+     * @param DOMElement $el The element to place.
+     * @return string|null The component's name, or null when it is not in one.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    private function componentOrigin(DOMElement $el): ?string
+    {
+        for ($node = $el; $node instanceof DOMElement; $node = $node->parentNode) {
+            if (!$node->hasAttribute(self::COMPONENT_ATTR)) {
+                continue;
+            }
+
+            $name = trim($node->getAttribute(self::COMPONENT_ATTR));
+
+            if ($name !== '') {
+                return $name;
+            }
+        }
+
+        return null;
+    }
+
     private function outerHtml(DOMElement $el): string
+    {
+        // Recorded against the context string rather than passed along, so that
+        // the thirty-odd checks that build issues do not each need changing.
+        // Two elements with byte-identical markup and preview text share an
+        // origin, which is what you would want anyway.
+        $this->_origins[$this->outerHtmlString($el)] = $this->componentOrigin($el) ?? 'authored';
+
+        return $this->outerHtmlString($el);
+    }
+
+    /**
+     * The context string for an element.
+     *
+     * @param DOMElement $el The element.
+     * @return string The context.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    private function outerHtmlString(DOMElement $el): string
     {
         $tag = '<' . $el->nodeName;
         for ($i = 0; $i < $el->attributes->length; $i++) {

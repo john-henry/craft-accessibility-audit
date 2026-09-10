@@ -253,7 +253,7 @@ class AccessibilityAudit extends BasePlugin
     /**
      * @var string The plugin's schema version, used to track migrations.
      */
-    public string $schemaVersion = '1.0.2';
+    public string $schemaVersion = '1.1.0';
 
     // Public Methods
     // =========================================================================

@@ -309,6 +309,14 @@
                 value: statement.meta.reviewDate ? statement.meta.reviewDate|date('Y-m-d') : null,
             }) }}
 
+            {{ forms.dateField({
+                label: 'Next review due'|t('accessibility-audit'),
+                instructions: 'Shown on the statement, so a reader can tell it is being kept up rather than left where it was published.'|t('accessibility-audit'),
+                id: 'nextReviewDate',
+                name: 'nextReviewDate',
+                value: statement.meta.nextReviewDate ? statement.meta.nextReviewDate|date('Y-m-d') : null,
+            }) }}
+
             {{ forms.textareaField({
                 label: 'Evaluation methods'|t('accessibility-audit'),
                 instructions: 'One per line. Shared with the VPAT. Only list testing somebody actually did.'|t('accessibility-audit'),

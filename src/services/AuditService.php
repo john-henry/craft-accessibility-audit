@@ -1419,6 +1419,55 @@ class AuditService extends Component
     }
 
     /** Returns issues grouped by rule, sorted by impact (occurrences × severity weight). */
+    /**
+     * How the site's unresolved issues split between markup written by hand and
+     * markup coming from a component library.
+     *
+     * The split is what makes it useful. A fault in hand-written markup is
+     * fixed on the page it is on. A fault inside a component is either the
+     * component's bug or the way it is being used, and fixing it once fixes
+     * every page it appears on, so it is worth a great deal more attention per
+     * occurrence than the count alone suggests.
+     *
+     * Rows scanned before the plugin knew to look have no origin recorded and
+     * are counted as unknown rather than guessed at.
+     *
+     * @param int $siteId The site to report on.
+     * @return array<string, int> Counts keyed by origin, highest first.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function getIssuesByOrigin(int $siteId): array
+    {
+        $latestIds = $this->getLatestScanIds($siteId);
+
+        if (empty($latestIds)) {
+            return [];
+        }
+
+        $query = (new Query())
+            ->select(['origin', 'COUNT(*) as occurrences'])
+            ->from('{{%accessibilityaudit_issues}}')
+            ->where(['scanId' => $latestIds, 'isResolved' => false])
+            ->andWhere($this->definiteCondition());
+
+        $ignored = $this->_ignoredRuleIds();
+
+        if (!empty($ignored)) {
+            $query->andWhere(['not in', 'ruleId', $ignored]);
+        }
+
+        $counts = [];
+
+        foreach ($query->groupBy(['origin'])->all() as $row) {
+            $counts[$row['origin'] ?? 'unknown'] = (int)$row['occurrences'];
+        }
+
+        arsort($counts);
+
+        return $counts;
+    }
+
     public function getIssuesByImpact(int $siteId, int $limit = 20): array
     {
         $latestIds = $this->getLatestScanIds($siteId);
@@ -2731,6 +2780,7 @@ class AuditService extends Component
             'context' => $this->scrubUtf8($issue->context),
             'helpUrl' => $issue->helpUrl,
             'source' => $issue->source,
+            'origin' => $issue->origin,
             'viewport' => $issue->viewport,
             'firstDetected' => Db::prepareDateForDb($firstDetected ?? new DateTime()),
             'isResolved' => false,
