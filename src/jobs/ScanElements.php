@@ -8,20 +8,22 @@ namespace johnhenry\accessibilityaudit\jobs;
 
 use Craft;
 use craft\base\Batchable;
-use craft\db\QueryBatcher;
 use craft\queue\BaseBatchedJob;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\helpers\ScanTargets;
 use johnhenry\accessibilityaudit\services\AuditService;
 use Throwable;
 use yii\queue\Queue;
 
 /**
- * Scans every URL-bearing element in a site for accessibility issues, one
- * batch per job step.
+ * Scans every page in a site for accessibility issues, one batch per job step.
+ *
+ * A page is either a URL-bearing element or one of the Additional URLs listed
+ * under Settings, and {@see ScanTargets} hands both over as a single run.
  *
  * Replaces the previous "one queue job per element" approach: on a large site
  * that produced thousands of individual jobs, each with its own outbound fetch.
- * A single batched job processes {@see self::$batchSize} elements per step and
+ * A single batched job processes {@see self::$batchSize} pages per step and
  * lets Craft's batch runner handle memory monitoring and progress reporting.
  *
  * @property-read Queue $queue
@@ -58,19 +60,29 @@ class ScanElements extends BaseBatchedJob
      */
     protected function loadData(): Batchable
     {
-        return new QueryBatcher(
-            AccessibilityAudit::getInstance()->audit->getUrlElementsQuery($this->siteId)
+        $plugin = AccessibilityAudit::getInstance();
+
+        return new ScanTargets(
+            $plugin->audit->getUrlElementsQuery($this->siteId),
+            $plugin->getSettings()->resolvedCustomUrls(),
         );
     }
 
     /**
      * @inheritdoc
      *
-     * @param array{elementId: int|string, elementType: string} $item
+     * @param array{elementId: int|string, elementType: string}|string $item An
+     * element row, or a configured URL.
      * @throws Throwable If the underlying scan fails irrecoverably.
      */
     protected function processItem(mixed $item): void
     {
+        if (is_string($item)) {
+            AccessibilityAudit::getInstance()->audit->scanUrl($item, $this->siteId);
+
+            return;
+        }
+
         $element = Craft::$app->getElements()->getElementById(
             (int) $item['elementId'],
             $item['elementType'] ?: null,
