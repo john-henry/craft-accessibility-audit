@@ -44,6 +44,12 @@
   pieces, because word order is not the same in every language. If you already replace the statement
   with your own template, nothing here changes for you.
 
+### Changed
+- Additional URLs is an editable table. Each URL gets a switch, so one can be parked without deleting
+  it, and on a multi-site install it can be scoped to a single site: a path that only exists on one
+  language no longer gets fetched on all of them. A row starting with a slash still resolves against
+  whichever site is being scanned, so the common case is still one row.
+
 ### Fixed
 - Dev mode no longer writes its template markers into `{% css %}` and `{% js %}` output. A partial
   included in a `{% css %}` block came out with an HTML comment at the top and the bottom of it, and
@@ -88,10 +94,6 @@
   slowly, and "up 4 points since 13 August" says more at a glance than a line that looks flat.
 
 ### Changed
-- Additional URLs is an editable table. Each URL gets a switch, so one can be parked without deleting
-  it, and on a multi-site install it can be scoped to a single site: a path that only exists on one
-  language no longer gets fetched on all of them. A row starting with a slash still resolves against
-  whichever site is being scanned, so the common case is still one row.
 - The note about unanswered questions now says how many kinds of question they fall into, not just
   how many there are in total. The review screen lists one row per kind, so a note counting tens of
   thousands of occurrences led to a screen showing eight rows and no explanation of the difference.

@@ -4,7 +4,10 @@
  * @copyright Copyright (c) John Henry Donovan
  */
 
+use craft\helpers\ProjectConfig;
+use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\models\SettingsModel;
+use markhuot\craftpest\factories\User as UserFactory;
 
 // ---------------------------------------------------------------------------
 // Additional URLs as rows.
@@ -98,5 +101,56 @@ describe('resolvedCustomUrls', function() {
         $settings = curSettings([curRow('/a'), curRow('/a'), curRow('  '), curRow('/b')]);
 
         expect($settings->resolvedCustomUrls())->toBe(['/a', '/b']);
+    });
+});
+
+describe('Saving the table', function() {
+    beforeEach(function() {
+        // The save path writes project config, which the environment may have
+        // pinned read-only for the read-only settings screens.
+        Craft::$app->getProjectConfig()->writeYamlAutomatically = false;
+        Craft::$app->getConfig()->getGeneral()->allowAdminChanges = true;
+        Craft::$app->getProjectConfig()->readOnly = false;
+
+        $this->actingAs(UserFactory::factory()->admin(true)->create());
+    });
+
+    it('stores the rows in the shape the scanner reads them', function() {
+        $this->post('actions/accessibility-audit/settings/save-scanning', [
+            'settings' => [
+                'customUrls' => [
+                    ['enabled' => '1', 'siteId' => '', 'url' => '/search/results?q=craft'],
+                    ['enabled' => '', 'siteId' => '', 'url' => '/parked'],
+                    ['enabled' => '1', 'siteId' => '', 'url' => '  '],
+                ],
+            ],
+            'redirect' => Craft::$app->getSecurity()->hashData('accessibility-audit/settings/scanning'),
+        ])->assertRedirect();
+
+        $stored = ProjectConfig::unpackAssociativeArrays(
+            (array)Craft::$app->getProjectConfig()->get('plugins.accessibility-audit.settings'),
+        );
+
+        // The blank row is the unfilled "add row", not a URL somebody meant.
+        expect($stored['customUrls'])->toBe([
+            ['enabled' => true, 'siteId' => '', 'url' => '/search/results?q=craft'],
+            ['enabled' => false, 'siteId' => '', 'url' => '/parked'],
+        ]);
+    });
+
+    it('honours a saved row the next time a sweep is worked out', function() {
+        $this->post('actions/accessibility-audit/settings/save-scanning', [
+            'settings' => [
+                'customUrls' => [
+                    ['enabled' => '1', 'siteId' => '', 'url' => '/search'],
+                ],
+            ],
+            'redirect' => Craft::$app->getSecurity()->hashData('accessibility-audit/settings/scanning'),
+        ])->assertRedirect();
+
+        $siteId = (int)Craft::$app->getSites()->getPrimarySite()->id;
+
+        expect(AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls($siteId))
+            ->toBe(['/search']);
     });
 });
