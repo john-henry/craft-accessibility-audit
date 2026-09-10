@@ -138,14 +138,17 @@
 
     <hr>
     
+    {% set siteOptions = [{ value: '', label: 'All sites'|t('accessibility-audit') }] %}
+    {% if craft.app.isMultiSite %}
+        {% for s in craft.app.sites.getAllSites() %}
+            {% set siteOptions = siteOptions|merge([{ value: s.id, label: s.name }]) %}
+        {% endfor %}
+    {% endif %}
+
     {% set uriCols = {
         enabled: { type: 'lightswitch', heading: 'On'|t('accessibility-audit'), thin: true },
     } %}
     {% if craft.app.isMultiSite %}
-        {% set siteOptions = [{ value: '', label: 'All sites'|t('accessibility-audit') }] %}
-        {% for s in craft.app.sites.getAllSites() %}
-            {% set siteOptions = siteOptions|merge([{ value: s.id, label: s.name }]) %}
-        {% endfor %}
         {% set uriCols = uriCols|merge({
             siteId: { type: 'select', heading: 'Site'|t('accessibility-audit'), options: siteOptions, thin: true },
         }) %}
@@ -191,20 +194,37 @@
         disabled: config.excludedSelectors is defined,
     }) }}
 
-    {{ forms.textareaField({
+    {% set customUrlCols = {
+        enabled: { type: 'lightswitch', heading: 'On'|t('accessibility-audit'), thin: true },
+    } %}
+    {% if craft.app.isMultiSite %}
+        {% set customUrlCols = customUrlCols|merge({
+            siteId: { type: 'select', heading: 'Site'|t('accessibility-audit'), options: siteOptions, thin: true },
+        }) %}
+    {% endif %}
+    {% set customUrlCols = customUrlCols|merge({
+        url: {
+            type: 'singleline',
+            heading: 'URL'|t('accessibility-audit'),
+            placeholder: '/search/results?q=craft',
+            code: true,
+        },
+    }) %}
+
+    {{ forms.editableTableField({
         label: 'Additional URLs'|t('accessibility-audit'),
-        instructions: 'Pages Craft routes without an entry behind them. One URL per line, absolute or starting with a slash, e.g. {example}.'|t('accessibility-audit', {
-            example: '<code>/search/results?q=craft</code>',
-        })
-            ~ ' <span class="info">' ~ 'Search results, filtered listings and paginated archives are the usual ones. A scan follows element URLs, so a page with no element behind it is never reached on its own, and a query string cannot be carried on an element URL at all. Lines beginning with # are ignored.'|t('accessibility-audit') ~ '</span>',
+        instructions: 'Pages Craft routes without an entry behind them. One URL per row, starting with a slash, or a full URL.'|t('accessibility-audit')
+            ~ ' <span class="info">' ~ 'Search results, filtered listings and paginated archives are the usual ones. A scan follows element URLs, so a page with no element behind it is never reached on its own, and a query string cannot be carried on an element URL at all. A row starting with a slash is resolved against whichever site is being scanned, so one row covers them all; scope it to a single site where the path only exists there.'|t('accessibility-audit') ~ '</span>',
+        warning: config.customUrls is defined ? 'Overridden by config file.'|t('accessibility-audit'),
         id: 'customUrls',
         name: 'settings[customUrls]',
-        value: settings.customUrls,
-        rows: 4,
-        class: 'code',
-        errors: settings.getErrors('customUrls'),
-        warning: config.customUrls is defined ? 'Overridden by config file.'|t('accessibility-audit'),
-        disabled: config.customUrls is defined,
+        cols: customUrlCols,
+        rows: settings.customUrls,
+        addRowLabel: 'Add a URL'|t('accessibility-audit'),
+        allowAdd: not (config.customUrls is defined),
+        allowDelete: not (config.customUrls is defined),
+        allowReorder: not (config.customUrls is defined),
+        static: config.customUrls is defined,
     }) }}
     
 

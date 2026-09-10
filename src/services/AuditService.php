@@ -1061,7 +1061,7 @@ class AuditService extends Component
      */
     public function isKnownScanUrl(string $url, int $siteId): bool
     {
-        $configured = AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls();
+        $configured = AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls($siteId);
 
         foreach ($configured as $candidate) {
             if ($this->absoluteUrl($candidate, $siteId) === $url) {
@@ -1287,7 +1287,7 @@ class AuditService extends Component
         return [
             'scanned' => count($this->getLatestScanIds($siteId)),
             'scannable' => (int)$this->getUrlElementsQuery($siteId)->count()
-                + count(AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls()),
+                + count(AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls($siteId)),
             'sweeping' => $this->isSweepRunning($siteId),
         ];
     }

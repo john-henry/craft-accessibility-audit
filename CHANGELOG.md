@@ -11,6 +11,9 @@
 > [!NOTE]
 > Dates printed on the published statement now follow the site's language instead of always coming out in British order. On a site set to US English, "4 September 2026" becomes "September 4, 2026". This one changes what is on the page without anybody touching anything, so have a look at your published statement after updating. It is what makes the dates read correctly on a site published in French or Irish. If you would rather they never moved, the statement template can be replaced with your own.
 
+> [!NOTE]
+> Additional URLs, under Settings > Scanning, is a table now rather than a box you type lines into. Anything you had is carried over on update, a row per URL, and a line you had commented out with a `#` comes across as a row switched off. Nothing needs doing by hand, and nothing drops out of your scans.
+
 ### Added
 - The statement can say when it is due to be reviewed again, printed beside the date it was last
   reviewed. The EU and UK regimes expect a statement to be kept up, and until now a reader could not
@@ -79,6 +82,10 @@
   slowly, and "up 4 points since 13 August" says more at a glance than a line that looks flat.
 
 ### Changed
+- Additional URLs is an editable table. Each URL gets a switch, so one can be parked without deleting
+  it, and on a multi-site install it can be scoped to a single site: a path that only exists on one
+  language no longer gets fetched on all of them. A row starting with a slash still resolves against
+  whichever site is being scanned, so the common case is still one row.
 - The note about unanswered questions now says how many kinds of question they fall into, not just
   how many there are in total. The review screen lists one row per kind, so a note counting tens of
   thousands of occurrences led to a screen showing eight rows and no explanation of the difference.

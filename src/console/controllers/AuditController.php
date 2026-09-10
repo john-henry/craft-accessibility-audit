@@ -97,7 +97,7 @@ class AuditController extends Controller
 
         // Configured URLs are scanned even when nothing else is, so a site
         // that routes everything through templates is not turned away here.
-        if (empty($urlRows) && empty(AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls())) {
+        if (empty($urlRows) && empty(AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls($siteId))) {
             $this->stdout("No URL-bearing elements found for this site.\n", BaseConsole::FG_YELLOW);
             return ExitCode::OK;
         }
@@ -148,7 +148,7 @@ class AuditController extends Controller
 
         // Configured URLs last: pages Craft routes without an element behind
         // them, which the sweep above has no way of finding.
-        $customUrls = AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls();
+        $customUrls = AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls($siteId);
 
         if (!empty($customUrls)) {
             $count = count($customUrls);

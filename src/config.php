@@ -60,6 +60,16 @@ return [
     //     ['uriPattern' => 'print$', 'siteId' => 1],
     // ],
 
+    // Extra pages to scan, for the ones Craft routes with no element behind
+    // them: search results, filtered listings, paginated archives. A 'url'
+    // starting with a slash is resolved against whichever site is being
+    // scanned; scope a row to one site with 'siteId' where the path only
+    // exists there. 'enabled' defaults to true.
+    // 'customUrls' => [
+    //     ['url' => '/search/results?q=craft'],
+    //     ['url' => '/recherche/resultats', 'siteId' => 2],
+    // ],
+
     // Asset volumes to leave out of the alt-text audit, by volume UID. Images
     // in these volumes drop out of the Assets page, its counts, and the
     // dashboard panel: handy for avatars, generated thumbnails, or system

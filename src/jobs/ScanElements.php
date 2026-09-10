@@ -64,7 +64,7 @@ class ScanElements extends BaseBatchedJob
 
         return new ScanTargets(
             $plugin->audit->getUrlElementsQuery($this->siteId),
-            $plugin->getSettings()->resolvedCustomUrls(),
+            $plugin->getSettings()->resolvedCustomUrls($this->siteId),
         );
     }
 

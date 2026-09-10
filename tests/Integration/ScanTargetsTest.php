@@ -43,10 +43,16 @@ function stElementQuery(): craft\db\Query
     );
 }
 
-/** Sets the Additional URLs for the duration of a test. */
-function stSetCustomUrls(string $value): void
+/** Sets the Additional URLs, taking the rows the editable table posts. */
+function stSetCustomUrls(array $rows): void
 {
-    AccessibilityAudit::getInstance()->getSettings()->customUrls = $value;
+    AccessibilityAudit::getInstance()->getSettings()->customUrls = $rows;
+}
+
+/** One enabled row, optionally scoped to a site. */
+function stRow(string $url, int|string $siteId = ''): array
+{
+    return ['enabled' => true, 'siteId' => $siteId, 'url' => $url];
 }
 
 describe('ScanTargets', function() {
@@ -107,7 +113,7 @@ describe('ScanTargets', function() {
 describe('The site-wide sweep', function() {
     it('loads the configured URLs alongside the elements', function() {
         scannableEntry('Sweep fixture');
-        stSetCustomUrls("/search/results?q=craft\n# a comment\n/paginated/2");
+        stSetCustomUrls([stRow('/search/results?q=craft'), stRow('/paginated/2')]);
 
         $job = new ScanElements(['siteId' => (int)Craft::$app->getSites()->getPrimarySite()->id]);
 
@@ -125,7 +131,7 @@ describe('The site-wide sweep', function() {
 
         scannableEntry('Queued count fixture');
         $elements = (int)stElementQuery()->count();
-        stSetCustomUrls("/a\n/b");
+        stSetCustomUrls([stRow('/a'), stRow('/b')]);
 
         $this->post('actions/accessibility-audit/audit/scan-all', [
             'siteId' => (int)Craft::$app->getSites()->getPrimarySite()->id,

@@ -192,7 +192,7 @@ class AuditController extends Controller
         // The configured URLs are swept alongside the elements, so they count
         // towards what was queued.
         $count = (int) $audit->getUrlElementsQuery($siteId)->count()
-            + count($plugin->getSettings()->resolvedCustomUrls());
+            + count($plugin->getSettings()->resolvedCustomUrls($siteId));
 
         // Single batched job: the batch runner walks the result set in
         // memory-safe chunks instead of spawning one job per element.

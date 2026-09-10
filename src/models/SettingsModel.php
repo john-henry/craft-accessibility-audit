@@ -207,12 +207,15 @@ class SettingsModel extends Model
     public array $excludedUriPatterns = [];
 
     /**
-     * @var string Extra URLs to scan, one per line, for pages Craft routes
-     * without backing them with an element: search results, filtered listings,
-     * paginated archives. Absolute or site-relative, and a query string is
-     * kept, so one named example of a dynamic page can be audited.
+     * @var array<int, array{enabled?: bool, siteId?: int|string, url?: string}>
+     * Extra pages to scan, for the ones Craft routes without backing them with
+     * an element: search results, filtered listings, paginated archives. Each
+     * row is one URL, absolute or site-relative, optionally scoped to a single
+     * site; a query string is kept, so one named example of a dynamic page can
+     * be audited. Shaped for the CP's editable-table field and settable from
+     * the config file.
      */
-    public string $customUrls = '';
+    public array $customUrls = [];
 
     /**
      * @var string Extra CSS selectors excluded from every scan surface, one
@@ -363,24 +366,94 @@ class SettingsModel extends Model
      * @since 1.0.0
      */
     /**
-     * The additional URLs to scan, one per line, cleaned up and de-duplicated.
+     * @inheritdoc
      *
-     * @return string[] Absolute URLs.
+     * Additional URLs were one newline-separated string up to 1.3.0. A site
+     * that has not had its stored settings rewritten yet, and a config file
+     * still written the old way, both hand a string to an array property,
+     * which would be fatal. Converting here covers every route in, since
+     * settings only ever reach the model through this method.
+     *
+     * @param array $values The attribute values, keyed by name.
+     * @param bool $safeOnly Whether to only assign safe attributes.
+     * @return void
      * @author JohnHenry <info@johnhenry.ie>
-     * @since 1.2.0
+     * @since 1.3.0
      */
-    public function resolvedCustomUrls(): array
+    public function setAttributes($values, $safeOnly = true): void
     {
-        $urls = [];
+        if (isset($values['customUrls']) && is_string($values['customUrls'])) {
+            $values['customUrls'] = self::customUrlRows($values['customUrls']);
+        }
 
-        foreach (preg_split('/\R+/u', $this->customUrls) ?: [] as $line) {
+        parent::setAttributes($values, $safeOnly);
+    }
+
+    /**
+     * The rows behind a newline-separated list of URLs.
+     *
+     * A line commented out with a `#` becomes an unticked row rather than
+     * being dropped: it is a URL somebody kept but did not want scanned, which
+     * is what unticking a row says.
+     *
+     * @param string $lines The URLs, one per line.
+     * @return array<int, array{enabled: bool, siteId: string, url: string}>
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public static function customUrlRows(string $lines): array
+    {
+        $rows = [];
+
+        foreach (preg_split('/\R/u', $lines) ?: [] as $line) {
             $line = trim($line);
 
-            if ($line === '' || str_starts_with($line, '#')) {
+            if ($line === '') {
                 continue;
             }
 
-            $urls[] = $line;
+            $enabled = !str_starts_with($line, '#');
+            $url = $enabled ? $line : trim(ltrim($line, '#'));
+
+            if ($url === '') {
+                continue;
+            }
+
+            $rows[] = ['enabled' => $enabled, 'siteId' => '', 'url' => $url];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * The additional URLs a scan of a site should cover, de-duplicated.
+     *
+     * @param int|null $siteId The site being scanned. Rows scoped to another
+     * site are left out. Null takes every row whatever its scope.
+     * @return string[] The URLs as they were entered, absolute or site-relative.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function resolvedCustomUrls(?int $siteId = null): array
+    {
+        $urls = [];
+
+        foreach ($this->customUrls as $row) {
+            if (!is_array($row) || !($row['enabled'] ?? true)) {
+                continue;
+            }
+
+            $rowSite = $row['siteId'] ?? '';
+
+            if ($siteId !== null && $rowSite !== '' && $rowSite !== null && (int)$rowSite !== $siteId) {
+                continue;
+            }
+
+            $url = trim((string)($row['url'] ?? ''));
+
+            if ($url !== '') {
+                $urls[] = $url;
+            }
         }
 
         return array_values(array_unique($urls));
@@ -523,13 +596,13 @@ class SettingsModel extends Model
             [['targetScore'], 'integer', 'min' => 0, 'max' => 100],
             [['notifyScoreDropThreshold'], 'integer', 'min' => 1, 'max' => 100],
             [['ignoreRules'], 'safe'],
-            [['excludedUriPatterns'], 'safe'],
+            [['excludedUriPatterns', 'customUrls'], 'safe'],
             [['excludedVolumes'], 'each', 'rule' => ['string']],
             [['scannedElementTypes'], 'each', 'rule' => ['string'], 'skipOnEmpty' => true],
             [['altTextField', 'anthropicApiKey', 'altTextContext', 'altTextLanguage', 'chromePath', 'chromeWsEndpoint', 'vpatExportTemplate'], 'string'],
             [['statementTemplate'], 'string'],
             [['notifyEmailRecipients', 'notifySlackWebhookUrl', 'ciApiToken', 'scannerUserAgent'], 'string'],
-            [['overlayApiToken', 'overlayAllowedOrigins', 'excludedSelectors', 'customUrls'], 'string'],
+            [['overlayApiToken', 'overlayAllowedOrigins', 'excludedSelectors'], 'string'],
         ];
     }
 

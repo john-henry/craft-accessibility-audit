@@ -467,7 +467,6 @@ class SettingsController extends Controller
         }
         $settings->scannerUserAgent = (string) $this->request->getBodyParam('settings[scannerUserAgent]', $settings->scannerUserAgent);
         $settings->excludedSelectors = (string) $this->request->getBodyParam('settings[excludedSelectors]', $settings->excludedSelectors);
-        $settings->customUrls = (string) $this->request->getBodyParam('settings[customUrls]', $settings->customUrls);
         $settings->en301549 = (bool)   $this->request->getBodyParam('settings[en301549]',        $settings->en301549);
         $settings->vpatExportTemplate = (string) $this->request->getBodyParam('settings[vpatExportTemplate]', $settings->vpatExportTemplate);
         $settings->statementTemplate = (string) $this->request->getBodyParam('settings[statementTemplate]', $settings->statementTemplate);
@@ -533,6 +532,31 @@ class SettingsController extends Controller
                 }
             }
             $settings->excludedUriPatterns = $clean;
+        }
+
+        if (!array_key_exists('customUrls', Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'))) {
+            $rows = $this->request->getBodyParam('settings[customUrls]', []);
+            $clean = [];
+            if (is_array($rows)) {
+                foreach ($rows as $row) {
+                    if (!is_array($row)) {
+                        continue;
+                    }
+                    $url = trim((string)($row['url'] ?? ''));
+                    // A URL is the whole point of the row, so an empty one is
+                    // an unfilled "add row" whatever else it carries.
+                    if ($url === '') {
+                        continue;
+                    }
+                    $siteId = trim((string)($row['siteId'] ?? ''));
+                    $clean[] = [
+                        'enabled' => (bool)($row['enabled'] ?? true),
+                        'siteId' => $siteId === '' ? '' : (int)$siteId,
+                        'url' => $url,
+                    ];
+                }
+            }
+            $settings->customUrls = $clean;
         }
 
         // Remember the resolved scan set before this save, so stored scans for
