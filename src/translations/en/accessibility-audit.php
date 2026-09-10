@@ -1037,4 +1037,9 @@ return [
     'Pages Craft routes without an entry behind them. One URL per row, starting with a slash, or a full URL.' => 'Pages Craft routes without an entry behind them. One URL per row, starting with a slash, or a full URL.',
     'Search results, filtered listings and paginated archives are the usual ones. A scan follows element URLs, so a page with no element behind it is never reached on its own, and a query string cannot be carried on an element URL at all. A row starting with a slash is resolved against whichever site is being scanned, so one row covers them all; scope it to a single site where the path only exists there.' => 'Search results, filtered listings and paginated archives are the usual ones. A scan follows element URLs, so a page with no element behind it is never reached on its own, and a query string cannot be carried on an element URL at all. A row starting with a slash is resolved against whichever site is being scanned, so one row covers them all; scope it to a single site where the path only exists there.',
     'Add a URL' => 'Add a URL',
+    'Undo last revision' => 'Undo last revision',
+    'The latest revision was removed.' => 'The latest revision was removed.',
+    'There are no revisions recorded to remove.' => 'There are no revisions recorded to remove.',
+    'That could not be removed. Try again.' => 'That could not be removed. Try again.',
+    'Remove the most recently recorded revision? This cannot be undone.' => 'Remove the most recently recorded revision? This cannot be undone.',
 ];

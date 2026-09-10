@@ -584,6 +584,7 @@ class DashboardController extends Controller
                 'saveCriterionUrl' => UrlHelper::actionUrl('accessibility-audit/vpat/save-criterion'),
                 'draftRemarkUrl' => UrlHelper::actionUrl('accessibility-audit/vpat/draft-remark'),
                 'recordRevisionUrl' => UrlHelper::actionUrl('accessibility-audit/vpat/record-revision'),
+                'deleteRevisionUrl' => UrlHelper::actionUrl('accessibility-audit/vpat/delete-latest-revision'),
                 'scopeSuggestions' => $scopeSuggestions,
                 'savedMessage' => Craft::t('accessibility-audit', 'Product information saved.'),
             ]) . '});',
@@ -601,6 +602,7 @@ class DashboardController extends Controller
             'sites' => $sites,
             'canDraftRemarks' => $canDraftRemarks,
             'scopeSuggestions' => $scopeSuggestions,
+            'revisionCount' => $isPro ? $plugin->vpat->countRevisions($siteId) : 0,
         ]);
     }
 

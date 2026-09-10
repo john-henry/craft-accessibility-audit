@@ -15,6 +15,15 @@
 > Additional URLs, under Settings > Scanning, is a table now rather than a box you type lines into. Anything you had is carried over on update, a row per URL, and a line you had commented out with a `#` comes across as a row switched off. Nothing needs doing by hand, and nothing drops out of your scans.
 
 ### Added
+- Console commands for the VPAT's revision history: `vpat/revisions` lists what is recorded with the
+  id of each, `vpat/delete-revision` removes one from anywhere in the history, and
+  `vpat/clear-revisions` removes the lot. The editor only takes back the most recent one, on purpose;
+  anything beyond that should take more deliberation than a button on a screen. Both removals ask
+  first, and neither touches the report itself.
+- The VPAT editor can undo the last recorded revision. Recording was a one-way door, so pressing the
+  button to see what it did left a revision on the report that nobody was ever given, printed in the
+  exported document with no way to take it back out. Only the most recent one can go: a history
+  somebody can lift a row out of the middle of is not a history.
 - The statement can say when it is due to be reviewed again, printed beside the date it was last
   reviewed. The EU and UK regimes expect a statement to be kept up, and until now a reader could not
   tell one somebody maintains from one nobody has looked at in three years. It has to fall after the
@@ -178,6 +187,7 @@
 
 ### Fixed
 - Dismissed contrast questions stay dismissed. Two things were giving one element two identities, so an answer given to one never reached the other. The report marks an element in its preview when you click Show on page, and the browser pass then read that same preview and recorded the element with the plugin's own mark on it, as though it were a different element. And the engine reports the whole element when its markup is short but only the opening tag once it passes a certain length, which a syntax-highlighted code block crosses partway through rendering. Occurrences are now identified by the opening tag with the plugin's own marks removed, and migrations bring existing answers onto it.
+- Clicking Show on page no longer turns a question you have already answered into a new one on the next scan. A question was identified by whatever markup the browser engine handed over, and that engine only shortens an element to its opening tag once the markup passes a certain length. A code block that a syntax highlighter expands only passes that length once the highlighting has finished, so the same element arrived as two different strings depending on how far the page had rendered, and became two separate questions. Answering one never reached the other. Contrast questions are now identified by the opening tag alone, which does not move, and a migration brings existing answers and occurrences onto it.
 - The accessibility statement no longer tells a fully scanned site that nothing has been scanned. It worked out whether scan data existed by looking at what the scans had concluded, and once no criterion is signed off by the scanner there is nothing to conclude on a site with nothing failing. A clean site was told its compliance status rested on no evidence at all. It now asks whether pages have been scanned, which is the actual question.
 - The Overview heading over the rules worth fixing said "Fix these 10 issues" whatever was actually listed, including when the list was empty. It now counts what is there, and says so plainly when there is nothing.
 - The accessibility statement and the VPAT no longer count questions you have already answered, or issues you have already fixed, against a success criterion. Conformance levels were read off the findings with no filtering at all, so a question dismissed weeks ago still held a criterion at Partially Supports, and so did an issue resolved since. The statement could show three failing criteria while Issues listed one rule, with nothing on either screen to explain the other two. Since a statement is a public claim about your site, it now reads the findings the same way every other screen does: dismissed questions and fixed issues are spent, confirmed ones still count.

@@ -229,6 +229,48 @@ class VpatController extends Controller
     }
 
     /**
+     * Removes the most recently recorded revision.
+     *
+     * The undo for a button pressed to see what it did. Only the latest one
+     * goes, so the history cannot be quietly rewritten from the middle.
+     *
+     * @return Response
+     * @throws ForbiddenHttpException
+     * @throws BadRequestHttpException
+     * @throws MethodNotAllowedHttpException
+     * @throws SiteNotFoundException
+     * @throws \yii\db\Exception
+     * @throws \yii\base\InvalidConfigException
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function actionDeleteLatestRevision(): Response
+    {
+        $this->requirePostRequest();
+        $this->requirePermission('accessibility-audit:manageVpat');
+
+        if (($refusal = $this->requireProJson('VPAT conformance reporting')) !== null) {
+            return $refusal;
+        }
+
+        $siteId = (int)$this->request->getRequiredBodyParam('siteId');
+
+        if (($refusal = $this->_requireAllowedSite($siteId)) !== null) {
+            return $refusal;
+        }
+
+        $removed = AccessibilityAudit::getInstance()->vpat->deleteLatestRevision($siteId);
+
+        return $this->asJson([
+            'success' => true,
+            'removed' => $removed,
+            'message' => $removed
+                ? Craft::t('accessibility-audit', 'The latest revision was removed.')
+                : Craft::t('accessibility-audit', 'There are no revisions recorded to remove.'),
+        ]);
+    }
+
+    /**
      * Exports the full VPAT report as a standalone HTML page.
      *
      * @return Response

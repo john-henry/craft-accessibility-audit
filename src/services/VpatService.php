@@ -771,6 +771,120 @@ class VpatService extends Component
     }
 
     /**
+     * Removes the most recently recorded revision.
+     *
+     * Only the latest one, and deliberately so. A revision history is a record
+     * of documents that went out, so being able to lift any row out of the
+     * middle of it would make the history worth less than the trouble of
+     * keeping it. What this is for is the revision that was never meant to
+     * exist: somebody pressed the button to see what it did.
+     *
+     * @param int $siteId The site the report belongs to.
+     * @return bool Whether a revision was removed. False when there were none.
+     * @throws \yii\db\Exception If the delete fails.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function deleteLatestRevision(int $siteId): bool
+    {
+        $id = (new Query())
+            ->select(['id'])
+            ->from('{{%accessibilityaudit_vpat_revisions}}')
+            ->where(['siteId' => $siteId])
+            ->orderBy(['dateCreated' => SORT_DESC, 'id' => SORT_DESC])
+            ->scalar();
+
+        if ($id === false || $id === null) {
+            return false;
+        }
+
+        // Scoped to the site as well as the id: the id came from a query on
+        // this site, and saying so again costs nothing.
+        return Craft::$app->getDb()->createCommand()
+            ->delete('{{%accessibilityaudit_vpat_revisions}}', ['id' => (int)$id, 'siteId' => $siteId])
+            ->execute() > 0;
+    }
+
+    /**
+     * Every revision held for a site, newest first, for addressing one by id.
+     *
+     * The snapshot itself is left out: this is for listing and choosing, and
+     * {@see self::getRevisionHistory()} is what reads the contents.
+     *
+     * @param int $siteId The site the report belongs to.
+     * @return array<int, array{id: int, dateCreated: string, answers: int}>
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function getRevisions(int $siteId): array
+    {
+        $rows = (new Query())
+            ->select(['id', 'dateCreated', 'snapshot'])
+            ->from('{{%accessibilityaudit_vpat_revisions}}')
+            ->where(['siteId' => $siteId])
+            ->orderBy(['dateCreated' => SORT_DESC, 'id' => SORT_DESC])
+            ->all();
+
+        return array_map(static fn(array $row): array => [
+            'id' => (int)$row['id'],
+            'dateCreated' => (string)$row['dateCreated'],
+            'answers' => count(Json::decodeIfJson($row['snapshot']) ?: []),
+        ], $rows);
+    }
+
+    /**
+     * Removes one revision by id.
+     *
+     * Scoped to the site so an id from another site's report cannot be reached
+     * by guessing at numbers.
+     *
+     * @param int $id The revision's id.
+     * @param int $siteId The site the report belongs to.
+     * @return bool Whether a revision was removed.
+     * @throws \yii\db\Exception If the delete fails.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function deleteRevision(int $id, int $siteId): bool
+    {
+        return Craft::$app->getDb()->createCommand()
+            ->delete('{{%accessibilityaudit_vpat_revisions}}', ['id' => $id, 'siteId' => $siteId])
+            ->execute() > 0;
+    }
+
+    /**
+     * Removes every revision held for a site.
+     *
+     * @param int $siteId The site the report belongs to.
+     * @return int How many were removed.
+     * @throws \yii\db\Exception If the delete fails.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function deleteAllRevisions(int $siteId): int
+    {
+        return Craft::$app->getDb()->createCommand()
+            ->delete('{{%accessibilityaudit_vpat_revisions}}', ['siteId' => $siteId])
+            ->execute();
+    }
+
+    /**
+     * How many revisions are held for a site.
+     *
+     * @param int $siteId The site the report belongs to.
+     * @return int
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function countRevisions(int $siteId): int
+    {
+        return (int)(new Query())
+            ->from('{{%accessibilityaudit_vpat_revisions}}')
+            ->where(['siteId' => $siteId])
+            ->count();
+    }
+
+    /**
      * The revision history: what changed between each snapshot and the one
      * before it, newest first.
      *

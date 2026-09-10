@@ -201,6 +201,8 @@ class AccessibilityAudit extends BasePlugin
         'Score',
         'Show issues on this page',
         'That could not be recorded. Try again.',
+        'That could not be removed. Try again.',
+        'Remove the most recently recorded revision? This cannot be undone.',
         'Target {n}',
         'Technical',
         'Verification failed.',
