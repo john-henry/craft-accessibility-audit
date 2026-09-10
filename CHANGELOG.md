@@ -12,14 +12,6 @@
 > Dates printed on the published statement now follow the site's language instead of always coming out in British order. On a site set to US English, "4 September 2026" becomes "September 4, 2026". This one changes what is on the page without anybody touching anything, so have a look at your published statement after updating. It is what makes the dates read correctly on a site published in French or Irish. If you would rather they never moved, the statement template can be replaced with your own.
 
 ### Added
-- Findings now record whether the markup was written by hand or came from an accessible component
-  library, and the report shows the split. A fault in your own markup is fixed on the page it is on;
-  a fault inside a component is fixed once and fixed everywhere. Any component writing a
-  `data-a11y-component` attribute on its outer element, with its own name as the value, is
-  recognised, so a library that marks its markup that way is picked up with nothing to install and
-  nothing to configure.
-- Scans taken before this existed keep no origin and are reported as not recorded, rather than being
-  guessed at after the fact. They fill in the next time those pages are scanned.
 - The statement can say when it is due to be reviewed again, printed beside the date it was last
   reviewed. The EU and UK regimes expect a statement to be kept up, and until now a reader could not
   tell one somebody maintains from one nobody has looked at in three years. It has to fall after the
