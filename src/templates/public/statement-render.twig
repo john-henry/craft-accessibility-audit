@@ -2,15 +2,16 @@
 {% set titleTag = 'h' ~ headingLevel %}
 {% set sectionTag = 'h' ~ min(headingLevel + 1, 6) %}
 {% set subSectionTag = 'h' ~ min(headingLevel + 2, 6) %}
-{% set statementTitle = title|default('Accessibility statement') %}
+{% set statementTitle = title|default('Accessibility statement'|t('accessibility-audit')) %}
 
 {% set meta = statement.meta %}
 {% set isMandated = statement.profile in ['eu', 'uk'] %}
 {% set statusText = {
-    'fullyCompliant': 'fully compliant',
-    'partiallyCompliant': 'partially compliant',
-    'nonCompliant': 'not compliant',
+    'fullyCompliant': 'fully compliant'|t('accessibility-audit'),
+    'partiallyCompliant': 'partially compliant'|t('accessibility-audit'),
+    'nonCompliant': 'not compliant'|t('accessibility-audit'),
 } %}
+{% set organisation = meta.productName ?: 'This organisation'|t('accessibility-audit') %}
 
 <div class="accessibility-statement">
 
@@ -20,22 +21,36 @@
         <p>{{ meta.commitmentOverride|nl2br }}</p>
     {% else %}
         <p>
-            {{ meta.productName ?: 'This organisation' }} is committed to making this website accessible,
-            {%- if statement.legislation %} in accordance with {{ statement.legislation }}{% endif -%}
-            .
+            {% if statement.legislation %}
+                {{ '{organisation} is committed to making this website accessible, in accordance with {legislation}.'|t('accessibility-audit', {
+                    organisation: organisation,
+                    legislation: statement.legislation,
+                }) }}
+            {% else %}
+                {{ '{organisation} is committed to making this website accessible.'|t('accessibility-audit', {
+                    organisation: organisation,
+                }) }}
+            {% endif %}
         </p>
         {% if meta.productDescription %}
             <p>{{ meta.productDescription }}</p>
         {% endif %}
     {% endif %}
 
-    <{{ sectionTag }}>Compliance status</{{ sectionTag }}>
+    <{{ sectionTag }}>{{ 'Compliance status'|t('accessibility-audit') }}</{{ sectionTag }}>
 
     <p>
-        This website is <strong>{{ statusText[statement.status] ?? statement.status }}</strong>
-        with {{ statement.standard }}
-        {%- if statement.status == 'partiallyCompliant' %}, because of the exceptions listed below{% endif -%}
-        .
+        {% if statement.status == 'partiallyCompliant' %}
+            {{ 'This website is <strong>{status}</strong> with {standard}, because of the exceptions listed below.'|t('accessibility-audit', {
+                status: (statusText[statement.status] ?? statement.status)|e,
+                standard: statement.standard|e,
+            })|raw }}
+        {% else %}
+            {{ 'This website is <strong>{status}</strong> with {standard}.'|t('accessibility-audit', {
+                status: (statusText[statement.status] ?? statement.status)|e,
+                standard: statement.standard|e,
+            })|raw }}
+        {% endif %}
     </p>
 
     {% set nonCompliance = statement.exclusions.nonCompliance ?? [] %}
@@ -43,76 +58,82 @@
     {% set outOfScope = statement.exclusions.outOfScope ?? [] %}
 
     {% if nonCompliance|length or burden|length or outOfScope|length %}
-        <{{ sectionTag }}>Non-accessible content</{{ sectionTag }}>
+        <{{ sectionTag }}>{{ 'Non-accessible content'|t('accessibility-audit') }}</{{ sectionTag }}>
 
         {% if nonCompliance|length %}
-            {% if isMandated %}<{{ subSectionTag }}>Non-compliance with the accessibility regulations</{{ subSectionTag }}>{% endif %}
+            {% if isMandated %}<{{ subSectionTag }}>{{ 'Non-compliance with the accessibility regulations'|t('accessibility-audit') }}</{{ subSectionTag }}>{% endif %}
             <ul>
                 {% for entry in nonCompliance %}
                     <li>
-                        {{ entry.content }}
-                        {%- if entry.criterion %} (WCAG {{ entry.criterion }}){% endif -%}
-                        {%- if entry.reason %}. {{ entry.reason }}{% endif -%}
-                        {%- if entry.plannedDate %} We expect to fix this by {{ entry.plannedDate|date('j F Y') }}.{% endif -%}
+                        {%- set body = entry.content|trim -%}
+                        {%- if entry.criterion %}{% set body = body ~ ' ' ~ '(WCAG {criterion})'|t('accessibility-audit', { criterion: entry.criterion }) %}{% endif -%}
+                        {%- if entry.reason %}{% set body = body ~ (body matches '/[.!?]$/' ? '' : '.') ~ ' ' ~ entry.reason %}{% endif -%}
+                        {{ body }}
+                        {%- if entry.plannedDate %} {{ 'We expect to fix this by {date}.'|t('accessibility-audit', { date: entry.plannedDate|date('long') }) }}{% endif -%}
                     </li>
                 {% endfor %}
             </ul>
         {% endif %}
 
         {% if burden|length %}
-            <{{ subSectionTag }}>Disproportionate burden</{{ subSectionTag }}>
+            <{{ subSectionTag }}>{{ 'Disproportionate burden'|t('accessibility-audit') }}</{{ subSectionTag }}>
             <ul>
                 {% for entry in burden %}
                     <li>
-                        {{ entry.content }}
-                        {%- if entry.criterion %} (WCAG {{ entry.criterion }}){% endif -%}
-                        {%- if entry.reason %}. {{ entry.reason }}{% endif -%}
+                        {%- set body = entry.content|trim -%}
+                        {%- if entry.criterion %}{% set body = body ~ ' ' ~ '(WCAG {criterion})'|t('accessibility-audit', { criterion: entry.criterion }) %}{% endif -%}
+                        {%- if entry.reason %}{% set body = body ~ (body matches '/[.!?]$/' ? '' : '.') ~ ' ' ~ entry.reason %}{% endif -%}
+                        {{ body }}
                     </li>
                 {% endfor %}
             </ul>
         {% endif %}
 
         {% if outOfScope|length %}
-            <{{ subSectionTag }}>Content not within the scope of the accessibility regulations</{{ subSectionTag }}>
+            <{{ subSectionTag }}>{{ 'Content not within the scope of the accessibility regulations'|t('accessibility-audit') }}</{{ subSectionTag }}>
             <ul>
                 {% for entry in outOfScope %}
                     <li>
-                        {{ entry.content }}
-                        {%- if entry.reason %}. {{ entry.reason }}{% endif -%}
+                        {%- set body = entry.content|trim -%}
+                        {%- if entry.reason %}{% set body = body ~ (body matches '/[.!?]$/' ? '' : '.') ~ ' ' ~ entry.reason %}{% endif -%}
+                        {{ body }}
                     </li>
                 {% endfor %}
             </ul>
         {% endif %}
     {% endif %}
 
-    <{{ sectionTag }}>Feedback and contact information</{{ sectionTag }}>
+    <{{ sectionTag }}>{{ 'Feedback and contact information'|t('accessibility-audit') }}</{{ sectionTag }}>
 
     <p>
-        If you find an accessibility problem on this site, or you need content in a different format,
-        get in touch{% if meta.contactName %} with {{ meta.contactName }}{% endif %}:
+        {% if meta.contactName %}
+            {{ 'If you find an accessibility problem on this site, or you need content in a different format, get in touch with {name}:'|t('accessibility-audit', { name: meta.contactName }) }}
+        {% else %}
+            {{ 'If you find an accessibility problem on this site, or you need content in a different format, get in touch:'|t('accessibility-audit') }}
+        {% endif %}
     </p>
 
     <ul>
         {% if meta.contactEmail %}
-            <li>Email: <a href="mailto:{{ meta.contactEmail }}">{{ meta.contactEmail }}</a></li>
+            <li>{{ 'Email'|t('accessibility-audit') }}: <a href="mailto:{{ meta.contactEmail }}">{{ meta.contactEmail }}</a></li>
         {% endif %}
         {% if meta.contactPhone %}
-            <li>Phone: {{ meta.contactPhone }}</li>
+            <li>{{ 'Phone'|t('accessibility-audit') }}: {{ meta.contactPhone }}</li>
         {% endif %}
     </ul>
 
     {% if meta.feedbackResponseTime %}
-        <p>We aim to respond {{ meta.feedbackResponseTime }}.</p>
+        <p>{{ 'We aim to respond {time}.'|t('accessibility-audit', { time: meta.feedbackResponseTime }) }}</p>
     {% endif %}
 
     {% if meta.enforcementBody %}
-        <{{ sectionTag }}>Enforcement procedure</{{ sectionTag }}>
+        <{{ sectionTag }}>{{ 'Enforcement procedure'|t('accessibility-audit') }}</{{ sectionTag }}>
         <p>
-            If you are not happy with how we respond to your complaint, contact
             {% if meta.enforcementUrl %}
-                <a href="{{ meta.enforcementUrl }}">{{ meta.enforcementBody }}</a>.
+                {% set enforcementLink = '<a href="' ~ meta.enforcementUrl|e ~ '">' ~ meta.enforcementBody|e ~ '</a>' %}
+                {{ 'If you are not happy with how we respond to your complaint, contact {body}.'|t('accessibility-audit', { body: enforcementLink })|raw }}
             {% else %}
-                {{ meta.enforcementBody }}.
+                {{ 'If you are not happy with how we respond to your complaint, contact {body}.'|t('accessibility-audit', { body: meta.enforcementBody }) }}
             {% endif %}
         </p>
         {% if meta.enforcementNotes %}
@@ -120,22 +141,23 @@
         {% endif %}
     {% endif %}
 
-    <{{ sectionTag }}>Preparation of this statement</{{ sectionTag }}>
+    <{{ sectionTag }}>{{ 'Preparation of this statement'|t('accessibility-audit') }}</{{ sectionTag }}>
 
     <p>
         {% if meta.statementDate %}
-            This statement was prepared on {{ meta.statementDate|date('j F Y') }}.
+            {{ 'This statement was prepared on {date}.'|t('accessibility-audit', { date: meta.statementDate|date('long') }) }}
         {% endif %}
         {% if meta.preparationMethod == 'thirdParty' and meta.preparedBy %}
-            The website was evaluated by {{ meta.preparedBy }}.
+            {{ 'The website was evaluated by {evaluator}.'|t('accessibility-audit', { evaluator: meta.preparedBy }) }}
         {% else %}
-            The website was assessed by {{ meta.productName ?: 'this organisation' }}, using a
-            combination of automated testing and manual review.
+            {{ 'The website was assessed by {organisation}, using a combination of automated testing and manual review.'|t('accessibility-audit', {
+                organisation: meta.productName ?: 'this organisation'|t('accessibility-audit'),
+            }) }}
         {% endif %}
     </p>
 
     {% if meta.evalMethods|length %}
-        <p>The evaluation used:</p>
+        <p>{{ 'The evaluation used:'|t('accessibility-audit') }}</p>
         <ul>
             {% for method in meta.evalMethods %}
                 <li>{{ method }}</li>
@@ -143,8 +165,16 @@
         </ul>
     {% endif %}
 
-    {% if meta.reviewDate %}
-        <p>This statement was last reviewed on {{ meta.reviewDate|date('j F Y') }}.</p>
+    {% if meta.reviewDate or meta.nextReviewDate %}
+        <p>
+            {%- if meta.reviewDate -%}
+                {{ 'This statement was last reviewed on {date}.'|t('accessibility-audit', { date: meta.reviewDate|date('long') }) }}
+            {%- endif -%}
+            {%- if meta.reviewDate and meta.nextReviewDate %} {% endif -%}
+            {%- if meta.nextReviewDate -%}
+                {{ 'It is due to be reviewed again by {date}.'|t('accessibility-audit', { date: meta.nextReviewDate|date('long') }) }}
+            {%- endif -%}
+        </p>
     {% endif %}
 
 </div>

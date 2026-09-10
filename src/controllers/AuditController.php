@@ -185,9 +185,14 @@ class AuditController extends Controller
 
         // Multi-site is Pro: on Standard, a batch scan only ever covers the
         // primary site, whatever siteId is posted.
-        $siteId = AccessibilityAudit::getInstance()->resolveSiteId($this->request->getBodyParam('siteId'));
-        $audit = AccessibilityAudit::getInstance()->audit;
-        $count = (int) $audit->getUrlElementsQuery($siteId)->count();
+        $plugin = AccessibilityAudit::getInstance();
+        $siteId = $plugin->resolveSiteId($this->request->getBodyParam('siteId'));
+        $audit = $plugin->audit;
+
+        // The configured URLs are swept alongside the elements, so they count
+        // towards what was queued.
+        $count = (int) $audit->getUrlElementsQuery($siteId)->count()
+            + count($plugin->getSettings()->resolvedCustomUrls($siteId));
 
         // Single batched job: the batch runner walks the result set in
         // memory-safe chunks instead of spawning one job per element.

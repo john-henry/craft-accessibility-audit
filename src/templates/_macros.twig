@@ -106,3 +106,7 @@
         <span class="accessibility-audit-count accessibility-audit-count--notice">{{ compact ? noticeCount : "{n, plural, =1{# notice} other{# notices}}"|t('accessibility-audit', {n: noticeCount}) }}</span>
     {%- endif -%}
 {%- endmacro %}
+
+{% macro newTabNote() -%}
+    <span class="visually-hidden"> {{ '(opens in a new tab)'|t('accessibility-audit') }}</span>
+{%- endmacro %}

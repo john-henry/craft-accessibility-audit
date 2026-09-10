@@ -32,6 +32,34 @@ use yii\db\Exception;
  */
 class VpatService extends Component
 {
+    // Const Properties
+    // =========================================================================
+
+    /**
+     * @var string The EN 301 549 version this report maps to. The harmonised
+     *      version behind the EU Web Accessibility Directive, and the one a
+     *      European procurement team will be checking against.
+     */
+    public const EN_301_549_VERSION = 'V3.2.1';
+
+    /**
+     * @var string[] Criteria WCAG 2.2 added, which the harmonised EN 301 549
+     *      does not carry.
+     *
+     * EN 301 549 V3.2.1 adopts WCAG 2.1, so clause 9 stops there. Numbering a
+     * clause 9.2.5.8 because the pattern holds everywhere else would put a
+     * reference in a conformance report that does not exist in the standard it
+     * cites, which is worse than leaving the cell empty.
+     */
+    private const NOT_IN_EN_301_549 = [
+        '2.4.11',
+        '2.5.7',
+        '2.5.8',
+        '3.2.6',
+        '3.3.7',
+        '3.3.8',
+    ];
+
     // ─── WCAG 2.1 A + AA Criteria ────────────────────────────────────────────
     // auto: 'automated' = scanner can fully detect
     //       'partial'   = scanner detects some violations but not all cases
@@ -697,6 +725,230 @@ class VpatService extends Component
     }
 
     /**
+     * Snapshots the current answers, unless they match the last snapshot.
+     *
+     * Called from the Record control on the exported document, never from the
+     * export itself: only the author knows when a version was actually issued.
+     * Recording twice with nothing answered in between is not a new version, so
+     * an unchanged snapshot is skipped.
+     *
+     * @param int $siteId The site the report belongs to.
+     * @return bool Whether a snapshot was written.
+     * @throws Exception If the insert fails.
+     * @throws \yii\base\InvalidConfigException
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function recordRevision(int $siteId): bool
+    {
+        $overrides = $this->getRecord($siteId)['overrides'];
+        $snapshot = Json::encode($this->_answerMap($overrides));
+
+        $latest = (new Query())
+            ->select(['snapshot'])
+            ->from('{{%accessibilityaudit_vpat_revisions}}')
+            ->where(['siteId' => $siteId])
+            ->orderBy(['dateCreated' => SORT_DESC, 'id' => SORT_DESC])
+            ->scalar();
+
+        if ($latest === $snapshot) {
+            return false;
+        }
+
+        $now = Db::prepareDateForDb(new DateTime());
+
+        Craft::$app->getDb()->createCommand()
+            ->insert('{{%accessibilityaudit_vpat_revisions}}', [
+                'siteId' => $siteId,
+                'snapshot' => $snapshot,
+                'dateCreated' => $now,
+                'dateUpdated' => $now,
+                'uid' => StringHelper::UUID(),
+            ])
+            ->execute();
+
+        return true;
+    }
+
+    /**
+     * Removes the most recently recorded revision.
+     *
+     * Only the latest one, and deliberately so. A revision history is a record
+     * of documents that went out, so being able to lift any row out of the
+     * middle of it would make the history worth less than the trouble of
+     * keeping it. What this is for is the revision that was never meant to
+     * exist: somebody pressed the button to see what it did.
+     *
+     * @param int $siteId The site the report belongs to.
+     * @return bool Whether a revision was removed. False when there were none.
+     * @throws \yii\db\Exception If the delete fails.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function deleteLatestRevision(int $siteId): bool
+    {
+        $id = (new Query())
+            ->select(['id'])
+            ->from('{{%accessibilityaudit_vpat_revisions}}')
+            ->where(['siteId' => $siteId])
+            ->orderBy(['dateCreated' => SORT_DESC, 'id' => SORT_DESC])
+            ->scalar();
+
+        if ($id === false || $id === null) {
+            return false;
+        }
+
+        // Scoped to the site as well as the id: the id came from a query on
+        // this site, and saying so again costs nothing.
+        return Craft::$app->getDb()->createCommand()
+            ->delete('{{%accessibilityaudit_vpat_revisions}}', ['id' => (int)$id, 'siteId' => $siteId])
+            ->execute() > 0;
+    }
+
+    /**
+     * Every revision held for a site, newest first, for addressing one by id.
+     *
+     * The snapshot itself is left out: this is for listing and choosing, and
+     * {@see self::getRevisionHistory()} is what reads the contents.
+     *
+     * @param int $siteId The site the report belongs to.
+     * @return array<int, array{id: int, dateCreated: string, answers: int}>
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function getRevisions(int $siteId): array
+    {
+        $rows = (new Query())
+            ->select(['id', 'dateCreated', 'snapshot'])
+            ->from('{{%accessibilityaudit_vpat_revisions}}')
+            ->where(['siteId' => $siteId])
+            ->orderBy(['dateCreated' => SORT_DESC, 'id' => SORT_DESC])
+            ->all();
+
+        return array_map(static fn(array $row): array => [
+            'id' => (int)$row['id'],
+            'dateCreated' => (string)$row['dateCreated'],
+            'answers' => count(Json::decodeIfJson($row['snapshot']) ?: []),
+        ], $rows);
+    }
+
+    /**
+     * Removes one revision by id.
+     *
+     * Scoped to the site so an id from another site's report cannot be reached
+     * by guessing at numbers.
+     *
+     * @param int $id The revision's id.
+     * @param int $siteId The site the report belongs to.
+     * @return bool Whether a revision was removed.
+     * @throws \yii\db\Exception If the delete fails.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function deleteRevision(int $id, int $siteId): bool
+    {
+        return Craft::$app->getDb()->createCommand()
+            ->delete('{{%accessibilityaudit_vpat_revisions}}', ['id' => $id, 'siteId' => $siteId])
+            ->execute() > 0;
+    }
+
+    /**
+     * Removes every revision held for a site.
+     *
+     * @param int $siteId The site the report belongs to.
+     * @return int How many were removed.
+     * @throws \yii\db\Exception If the delete fails.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function deleteAllRevisions(int $siteId): int
+    {
+        return Craft::$app->getDb()->createCommand()
+            ->delete('{{%accessibilityaudit_vpat_revisions}}', ['siteId' => $siteId])
+            ->execute();
+    }
+
+    /**
+     * How many revisions are held for a site.
+     *
+     * @param int $siteId The site the report belongs to.
+     * @return int
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function countRevisions(int $siteId): int
+    {
+        return (int)(new Query())
+            ->from('{{%accessibilityaudit_vpat_revisions}}')
+            ->where(['siteId' => $siteId])
+            ->count();
+    }
+
+    /**
+     * The revision history: what changed between each snapshot and the one
+     * before it, newest first.
+     *
+     * The oldest snapshot held is not reported on. There is nothing before it
+     * to compare against, and describing a first issue as though every answer
+     * in it were a change would overstate what happened.
+     *
+     * @param int $siteId The site the report belongs to.
+     * @param int $limit How many revisions to describe.
+     * @return array<int, array{date: string, changes: array<int, array{criterion: string, name: string, from: string, to: string}>, remarkEdits: int}>
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function getRevisionHistory(int $siteId, int $limit = 5): array
+    {
+        $rows = (new Query())
+            ->select(['snapshot', 'dateCreated'])
+            ->from('{{%accessibilityaudit_vpat_revisions}}')
+            ->where(['siteId' => $siteId])
+            ->orderBy(['dateCreated' => SORT_DESC, 'id' => SORT_DESC])
+            ->limit($limit + 1)
+            ->all();
+
+        $history = [];
+
+        for ($i = 0, $n = count($rows) - 1; $i < $n; $i++) {
+            $current = Json::decodeIfJson($rows[$i]['snapshot']) ?: [];
+            $previous = Json::decodeIfJson($rows[$i + 1]['snapshot']) ?: [];
+
+            $changes = [];
+            $remarkEdits = 0;
+
+            foreach (array_keys($current + $previous) as $criterion) {
+                $was = $previous[$criterion]['level'] ?? '';
+                $now = $current[$criterion]['level'] ?? '';
+
+                if ($was !== $now) {
+                    $changes[] = [
+                        'criterion' => $criterion,
+                        'name' => self::CRITERIA[$criterion]['name'] ?? $criterion,
+                        'from' => $was !== '' ? $was : 'Not evaluated',
+                        'to' => $now !== '' ? $now : 'Not evaluated',
+                    ];
+                    continue;
+                }
+
+                if (($previous[$criterion]['remarks'] ?? '') !== ($current[$criterion]['remarks'] ?? '')) {
+                    $remarkEdits++;
+                }
+            }
+
+            usort($changes, static fn(array $a, array $b): int => strnatcmp($a['criterion'], $b['criterion']));
+
+            $history[] = [
+                'date' => $rows[$i]['dateCreated'],
+                'changes' => $changes,
+                'remarkEdits' => $remarkEdits,
+            ];
+        }
+
+        return $history;
+    }
+
+    /**
      * Derives conformance levels from live scan data.
      *
      * For criteria with scan violations:
@@ -861,6 +1113,7 @@ class VpatService extends Component
                 'remarkStale' => $this->_remarkIsStale($override, $evidence[$num] ?? null),
                 'remarkSavedAt' => $override['remarkSavedAt'] ?? null,
                 'remarkFindings' => $override['remarkFindings'] ?? null,
+                'enClause' => $this->enClause($num),
             ]);
 
             if ($criterion['level'] === 'A') {
@@ -884,7 +1137,43 @@ class VpatService extends Component
             // Whether to state EN 301 549 alongside WCAG: clause 9 restates WCAG
             // 2.1 Level AA, and this report is Level AA throughout.
             'en301549' => (bool)(AccessibilityAudit::getInstance()->getSettings()->en301549 ?? false),
+            'en301549Version' => self::EN_301_549_VERSION,
+            'revisions' => $this->getRevisionHistory($siteId),
+            // Carried so the exported document can post back against the site
+            // it describes, rather than whichever site the request defaults to.
+            'siteId' => $siteId,
         ];
+    }
+
+    /**
+     * The EN 301 549 clause covering a WCAG criterion, or null where the
+     * harmonised version does not cover it.
+     *
+     * Clause 9 of EN 301 549 adopts the WCAG success criteria wholesale and
+     * numbers each one by prefixing 9, so WCAG 1.4.3 is clause 9.1.4.3. The
+     * mapping is mechanical, which is why a report can state it and why a
+     * reader checking against the European standard should not have to work it
+     * out themselves.
+     *
+     * It stops at WCAG 2.1. The criteria 2.2 added have no clause in the
+     * harmonised version and return null rather than a plausible number.
+     *
+     * @param string $number The WCAG criterion number, e.g. '1.4.3'.
+     * @return string|null The EN clause, e.g. '9.1.4.3', or null where uncovered.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function enClause(string $number): ?string
+    {
+        if (!isset(self::CRITERIA[$number])) {
+            return null;
+        }
+
+        if (in_array($number, self::NOT_IN_EN_301_549, true)) {
+            return null;
+        }
+
+        return '9.' . $number;
     }
 
     /**
@@ -1148,6 +1437,35 @@ class VpatService extends Component
         }
 
         return (int)$override['remarkFindings'] !== (int)$evidence['findings'];
+    }
+
+    /**
+     * Reduces the stored overrides to the answers themselves, sorted.
+     *
+     * The bookkeeping saved alongside a remark, when it was written and what
+     * the findings were at the time, changes on its own and would make two
+     * identical sets of answers compare as different. Key order would do the
+     * same, since a criterion answered later sits later in the map.
+     *
+     * @param array<string, array> $overrides The stored override map.
+     * @return array<string, array{level: string, remarks: string}>
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    private function _answerMap(array $overrides): array
+    {
+        $answers = [];
+
+        foreach ($overrides as $criterion => $override) {
+            $answers[$criterion] = [
+                'level' => (string)($override['level'] ?? ''),
+                'remarks' => (string)($override['remarks'] ?? ''),
+            ];
+        }
+
+        ksort($answers, SORT_NATURAL);
+
+        return $answers;
     }
 
     /**

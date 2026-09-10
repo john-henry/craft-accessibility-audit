@@ -91,6 +91,7 @@ class StatementController extends Controller
         $meta->statusOverride = trim((string) $this->request->getBodyParam('statusOverride', ''));
         $meta->statementDate = $this->_dateParamToYmd('statementDate');
         $meta->reviewDate = $this->_dateParamToYmd('reviewDate');
+        $meta->nextReviewDate = $this->_dateParamToYmd('nextReviewDate');
         $meta->preparationMethod = trim((string) $this->request->getBodyParam('preparationMethod', StatementMetaModel::METHOD_SELF));
         $meta->preparedBy = trim((string) $this->request->getBodyParam('preparedBy', ''));
         $meta->enforcementBody = trim((string) $this->request->getBodyParam('enforcementBody', ''));

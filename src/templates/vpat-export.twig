@@ -20,12 +20,16 @@ a { color: #0d78f2; }
 a:hover { text-decoration: underline; }
 
 /* ── Print ───────────────────────────────────────────────────────────────── */
+@page { margin: 16mm 14mm; }
+
 @media print {
     body { font-size: 11px; }
-    .vpat-print-bar { display: none; }
-    table { page-break-inside: avoid; }
-    h2, h3 { page-break-after: avoid; }
-    .vpat-section { page-break-inside: avoid; }
+    .vpat-print-bar { display: none !important; }
+
+    thead { display: table-header-group; }
+    tr { break-inside: avoid; page-break-inside: avoid; }
+    h1, h2, h3 { break-after: avoid; page-break-after: avoid; }
+    .vpat-section { break-inside: auto; page-break-inside: auto; }
 }
 
 /* ── Layout ──────────────────────────────────────────────────────────────── */
@@ -43,6 +47,7 @@ a:hover { text-decoration: underline; }
 }
 .vpat-print-bar a { color: #7eb8f7; }
 .vpat-print-bar__actions { display: flex; gap: 12px; align-items: center; }
+.vpat-print-bar button[disabled] { opacity: 0.55; cursor: default; }
 .vpat-print-bar button {
     background: #fff;
     color: #1b3a6b;
@@ -135,12 +140,17 @@ a:hover { text-decoration: underline; }
     vertical-align: top;
 }
 .vpat-criteria-table tr:nth-child(even) td { background: #f5f8fc; }
-.vpat-criteria-table th:first-child,
-.vpat-criteria-table td:first-child { width: 100px; }
-.vpat-criteria-table th:nth-child(2),
-.vpat-criteria-table td:nth-child(2) { width: 220px; }
-.vpat-criteria-table th:nth-child(3),
-.vpat-criteria-table td:nth-child(3) { width: 175px; }
+
+.vpat-col-crit { width: 100px; }
+.vpat-col-en { width: 90px; white-space: nowrap; }
+.vpat-col-level { width: 175px; }
+.vpat-col-remarks { width: auto; }
+
+.vpat-en-none {
+    color: #777;
+    font-style: italic;
+    white-space: normal;
+}
 
 .vpat-crit-num {
     font-weight: 700;
@@ -204,56 +214,104 @@ a:hover { text-decoration: underline; }
 </head>
 <body>
 
-<div class="vpat-print-bar">
-    <span>VPAT®: WCAG 2.2 Level AA Conformance Report</span>
-    <div class="vpat-print-bar__actions">
-        <button type="button" onclick="window.close()"><span aria-hidden="true">←</span> Back to editor</button>
-        <button type="button" onclick="window.print()">Print / Save as PDF</button>
-    </div>
-</div>
+{% set jsonFlags = constant('JSON_HEX_TAG') b-or constant('JSON_HEX_APOS') b-or constant('JSON_HEX_QUOT') b-or constant('JSON_HEX_AMP') %}
+
+{% set levelLabels = {
+    'Supports': 'Supports'|t('accessibility-audit'),
+    'Partially Supports': 'Partially Supports'|t('accessibility-audit'),
+    'Does Not Support': 'Does Not Support'|t('accessibility-audit'),
+    'Not Applicable': 'Not Applicable'|t('accessibility-audit'),
+    'Not Evaluated': 'Not Evaluated'|t('accessibility-audit'),
+    'Not evaluated': 'Not evaluated'|t('accessibility-audit'),
+} %}
+
+<div id="vpat-print-bar-mount"></div>
+<script>
+(function() {
+    'use strict';
+
+    var mount = document.getElementById('vpat-print-bar-mount');
+    if (!mount) { return; }
+
+    var bar = document.createElement('div');
+    bar.className = 'vpat-print-bar';
+
+    var label = document.createElement('span');
+    label.textContent = {{ 'VPAT®: WCAG 2.2 Level AA Conformance Report'|t('accessibility-audit')|json_encode(jsonFlags)|raw }};
+
+    var actions = document.createElement('div');
+    actions.className = 'vpat-print-bar__actions';
+
+    var back = document.createElement('button');
+    back.type = 'button';
+    var arrow = document.createElement('span');
+    arrow.setAttribute('aria-hidden', 'true');
+    arrow.textContent = '← ';
+    back.appendChild(arrow);
+    back.appendChild(document.createTextNode(
+        {{ 'Back to editor'|t('accessibility-audit')|json_encode(jsonFlags)|raw }}
+    ));
+    back.addEventListener('click', function() { window.close(); });
+
+    var print = document.createElement('button');
+    print.type = 'button';
+    print.textContent = {{ 'Print / Save as PDF'|t('accessibility-audit')|json_encode(jsonFlags)|raw }};
+    print.addEventListener('click', function() { window.print(); });
+
+    actions.appendChild(back);
+
+    actions.appendChild(print);
+    bar.appendChild(label);
+    bar.appendChild(actions);
+    mount.parentNode.replaceChild(bar, mount);
+})();
+</script>
 
 <div class="vpat-doc">
 
     <div class="vpat-header">
-        <h1>Accessibility Conformance Report</h1>
+        <h1>{{ 'Accessibility Conformance Report'|t('accessibility-audit') }}</h1>
         <p class="vpat-subtitle">
-            WCAG Edition &nbsp;·&nbsp;
-            Based on VPAT® Version 2.5Rev
+            {{ 'WCAG Edition'|t('accessibility-audit') }} &nbsp;·&nbsp;
+            {{ 'Based on VPAT® Version {version}'|t('accessibility-audit', { version: '2.5Rev' }) }}
         </p>
     </div>
 
     <div class="vpat-section">
-        <h2>Name of Product / Version</h2>
+        <h2>{{ 'Name of Product / Version'|t('accessibility-audit') }}</h2>
         <p>
-            <strong>{{ report.meta.productName ?? '[Product Name]' }}</strong>
+            <strong>{{ report.meta.productName ?? '[Product Name]'|t('accessibility-audit') }}</strong>
             {% if report.meta.productVersion ?? false %}
-                &nbsp;&nbsp;Version {{ report.meta.productVersion }}
+                &nbsp;&nbsp;{{ 'Version {version}'|t('accessibility-audit', { version: report.meta.productVersion }) }}
             {% endif %}
         </p>
 
         {% if report.meta.productDescription ?? false %}
-            <h2>Product Description</h2>
+            <h2>{{ 'Product Description'|t('accessibility-audit') }}</h2>
             <p>{{ report.meta.productDescription|nl2br }}</p>
         {% endif %}
 
-        <h2>Report Date</h2>
+        <h2>{{ 'Report Date'|t('accessibility-audit') }}</h2>
         <table class="vpat-info-table">
             <tr>
-                <th scope="row">Report Date:</th>
-                <td>{{ report.meta.reportDate ?? '[Not specified]' }}</td>
+                <th scope="row">{{ 'Report Date'|t('accessibility-audit') }}:</th>
+                <td>{{ report.meta.reportDate ?? '[Not specified]'|t('accessibility-audit') }}</td>
             </tr>
             <tr>
-                <th scope="row">Evaluation Period:</th>
+                <th scope="row">{{ 'Evaluation Period'|t('accessibility-audit') }}:</th>
                 <td>
                     {% if (report.meta.reportPeriodFrom ?? false) or (report.meta.reportPeriodTo ?? false) %}
-                        {{ report.meta.reportPeriodFrom ?? '—' }} to {{ report.meta.reportPeriodTo ?? '—' }}
+                        {{ '{from} to {to}'|t('accessibility-audit', {
+                            from: report.meta.reportPeriodFrom ?? '—',
+                            to: report.meta.reportPeriodTo ?? '—',
+                        }) }}
                     {% else %}
-                        [Not specified]
+                        {{ '[Not specified]'|t('accessibility-audit') }}
                     {% endif %}
                 </td>
             </tr>
             <tr>
-                <th scope="row">Contact:</th>
+                <th scope="row">{{ 'Contact'|t('accessibility-audit') }}:</th>
                 <td>
                     {{ report.meta.contactName ?? '' }}
                     {% if report.meta.contactEmail ?? false %}
@@ -269,15 +327,15 @@ a:hover { text-decoration: underline; }
 
     {% if report.meta.notes ?? false %}
         <div class="vpat-section">
-            <h2>Notes</h2>
+            <h2>{{ 'Notes'|t('accessibility-audit') }}</h2>
             <p>{{ report.meta.notes|nl2br }}</p>
         </div>
     {% endif %}
 
     {% if (report.meta.scopePages ?? []) is not empty %}
         <div class="vpat-section">
-            <h2>Scope of Evaluation</h2>
-            <p>The evaluation covered the following pages and screens:</p>
+            <h2>{{ 'Scope of Evaluation'|t('accessibility-audit') }}</h2>
+            <p>{{ 'The evaluation covered the following pages and screens:'|t('accessibility-audit') }}</p>
             <ul class="vpat-scope-list">
                 {% for page in report.meta.scopePages %}
                     <li>{{ page }}</li>
@@ -287,7 +345,7 @@ a:hover { text-decoration: underline; }
     {% endif %}
 
     <div class="vpat-section">
-        <h2>Evaluation Methods Used</h2>
+        <h2>{{ 'Evaluation Methods Used'|t('accessibility-audit') }}</h2>
         {% if (report.meta.evalMethods ?? []) is not empty %}
             <ul class="vpat-methods-list">
                 {% for method in report.meta.evalMethods %}
@@ -298,70 +356,82 @@ a:hover { text-decoration: underline; }
         {% if report.meta.evalMethodology ?? false %}
             <p>{{ report.meta.evalMethodology|nl2br }}</p>
         {% elseif (report.meta.evalMethods ?? []) is empty %}
-            <p>Automated scanning with axe-core and server-side HTML analysis.</p>
+            <p>{{ 'Automated scanning with axe-core and server-side HTML analysis.'|t('accessibility-audit') }}</p>
         {% endif %}
     </div>
 
     <div class="vpat-section">
-        <h2>Applicable Standards / Guidelines</h2>
+        <h2>{{ 'Applicable Standards / Guidelines'|t('accessibility-audit') }}</h2>
         <p>
-            This report covers conformance with the following accessibility standard:
-            <strong>Web Content Accessibility Guidelines (WCAG) 2.2</strong> at Level AA,
-            published by the W3C World Wide Web Consortium at
-            <a href="https://www.w3.org/TR/WCAG22/">https://www.w3.org/TR/WCAG22/</a>.
+            {{ 'This report covers conformance with the following accessibility standard: <strong>Web Content Accessibility Guidelines (WCAG) 2.2</strong> at Level AA, published by the W3C World Wide Web Consortium at <a href="{url}">{url}</a>.'|t('accessibility-audit', {
+                url: 'https://www.w3.org/TR/WCAG22/',
+            })|raw }}
         </p>
         {% if report.en301549 ?? false %}
         <p>
-            <strong>EN 301 549</strong> (the European standard behind the EU Web
-            Accessibility Directive and the European Accessibility Act) adopts the
-            WCAG Level AA success criteria for web content in its clause 9, so the
-            results above speak to that clause. Clauses covering non-web ICT, such
-            as hardware, software, documents and support services, are outside the
-            scope of this report.
+            {{ '<strong>EN 301 549 {version}</strong> (the European standard behind the EU Web Accessibility Directive and the European Accessibility Act) adopts the WCAG Level AA success criteria for web content in its clause 9, so the results below speak to that clause. The corresponding clause number is given beside each criterion. Clauses covering non-web ICT, such as hardware, software, documents and support services, are outside the scope of this report.'|t('accessibility-audit', {
+                version: report.en301549Version|e,
+            })|raw }}
+        </p>
+        <p>
+            {{ 'EN 301 549 {version} adopts WCAG 2.1. The criteria WCAG 2.2 added have no clause in it and are marked as such rather than given a clause number that does not exist in the standard. They are assessed here against WCAG 2.2 all the same.'|t('accessibility-audit', {
+                version: report.en301549Version,
+            }) }}
         </p>
         {% endif %}
     </div>
 
     <div class="vpat-section vpat-terms">
-        <h2>Terms Used in the Conformance Level Column</h2>
+        <h2>{{ 'Terms Used in the Conformance Level Column'|t('accessibility-audit') }}</h2>
         <dl>
-            <dt>Supports</dt>
-            <dd>The functionality of the product meets the criterion without exception.</dd>
-            <dt>Partially Supports</dt>
-            <dd>Some functionality of the product meets the criterion, while other functionality does not.</dd>
-            <dt>Does Not Support</dt>
-            <dd>The majority of product functionality does not meet the criterion.</dd>
-            <dt>Not Applicable</dt>
-            <dd>The criterion is not relevant to this product.</dd>
-            <dt>Not Evaluated</dt>
-            <dd>The product has not been evaluated against this criterion. (Allowed for Level AAA only.)</dd>
+            <dt>{{ levelLabels['Supports'] }}</dt>
+            <dd>{{ 'The functionality of the product meets the criterion without exception.'|t('accessibility-audit') }}</dd>
+            <dt>{{ levelLabels['Partially Supports'] }}</dt>
+            <dd>{{ 'Some functionality of the product meets the criterion, while other functionality does not.'|t('accessibility-audit') }}</dd>
+            <dt>{{ levelLabels['Does Not Support'] }}</dt>
+            <dd>{{ 'The majority of product functionality does not meet the criterion.'|t('accessibility-audit') }}</dd>
+            <dt>{{ levelLabels['Not Applicable'] }}</dt>
+            <dd>{{ 'The criterion is not relevant to this product.'|t('accessibility-audit') }}</dd>
+            <dt>{{ levelLabels['Not Evaluated'] }}</dt>
+            <dd>{{ 'The product has not been evaluated against this criterion. (Allowed for Level AAA only.)'|t('accessibility-audit') }}</dd>
         </dl>
     </div>
 
     <div class="vpat-section">
-        <h2>WCAG 2.2 Report</h2>
+        <h2>{{ 'WCAG 2.2 Report'|t('accessibility-audit') }}</h2>
         <p>
-            Note: When reporting on conformance with the WCAG 2.x Success Criteria,
-            they are scoped for full pages, complete processes, and accessibility-supported ways.
+            {{ 'Note: When reporting on conformance with the WCAG 2.x Success Criteria, they are scoped for full pages, complete processes, and accessibility-supported ways.'|t('accessibility-audit') }}
         </p>
 
-        <h3>Table 1: Success Criteria, Level A</h3>
+        <h3>{{ 'Table 1: Success Criteria, Level A'|t('accessibility-audit') }}</h3>
         <table class="vpat-criteria-table">
             <thead>
                 <tr>
-                    <th scope="col">Criteria</th>
-                    <th scope="col">Conformance Level</th>
-                    <th scope="col">Remarks and Explanations</th>
+                    <th scope="col" class="vpat-col-crit">{{ 'Criteria'|t('accessibility-audit') }}</th>
+                    {% if report.en301549 %}
+                        <th scope="col" class="vpat-col-en">EN 301 549</th>
+                    {% endif %}
+                    <th scope="col" class="vpat-col-level">{{ 'Conformance Level'|t('accessibility-audit') }}</th>
+                    <th scope="col" class="vpat-col-remarks">{{ 'Remarks and Explanations'|t('accessibility-audit') }}</th>
                 </tr>
             </thead>
             <tbody>
                 {% for num, row in report.levelA %}
                     <tr>
-                        <td class="vpat-crit-num">
+                        <td class="vpat-crit-num vpat-col-crit">
                             <a href="{{ row.url }}" target="_blank" rel="noopener">{{ num }}</a>
                             {{ row.name }}
                         </td>
-                        <td>
+                        {% if report.en301549 %}
+                            <td class="vpat-col-en">
+                                {%- if row.enClause -%}
+                                    {{ row.enClause }}
+                                {%- else -%}
+                                    <span class="vpat-en-none">{{ 'Not in {version}'|t('accessibility-audit', { version: report.en301549Version }) }}</span>
+                                {%- endif -%}
+                            </td>
+                        {% endif %}
+                        <td class="vpat-col-level">
                             {% if row.effectiveLevel %}
                                 {% set badgeClass = {
                                     'Supports':          'supports',
@@ -370,34 +440,46 @@ a:hover { text-decoration: underline; }
                                     'Not Applicable':    'na',
                                     'Not Evaluated':     'not-evaluated',
                                 }[row.effectiveLevel] ?? 'na' %}
-                                <span class="vpat-badge vpat-badge--{{ badgeClass }}">{{ row.effectiveLevel }}</span>
+                                <span class="vpat-badge vpat-badge--{{ badgeClass }}">{{ levelLabels[row.effectiveLevel] ?? row.effectiveLevel }}</span>
                             {% else %}
-                                <span class="vpat-badge vpat-badge--empty">Not evaluated</span>
+                                <span class="vpat-badge vpat-badge--empty">{{ levelLabels['Not evaluated'] }}</span>
                             {% endif %}
                         </td>
-                        <td>{{ row.effectiveRemarks|nl2br ?: '' }}</td>
+                        <td class="vpat-col-remarks">{{ row.effectiveRemarks|nl2br ?: '' }}</td>
                     </tr>
                 {% endfor %}
             </tbody>
         </table>
 
-        <h3>Table 2: Success Criteria, Level AA</h3>
+        <h3>{{ 'Table 2: Success Criteria, Level AA'|t('accessibility-audit') }}</h3>
         <table class="vpat-criteria-table">
             <thead>
                 <tr>
-                    <th scope="col">Criteria</th>
-                    <th scope="col">Conformance Level</th>
-                    <th scope="col">Remarks and Explanations</th>
+                    <th scope="col" class="vpat-col-crit">{{ 'Criteria'|t('accessibility-audit') }}</th>
+                    {% if report.en301549 %}
+                        <th scope="col" class="vpat-col-en">EN 301 549</th>
+                    {% endif %}
+                    <th scope="col" class="vpat-col-level">{{ 'Conformance Level'|t('accessibility-audit') }}</th>
+                    <th scope="col" class="vpat-col-remarks">{{ 'Remarks and Explanations'|t('accessibility-audit') }}</th>
                 </tr>
             </thead>
             <tbody>
                 {% for num, row in report.levelAA %}
                     <tr>
-                        <td class="vpat-crit-num">
+                        <td class="vpat-crit-num vpat-col-crit">
                             <a href="{{ row.url }}" target="_blank" rel="noopener">{{ num }}</a>
                             {{ row.name }}
                         </td>
-                        <td>
+                        {% if report.en301549 %}
+                            <td class="vpat-col-en">
+                                {%- if row.enClause -%}
+                                    {{ row.enClause }}
+                                {%- else -%}
+                                    <span class="vpat-en-none">{{ 'Not in {version}'|t('accessibility-audit', { version: report.en301549Version }) }}</span>
+                                {%- endif -%}
+                            </td>
+                        {% endif %}
+                        <td class="vpat-col-level">
                             {% if row.effectiveLevel %}
                                 {% set badgeClass = {
                                     'Supports':          'supports',
@@ -406,30 +488,71 @@ a:hover { text-decoration: underline; }
                                     'Not Applicable':    'na',
                                     'Not Evaluated':     'not-evaluated',
                                 }[row.effectiveLevel] ?? 'na' %}
-                                <span class="vpat-badge vpat-badge--{{ badgeClass }}">{{ row.effectiveLevel }}</span>
+                                <span class="vpat-badge vpat-badge--{{ badgeClass }}">{{ levelLabels[row.effectiveLevel] ?? row.effectiveLevel }}</span>
                             {% else %}
-                                <span class="vpat-badge vpat-badge--empty">Not evaluated</span>
+                                <span class="vpat-badge vpat-badge--empty">{{ levelLabels['Not evaluated'] }}</span>
                             {% endif %}
                         </td>
-                        <td>{{ row.effectiveRemarks|nl2br ?: '' }}</td>
+                        <td class="vpat-col-remarks">{{ row.effectiveRemarks|nl2br ?: '' }}</td>
                     </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 
+    {% if report.revisions|length %}
+        <div class="vpat-section">
+            <h2>{{ 'Revision History'|t('accessibility-audit') }}</h2>
+            <p>
+                {{ 'What changed between this revision of the report and the ones recorded before it. A criterion is listed where its conformance level moved; wording changes are counted rather than listed. Each revision is recorded deliberately, so this is a history of the versions that were put out, not a log of every edit made along the way.'|t('accessibility-audit') }}
+            </p>
+            {% for revision in report.revisions %}
+                <h3>{{ revision.date|date('long') }}</h3>
+                {% if revision.changes|length %}
+                    <table class="vpat-criteria-table vpat-revision-table">
+                        <thead>
+                            <tr>
+                                <th scope="col" class="vpat-col-crit">{{ 'Criteria'|t('accessibility-audit') }}</th>
+                                <th scope="col" class="vpat-col-level">{{ 'Was'|t('accessibility-audit') }}</th>
+                                <th scope="col" class="vpat-col-level">{{ 'Became'|t('accessibility-audit') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for change in revision.changes %}
+                                <tr>
+                                    <td class="vpat-crit-num vpat-col-crit">
+                                        {{ change.criterion }} {{ change.name }}
+                                    </td>
+                                    <td class="vpat-col-level">{{ levelLabels[change.from] ?? change.from }}</td>
+                                    <td class="vpat-col-level">{{ levelLabels[change.to] ?? change.to }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p>{{ 'No conformance level changed.'|t('accessibility-audit') }}</p>
+                {% endif %}
+                {% if revision.remarkEdits %}
+                    <p>
+                        {{ '{n, plural, =1{# remark was reworded without the conformance level changing.} other{# remarks were reworded without the conformance level changing.}}'|t('accessibility-audit', { n: revision.remarkEdits }) }}
+                    </p>
+                {% endif %}
+            {% endfor %}
+        </div>
+    {% endif %}
+
     {% if report.meta.legalDisclaimer ?? false %}
         <div class="vpat-section">
-            <h2>Legal Disclaimer</h2>
+            <h2>{{ 'Legal Disclaimer'|t('accessibility-audit') }}</h2>
             <p>{{ report.meta.legalDisclaimer|nl2br }}</p>
         </div>
     {% endif %}
 
     <div class="vpat-footer">
         <p>
-            VPAT® is a registered service mark of the Information Technology Industry Council (ITI).
-            This report was generated using the Accessibility Audit plugin for Craft CMS.
-            Generated: {{ now|date('Y-m-d') }}.
+            {{ 'VPAT® is a registered service mark of the Information Technology Industry Council (ITI).'|t('accessibility-audit') }}
+            {{ 'This report was generated using the Accessibility Audit plugin for Craft CMS.'|t('accessibility-audit') }}
+            {{ 'Generated: {date}.'|t('accessibility-audit', { date: now|date('Y-m-d') }) }}
         </p>
     </div>
 

@@ -83,10 +83,13 @@ describe('AuditService::getCoverage', function() {
         $was = $settings->customUrls;
 
         try {
-            $settings->customUrls = '';
+            $settings->customUrls = [];
             $bare = $this->audit->getCoverage($this->siteId)['scannable'];
 
-            $settings->customUrls = "https://example.com/a\nhttps://example.com/b";
+            $settings->customUrls = [
+                ['enabled' => true, 'siteId' => '', 'url' => 'https://example.com/a'],
+                ['enabled' => true, 'siteId' => '', 'url' => 'https://example.com/b'],
+            ];
 
             expect($this->audit->getCoverage($this->siteId)['scannable'])->toBe($bare + 2);
         } finally {

@@ -185,6 +185,92 @@ class VpatController extends Controller
     }
 
     /**
+     * Records the current answers as a revision of the report.
+     *
+     * Deliberate, and separate from exporting. Only the author knows when a
+     * document was actually given to somebody, and hanging the history off the
+     * export would have turned a record of issued documents into a record of
+     * times the preview was opened.
+     *
+     * @return Response
+     * @throws ForbiddenHttpException
+     * @throws BadRequestHttpException
+     * @throws MethodNotAllowedHttpException
+     * @throws SiteNotFoundException
+     * @throws \yii\db\Exception
+     * @throws \yii\base\InvalidConfigException
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function actionRecordRevision(): Response
+    {
+        $this->requirePostRequest();
+        $this->requirePermission('accessibility-audit:manageVpat');
+
+        if (($refusal = $this->requireProJson('VPAT conformance reporting')) !== null) {
+            return $refusal;
+        }
+
+        $siteId = (int)$this->request->getRequiredBodyParam('siteId');
+
+        if (($refusal = $this->_requireAllowedSite($siteId)) !== null) {
+            return $refusal;
+        }
+
+        $recorded = AccessibilityAudit::getInstance()->vpat->recordRevision($siteId);
+
+        return $this->asJson([
+            'success' => true,
+            'recorded' => $recorded,
+            'message' => $recorded
+                ? Craft::t('accessibility-audit', 'Recorded. This is now the latest revision of this report.')
+                : Craft::t('accessibility-audit', 'Nothing has changed since the last revision, so nothing new was recorded.'),
+        ]);
+    }
+
+    /**
+     * Removes the most recently recorded revision.
+     *
+     * The undo for a button pressed to see what it did. Only the latest one
+     * goes, so the history cannot be quietly rewritten from the middle.
+     *
+     * @return Response
+     * @throws ForbiddenHttpException
+     * @throws BadRequestHttpException
+     * @throws MethodNotAllowedHttpException
+     * @throws SiteNotFoundException
+     * @throws \yii\db\Exception
+     * @throws \yii\base\InvalidConfigException
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function actionDeleteLatestRevision(): Response
+    {
+        $this->requirePostRequest();
+        $this->requirePermission('accessibility-audit:manageVpat');
+
+        if (($refusal = $this->requireProJson('VPAT conformance reporting')) !== null) {
+            return $refusal;
+        }
+
+        $siteId = (int)$this->request->getRequiredBodyParam('siteId');
+
+        if (($refusal = $this->_requireAllowedSite($siteId)) !== null) {
+            return $refusal;
+        }
+
+        $removed = AccessibilityAudit::getInstance()->vpat->deleteLatestRevision($siteId);
+
+        return $this->asJson([
+            'success' => true,
+            'removed' => $removed,
+            'message' => $removed
+                ? Craft::t('accessibility-audit', 'The latest revision was removed.')
+                : Craft::t('accessibility-audit', 'There are no revisions recorded to remove.'),
+        ]);
+    }
+
+    /**
      * Exports the full VPAT report as a standalone HTML page.
      *
      * @return Response
@@ -305,6 +391,55 @@ class VpatController extends Controller
      * @since 1.0.0
      */
     private function _renderExportHtml(array $report): string
+    {
+        // Everything this produces is read by somebody outside the
+        // organisation, which is why the export template carries no explanatory
+        // comments of its own and the reasoning for how it is built sits here
+        // instead:
+        //
+        //  - The toolbar is created in JavaScript rather than written into the
+        //    markup, so a saved copy of the page, or one run through an HTML to
+        //    PDF converter, holds no editor controls whether or not that
+        //    converter honours the print stylesheet.
+        //  - The CSRF token for the Record control is fetched when the button
+        //    is pressed rather than printed into the page, so it does not
+        //    travel with a document that is meant to be sent to a buyer.
+        //  - The conformance table breaks across pages and repeats its header,
+        //    because a table of fifty rows kept whole is pushed to a fresh page
+        //    and leaves the one before it empty.
+        //
+        // The report is written in the language of the site it describes, not
+        // the language whoever exported it happens to read the control panel
+        // in. It is handed to a buyer, and an Irish admin exporting the report
+        // for an English site should not produce an Irish document.
+        $site = Craft::$app->getSites()->getSiteById((int)($report['siteId'] ?? 0));
+        $originalLanguage = Craft::$app->language;
+
+        if ($site !== null) {
+            Craft::$app->language = $site->language;
+        }
+
+        try {
+            return $this->_renderExportTemplate($report);
+        } finally {
+            Craft::$app->language = $originalLanguage;
+        }
+    }
+
+    /**
+     * Renders the export markup, from the site's own template where one is
+     * configured and from the built-in report otherwise.
+     *
+     * @param array $report The full report data.
+     * @return string The rendered HTML.
+     * @throws Exception
+     * @throws \Twig\Error\LoaderError
+     * @throws \Twig\Error\RuntimeError
+     * @throws \Twig\Error\SyntaxError
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    private function _renderExportTemplate(array $report): string
     {
         $view = Craft::$app->getView();
         $template = trim(AccessibilityAudit::getInstance()->getSettings()->vpatExportTemplate);

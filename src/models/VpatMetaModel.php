@@ -7,6 +7,7 @@
 namespace johnhenry\accessibilityaudit\models;
 
 use craft\base\Model;
+use DateTime;
 
 /**
  * Validates and represents the VPAT-specific report metadata for a site.
@@ -120,7 +121,29 @@ class VpatMetaModel extends Model
             [['notes', 'legalDisclaimer'], 'string', 'max' => 5000],
             // Dates must be well-formed flat ISO strings; the date validator
             // does not mutate the stored value (defaultTimeZone/format left alone).
-            [['reportDate', 'reportPeriodFrom', 'reportPeriodTo'], 'date', 'format' => self::DATE_FORMAT],
+            //
+            // All three describe work already done: the day the report was
+            // published, and the period the evaluation covered. A future date
+            // in any of them claims testing nobody has carried out.
+            [
+                ['reportDate', 'reportPeriodFrom', 'reportPeriodTo'],
+                'date',
+                'format' => self::DATE_FORMAT,
+                'max' => (new DateTime('today'))->format('Y-m-d'),
+                'tooBig' => '{attribute} cannot be in the future.',
+            ],
+
+            // An evaluation period that ends before it starts describes nothing,
+            // and both halves are typed by hand into separate fields.
+            [
+                ['reportPeriodTo'],
+                'compare',
+                'compareAttribute' => 'reportPeriodFrom',
+                'operator' => '>=',
+                'type' => 'string',
+                'when' => static fn(self $model): bool => $model->reportPeriodFrom !== '' && $model->reportPeriodTo !== '',
+                'message' => 'The evaluation period cannot end before it starts.',
+            ],
         ]);
     }
 }

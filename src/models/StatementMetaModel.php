@@ -7,6 +7,7 @@
 namespace johnhenry\accessibilityaudit\models;
 
 use craft\base\Model;
+use DateTime;
 use johnhenry\accessibilityaudit\services\StatementProfiles;
 
 /**
@@ -76,6 +77,17 @@ class StatementMetaModel extends Model
     public string $reviewDate = '';
 
     /**
+     * @var string The date the statement is due to be reviewed again (Y-m-d).
+     *
+     * The EU and UK regimes both expect a statement to be kept current rather
+     * than published once, and a reader has no way to tell a statement that is
+     * being maintained from one nobody has looked at since it went up. Stating
+     * when the next review is due is what separates the two, and it is the only
+     * date here that belongs in the future.
+     */
+    public string $nextReviewDate = '';
+
+    /**
      * @var string How the assessment was carried out.
      */
     public string $preparationMethod = self::METHOD_SELF;
@@ -142,6 +154,7 @@ class StatementMetaModel extends Model
             'statusOverride' => $this->statusOverride,
             'statementDate' => $this->statementDate,
             'reviewDate' => $this->reviewDate,
+            'nextReviewDate' => $this->nextReviewDate,
             'preparationMethod' => $this->preparationMethod,
             'preparedBy' => $this->preparedBy,
             'enforcementBody' => $this->enforcementBody,
@@ -167,6 +180,7 @@ class StatementMetaModel extends Model
             'statusOverride',
             'statementDate',
             'reviewDate',
+            'nextReviewDate',
             'preparationMethod',
             'preparedBy',
             'enforcementBody',
@@ -196,7 +210,34 @@ class StatementMetaModel extends Model
             [['enforcementNotes'], 'string', 'max' => 2000],
             [['commitmentOverride'], 'string', 'max' => 5000],
             [['manualReviewConfirmed'], 'boolean'],
-            [['statementDate', 'reviewDate'], 'date', 'format' => self::DATE_FORMAT],
+            // Both describe something that has already happened: the day the
+            // statement was prepared, and the day it was last reviewed. A date
+            // in the future is published as a claim about work nobody has done.
+            [
+                ['statementDate', 'reviewDate'],
+                'date',
+                'format' => self::DATE_FORMAT,
+                'max' => (new DateTime('today'))->format('Y-m-d'),
+                'tooBig' => '{attribute} cannot be in the future.',
+            ],
+
+            // The one date here that belongs in the future, so it takes no
+            // ceiling. A past one is left alone on purpose: a review that is
+            // overdue is a true thing to publish, and refusing it would only
+            // push people to quietly move the date instead.
+            [['nextReviewDate'], 'date', 'format' => self::DATE_FORMAT],
+
+            // A statement cannot be due for review before the day it was last
+            // reviewed.
+            [
+                ['nextReviewDate'],
+                'compare',
+                'compareAttribute' => 'reviewDate',
+                'operator' => '>',
+                'type' => 'string',
+                'when' => static fn(self $model): bool => $model->reviewDate !== '' && $model->nextReviewDate !== '',
+                'message' => 'The next review has to fall after the last one.',
+            ],
 
             // Conditional on the profile: an enforcement body is compulsory
             // under the EU and UK regimes and meaningless without one, so it is

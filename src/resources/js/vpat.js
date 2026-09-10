@@ -324,4 +324,55 @@
         });
     }
 
+    /* Records the answers as they stand as a revision of the report. It sits
+       here rather than on the exported document so that replacing the export
+       with a template of your own does not take the control away with it. */
+    const recordBtn = document.getElementById('a11y-vpat-record');
+
+    if (recordBtn && CFG.recordRevisionUrl) {
+        recordBtn.addEventListener('click', async () => {
+            recordBtn.disabled = true;
+
+            try {
+                const result = await post(CFG.recordRevisionUrl, { siteId });
+
+                if (result && result.success) {
+                    Craft.cp.displayNotice(result.message);
+                } else {
+                    Craft.cp.displayError((result && result.error) || Craft.t('accessibility-audit', 'That could not be recorded. Try again.'));
+                }
+            } catch (e) {
+                Craft.cp.displayError(Craft.t('accessibility-audit', 'That could not be recorded. Try again.'));
+            }
+
+            recordBtn.disabled = false;
+        });
+    }
+
+    const undoBtn = document.getElementById('a11y-vpat-undo-record');
+
+    if (undoBtn && CFG.deleteRevisionUrl) {
+        undoBtn.addEventListener('click', async () => {
+            if (!window.confirm(Craft.t('accessibility-audit', 'Remove the most recently recorded revision? This cannot be undone.'))) {
+                return;
+            }
+
+            undoBtn.disabled = true;
+
+            try {
+                const result = await post(CFG.deleteRevisionUrl, { siteId });
+
+                if (result && result.success) {
+                    Craft.cp.displayNotice(result.message);
+                } else {
+                    Craft.cp.displayError((result && result.error) || Craft.t('accessibility-audit', 'That could not be removed. Try again.'));
+                }
+            } catch (e) {
+                Craft.cp.displayError(Craft.t('accessibility-audit', 'That could not be removed. Try again.'));
+            }
+
+            undoBtn.disabled = false;
+        });
+    }
+
 })();

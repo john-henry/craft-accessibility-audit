@@ -1,5 +1,7 @@
 {% extends "accessibility-audit/_settings/layout" %}
 
+{% import 'accessibility-audit/_macros' as macros %}
+
 {% set crumbs = [] %}
 {% block blockContent %}
 
@@ -16,8 +18,12 @@
     <table class="data fullwidth">
         <tbody>
         <tr>
+            <th scope="row">{{ 'Support'|t('accessibility-audit') }}</th>
+            <td><a href="https://johnhenry.ie/plugins/accessibility-audit/support" target="_blank" rel="noopener">johnhenry.ie/plugins/accessibility-audit/support{{ macros.newTabNote() }}</a></td>
+        </tr>
+        <tr>
             <th scope="row">{{ 'Documentation'|t('accessibility-audit') }}</th>
-            <td><a href="https://johnhenry.ie/plugins/accessibility-audit/docs" target="_blank" rel="noopener">johnhenry.ie/plugins/accessibility-audit/docs</a></td>
+            <td><a href="https://johnhenry.ie/plugins/accessibility-audit/docs" target="_blank" rel="noopener">johnhenry.ie/plugins/accessibility-audit/docs{{ macros.newTabNote() }}</a></td>
         </tr>
         <tr>
             <th scope="row">{{ 'Email'|t('accessibility-audit') }}</th>
@@ -25,11 +31,11 @@
         </tr>
         <tr>
             <th scope="row">{{ 'Bug reports'|t('accessibility-audit') }}</th>
-            <td><a href="https://github.com/john-henry/craft-accessibility-audit/issues" target="_blank" rel="noopener">github.com/john-henry/craft-accessibility-audit/issues</a></td>
+            <td><a href="https://github.com/john-henry/craft-accessibility-audit/issues" target="_blank" rel="noopener">github.com/john-henry/craft-accessibility-audit/issues{{ macros.newTabNote() }}</a></td>
         </tr>
         <tr>
             <th scope="row">{{ 'Developer'|t('accessibility-audit') }}</th>
-            <td><a href="https://johnhenry.ie" target="_blank" rel="noopener">johnhenry.ie</a></td>
+            <td><a href="https://johnhenry.ie" target="_blank" rel="noopener">johnhenry.ie{{ macros.newTabNote() }}</a></td>
         </tr>
         </tbody>
     </table>
@@ -41,15 +47,15 @@
         <tbody>
         <tr>
             <th scope="row">{{ 'WCAG 2.2 specification'|t('accessibility-audit') }}</th>
-            <td><a href="https://www.w3.org/TR/WCAG22/" target="_blank" rel="noopener">w3.org/TR/WCAG22</a></td>
+            <td><a href="https://www.w3.org/TR/WCAG22/" target="_blank" rel="noopener">w3.org/TR/WCAG22{{ macros.newTabNote() }}</a></td>
         </tr>
         <tr>
             <th scope="row">{{ 'axe-core rules'|t('accessibility-audit') }}</th>
-            <td><a href="https://dequeuniversity.com/rules/axe/" target="_blank" rel="noopener">dequeuniversity.com/rules/axe</a></td>
+            <td><a href="https://dequeuniversity.com/rules/axe/" target="_blank" rel="noopener">dequeuniversity.com/rules/axe{{ macros.newTabNote() }}</a></td>
         </tr>
         <tr>
             <th scope="row">{{ 'WebAIM Contrast Checker'|t('accessibility-audit') }}</th>
-            <td><a href="https://webaim.org/resources/contrastchecker/" target="_blank" rel="noopener">webaim.org/resources/contrastchecker</a></td>
+            <td><a href="https://webaim.org/resources/contrastchecker/" target="_blank" rel="noopener">webaim.org/resources/contrastchecker{{ macros.newTabNote() }}</a></td>
         </tr>
         </tbody>
     </table>

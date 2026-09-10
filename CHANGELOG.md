@@ -1,17 +1,97 @@
 # Release Notes for Accessibility Audit
 
-## Unreleased
+## 1.3.0 - 2026-09-10
+
+> [!IMPORTANT]
+> This update runs database migrations, including one that shipped in 1.2.1 and never ran. The plugin's schema version was not raised at the time, and Craft only runs a plugin's migrations when that number goes up, so 1.2.1 and 1.2.2 left it sitting there unapplied. If you installed the plugin fresh on 1.2.0 or later and scanning a page by its URL has been failing, this is why, and this update puts it right. Nothing is lost either way: the migrations only add columns and a table.
+
+> [!NOTE]
+> Dates on the accessibility statement and the VPAT are checked more strictly than they were. The day a statement was prepared or last reviewed, the report date, and both ends of the evaluation period all describe work already done, so none of them will take a date in the future any more, and an evaluation period has to end on or after it starts. Nothing stored changes and nothing breaks on its own: if one of your saved dates falls foul of this, you will find out the next time somebody saves that form, and the message will say which field and why.
+
+> [!NOTE]
+> Dates printed on the published statement now follow the site's language instead of always coming out in British order. On a site set to US English, "4 September 2026" becomes "September 4, 2026". This one changes what is on the page without anybody touching anything, so have a look at your published statement after updating. It is what makes the dates read correctly on a site published in French or Irish. If you would rather they never moved, the statement template can be replaced with your own.
+
+> [!NOTE]
+> Additional URLs, under Settings > Scanning, is a table now rather than a box you type lines into. Anything you had is carried over on update, a row per URL, and a line you had commented out with a `#` comes across as a row switched off. Nothing needs doing by hand, and nothing drops out of your scans.
 
 ### Added
-- Findings now record whether the markup was written by hand or came from an accessible component
-  library, and the report shows the split. The two want different answers: a fault in your own markup
-  is fixed on the page it is on, while a fault inside a component is either the component's bug or
-  the way it is being used, and fixing it once fixes every page it appears on. Any component
-  rendering a `data-ui-` attribute on its outer element is recognised, which is what
-  [A11y Components](https://johnhenry.ie/plugins/a11y-components/) does; nothing needs installing for
-  the rest of the plugin to carry on as before.
-- Scans taken before this existed keep no origin and are reported as not recorded, rather than being
-  guessed at after the fact. They fill in the next time those pages are scanned.
+- Console commands for the VPAT's revision history: `vpat/revisions` lists what is recorded with the
+  id of each, `vpat/delete-revision` removes one from anywhere in the history, and
+  `vpat/clear-revisions` removes the lot. The editor only takes back the most recent one, on purpose;
+  anything beyond that should take more deliberation than a button on a screen. Both removals ask
+  first, and neither touches the report itself.
+- The VPAT editor can undo the last recorded revision. Recording was a one-way door, so pressing the
+  button to see what it did left a revision on the report that nobody was ever given, printed in the
+  exported document with no way to take it back out. Only the most recent one can go: a history
+  somebody can lift a row out of the middle of is not a history.
+- The statement can say when it is due to be reviewed again, printed beside the date it was last
+  reviewed. The EU and UK regimes expect a statement to be kept up, and until now a reader could not
+  tell one somebody maintains from one nobody has looked at in three years. It has to fall after the
+  last review. A date already gone by is accepted, since an overdue review is a true thing to say.
+- The exported VPAT gives the EN 301 549 clause beside each WCAG criterion, on reports that claim the
+  European standard. A buyer in the EU is checking against the standard their own obligation names,
+  not against WCAG directly, and until now they had to do that mapping themselves. The criteria WCAG
+  2.2 added are marked as not being in the harmonised version rather than given a clause number that
+  does not exist in it.
+- The exported VPAT carries a revision history: what changed since the revisions before it, criterion
+  by criterion, with what each one was and what it became. Read on its own a conformance report says
+  nothing about whether a site is getting better or worse. Wording changes are counted rather than
+  listed. Recording a revision is deliberate, on a button in the VPAT editor, so exporting the report
+  to see how it reads stays a preview and does not quietly add a version you never gave anybody. It
+  sits in the editor rather than on the document so that replacing the export with a template of your
+  own does not take the control away with it.
+- The exported VPAT is translatable too, headings, terms, table columns and all the prose around
+  them. It is written in the language of the site it describes rather than whichever language the
+  person exporting it reads the control panel in, on the grounds that the report is handed to a
+  buyer and an Irish speaking admin exporting a report for an English site should not produce an
+  Irish document. The conformance levels are still stored in English, since they are a fixed
+  vocabulary the format defines, and only what a reader sees is translated.
+- The published accessibility statement is translatable. Every heading and every sentence in it now
+  goes through Craft's translations, and its dates are written the way the site's language writes
+  them, so a French or Irish language site publishes a statement in that language instead of one
+  headed "Compliance status" in English. Sentences are translated whole rather than assembled from
+  pieces, because word order is not the same in every language. If you already replace the statement
+  with your own template, nothing here changes for you.
+
+### Changed
+- Additional URLs is an editable table. Each URL gets a switch, so one can be parked without deleting
+  it, and on a multi-site install it can be scoped to a single site: a path that only exists on one
+  language no longer gets fetched on all of them. A row starting with a slash still resolves against
+  whichever site is being scanned, so the common case is still one row.
+
+### Fixed
+- Dev mode no longer writes its template markers into `{% css %}` and `{% js %}` output. A partial
+  included in a `{% css %}` block came out with an HTML comment at the top and the bottom of it, and
+  a stylesheet cannot carry one: the comment ran into the selector after it and the browser dropped
+  that whole rule. The first rule of the included file and the first rule of whatever followed the
+  include both went missing, on the local site only, which is exactly where you would be looking at
+  the CSS. Markers on templates that render markup are unchanged.
+- Scan All Pages now covers the Additional URLs listed under Settings. It only ever walked pages with
+  an entry behind them, so a search results page or a paginated archive you had listed was left out
+  of every scan started from the control panel, while the Overview still counted it as a page waiting
+  to be scanned. Coverage on those sites could never reach the whole site no matter how often you ran
+  it. Scanning from the command line always did cover them.
+- The published accessibility statement no longer reads "committed to making this website
+  accessible,." on any site whose profile names no legislation, which is every site on the generic
+  profile. A stray comma, sitting in a legal document with your name on it.
+- Exclusions listed on the statement no longer double the full stop when you end the sentence
+  yourself. Writing "Third party booking software on the admissions pages." gave you "pages.. The
+  supplier publishes", and most people do end a sentence with a full stop.
+- The exported VPAT prints properly. The conformance table was told to stay on one page, which no
+  table of fifty rows can do, so it was pushed whole to the next one and left most of the page before
+  it blank. It now breaks across pages and repeats its header on each, and page margins are set.
+- The VPAT's toolbar can no longer end up in the saved document. The Back and Print buttons are
+  built by the browser when the page opens, so a run through a converter that ignores print styles
+  gets a clean report instead of one with two buttons stamped in the middle of it.
+- The statement will not take a date in the future for when it was prepared or last reviewed. Both
+  describe something that has already happened, and it is easy to type next year's review date into
+  a field asking for the last one. The published statement then tells a reader it was reviewed on a
+  day that has not arrived yet, which is the sort of thing somebody deciding whether to trust the
+  document will notice.
+- The same on the VPAT: neither the report date nor either end of the evaluation period can be set
+  in the future, since all three describe testing already carried out. The evaluation period also has
+  to end on or after it starts, because a period running backwards describes nothing and both halves
+  are typed by hand into separate boxes.
 
 ## 1.2.2 - 2026-09-09
 
@@ -107,6 +187,7 @@
 
 ### Fixed
 - Dismissed contrast questions stay dismissed. Two things were giving one element two identities, so an answer given to one never reached the other. The report marks an element in its preview when you click Show on page, and the browser pass then read that same preview and recorded the element with the plugin's own mark on it, as though it were a different element. And the engine reports the whole element when its markup is short but only the opening tag once it passes a certain length, which a syntax-highlighted code block crosses partway through rendering. Occurrences are now identified by the opening tag with the plugin's own marks removed, and migrations bring existing answers onto it.
+- Clicking Show on page no longer turns a question you have already answered into a new one on the next scan. A question was identified by whatever markup the browser engine handed over, and that engine only shortens an element to its opening tag once the markup passes a certain length. A code block that a syntax highlighter expands only passes that length once the highlighting has finished, so the same element arrived as two different strings depending on how far the page had rendered, and became two separate questions. Answering one never reached the other. Contrast questions are now identified by the opening tag alone, which does not move, and a migration brings existing answers and occurrences onto it.
 - The accessibility statement no longer tells a fully scanned site that nothing has been scanned. It worked out whether scan data existed by looking at what the scans had concluded, and once no criterion is signed off by the scanner there is nothing to conclude on a site with nothing failing. A clean site was told its compliance status rested on no evidence at all. It now asks whether pages have been scanned, which is the actual question.
 - The Overview heading over the rules worth fixing said "Fix these 10 issues" whatever was actually listed, including when the list was empty. It now counts what is there, and says so plainly when there is nothing.
 - The accessibility statement and the VPAT no longer count questions you have already answered, or issues you have already fixed, against a success criterion. Conformance levels were read off the findings with no filtering at all, so a question dismissed weeks ago still held a criterion at Partially Supports, and so did an issue resolved since. The statement could show three failing criteria while Issues listed one rule, with nothing on either screen to explain the other two. Since a statement is a public claim about your site, it now reads the findings the same way every other screen does: dismissed questions and fixed issues are spent, confirmed ones still count.

@@ -22,6 +22,12 @@
 
 {% block actionButton %}
     {% if isPro %}
+        {% if currentUser.can('accessibility-audit:manageVpat') %}
+            <button type="button" id="a11y-vpat-record" class="btn">{{ 'Record this revision'|t('accessibility-audit') }}</button>
+            {% if revisionCount ?? 0 %}
+                <button type="button" id="a11y-vpat-undo-record" class="btn">{{ 'Undo last revision'|t('accessibility-audit') }}</button>
+            {% endif %}
+        {% endif %}
         <a href="{{ exportUrl }}" target="_blank" class="btn submit">Export HTML</a>
     {% endif %}
 {% endblock %}

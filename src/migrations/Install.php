@@ -28,6 +28,7 @@ class Install extends Migration
         $this->dropTableIfExists('{{%accessibilityaudit_verdicts}}');
         $this->dropTableIfExists('{{%accessibilityaudit_issues}}');
         $this->dropTableIfExists('{{%accessibilityaudit_scans}}');
+        $this->dropTableIfExists('{{%accessibilityaudit_vpat_revisions}}');
         $this->dropTableIfExists('{{%accessibilityaudit_vpat}}');
         $this->dropTableIfExists('{{%accessibilityaudit_statement}}');
         $this->dropTableIfExists('{{%accessibilityaudit_organisation}}');
@@ -77,6 +78,7 @@ class Install extends Migration
                 'context' => $this->text()->null(),
                 'helpUrl' => $this->string(255)->null(),
                 'source' => $this->enum('source', ['php', 'axe', 'contrast'])->notNull()->defaultValue('php'),
+                'origin' => $this->string(50)->null(),
                 'viewport' => $this->string(10)->null(),
                 'firstDetected' => $this->dateTime()->null(),
                 'isResolved' => $this->boolean()->notNull()->defaultValue(false),
@@ -122,6 +124,21 @@ class Install extends Migration
                 'siteId' => $this->integer()->notNull(),
                 'meta' => $this->text()->null(),
                 'overrides' => $this->text()->null(),
+                'dateCreated' => $this->dateTime()->notNull(),
+                'dateUpdated' => $this->dateTime()->notNull(),
+                'uid' => $this->uid(),
+            ]);
+        }
+
+        // One snapshot per recorded revision, so a reissue can say what changed
+        // since the last one. The whole map is kept rather than a
+        // diff: a snapshot can be re-read against any later idea of what counts
+        // as a change, a stored diff cannot.
+        if (!$this->db->tableExists('{{%accessibilityaudit_vpat_revisions}}')) {
+            $this->createTable('{{%accessibilityaudit_vpat_revisions}}', [
+                'id' => $this->primaryKey(),
+                'siteId' => $this->integer()->notNull(),
+                'snapshot' => $this->mediumText()->notNull(),
                 'dateCreated' => $this->dateTime()->notNull(),
                 'dateUpdated' => $this->dateTime()->notNull(),
                 'uid' => $this->uid(),
@@ -242,10 +259,12 @@ class Install extends Migration
         $this->createIndex(null, '{{%accessibilityaudit_asset_issues}}', ['ruleId']);
         $this->createIndex(null, '{{%accessibilityaudit_asset_flags}}', ['assetId'], true);
         $this->createIndex(null, '{{%accessibilityaudit_issues}}', ['verdict']);
+        $this->createIndex(null, '{{%accessibilityaudit_issues}}', ['origin']);
         // One ruling per target + rule + occurrence.
         $this->createIndex(null, '{{%accessibilityaudit_verdicts}}', ['siteId', 'targetHash', 'ruleId', 'contextHash'], true);
         $this->createIndex(null, '{{%accessibilityaudit_verdicts}}', ['siteId', 'targetHash']);
         $this->createIndex(null, '{{%accessibilityaudit_verdicts}}', ['elementId', 'siteId']);
+        $this->createIndex(null, '{{%accessibilityaudit_vpat_revisions}}', ['siteId', 'dateCreated']);
     }
 
     protected function addForeignKeys(): void
@@ -271,6 +290,12 @@ class Install extends Migration
         $this->addForeignKey(
             null,
             '{{%accessibilityaudit_vpat}}', 'siteId',
+            '{{%sites}}', 'id',
+            'CASCADE', 'CASCADE'
+        );
+        $this->addForeignKey(
+            null,
+            '{{%accessibilityaudit_vpat_revisions}}', 'siteId',
             '{{%sites}}', 'id',
             'CASCADE', 'CASCADE'
         );

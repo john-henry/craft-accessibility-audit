@@ -3364,7 +3364,12 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   display: flex;
   align-items: flex-start;
   gap: 9px;
-  margin: 14px 0 0;
+
+  /* Craft's .pane carries margin-block: 14px and overflow: auto, so stacked
+     panes never collapse their margins and sit 28px apart. Matching that top
+     and bottom keeps one rhythm down the page whether the next thing is
+     another note or a pane. */
+  margin: 14px 0;
 
   /* 17px on the left so the words start where they would on a note with no
      accent: the stripe is drawn inside the box, not added to it. */

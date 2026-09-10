@@ -97,7 +97,7 @@ class AuditController extends Controller
 
         // Configured URLs are scanned even when nothing else is, so a site
         // that routes everything through templates is not turned away here.
-        if (empty($urlRows) && empty(AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls())) {
+        if (empty($urlRows) && empty(AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls($siteId))) {
             $this->stdout("No URL-bearing elements found for this site.\n", BaseConsole::FG_YELLOW);
             return ExitCode::OK;
         }
@@ -148,7 +148,7 @@ class AuditController extends Controller
 
         // Configured URLs last: pages Craft routes without an element behind
         // them, which the sweep above has no way of finding.
-        $customUrls = AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls();
+        $customUrls = AccessibilityAudit::getInstance()->getSettings()->resolvedCustomUrls($siteId);
 
         if (!empty($customUrls)) {
             $count = count($customUrls);
@@ -405,6 +405,24 @@ class AuditController extends Controller
         $this->stdout("Total warnings: {$summary['warningCount']}\n", BaseConsole::FG_YELLOW);
         $this->stdout("Total notices:  {$summary['noticeCount']}\n");
         $this->stdout("Critical pages: {$summary['criticalPages']} (pages with at least one error)\n\n");
+
+        $byOrigin = AccessibilityAudit::getInstance()->audit->getIssuesByOrigin($siteId);
+
+        if ($byOrigin !== [] && array_keys($byOrigin) !== ['unknown']) {
+            $this->stdout("Where the markup came from:\n", BaseConsole::BOLD);
+
+            foreach ($byOrigin as $origin => $count) {
+                $label = match ($origin) {
+                    'authored' => 'written by hand',
+                    'unknown' => 'not recorded (scanned before this was tracked)',
+                    default => 'component: ' . $origin,
+                };
+
+                $this->stdout("  {$count}× {$label}\n");
+            }
+
+            $this->stdout("\n");
+        }
 
         $byRule = AccessibilityAudit::getInstance()->audit->getIssuesByImpact($siteId, 15);
         if (!empty($byRule)) {

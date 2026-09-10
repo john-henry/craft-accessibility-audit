@@ -32,7 +32,8 @@
 
     {{ forms.lightswitchField({
         label: 'EN 301 549'|t('accessibility-audit'),
-        instructions: 'Include EN 301 549 rules in the frontend axe-core overlay. EN 301 549 is the European accessibility standard required by the EU Web Accessibility Directive and the European Accessibility Act (EAA). It largely maps to WCAG 2.1 AA but adds a handful of additional criteria.'|t('accessibility-audit'),
+        instructions: 'Include EN 301 549 rules in the frontend axe-core overlay.'|t('accessibility-audit')
+            ~ ' <span class="info">' ~ 'EN 301 549 is the European standard the EU Web Accessibility Directive and the European Accessibility Act both require. It largely maps to WCAG 2.1 AA but adds a handful of criteria of its own. Turning it on also makes the exported VPAT state clause 9 beside each criterion.'|t('accessibility-audit') ~ '</span>',
         id: 'en301549',
         name: 'settings[en301549]',
         on: settings.en301549,
@@ -62,7 +63,8 @@
     
     {{ forms.lightswitchField({
         label: 'Enable axe-core Frontend Overlay'|t('accessibility-audit'),
-        instructions: 'Inject a floating axe-core panel on the live site for logged-in administrators. Allows in-browser scanning for colour contrast, focus order, and ARIA state issues.'|t('accessibility-audit'),
+        instructions: 'Inject a floating axe-core panel on the live site for logged-in administrators.'|t('accessibility-audit')
+            ~ ' <span class="info">' ~ 'It reads the page as the browser actually rendered it, so it catches what a server-side reading cannot: colour contrast, focus order, and ARIA state. Only administrators see it, and it never loads for a visitor.'|t('accessibility-audit') ~ '</span>',
         id: 'frontendAxe',
         name: 'settings[frontendAxe]',
         on: settings.frontendAxe,
@@ -90,7 +92,8 @@
 
     {{ forms.lightswitchField({
         label: 'Collapse to Badge When Idle'|t('accessibility-audit'),
-        instructions: 'Keep the overlay collapsed to a small badge showing the issue count, expanding to the full panel only when clicked. When off, the panel opens automatically once a scan finds issues.'|t('accessibility-audit'),
+        instructions: 'Keep the overlay collapsed to a small badge showing the issue count.'|t('accessibility-audit')
+            ~ ' <span class="info">' ~ 'The full panel opens when the badge is clicked. With this off it opens by itself as soon as a scan finds something, which is what you want while you are working on a page and not what you want the rest of the time.'|t('accessibility-audit') ~ '</span>',
         id: 'overlayCollapseWhenIdle',
         name: 'settings[overlayCollapseWhenIdle]',
         on: settings.overlayCollapseWhenIdle,
@@ -121,7 +124,8 @@
 
         {{ forms.autosuggestField({
             label: 'VPAT Export Template'|t('accessibility-audit'),
-            instructions: 'Path to a site template that renders the VPAT export in place of the built-in document, e.g. `_vpat/export`. It receives the same `report` variable the built-in export gets. Leave empty to use the built-in print-ready document. If the template can\'t be found, the built-in document is used.'|t('accessibility-audit'),
+            instructions: 'Path to a site template that renders the VPAT export in place of the built-in document, e.g. `_vpat/export`.'|t('accessibility-audit')
+                ~ ' <span class="info">' ~ 'It receives the same `report` variable the built-in export gets and is responsible for the whole page, so it can carry your own branding and layout. Leave it empty for the built-in print-ready document. If the template cannot be found, the built-in one is used rather than nothing.'|t('accessibility-audit') ~ '</span>',
             id: 'vpatExportTemplate',
             name: 'settings[vpatExportTemplate]',
             suggestions: craft.cp.getTemplateSuggestions(),
@@ -136,7 +140,8 @@
 
     {{ forms.autosuggestField({
         label: 'Accessibility Statement Template'|t('accessibility-audit'),
-        instructions: 'Path to a site template that **replaces** the built-in statement markup, e.g. `_statement/render`. It receives the same `statement` variable and should output the statement itself. This is not the page you publish the statement on: a template that calls `craft.a11y.accessibilityStatementHtml()` would render itself forever, so that is ignored. Leave empty to use the built-in markup.'|t('accessibility-audit'),
+        instructions: 'Path to a site template that **replaces** the built-in statement markup, e.g. `_statement/render`.'|t('accessibility-audit')
+            ~ ' <span class="info">' ~ 'It receives the same `statement` variable and should output the statement itself. This is not the page you publish the statement on: a template that calls `craft.a11y.accessibilityStatementHtml()` would render itself forever, so that is ignored. Leave empty for the built-in markup.'|t('accessibility-audit') ~ '</span>',
         id: 'statementTemplate',
         name: 'settings[statementTemplate]',
         suggestions: craft.cp.getTemplateSuggestions(),
