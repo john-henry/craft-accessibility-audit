@@ -170,7 +170,7 @@
 ## 1.2.0 - 2026-08-30
 
 > [!IMPORTANT]
-> Extending this plugin, or reading its tables directly? Some public service signatures and two database columns changed. See [UPGRADE.md](https://github.com/john-henry/craft-accessibility-audit/blob/main/UPGRADE.md).
+> Extending this plugin, or reading its tables directly? Some public service signatures and two database columns changed. See [UPGRADE.md](https://github.com/john-henry/craft-accessibility-audit/blob/craft-5/UPGRADE.md).
 
 > [!WARNING]
 > Scan history older than your **Retain Scan Results** setting is deleted the first time Craft runs garbage collection after this update. That setting never actually deleted anything before now, so a site that has been running the plugin for a while almost certainly holds more history than the setting allows, and the default is 90 days. If you want to keep what you have, raise it (or set it to 0 to keep everything, on Pro) before you update. Scores and trends are drawn from that history.
