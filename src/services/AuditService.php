@@ -159,11 +159,11 @@ class AuditService extends Component
 
         $tags = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'];
 
-        if (strtoupper($settings->wcagLevel ?? 'AA') === 'AAA') {
+        if (strtoupper($settings->wcagLevel) === 'AAA') {
             $tags[] = 'wcag2aaa';
         }
 
-        if ((bool)($settings->en301549 ?? false)) {
+        if ($settings->en301549) {
             $tags[] = 'EN-301-549';
         }
 
@@ -294,7 +294,7 @@ class AuditService extends Component
      */
     public function isUriExcluded(?string $uri, int $siteId): bool
     {
-        $patterns = AccessibilityAudit::getInstance()->getSettings()->excludedUriPatterns ?? [];
+        $patterns = AccessibilityAudit::getInstance()->getSettings()->excludedUriPatterns;
         if (empty($patterns)) {
             return false;
         }
@@ -310,7 +310,7 @@ class AuditService extends Component
             }
 
             $rowSite = $row['siteId'] ?? '';
-            if ($rowSite !== '' && $rowSite !== null && (int)$rowSite !== $siteId) {
+            if ($rowSite !== '' && (int)$rowSite !== $siteId) {
                 continue;
             }
 
@@ -668,7 +668,7 @@ class AuditService extends Component
      * (when available). The Inspect page passes false: its preview runs the
      * browser checks itself, and two browser writers racing on one scan is
      * exactly what makes results flip-flop.
-     * @return array{scanId: int, score: int, issues: IssueModel[], limitReached?: bool, error?: string}
+     * @return array{scanId: int, score: int, issues: IssueModel[], excluded?: bool, limitReached?: bool, error?: string}
      * @throws Throwable
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
@@ -1415,7 +1415,7 @@ class AuditService extends Component
      */
     private function _ignoredRuleIds(): array
     {
-        return AccessibilityAudit::getInstance()->getSettings()->ignoreRules ?? [];
+        return AccessibilityAudit::getInstance()->getSettings()->ignoreRules;
     }
 
     /** Returns issues grouped by rule, sorted by impact (occurrences × severity weight). */
@@ -2137,7 +2137,7 @@ class AuditService extends Component
         // A rule that's now on the ignore list vanishes from scans, but it was
         // muted, not fixed, so it must not be flipped to "resolved". Exclude the
         // ignored rules so they're left untouched (the display queries hide them).
-        $ignoreRules = AccessibilityAudit::getInstance()->getSettings()->ignoreRules ?? [];
+        $ignoreRules = AccessibilityAudit::getInstance()->getSettings()->ignoreRules;
         $resolvedRules = array_diff($previousRuleIds, $currentRuleIds, $ignoreRules);
 
         if (!empty($resolvedRules)) {
@@ -2460,7 +2460,7 @@ class AuditService extends Component
         }
 
         $settings = AccessibilityAudit::getInstance()->getSettings();
-        $ignoreRules = $settings->ignoreRules ?? [];
+        $ignoreRules = $settings->ignoreRules;
 
         $definiteIssues = AccessibilityAudit::getInstance()->content->scan($html, $ignoreRules);
         $potentialIssues = AccessibilityAudit::getInstance()->potential->scan($html);
@@ -2598,7 +2598,7 @@ class AuditService extends Component
     private function _filterIssuesToTargetLevel(array $issues): array
     {
         $rank = ['A' => 1, 'AA' => 2, 'AAA' => 3];
-        $target = $rank[strtoupper(AccessibilityAudit::getInstance()->getSettings()->wcagLevel ?? 'AA')] ?? 2;
+        $target = $rank[strtoupper(AccessibilityAudit::getInstance()->getSettings()->wcagLevel)] ?? 2;
 
         return array_values(array_filter($issues, static function(IssueModel $issue) use ($rank, $target): bool {
             if ($issue->wcagLevel === null) {

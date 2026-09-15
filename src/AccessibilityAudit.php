@@ -160,6 +160,7 @@ class AccessibilityAudit extends BasePlugin
         'Level A',
         'Level AA',
         'Limit reached',
+        'Excluded',
         'Loading…',
         'Marked decorative, no alt text needed.',
         'You can change that on the Assets page.',
@@ -479,7 +480,7 @@ class AccessibilityAudit extends BasePlugin
         if ($settings->scanOnSave) {
             $this->registerScanOnSave();
         }
-        if ($settings->autoGenerateAlt && !empty(trim(App::parseEnv($settings->anthropicApiKey ?? '')))) {
+        if ($settings->autoGenerateAlt && !empty(trim(App::parseEnv($settings->anthropicApiKey)))) {
             $this->registerAutoGenerateAlt();
         }
     }
@@ -763,6 +764,7 @@ class AccessibilityAudit extends BasePlugin
                     'accessibility-audit/vpat/save-meta' => 'accessibility-audit/vpat/save-meta',
                     'accessibility-audit/vpat/save-criterion' => 'accessibility-audit/vpat/save-criterion',
                     'accessibility-audit/vpat/export' => 'accessibility-audit/vpat/export',
+                    'accessibility-audit/vpat/export-openacr' => 'accessibility-audit/vpat/export-open-acr',
                     'accessibility-audit/statement' => 'accessibility-audit/dashboard/statement',
                     'accessibility-audit/statement/save-meta' => 'accessibility-audit/statement/save-meta',
                     'accessibility-audit/statement/suggestions' => 'accessibility-audit/statement/suggestions',
@@ -868,7 +870,7 @@ class AccessibilityAudit extends BasePlugin
 
                 $view = Craft::$app->getView();
                 $settings = $this->getSettings();
-                $hasApiKey = !empty(trim(App::parseEnv($settings->anthropicApiKey ?? '')));
+                $hasApiKey = !empty(trim(App::parseEnv($settings->anthropicApiKey)));
 
                 $view->registerAssetBundle(AccessibilityAuditAsset::class);
 
@@ -942,7 +944,7 @@ class AccessibilityAudit extends BasePlugin
                 }
 
                 $settings = self::$plugin->getSettings();
-                $hasApiKey = !empty(trim(App::parseEnv($settings->anthropicApiKey ?? '')));
+                $hasApiKey = !empty(trim(App::parseEnv($settings->anthropicApiKey)));
 
                 // A decorative image correctly carries an empty alt, so the
                 // edit page shows a note instead of a Generate button that
@@ -1001,17 +1003,14 @@ class AccessibilityAudit extends BasePlugin
 
             // A draft or revision is not what gets scanned, and its panel
             // would report the canonical element's findings as its own.
-            if (
-                (property_exists($element, 'draftId') && $element->draftId) ||
-                (property_exists($element, 'revisionId') && $element->revisionId)
-            ) {
+            if ($element->getIsDerivative()) {
                 return;
             }
 
-            // An element type left out of the scan set gets no panel, in
-            // step with getUrlElementsQuery() and isElementExcluded(): its
-            // Re-scan button would only ever report "excluded".
-            if (!in_array($element::class, self::$plugin->getSettings()->resolvedScannedElementTypes(), true)) {
+            // An element type left out of the scan set, or a page matched by
+            // an excluded URI pattern, gets no panel: every scan path skips
+            // it, so any score shown would be one nothing will ever update.
+            if (self::$plugin->audit->isElementExcluded($element)) {
                 return;
             }
 
@@ -1027,7 +1026,7 @@ class AccessibilityAudit extends BasePlugin
             // findings collapse into a count instead of filling the panel.
             // Same query the page report's issue list uses.
             $issues = $scan ? $plugin->audit->getIssuesGroupedByScan((int) $scan['id']) : [];
-            $hasApiKey = trim(App::parseEnv($plugin->getSettings()->anthropicApiKey ?? '')) !== '';
+            $hasApiKey = trim(App::parseEnv($plugin->getSettings()->anthropicApiKey)) !== '';
             $readabilityPro = $plugin->isPro();
 
             $readabilityResult = null;
@@ -1112,6 +1111,14 @@ class AccessibilityAudit extends BasePlugin
                     return;
                 }
 
+                // An excluded page is left alone by every scan path, and the
+                // overlay could store nothing it found there.
+                $element = Craft::$app->getUrlManager()->getMatchedElement() ?: null;
+                $siteId = (int)$sites->getCurrentSite()->id;
+                if ($this->getOverlay()->isPageExcluded($element, Craft::$app->getRequest()->getPathInfo(), $siteId)) {
+                    return;
+                }
+
                 // The overlay is per-admin markup carrying this session's CSRF
                 // token. A full-page cache that stores this render would serve
                 // both to every visitor, so mark the response uncacheable and,
@@ -1131,11 +1138,7 @@ class AccessibilityAudit extends BasePlugin
                 // drift. Only the session's CSRF pair is added here: it's this
                 // path's credential, where the decoupled loader appends its
                 // bearer token client-side instead.
-                $element = Craft::$app->getUrlManager()->getMatchedElement();
-                $config = $this->getOverlay()->buildConfig(
-                    $element ?: null,
-                    Craft::$app->getSites()->getCurrentSite()->id,
-                );
+                $config = $this->getOverlay()->buildConfig($element, $siteId);
                 $config['csrfName'] = Craft::$app->getConfig()->getGeneral()->csrfTokenName;
                 $config['csrfValue'] = Craft::$app->getRequest()->getCsrfToken();
 

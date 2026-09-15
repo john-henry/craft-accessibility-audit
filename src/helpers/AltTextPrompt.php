@@ -48,7 +48,7 @@ class AltTextPrompt
     {
         $parts = [];
 
-        $siteContext = trim((string)($settings->altTextContext ?? ''));
+        $siteContext = trim($settings->altTextContext);
         if ($siteContext !== '') {
             $parts[] = 'Site context: ' . $siteContext;
         }
@@ -145,7 +145,7 @@ class AltTextPrompt
      */
     public static function instruction(SettingsModel $settings): string
     {
-        $language = trim((string)($settings->altTextLanguage ?? 'English')) ?: 'English';
+        $language = trim($settings->altTextLanguage) ?: 'English';
 
         return 'Write concise, descriptive alt text for this image. '
             . 'If it is a screenshot of a user interface, describe the interface and what it is showing: '

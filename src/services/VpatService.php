@@ -1065,13 +1065,6 @@ class VpatService extends Component
             ];
         }
 
-        // Fully automated criteria with no violations → Supports
-        foreach (self::CRITERIA as $num => $criterion) {
-            if ($criterion['auto'] === 'automated' && !isset($result[$num])) {
-                $result[$num] = ['level' => 'Supports', 'basis' => 'automated'];
-            }
-        }
-
         return $result;
     }
 
@@ -1136,7 +1129,7 @@ class VpatService extends Component
             'hasScanData' => ($evidence[array_key_first($evidence)]['pages'] ?? 0) > 0,
             // Whether to state EN 301 549 alongside WCAG: clause 9 restates WCAG
             // 2.1 Level AA, and this report is Level AA throughout.
-            'en301549' => (bool)(AccessibilityAudit::getInstance()->getSettings()->en301549 ?? false),
+            'en301549' => AccessibilityAudit::getInstance()->getSettings()->en301549,
             'en301549Version' => self::EN_301_549_VERSION,
             'revisions' => $this->getRevisionHistory($siteId),
             // Carried so the exported document can post back against the site
@@ -1233,7 +1226,7 @@ class VpatService extends Component
         }
 
         $settings = AccessibilityAudit::getInstance()->getSettings();
-        $apiKey = trim(App::parseEnv($settings->anthropicApiKey ?? ''));
+        $apiKey = trim(App::parseEnv($settings->anthropicApiKey));
         if ($apiKey === '') {
             return ['success' => false, 'error' => Craft::t('accessibility-audit', 'Add an Anthropic API key under Settings → Tools to draft remarks.')];
         }

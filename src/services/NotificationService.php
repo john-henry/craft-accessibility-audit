@@ -254,7 +254,7 @@ class NotificationService extends Component
     public function notifySlack(string $subject, string $body, ?string $color = null, string $contextLine = '', ?string $actionUrl = null): void
     {
         $settings = AccessibilityAudit::getInstance()->getSettings();
-        $webhookUrl = trim(App::parseEnv($settings->notifySlackWebhookUrl ?? '') ?: '');
+        $webhookUrl = trim(App::parseEnv($settings->notifySlackWebhookUrl) ?: '');
 
         if ($webhookUrl === '') {
             return;

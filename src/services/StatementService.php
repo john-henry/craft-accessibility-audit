@@ -397,7 +397,7 @@ class StatementService extends Component
         $profile = StatementProfiles::get($record['profile']);
         $status = $this->resolveComplianceStatus($siteId);
         $settings = AccessibilityAudit::getInstance()->getSettings();
-        $targetLevel = (string) ($settings->wcagLevel ?? 'AA');
+        $targetLevel = $settings->wcagLevel;
 
         return [
             'profile' => $record['profile'],

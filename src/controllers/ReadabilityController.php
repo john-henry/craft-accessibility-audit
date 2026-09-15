@@ -85,7 +85,7 @@ class ReadabilityController extends Controller
 
         $service = AccessibilityAudit::getInstance()->readability;
         $settings = AccessibilityAudit::getInstance()->getSettings();
-        $hasApiKey = trim(App::parseEnv($settings->anthropicApiKey ?? '')) !== '';
+        $hasApiKey = trim(App::parseEnv($settings->anthropicApiKey)) !== '';
 
         return $this->renderTemplate('accessibility-audit/readability', [
             'isPro' => true,
@@ -235,7 +235,7 @@ class ReadabilityController extends Controller
             }
 
             $url = $element->getUrl() ?? '';
-            $title = property_exists($element, 'title') ? (string) $element->title : '';
+            $title = (string)$element->title;
             $service->storeResult($result, $elementId, $siteId, $url, $title);
 
             return $this->asJson(['success' => true, 'result' => $result]);

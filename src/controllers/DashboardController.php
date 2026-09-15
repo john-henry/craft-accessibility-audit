@@ -131,11 +131,11 @@ class DashboardController extends Controller
             'siteHandle' => $siteHandle,
             'sites' => $sites,
             'targetScore' => $settings->targetScore,
-            'wcagLevel' => strtoupper((string)($settings->wcagLevel ?? 'AA')),
+            'wcagLevel' => strtoupper($settings->wcagLevel),
             // Drives the EN 301 549 note under the conformance scores. Derived
             // from the WCAG level, not axe tags: clause 9 of the standard restates
             // WCAG 2.1 AA, so the level is the reliable signal for every issue.
-            'en301549' => (bool)($settings->en301549 ?? false),
+            'en301549' => $settings->en301549,
             'assetStats' => $plugin->getAssets()->getStoredAssetStats(),
             'isPro' => $isPro,
             'isMultiSite' => $isMultiSite,
@@ -521,7 +521,7 @@ class DashboardController extends Controller
         }
 
         return $this->renderTemplate('accessibility-audit/utilities', [
-            'wcagLevel' => strtoupper((string)($settings->wcagLevel ?? 'AA')),
+            'wcagLevel' => strtoupper($settings->wcagLevel),
             'activeTab' => $tab,
         ]);
     }
@@ -552,7 +552,7 @@ class DashboardController extends Controller
         // AI remark drafting is only offered when an Anthropic API key is
         // configured; without one the button would just error.
         $settings = $plugin->getSettings();
-        $canDraftRemarks = $isPro && trim(App::parseEnv($settings->anthropicApiKey ?? '')) !== '';
+        $canDraftRemarks = $isPro && trim(App::parseEnv($settings->anthropicApiKey)) !== '';
 
         // Pages the scanner has actually covered, offered to the editor's
         // "Fill from scanned pages" button so the Scope section starts from
@@ -714,7 +714,7 @@ class DashboardController extends Controller
         // query param, and dropped back to "all" when it doesn't resolve.
         // Excluded volumes are dropped from the list so you can't narrow to a
         // volume the audit ignores, which would only ever show nothing.
-        $excludedVolumes = $settings->excludedVolumes ?? [];
+        $excludedVolumes = $settings->excludedVolumes;
         $volumes = Craft::$app->getVolumes()->getAllVolumes();
         if (!empty($excludedVolumes)) {
             $volumes = array_values(array_filter(
@@ -765,7 +765,7 @@ class DashboardController extends Controller
             'total' => $paged['total'],
             'totalPages' => $paged['totalPages'],
             'pageInfo' => $this->_pageInfo('accessibility-audit/assets', $paged['page'], $paged['perPage'], $paged['total'], $paged['totalPages'], $extraParams),
-            'hasApiKey' => !empty(trim(App::parseEnv($settings->anthropicApiKey ?? ''))),
+            'hasApiKey' => !empty(trim(App::parseEnv($settings->anthropicApiKey))),
             // The same number the long-alt check reports on, so the count
             // beside the field agrees with the finding.
             'altGuideline' => PotentialScanner::MAX_ALT_LENGTH,
@@ -1402,7 +1402,7 @@ class DashboardController extends Controller
                     'notices' => (int)($scan['noticeCount'] ?? 0),
                 ],
                 'lastScanned' => $lastScanned !== false ? $lastScanned->format('d M Y') : '—',
-                'rescan' => $element?->id ?? 0,
+                'rescan' => $element->id ?? 0,
                 'report' => $reportUrl,
             ];
         }
@@ -1522,7 +1522,7 @@ class DashboardController extends Controller
                 'issues' => (int)$row['issueCount'],
                 'count' => (int)$row['occurrences'],
                 'lastScanned' => $lastScanned !== false ? $lastScanned->format('d M Y') : '—',
-                'rescan' => $element?->id ?? 0,
+                'rescan' => $element->id ?? 0,
                 'report' => $reportUrl,
             ];
         }
@@ -1560,7 +1560,7 @@ class DashboardController extends Controller
                 'count' => (int)$row['occurrences'],
                 'firstDetected' => $firstDetected !== false ? $firstDetected->format('d M Y') : '—',
                 'lastScanned' => $lastScanned !== false ? $lastScanned->format('d M Y') : '—',
-                'rescan' => $element?->id ?? 0,
+                'rescan' => $element->id ?? 0,
                 'report' => $reportUrl,
             ];
         }

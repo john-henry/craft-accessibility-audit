@@ -207,13 +207,13 @@ class SettingsModel extends Model
     public array $excludedUriPatterns = [];
 
     /**
-     * @var array<int, array{enabled?: bool, siteId?: int|string, url?: string}>
+     * @var array<int, array{enabled?: bool, siteId?: int|string, url?: string}|string>
      * Extra pages to scan, for the ones Craft routes without backing them with
      * an element: search results, filtered listings, paginated archives. Each
      * row is one URL, absolute or site-relative, optionally scoped to a single
      * site; a query string is kept, so one named example of a dynamic page can
      * be audited. Shaped for the CP's editable-table field and settable from
-     * the config file.
+     * the config file, where a list can hold a bare string in place of a row.
      */
     public array $customUrls = [];
 
@@ -445,7 +445,7 @@ class SettingsModel extends Model
 
             $rowSite = $row['siteId'] ?? '';
 
-            if ($siteId !== null && $rowSite !== '' && $rowSite !== null && (int)$rowSite !== $siteId) {
+            if ($siteId !== null && $rowSite !== '' && (int)$rowSite !== $siteId) {
                 continue;
             }
 
@@ -501,7 +501,7 @@ class SettingsModel extends Model
      */
     public function getScannerUserAgent(): string
     {
-        return trim(App::parseEnv($this->scannerUserAgent ?? ''));
+        return trim(App::parseEnv($this->scannerUserAgent));
     }
 
     /**
@@ -557,7 +557,7 @@ class SettingsModel extends Model
      */
     private function _pluginVersion(): string
     {
-        return AccessibilityAudit::getInstance()?->version ?? '1.0';
+        return AccessibilityAudit::getInstance()->version ?? '1.0';
     }
 
     /**

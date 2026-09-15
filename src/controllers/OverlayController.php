@@ -192,6 +192,12 @@ class OverlayController extends Controller
         $overlay = AccessibilityAudit::getInstance()->getOverlay();
         $resolved = $overlay->resolveElementFromUrl($url);
 
+        // Still a successful token check, so activation completes; the loader
+        // just has no overlay to mount.
+        if ($resolved['excluded']) {
+            return $this->asJson(['success' => true, 'excluded' => true]);
+        }
+
         return $this->asJson([
             'success' => true,
             'config' => $overlay->buildConfig($resolved['element'], $resolved['siteId'], true),

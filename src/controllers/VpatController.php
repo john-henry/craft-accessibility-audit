@@ -12,6 +12,7 @@ use craft\helpers\DateTimeHelper;
 use craft\web\Controller;
 use craft\web\View;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\helpers\OpenAcr;
 use johnhenry\accessibilityaudit\models\OrganisationMetaModel;
 use johnhenry\accessibilityaudit\models\VpatMetaModel;
 use yii\base\Exception;
@@ -301,8 +302,88 @@ class VpatController extends Controller
         return $response;
     }
 
+    /**
+     * Exports the full VPAT report as an OpenACR YAML file.
+     *
+     * @return Response
+     * @throws BadRequestHttpException
+     * @throws SiteNotFoundException
+     * @throws ForbiddenHttpException
+     * @throws \yii\db\Exception
+     * @throws \Exception
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.4.0
+     */
+    public function actionExportOpenAcr(): Response
+    {
+        $this->requirePermission('accessibility-audit:viewReports');
+
+        if (($refusal = $this->requireProJson('VPAT conformance reporting')) !== null) {
+            return $refusal;
+        }
+
+        $siteId = AccessibilityAudit::getInstance()->requestedSiteId();
+        $report = AccessibilityAudit::getInstance()->vpat->getFullReport($siteId);
+
+        // The schema requires the author's email, and a file a buyer's tooling
+        // rejects is worse than being told what to fill in.
+        if (!OpenAcr::canExport($report)) {
+            throw new BadRequestHttpException(Craft::t('accessibility-audit', 'Add a contact email to the report information before exporting OpenACR. The format requires one.'));
+        }
+
+        $siteName = (string)Craft::$app->getSites()->getSiteById($siteId)?->getName();
+        $yaml = $this->_inSiteLanguage(
+            $siteId,
+            static fn(): string => OpenAcr::toYaml(OpenAcr::document($report, $siteName)),
+        );
+
+        // Set directly rather than through sendContentAsFile(), which discards
+        // an output buffer it did not open.
+        $response = $this->response;
+        $response->format = Response::FORMAT_RAW;
+        $response->content = $yaml;
+        $response->setDownloadHeaders(
+            OpenAcr::filename(OpenAcr::productName($report, $siteName)),
+            'application/yaml',
+        );
+
+        return $response;
+    }
+
     // Private Methods
     // =========================================================================
+
+    /**
+     * Runs a callback with the application language set to a site's own, and
+     * puts it back afterwards.
+     *
+     * An exported report is written in the language of the site it describes,
+     * not the language whoever exported it reads the control panel in. It is
+     * handed to a buyer, and an Irish admin exporting the report for an English
+     * site should not produce an Irish document.
+     *
+     * @template T
+     * @param int $siteId The site whose language to use.
+     * @param callable(): T $callback
+     * @return T
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.4.0
+     */
+    private function _inSiteLanguage(int $siteId, callable $callback): mixed
+    {
+        $site = Craft::$app->getSites()->getSiteById($siteId);
+        $originalLanguage = Craft::$app->language;
+
+        if ($site !== null) {
+            Craft::$app->language = $site->language;
+        }
+
+        try {
+            return $callback();
+        } finally {
+            Craft::$app->language = $originalLanguage;
+        }
+    }
 
     /**
      * Refuses a save that targets a site the current user may not edit. The
@@ -407,23 +488,10 @@ class VpatController extends Controller
         //  - The conformance table breaks across pages and repeats its header,
         //    because a table of fifty rows kept whole is pushed to a fresh page
         //    and leaves the one before it empty.
-        //
-        // The report is written in the language of the site it describes, not
-        // the language whoever exported it happens to read the control panel
-        // in. It is handed to a buyer, and an Irish admin exporting the report
-        // for an English site should not produce an Irish document.
-        $site = Craft::$app->getSites()->getSiteById((int)($report['siteId'] ?? 0));
-        $originalLanguage = Craft::$app->language;
-
-        if ($site !== null) {
-            Craft::$app->language = $site->language;
-        }
-
-        try {
-            return $this->_renderExportTemplate($report);
-        } finally {
-            Craft::$app->language = $originalLanguage;
-        }
+        return $this->_inSiteLanguage(
+            (int)($report['siteId'] ?? 0),
+            fn(): string => $this->_renderExportTemplate($report),
+        );
     }
 
     /**

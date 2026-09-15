@@ -96,7 +96,7 @@
       return res.ok ? res.json() : null;
     })
     .then(function (data) {
-      if (!data || !data.success || !data.config) {
+      if (!data || !data.success || (!data.config && !data.excluded)) {
         if (fromFragment && data && data.error) {
           // e.g. Standard edition, or the feature switched off: say why
           // instead of silently doing nothing.
@@ -107,12 +107,14 @@
 
       if (fromFragment) {
         try { window.localStorage.setItem(KEY, token); } catch (_) {}
-        notice('Accessibility Audit overlay activated in this browser.');
+        notice(data.excluded
+          ? 'Accessibility Audit overlay activated in this browser. This page is excluded from scanning, so the overlay stays off it.'
+          : 'Accessibility Audit overlay activated in this browser.');
       }
 
       // Token saved and confirmed; the injected overlay still owns this
-      // page's panel.
-      if (injectedOwnsPage) return;
+      // page's panel, or the page is excluded and gets none.
+      if (injectedOwnsPage || data.excluded) return;
 
       var cfg = data.config;
       cfg.token = token;

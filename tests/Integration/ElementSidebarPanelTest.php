@@ -137,6 +137,13 @@ it('keeps assets out of the panel, as the scanner does', function() {
     expect(sidebarPanelRegistration())->toContain('instanceof Asset');
 });
 
+it('keeps excluded pages out of the panel, by type and by URI pattern', function() {
+    // isElementExcluded() is the gate scan-on-save and scanElement() use. A
+    // type-only check here leaves a page on Excluded Pages showing a score
+    // nothing will ever update.
+    expect(sidebarPanelRegistration())->toContain('isElementExcluded($element)');
+});
+
 it('asks for no variable the event handler does not supply', function() {
     // Guards the specific drift that broke it: the template and the handler are
     // in different files, and nothing but this notices when they disagree.
