@@ -28,7 +28,8 @@
   },
   "require-dev": {
     "craftcms/ecs": "dev-main",
-    "craftcms/phpstan": "dev-main"
+    "craftcms/phpstan": "dev-main",
+    "phpstan/phpstan": "^2.2"
   },
   "minimum-stability": "stable",
   "prefer-stable": true,
