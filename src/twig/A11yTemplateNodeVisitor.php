@@ -158,7 +158,7 @@ class A11yTemplateNodeVisitor implements NodeVisitorInterface
                 return $text;
             }
 
-            if ($child instanceof Node && iterator_count($child) > 0) {
+            if (iterator_count($child) > 0) {
                 return $this->_leadingText($child);
             }
 

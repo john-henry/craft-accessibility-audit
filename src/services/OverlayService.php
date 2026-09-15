@@ -115,11 +115,11 @@ class OverlayService extends Component
      * resolve correctly. When no site claims the origin (typically a local
      * dev server on a different port), every site is tried in turn, primary
      * first, matching by URI alone. The element must be one of the scanned
-     * element types, and excluded URIs resolve to nothing, exactly as they do
-     * for the crawler.
+     * element types. A URI matched by an excluded pattern resolves to no
+     * element and is flagged `excluded`, so the loader keeps the overlay off it.
      *
      * @param string $url The full URL of the page the overlay is running on.
-     * @return array{element: ElementInterface|null, siteId: int}
+     * @return array{element: ElementInterface|null, siteId: int, excluded: bool}
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
      */
@@ -130,7 +130,7 @@ class OverlayService extends Component
 
         $parsed = parse_url($url);
         if ($parsed === false || empty($parsed['host'])) {
-            return ['element' => null, 'siteId' => $primaryId];
+            return ['element' => null, 'siteId' => $primaryId, 'excluded' => false];
         }
 
         $origin = $this->_origin($url);
@@ -158,16 +158,19 @@ class OverlayService extends Component
             krsort($candidates);
             foreach ($candidates as $group) {
                 foreach ($group as [$siteId, $uri]) {
+                    if ($this->isPageExcluded(null, $uri, (int)$siteId)) {
+                        return ['element' => null, 'siteId' => (int)$siteId, 'excluded' => true];
+                    }
                     $element = $this->_findByUri($uri, $siteId);
                     if ($element !== null) {
-                        return ['element' => $element, 'siteId' => $siteId];
+                        return ['element' => $element, 'siteId' => $siteId, 'excluded' => false];
                     }
                 }
             }
             // The origin belongs to a site but nothing matched the URI: stay on
             // that site so the overlay at least reports against the right one.
             $first = reset($candidates)[0];
-            return ['element' => null, 'siteId' => $first[0]];
+            return ['element' => null, 'siteId' => $first[0], 'excluded' => false];
         }
 
         // No site claims the origin (dev server, preview deploy): try the URI
@@ -177,13 +180,16 @@ class OverlayService extends Component
         usort($siteIds, static fn(int $a, int $b) => ($b === $primaryId) <=> ($a === $primaryId));
 
         foreach ($siteIds as $siteId) {
+            if ($this->isPageExcluded(null, $uri, (int)$siteId)) {
+                return ['element' => null, 'siteId' => (int)$siteId, 'excluded' => true];
+            }
             $element = $this->_findByUri($uri, $siteId);
             if ($element !== null) {
-                return ['element' => $element, 'siteId' => (int)$siteId];
+                return ['element' => $element, 'siteId' => (int)$siteId, 'excluded' => false];
             }
         }
 
-        return ['element' => null, 'siteId' => $primaryId];
+        return ['element' => null, 'siteId' => $primaryId, 'excluded' => false];
     }
 
     /**
@@ -288,6 +294,35 @@ class OverlayService extends Component
             // False inside a preview pane: scan and show, but post nothing.
             'storeResults' => !$isDerivative,
         ];
+    }
+
+    /**
+     * Whether the page the overlay would run on is excluded from scanning.
+     *
+     * A matched element is judged by its own URI, or its canonical's inside a
+     * preview, since an unsaved draft may carry none. A page with no element
+     * behind it is judged by its request path.
+     *
+     * @param ElementInterface|null $element The matched element, if any.
+     * @param string $path The page's path relative to its site, used when there
+     *                     is no element or the element has no URI.
+     * @param int $siteId The site the page belongs to.
+     * @return bool
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.4.0
+     */
+    public function isPageExcluded(?ElementInterface $element, string $path, int $siteId): bool
+    {
+        $audit = AccessibilityAudit::getInstance()->getAudit();
+
+        if ($element !== null) {
+            $source = $element->getIsDerivative() ? $element->getCanonical() : $element;
+            if ($source->uri !== null) {
+                return $audit->isUriExcluded($source->uri, (int)$source->siteId);
+            }
+        }
+
+        return $audit->isUriExcluded(trim($path, '/'), $siteId);
     }
 
     /**

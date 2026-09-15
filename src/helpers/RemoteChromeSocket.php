@@ -56,6 +56,9 @@ class RemoteChromeSocket extends ClientSocket
         try {
             return parent::receive($length, $waitSeconds);
         } finally {
+            // The read can leave the socket closed, and a closed stream is no
+            // longer a resource, whatever the parent's docblock says.
+            // @phpstan-ignore if.alwaysTrue
             if (\is_resource($this->socket)) {
                 \stream_set_blocking($this->socket, true);
             }

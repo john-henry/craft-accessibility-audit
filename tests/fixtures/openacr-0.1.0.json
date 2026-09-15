@@ -1,0 +1,115 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "openacr-0.1.0.json",
+  "title": "OpenACR",
+  "description": "Open Accessibility Conformance Report (OpenACR) as a YAML file.",
+  "type": "object",
+  "properties": {
+    "title": {
+      "description": "The title of the report in the heading format of '[Company Name] Accessibility Conformance Report'.",
+      "type": "string"
+    },
+    "product": {
+      "description": "Product information",
+      "type": "object",
+      "properties": {
+        "name": { "description": "Product name.", "type": "string" },
+        "version": { "description": "Product version if available.", "type": "string" },
+        "description": { "description": "A brief description of the product.", "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "author": { "description": "Author information.", "$ref": "#/definitions/contact" },
+    "vendor": { "description": "Vendor information.", "$ref": "#/definitions/contact" },
+    "report_date": { "description": "Report date.", "type": "string" },
+    "last_modified_date": { "description": "Last modified date.", "type": "string" },
+    "version": { "description": "Version of this OpenACR document. E.g. drupal-9.1-3", "type": "integer" },
+    "notes": { "description": "Any details or explanation about the product or the report.", "type": "string" },
+    "evaluation_methods_used": {
+      "description": "Include a description of evaluation methods used to complete the OpenACR for the product under test.",
+      "type": "string"
+    },
+    "legal_disclaimer": { "description": "Area for any legal disclaimer text required by your organization.", "type": "string" },
+    "license": { "type": "string", "description": "A valid SPDX license identifier." },
+    "repository": { "description": "Specify the place where your OpenACR lives.", "type": "string" },
+    "feedback": { "description": "The url to your project's issue tracker.", "type": "string" },
+    "related_openacrs": {
+      "description": "Link to related OpenACRs.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "url": { "description": "Link to related OpenACR.", "type": "string" },
+          "type": { "description": "Specify whether the link is a primary or secondary.", "enum": ["primary", "secondary"] }
+        }
+      }
+    },
+    "catalog": {
+      "description": "Name of the catalog to build and validate the OpenACR. E.g. 2.4-edition-wcag-2.0-508-en.",
+      "type": "string"
+    },
+    "chapters": {
+      "type": "object",
+      "properties": {
+        "success_criteria_level_a": { "$ref": "#/definitions/chapter" },
+        "success_criteria_level_aa": { "$ref": "#/definitions/chapter" },
+        "success_criteria_level_aaa": { "$ref": "#/definitions/chapter" },
+        "functional_performance_criteria": { "$ref": "#/definitions/chapter" },
+        "hardware": { "$ref": "#/definitions/chapter" },
+        "software": { "$ref": "#/definitions/chapter" },
+        "support_documentation_and_services": { "$ref": "#/definitions/chapter" }
+      }
+    }
+  },
+  "required": ["title", "product", "author"],
+  "definitions": {
+    "contact": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "company_name": { "type": "string" },
+        "address": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "website": { "type": "string" }
+      },
+      "required": ["email"]
+    },
+    "chapter": {
+      "type": "object",
+      "properties": {
+        "notes": { "description": "Any details or explanation about the chapter.", "type": "string" },
+        "disabled": { "description": "Whether this chapter's criteria is not going to be provided in the ACR.", "type": "boolean" },
+        "criteria": { "$ref": "#/definitions/criteria" }
+      }
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "num": { "description": "Criteria number.", "type": "string" },
+          "components": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "description": "Name of component.", "type": "string" },
+                "adherence": {
+                  "type": "object",
+                  "properties": {
+                    "level": { "description": "Conformance level.", "type": "string" },
+                    "notes": { "description": "Remarks and Explanations.", "type": "string" }
+                  },
+                  "required": ["level"]
+                }
+              },
+              "required": ["name"]
+            }
+          }
+        },
+        "required": ["num"]
+      }
+    }
+  }
+}

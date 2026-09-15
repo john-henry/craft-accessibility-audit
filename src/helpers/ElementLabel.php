@@ -59,6 +59,6 @@ class ElementLabel
             return $fallback;
         }
 
-        return Craft::t('accessibility-audit', 'Element #') . ($elementId ?? $element?->id ?? '');
+        return Craft::t('accessibility-audit', 'Element #') . ($elementId ?? $element->id ?? '');
     }
 }

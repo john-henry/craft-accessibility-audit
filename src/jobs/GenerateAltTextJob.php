@@ -56,7 +56,7 @@ class GenerateAltTextJob extends BaseJob
 
         $plugin = AccessibilityAudit::getInstance();
         $settings = $plugin->getSettings();
-        $apiKey = trim(App::parseEnv($settings->anthropicApiKey ?? ''));
+        $apiKey = trim(App::parseEnv($settings->anthropicApiKey));
 
         if (!$apiKey) {
             Craft::warning('A11y: GenerateAltTextJob skipped, no API key configured.', 'accessibility-audit');

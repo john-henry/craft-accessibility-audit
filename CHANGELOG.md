@@ -1,5 +1,32 @@
 # Release Notes for Accessibility Audit
 
+## 1.4.0 - 2026-09-15
+
+### Added
+- The VPAT can be exported as an OpenACR YAML file, the machine-readable conformance report format GSA
+  maintains, beside the existing HTML export. Each Level A and AA criterion carries its level and remark,
+  an unanswered one goes out as not evaluated, and with EN 301 549 switched on the file names the
+  International Edition. It needs a contact email, since the format requires one, and says so if it's
+  missing. See https://johnhenry.ie/plugins/accessibility-audit/docs/reporting-compliance/vpat-report
+
+### Changed
+- The Support tab says plainly what does the checking: axe-core, unmodified, on the rendered page, with
+  the plugin's own checks added for what axe-core can't see. The old wording read as if the plugin had
+  an engine of its own with axe-core tacked on.
+
+### Fixed
+- Saving the General, Maintenance, Tools or Notifications settings no longer empties Excluded URI
+  Patterns, Additional URLs and Ignored Rule IDs. Every tab saves through the same form, and those three,
+  which only live on the Scanning tab, were read as empty whenever another tab was saved. Anything
+  already lost that way needs putting back in once, under Settings > Scanning.
+- A page matched by Excluded Pages no longer gets the Accessibility panel in its edit screen. The panel
+  kept showing whatever score the page had before it was excluded, a score nothing was ever going to
+  update.
+- Re-scanning an excluded page now says the page is excluded. It used to spin, reload and leave
+  everything as it was, which looked like a scan failing without a word.
+- The frontend overlay no longer appears on pages matched by Excluded Pages, on sites Craft renders and
+  on decoupled front ends alike. It ran its checks there but could never store what it found.
+
 ## 1.3.0 - 2026-09-10
 
 > [!IMPORTANT]
@@ -143,7 +170,7 @@
 ## 1.2.0 - 2026-08-30
 
 > [!IMPORTANT]
-> Extending this plugin, or reading its tables directly? Some public service signatures and two database columns changed. See [UPGRADE.md](https://github.com/john-henry/craft-accessibility-audit/blob/main/UPGRADE.md).
+> Extending this plugin, or reading its tables directly? Some public service signatures and two database columns changed. See [UPGRADE.md](https://github.com/john-henry/craft-accessibility-audit/blob/craft-5/UPGRADE.md).
 
 > [!WARNING]
 > Scan history older than your **Retain Scan Results** setting is deleted the first time Craft runs garbage collection after this update. That setting never actually deleted anything before now, so a site that has been running the plugin for a while almost certainly holds more history than the setting allows, and the default is 90 days. If you want to keep what you have, raise it (or set it to 0 to keep everything, on Pro) before you update. Scores and trends are drawn from that history.

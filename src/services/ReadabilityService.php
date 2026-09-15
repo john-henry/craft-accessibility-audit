@@ -120,7 +120,7 @@ class ReadabilityService extends Component
 
         if ($withClaude) {
             $settings = AccessibilityAudit::getInstance()->getSettings();
-            $apiKey = trim(App::parseEnv($settings->anthropicApiKey ?? ''));
+            $apiKey = trim(App::parseEnv($settings->anthropicApiKey));
             if ($apiKey !== '') {
                 $claudeResult = $this->_analyseWithClaude($text, $apiKey);
                 if ($claudeResult !== null) {
@@ -430,9 +430,7 @@ class ReadabilityService extends Component
         if ($value instanceof \craft\elements\db\ElementQuery) {
             $texts = [];
             foreach ($value->all() as $el) {
-                if ($el instanceof ElementInterface) {
-                    $texts[] = $this->_extractElementText($el);
-                }
+                $texts[] = $this->_extractElementText($el);
             }
             return implode("\n\n", array_filter($texts));
         }
@@ -560,7 +558,7 @@ class ReadabilityService extends Component
     private function _findComplexSentences(array $sentences): array
     {
         usort($sentences, fn($a, $b) => str_word_count($b) <=> str_word_count($a));
-        return array_values(array_slice($sentences, 0, 5));
+        return array_slice($sentences, 0, 5);
     }
 
     /**

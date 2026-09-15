@@ -501,15 +501,20 @@ class SettingsController extends Controller
         $settings->notifyOnScoreDrop = (bool)   $this->request->getBodyParam('settings[notifyOnScoreDrop]',     $settings->notifyOnScoreDrop);
         $settings->notifyScoreDropThreshold = (int)    $this->request->getBodyParam('settings[notifyScoreDropThreshold]', $settings->notifyScoreDropThreshold);
 
-        $ignoreRulesRaw = $this->request->getBodyParam('settings[ignoreRules]', '');
+        // Ignored rules, excluded URI patterns and additional URLs are only on
+        // the Scanning tab, and every tab saves through here, so a field missing
+        // from the post means another tab was saved and the stored value stands.
+        // An emptied textarea posts an empty string, and so does an editable
+        // table with every row removed, so clearing one still clears it.
+        $ignoreRulesRaw = $this->request->getBodyParam('settings[ignoreRules]');
         if (is_string($ignoreRulesRaw)) {
             $settings->ignoreRules = array_filter(array_map('trim', explode("\n", $ignoreRulesRaw)));
         }
 
         // A config-file value takes precedence and renders the table static, so
         // only read the posted rows when the file isn't overriding them.
-        if (!array_key_exists('excludedUriPatterns', Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'))) {
-            $rows = $this->request->getBodyParam('settings[excludedUriPatterns]', []);
+        $rows = $this->request->getBodyParam('settings[excludedUriPatterns]');
+        if ($rows !== null && !array_key_exists('excludedUriPatterns', Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'))) {
             $clean = [];
             if (is_array($rows)) {
                 foreach ($rows as $row) {
@@ -534,8 +539,8 @@ class SettingsController extends Controller
             $settings->excludedUriPatterns = $clean;
         }
 
-        if (!array_key_exists('customUrls', Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'))) {
-            $rows = $this->request->getBodyParam('settings[customUrls]', []);
+        $rows = $this->request->getBodyParam('settings[customUrls]');
+        if ($rows !== null && !array_key_exists('customUrls', Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'))) {
             $clean = [];
             if (is_array($rows)) {
                 foreach ($rows as $row) {

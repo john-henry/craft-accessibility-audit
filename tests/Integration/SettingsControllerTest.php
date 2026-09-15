@@ -190,3 +190,55 @@ describe('SettingsController browser scanning gating', function() {
         expect(AccessibilityAudit::getInstance()->getSettings()->browserSettleMs)->toBe(500);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Every tab saves through the same action, so a field only the Scanning tab
+// renders has to survive a save from any other tab.
+// ---------------------------------------------------------------------------
+
+describe('SettingsController fields only the Scanning tab posts', function() {
+    beforeEach(function() {
+        $settings = AccessibilityAudit::getInstance()->getSettings();
+
+        $this->storedScanning = [
+            'excludedUriPatterns' => $settings->excludedUriPatterns,
+            'customUrls' => $settings->customUrls,
+            'ignoreRules' => $settings->ignoreRules,
+        ];
+
+        $settings->excludedUriPatterns = [['enabled' => true, 'siteId' => '', 'uriPattern' => 'exhibitions']];
+        $settings->customUrls = [['enabled' => true, 'siteId' => '', 'url' => '/search?q=craft']];
+        $settings->ignoreRules = ['color-contrast'];
+    });
+
+    afterEach(function() {
+        $settings = AccessibilityAudit::getInstance()->getSettings();
+        $settings->excludedUriPatterns = $this->storedScanning['excludedUriPatterns'];
+        $settings->customUrls = $this->storedScanning['customUrls'];
+        $settings->ignoreRules = $this->storedScanning['ignoreRules'];
+    });
+
+    it('keeps them when the General tab is saved', function() {
+        // General posts none of the three. Read as empty, a General save wiped
+        // every excluded pattern, additional URL and ignored rule.
+        saveSettings([]);
+
+        $settings = AccessibilityAudit::getInstance()->getSettings();
+
+        expect($settings->excludedUriPatterns)->toBe([['enabled' => true, 'siteId' => '', 'uriPattern' => 'exhibitions']])
+            ->and($settings->customUrls)->toBe([['enabled' => true, 'siteId' => '', 'url' => '/search?q=craft']])
+            ->and(array_values($settings->ignoreRules))->toBe(['color-contrast']);
+    });
+
+    it('still clears them when the Scanning tab posts them empty', function() {
+        // An editable table with every row removed posts an empty string, as
+        // does an emptied textarea. That is a deliberate clear, not an absence.
+        saveSettings(['excludedUriPatterns' => '', 'customUrls' => '', 'ignoreRules' => '']);
+
+        $settings = AccessibilityAudit::getInstance()->getSettings();
+
+        expect($settings->excludedUriPatterns)->toBe([])
+            ->and($settings->customUrls)->toBe([])
+            ->and($settings->ignoreRules)->toBe([]);
+    });
+});

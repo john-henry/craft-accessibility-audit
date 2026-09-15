@@ -101,7 +101,7 @@ class AltController extends Controller
         }
 
         $settings = AccessibilityAudit::getInstance()->getSettings();
-        $apiKey = trim(App::parseEnv($settings->anthropicApiKey ?? ''));
+        $apiKey = trim(App::parseEnv($settings->anthropicApiKey));
 
         if (!$apiKey) {
             return $this->asJson(['success' => false, 'error' => Craft::t('accessibility-audit', 'No Anthropic API key configured. Add it in Accessibility → Settings → AI Alt Text.')]);
@@ -305,7 +305,7 @@ class AltController extends Controller
         $this->requireAdmin();
 
         $settings = AccessibilityAudit::getInstance()->getSettings();
-        $apiKey = trim(App::parseEnv($settings->anthropicApiKey ?? ''));
+        $apiKey = trim(App::parseEnv($settings->anthropicApiKey));
 
         if (!$apiKey) {
             return $this->asJson(['success' => false, 'error' => Craft::t('accessibility-audit', 'No API key configured.')]);

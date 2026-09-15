@@ -85,6 +85,16 @@ class AuditController extends Controller
             ]);
         }
 
+        // Nothing was scanned, so there is no result to reload into. Flagged
+        // so the JS can say why rather than refreshing an unchanged page.
+        if (!empty($result['excluded'])) {
+            return $this->asJson([
+                'success' => false,
+                'excluded' => true,
+                'error' => Craft::t('accessibility-audit', 'This page is excluded from scanning under Settings → Scanning → Excluded Pages.'),
+            ]);
+        }
+
         return $this->asJson([
             'success' => true,
             'scanId' => $result['scanId'],

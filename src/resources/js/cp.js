@@ -205,6 +205,12 @@
           return;
         }
 
+        if (data.excluded) {
+          if (window.Craft && Craft.cp) Craft.cp.displayNotice(data.error);
+          setText(Craft.t('accessibility-audit', 'Excluded'));
+          return;
+        }
+
         if (data.success) {
           /* The queued headless pass was skipped above, and that pass is the
              one covering both viewports. Ask the preview to sweep them itself
