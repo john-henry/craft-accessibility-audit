@@ -61,10 +61,31 @@ class RemoteChromeSocket extends ClientSocket
         } finally {
             // The read can leave the socket closed, and a closed stream is no
             // longer a resource, whatever the parent's docblock says.
-            // @phpstan-ignore if.alwaysTrue
-            if (is_resource($this->socket)) {
+            if (self::_isOpen($this->socket)) {
                 stream_set_blocking($this->socket, true);
             }
         }
+    }
+
+    // =========================================================================
+    // Private Methods
+    // =========================================================================
+
+    /**
+     * Whether a stream is still open.
+     *
+     * Taken as mixed so static analysis doesn't treat the check as always
+     * true: the parent types the socket as a resource, but a closed stream
+     * isn't one.
+     *
+     * @param mixed $socket The stream.
+     * @return bool Whether it's an open resource.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private static function _isOpen(mixed $socket): bool
+    {
+        return is_resource($socket);
     }
 }

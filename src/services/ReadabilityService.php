@@ -9,6 +9,7 @@ namespace johnhenry\accessibilityaudit\services;
 use Craft;
 use craft\base\ElementContainerFieldInterface;
 use craft\base\ElementInterface;
+use craft\commerce\elements\Product;
 use craft\db\Query;
 use craft\elements\db\ElementQuery;
 use craft\helpers\App;
@@ -64,12 +65,6 @@ class ReadabilityService extends Component
      *      Matrix entry) text is gathered from.
      */
     private const MAX_NESTING = 4;
-
-    /**
-     * @var string Commerce's product element class, whose variants' text is
-     *      read with the product's.
-     */
-    private const COMMERCE_PRODUCT = 'craft\\commerce\\elements\\Product';
 
     /**
      * @var string The elements of a fetched page whose end is the end of a
@@ -1107,7 +1102,7 @@ class ReadabilityService extends Component
      *
      * Commerce attaches variants through a layout element of its own rather
      * than a custom field, so walking the product's custom fields never reaches
-     * them. Commerce is optional, so the product class is named as a string.
+     * them.
      *
      * @param ElementInterface $element Any element.
      * @return ElementInterface[] The product's enabled variants, or none.
@@ -1117,17 +1112,15 @@ class ReadabilityService extends Component
      */
     private function _variantsOf(ElementInterface $element): array
     {
-        if (!is_a($element, self::COMMERCE_PRODUCT)) {
+        // instanceof against a class that isn't loaded is simply false, so
+        // this is safe on installs without Commerce.
+        if (!$element instanceof Product) {
             return [];
         }
 
-        // Called by name so static analysis without Commerce installed does not
-        // look for the method; is_a() above is the runtime guard.
-        $getVariants = 'getVariants';
-
         try {
             // false leaves out disabled variants, which are not on the page.
-            $variants = $element->$getVariants(false);
+            $variants = $element->getVariants(false);
         } catch (Throwable) {
             return [];
         }

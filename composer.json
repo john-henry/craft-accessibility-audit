@@ -32,6 +32,7 @@
     "php": "^8.2 || ^8.3 || ^8.4"
   },
   "require-dev": {
+    "craftcms/commerce": "^5.0",
     "craftcms/ecs": "dev-main",
     "craftcms/phpstan": "dev-main",
     "phpstan/phpstan": "^2.2"
