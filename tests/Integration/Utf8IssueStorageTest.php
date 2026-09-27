@@ -42,7 +42,7 @@ it('stores a long multibyte alt text without failing the scan', function() {
     // long-alt check.
     $alt = str_repeat('a', 99) . '”' . str_repeat('b', 60);
 
-    $result = AccessibilityAudit::getInstance()->audit->scanHtml(
+    $result = AccessibilityAudit::getInstance()->getAudit()->scanHtml(
         utf8FixturePage($alt),
         (int) $entry->id,
         Entry::class,

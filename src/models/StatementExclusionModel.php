@@ -6,6 +6,7 @@
 
 namespace johnhenry\accessibilityaudit\models;
 
+use Craft;
 use craft\base\Model;
 
 /**
@@ -22,7 +23,7 @@ use craft\base\Model;
  * own table: they are only ever read as a complete set for one site, never
  * queried or joined across sites.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class StatementExclusionModel extends Model
@@ -84,6 +85,9 @@ class StatementExclusionModel extends Model
      * All valid category handles.
      *
      * @return string[]
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function categories(): array
     {
@@ -95,10 +99,58 @@ class StatementExclusionModel extends Model
     }
 
     /**
-     * Builds a validated model from a stored or posted row.
+     * Whether nothing has been typed into the row yet.
+     *
+     * The form adds rows server-side, so a blank one is posted back with every
+     * save from the moment the editor presses Add until they fill it in. That
+     * is a row in progress, not a bad one, and it is held to the rules only
+     * once it carries something.
+     *
+     * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public function isBlank(): bool
+    {
+        return self::rowIsBlank($this->toStorageArray());
+    }
+
+    /**
+     * Whether a stored row would put nothing on the page.
+     *
+     * A planned date on its own says "we expect to fix this by March" with no
+     * "this", so it does not count as content either.
+     *
+     * @param array<string, mixed> $row A stored or posted row.
+     * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public static function rowIsBlank(array $row): bool
+    {
+        foreach (['content', 'reason', 'criterion'] as $field) {
+            if (trim((string)($row[$field] ?? '')) !== '') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Builds a model from a stored or posted row.
+     *
+     * Values are cast and trimmed here, not checked: an entry is validated
+     * against {@see defineRules()} by whoever is about to save it, so a row the
+     * editor has not finished can still be built and handed back to the form.
      *
      * @param array<string, mixed> $row The raw values.
      * @return self
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function fromArray(array $row): self
     {
@@ -117,6 +169,9 @@ class StatementExclusionModel extends Model
      * storage.
      *
      * @return array<string, string>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function toStorageArray(): array
     {
@@ -134,16 +189,31 @@ class StatementExclusionModel extends Model
 
     /**
      * @inheritdoc
+     *
+     * @return array<int, mixed>
      */
     protected function defineRules(): array
     {
         return array_merge(parent::defineRules(), [
-            [['content'], 'required'],
+            // Content is deliberately not required. The Add button stores an
+            // empty row, and a row built from a scan suggestion carries the
+            // criterion and the finding but leaves the description blank on
+            // purpose: it asks what a member of the public would recognise, and
+            // only a person can write that. A row with nothing in it at all is
+            // dropped when the statement renders rather than refused here.
             [['category'], 'in', 'range' => self::categories()],
             [['content'], 'string', 'max' => 500],
             [['reason'], 'string', 'max' => 2000],
+            // The Web Accessibility Directive requires a disproportionate
+            // burden claim to be justified, so one with content says why.
+            [
+                ['reason'],
+                'required',
+                'when' => fn(self $model): bool => $model->category === self::CATEGORY_BURDEN && trim($model->content) !== '',
+                'message' => Craft::t('accessibility-audit', 'Say why this content is a disproportionate burden.'),
+            ],
             // Criterion numbers only: "1.4.3", not a sentence about one.
-            [['criterion'], 'match', 'pattern' => '/^(\d+\.\d+\.\d+)?$/', 'message' => '{attribute} must be a WCAG criterion number, e.g. 1.4.3.'],
+            [['criterion'], 'match', 'pattern' => '/^(\d+\.\d+\.\d+)?$/', 'message' => Craft::t('accessibility-audit', '{attribute} must be a WCAG criterion number, e.g. 1.4.3.')],
             [['plannedDate'], 'date', 'format' => StatementMetaModel::DATE_FORMAT],
         ]);
     }

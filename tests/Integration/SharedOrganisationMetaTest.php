@@ -24,7 +24,7 @@ describe('split metadata storage', function() {
             'legalDisclaimer' => 'For information only.',
         ]);
 
-        $meta = AccessibilityAudit::getInstance()->vpat->getRecord($siteId)['meta'];
+        $meta = AccessibilityAudit::getInstance()->getVpat()->getRecord($siteId)['meta'];
 
         expect($meta['productName'])->toBe('Acme Website')
             ->and($meta['contactEmail'])->toBe('access@example.com')
@@ -56,9 +56,9 @@ describe('split metadata storage', function() {
         // failure mode that made the old single-blob storage unsafe to share.
         $vpatOnly = new VpatMetaModel();
         $vpatOnly->notes = 'Revised notes.';
-        AccessibilityAudit::getInstance()->vpat->saveMeta($siteId, $vpatOnly);
+        AccessibilityAudit::getInstance()->getVpat()->saveMeta($siteId, $vpatOnly);
 
-        $meta = AccessibilityAudit::getInstance()->vpat->getRecord($siteId)['meta'];
+        $meta = AccessibilityAudit::getInstance()->getVpat()->getRecord($siteId)['meta'];
 
         expect($meta['productName'])->toBe('Acme Website')
             ->and($meta['contactEmail'])->toBe('access@example.com')
@@ -87,7 +87,7 @@ describe('VpatController::actionSaveMeta split write', function() {
 
         // Read through OrganisationService directly, the way an accessibility
         // statement would, rather than through the VPAT's merged view.
-        $shared = AccessibilityAudit::getInstance()->organisation->getMeta($siteId);
+        $shared = AccessibilityAudit::getInstance()->getOrganisation()->getMeta($siteId);
 
         expect($shared['productName'])->toBe('Acme Website')
             ->and($shared['contactEmail'])->toBe('access@example.com')
@@ -111,7 +111,7 @@ describe('VpatController::actionSaveMeta split write', function() {
         expect($json['success'])->toBeFalse()
             ->and($json['errors'])->toHaveKey('productName');
 
-        $meta = AccessibilityAudit::getInstance()->vpat->getRecord($siteId)['meta'];
+        $meta = AccessibilityAudit::getInstance()->getVpat()->getRecord($siteId)['meta'];
 
         expect($meta['productName'])->toBe('Original Name')
             ->and($meta['notes'])->toBe('Original notes.');

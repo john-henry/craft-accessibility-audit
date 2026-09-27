@@ -19,11 +19,52 @@ use johnhenry\accessibilityaudit\models\IssueModel;
 use yii\base\Component;
 
 /**
- * Scans HTML for patterns that may be accessibility issues but require human confirmation.
- * All issues are stored with ruleId prefixed "potential:" so they can be queried separately.
+ * Reads a page for patterns that may be accessibility problems but need a
+ * person to say either way.
+ *
+ * Every finding is stored under a `potential:` rule id, so a question waiting
+ * on an answer is never counted as a failure.
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
+ * @since 1.0.0
  */
 class PotentialScanner extends Component
 {
+    // Const Properties
+    // =========================================================================
+
+    /**
+     * @var int The length past which alt text is worth a second look. Longer
+     *      than most screen readers will read out in one breath, and past the
+     *      point where the detail belongs in the page rather than in an
+     *      attribute nobody can skim.
+     *
+     *      A guideline, not a cap. Craft's own alt field sets no limit and
+     *      neither does this plugin: text is counted and flagged, never cut.
+     *      Public so the editing field counts against the same number the
+     *      rule reports on.
+     */
+    public const MAX_ALT_LENGTH = 150;
+
+    // Public Methods
+    // =========================================================================
+
+    /**
+     * Reads a page for patterns a person has to judge.
+     *
+     * Nothing here is a failure on its own: every finding is a question, stored
+     * under a `potential:` rule id so it can be answered and kept apart from
+     * the definite findings. Excluded furniture and markup the browser never
+     * renders both come out before any check runs: an unrendered template
+     * asking somebody a question is worse than a false positive, because they
+     * cannot answer it by looking at the page.
+     *
+     * @param string $html The rendered page.
+     * @return IssueModel[] The questions raised, in check order.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     public function scan(string $html): array
     {
         if (empty(trim($html))) {
@@ -45,20 +86,32 @@ class PotentialScanner extends Component
         InertMarkup::removeFrom($xpath);
 
         return array_merge(
-            $this->checkShortAlt($xpath),
-            $this->checkLongAlt($xpath),
-            $this->checkIdenticalLinks($xpath),
-            $this->checkUrlAsLinkText($xpath),
-            $this->checkDecorativeImage($xpath),
-            $this->checkPossibleHeading($xpath),
-            $this->checkTableLayout($xpath),
-            $this->checkVideoNoAudioDesc($xpath),
+            $this->_checkShortAlt($xpath),
+            $this->_checkLongAlt($xpath),
+            $this->_checkIdenticalLinks($xpath),
+            $this->_checkUrlAsLinkText($xpath),
+            $this->_checkDecorativeImage($xpath),
+            $this->_checkPossibleHeading($xpath),
+            $this->_checkTableLayout($xpath),
+            $this->_checkVideoNoAudioDesc($xpath),
         );
     }
 
-    // ── Checks ───────────────────────────────────────────────────────────────
+    // Private Methods
+    // =========================================================================
 
-    private function checkShortAlt(DOMXPath $xpath): array
+    /**
+     * Alt text short enough to be worth a second look.
+     *
+     * Raises `potential:short-alt` against WCAG 1.1.1 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The questions raised, empty where none apply.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkShortAlt(DOMXPath $xpath): array
     {
         $issues = [];
         $nodes = $xpath->query('//img[@alt and string-length(normalize-space(@alt)) >= 1 and string-length(normalize-space(@alt)) <= 3]');
@@ -66,7 +119,7 @@ class PotentialScanner extends Component
             if (!$node instanceof DOMElement) {
                 continue;
             }
-            if ($this->isDecorative($node)) {
+            if ($this->_isDecorative($node)) {
                 continue;
             }
             $issues[] = IssueModel::make(
@@ -78,7 +131,7 @@ class PotentialScanner extends Component
                 // 300, not the default cap: image snippets must keep enough
                 // of the src URL to tell sibling images on a shared upload
                 // path apart, or the report highlights the lot of them.
-                context: $this->outerHtml($node, 300),
+                context: $this->_outerHtml($node, 300),
                 helpUrl: null,
                 source: 'php',
             );
@@ -87,19 +140,17 @@ class PotentialScanner extends Component
     }
 
     /**
-     * @var int The length past which alt text is worth a second look. Longer
-     *      than most screen readers will read out in one breath, and past the
-     *      point where the detail belongs in the page rather than in an
-     *      attribute nobody can skim.
+     * Alt text longer than a screen reader will read out in one breath.
      *
-     *      A guideline, not a cap. Craft's own alt field sets no limit and
-     *      neither does this plugin: text is counted and flagged, never cut.
-     *      Public so the editing field counts against the same number the
-     *      rule reports on.
+     * Raises `potential:long-alt` against WCAG 1.1.1 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The questions raised, empty where none apply.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
-    public const MAX_ALT_LENGTH = 150;
-
-    private function checkLongAlt(DOMXPath $xpath): array
+    private function _checkLongAlt(DOMXPath $xpath): array
     {
         $issues = [];
         $nodes = $xpath->query('//img[@alt and string-length(@alt) > ' . self::MAX_ALT_LENGTH . ']');
@@ -149,10 +200,11 @@ class PotentialScanner extends Component
      * @param string $href The raw href attribute.
      * @param string[] $siteHosts Hosts that belong to this install.
      * @return string A comparable form of the destination.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    private function normaliseHref(string $href, array $siteHosts): string
+    private function _normaliseHref(string $href, array $siteHosts): string
     {
         $href = trim($href);
         $parts = parse_url($href);
@@ -189,10 +241,11 @@ class PotentialScanner extends Component
      * apart from a link to somewhere else.
      *
      * @return string[] Lowercased hostnames.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    private function siteHosts(): array
+    private function _siteHosts(): array
     {
         $hosts = [];
 
@@ -222,14 +275,15 @@ class PotentialScanner extends Component
      *
      * @param DOMXPath $xpath The parsed page.
      * @return IssueModel[]
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    private function checkIdenticalLinks(DOMXPath $xpath): array
+    private function _checkIdenticalLinks(DOMXPath $xpath): array
     {
         $issues = [];
         $linkMap = [];
-        $siteHosts = $this->siteHosts();
+        $siteHosts = $this->_siteHosts();
 
         foreach ($xpath->query('//a[@href]') as $node) {
             if (!$node instanceof DOMElement) {
@@ -255,7 +309,7 @@ class PotentialScanner extends Component
             // reader hears no difference. The first spelling seen is kept for
             // the report, because that is what the author will recognise.
             $key = mb_strtolower(trim(preg_replace('/\s+/u', ' ', $name) ?? $name));
-            $target = $this->normaliseHref($href, $siteHosts);
+            $target = $this->_normaliseHref($href, $siteHosts);
 
             $linkMap[$key]['name'] ??= $name;
             // Keyed by resolved destination so the same target written two ways
@@ -271,7 +325,7 @@ class PotentialScanner extends Component
                 continue;
             }
 
-            $issues[] = $this->identicalLinkIssue((string)$group['name'], $group['links'], $xpath);
+            $issues[] = $this->_identicalLinkIssue((string)$group['name'], $group['links'], $xpath);
         }
 
         return $issues;
@@ -284,8 +338,11 @@ class PotentialScanner extends Component
      * @param array<string, array{href: string, node: DOMElement}> $links Keyed by destination.
      * @param DOMXPath $xpath The document.
      * @return IssueModel
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
-    private function identicalLinkIssue(string $name, array $links, DOMXPath $xpath): IssueModel
+    private function _identicalLinkIssue(string $name, array $links, DOMXPath $xpath): IssueModel
     {
         $lines = [];
         $places = [];
@@ -381,7 +438,7 @@ class PotentialScanner extends Component
                     . 'the page itself.',
                 wcagCriterion: $criterion,
                 wcagLevel: $level,
-                context: $this->identicalLinkContext($name, $links),
+                context: $this->_identicalLinkContext($name, $links),
                 helpUrl: null,
                 source: 'php',
             );
@@ -397,7 +454,7 @@ class PotentialScanner extends Component
         // region is one attribute and settles every ambiguous link inside it
         // at once, without touching any link's announced name. On a real page
         // that beats editing each link by a distance, so it goes second.
-        $unnamed = $this->unnamedLandmarks($contexts);
+        $unnamed = $this->_unnamedLandmarks($contexts);
 
         if ($unnamed !== []) {
             $message .= '  2. Give the unnamed region a name, with aria-label on it. One attribute, and it '
@@ -430,7 +487,7 @@ class PotentialScanner extends Component
             message: $message,
             wcagCriterion: $criterion,
             wcagLevel: $level,
-            context: $this->identicalLinkContext($name, $links),
+            context: $this->_identicalLinkContext($name, $links),
             helpUrl: null,
             source: 'php',
         );
@@ -446,10 +503,11 @@ class PotentialScanner extends Component
      * @param array<int, array{name: string, heading: string, landmark: DOMElement|null}> $contexts
      *        The resolved context of each link in the group.
      * @return array<string, int> Keyed by the region's markup, valued by count.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
-    private function unnamedLandmarks(array $contexts): array
+    private function _unnamedLandmarks(array $contexts): array
     {
         $found = [];
 
@@ -480,13 +538,27 @@ class PotentialScanner extends Component
      * @param string $name The name the links share.
      * @param array<string, array{href: string, node: DOMElement}> $links Keyed by destination.
      * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
-    private function identicalLinkContext(string $name, array $links): string
+    private function _identicalLinkContext(string $name, array $links): string
     {
         return '"' . $name . '" → ' . implode(', ', array_slice(array_column($links, 'href'), 0, 3));
     }
 
-    private function checkUrlAsLinkText(DOMXPath $xpath): array
+    /**
+     * A raw address used as the link's own text.
+     *
+     * Raises `potential:url-as-link-text` against WCAG 2.4.4 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The questions raised, empty where none apply.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkUrlAsLinkText(DOMXPath $xpath): array
     {
         $issues = [];
         $nodes = $xpath->query('//a[normalize-space(.) != ""]');
@@ -508,7 +580,18 @@ class PotentialScanner extends Component
         return $issues;
     }
 
-    private function checkDecorativeImage(DOMXPath $xpath): array
+    /**
+     * An image that may be decoration rather than content.
+     *
+     * Raises `potential:decorative-image` against WCAG 1.1.1 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The questions raised, empty where none apply.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkDecorativeImage(DOMXPath $xpath): array
     {
         $issues = [];
         $nodes = $xpath->query('//img[@alt=""]');
@@ -526,7 +609,7 @@ class PotentialScanner extends Component
                     wcagCriterion: '1.1.1',
                     wcagLevel: 'A',
                     // Same 300 cap as short-alt: see the comment there.
-                    context: $this->outerHtml($node, 300),
+                    context: $this->_outerHtml($node, 300),
                     helpUrl: null,
                     source: 'php',
                 );
@@ -535,7 +618,18 @@ class PotentialScanner extends Component
         return $issues;
     }
 
-    private function checkPossibleHeading(DOMXPath $xpath): array
+    /**
+     * Short bold text standing alone, which often wants to be a heading.
+     *
+     * Raises `potential:possible-heading` against WCAG 1.3.1 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The questions raised, empty where none apply.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkPossibleHeading(DOMXPath $xpath): array
     {
         $issues = [];
         // <p> whose only child content is entirely wrapped in <strong> or <b>
@@ -559,7 +653,18 @@ class PotentialScanner extends Component
         return $issues;
     }
 
-    private function checkTableLayout(DOMXPath $xpath): array
+    /**
+     * A table with no header cells, which may be laying out a page.
+     *
+     * Raises `potential:table-layout` against WCAG 1.3.1 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The questions raised, empty where none apply.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkTableLayout(DOMXPath $xpath): array
     {
         $issues = [];
         $nodes = $xpath->query(
@@ -583,7 +688,18 @@ class PotentialScanner extends Component
         return $issues;
     }
 
-    private function checkVideoNoAudioDesc(DOMXPath $xpath): array
+    /**
+     * Video that may carry information only the picture gives.
+     *
+     * Raises `potential:video-audio-desc` against WCAG 1.2.5 (AA).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The questions raised, empty where none apply.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkVideoNoAudioDesc(DOMXPath $xpath): array
     {
         $issues = [];
         $nodes = $xpath->query('//video');
@@ -596,7 +712,7 @@ class PotentialScanner extends Component
                     message: 'Does this video need an audio description? Videos with visual-only information require audio description for blind users.',
                     wcagCriterion: '1.2.5',
                     wcagLevel: 'AA',
-                    context: $this->outerHtml($node, 80),
+                    context: $this->_outerHtml($node, 80),
                     helpUrl: null,
                     source: 'php',
                 );
@@ -605,16 +721,38 @@ class PotentialScanner extends Component
         return $issues;
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private function isDecorative(DOMElement $node): bool
+    /**
+     * Whether an element is already marked as decoration.
+     *
+     * @param DOMElement $node The element to read.
+     * @return bool True where a presentation role or aria-hidden says so.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _isDecorative(DOMElement $node): bool
     {
         $role = strtolower($node->getAttribute('role'));
         return in_array($role, ['presentation', 'none'], true)
             || strtolower($node->getAttribute('aria-hidden')) === 'true';
     }
 
-    private function outerHtml(DOMNode $node, int $maxLen = 150): string
+    /**
+     * An element's markup, trimmed to a length a report can carry.
+     *
+     * Cut with the mb_ functions rather than by bytes: a byte cut can split a
+     * multibyte character, and the invalid sequence aborts the issue INSERT on
+     * strict-mode MySQL, taking the whole scan transaction with it.
+     *
+     * @param DOMNode $node The element a question is about.
+     * @param int $maxLen The most characters to keep.
+     * @return string The markup, with an ellipsis where it was cut.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _outerHtml(DOMNode $node, int $maxLen = 150): string
     {
         $doc = new DOMDocument();
         $doc->appendChild($doc->importNode($node, true));

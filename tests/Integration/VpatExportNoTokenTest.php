@@ -15,7 +15,7 @@ use johnhenry\accessibilityaudit\AccessibilityAudit;
 
 function renderExport(int $siteId): string
 {
-    $report = AccessibilityAudit::getInstance()->vpat->getFullReport($siteId);
+    $report = AccessibilityAudit::getInstance()->getVpat()->getFullReport($siteId);
 
     return Craft::$app->getView()->renderTemplate(
         'accessibility-audit/vpat-export',

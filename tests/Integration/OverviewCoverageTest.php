@@ -8,6 +8,7 @@ use craft\elements\User;
 use craft\helpers\Db;
 use craft\helpers\StringHelper;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\jobs\ScanElements;
 use johnhenry\accessibilityaudit\services\AuditService;
 use markhuot\craftpest\factories\User as UserFactory;
 
@@ -51,7 +52,7 @@ function clearSweepFlag(int $siteId): void
 
 beforeEach(function() {
     $this->siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
-    $this->audit = AccessibilityAudit::getInstance()->audit;
+    $this->audit = AccessibilityAudit::getInstance()->getAudit();
 
     clearSweepFlag($this->siteId);
 });
@@ -103,8 +104,9 @@ describe('AuditService::isSweepRunning', function() {
         expect($this->audit->isSweepRunning($this->siteId))->toBeFalse();
     });
 
-    it('is true while the flag the job sets is in place', function() {
+    it('is true while the flag the job sets is in place and the job is queued', function() {
         Craft::$app->getCache()->set(AuditService::sweepKey($this->siteId), true, 60);
+        Craft::$app->getQueue()->push(new ScanElements(['siteId' => $this->siteId]));
 
         expect($this->audit->isSweepRunning($this->siteId))->toBeTrue();
     });
@@ -129,12 +131,15 @@ describe('the sweep job', function() {
     });
 
     it('lets the flag expire, so a sweep that dies does not wedge the Overview', function() {
-        // A failed job or a restarted worker never reaches after().
-        $source = (string) file_get_contents(
-            (new ReflectionClass(\johnhenry\accessibilityaudit\jobs\ScanElements::class))->getFileName(),
-        );
+        // A failed job or a restarted worker never reaches after(), so the flag
+        // has to lapse on its own. Asserted on the value rather than on how the
+        // constant is declared: what matters is that there is an expiry and it
+        // is a real length of time.
+        $ttl = \johnhenry\accessibilityaudit\jobs\ScanElements::SWEEP_TTL;
 
-        expect($source)->toContain('private const SWEEP_TTL =');
+        expect($ttl)->toBeInt()
+            ->toBeGreaterThan(0)
+            ->toBeLessThanOrEqual(86400);
     });
 });
 
@@ -176,6 +181,6 @@ describe('the Overview', function() {
             (new ReflectionClass(\johnhenry\accessibilityaudit\controllers\DashboardController::class))->getFileName(),
         );
 
-        expect($source)->toContain("'coverage' => \$plugin->audit->getCoverage(\$siteId),");
+        expect($source)->toContain("'coverage' => \$plugin->getAudit()->getCoverage(\$siteId),");
     });
 });

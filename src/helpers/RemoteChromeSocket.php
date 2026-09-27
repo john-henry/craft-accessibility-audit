@@ -7,6 +7,8 @@
 namespace johnhenry\accessibilityaudit\helpers;
 
 use Wrench\Socket\ClientSocket;
+use function is_resource;
+use function stream_set_blocking;
 
 /**
  * A client socket whose reads return what has arrived instead of waiting.
@@ -21,7 +23,7 @@ use Wrench\Socket\ClientSocket;
  * Reading non-blocking is safe here because the caller already polls: chrome-php
  * waits on the socket in 50ms slices and re-checks until its response arrives.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class RemoteChromeSocket extends ClientSocket
@@ -42,16 +44,17 @@ class RemoteChromeSocket extends ClientSocket
      * @param int $length Maximum bytes to read.
      * @param float $waitSeconds Seconds to wait for data before reading.
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function receive(int $length = self::DEFAULT_RECEIVE_LENGTH, float $waitSeconds = 0.0): string
     {
-        if (!\is_resource($this->socket)) {
+        if (!is_resource($this->socket)) {
             return parent::receive($length, $waitSeconds);
         }
 
-        \stream_set_blocking($this->socket, false);
+        stream_set_blocking($this->socket, false);
 
         try {
             return parent::receive($length, $waitSeconds);
@@ -59,8 +62,8 @@ class RemoteChromeSocket extends ClientSocket
             // The read can leave the socket closed, and a closed stream is no
             // longer a resource, whatever the parent's docblock says.
             // @phpstan-ignore if.alwaysTrue
-            if (\is_resource($this->socket)) {
-                \stream_set_blocking($this->socket, true);
+            if (is_resource($this->socket)) {
+                stream_set_blocking($this->socket, true);
             }
         }
     }

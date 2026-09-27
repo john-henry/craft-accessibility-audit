@@ -14,7 +14,9 @@ use craft\helpers\Json;
 use craft\helpers\StringHelper;
 use DateTime;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\helpers\Anthropic;
 use johnhenry\accessibilityaudit\models\VpatMetaModel;
+use Throwable;
 use yii\base\Component;
 use yii\db\Exception;
 
@@ -28,7 +30,44 @@ use yii\db\Exception;
  * Auto-conformance is derived live from the scan database so it always
  * reflects the most recent scan results.
  *
- * @property-read array[] $criteria
+ * @property-read array<string, array<string, mixed>> $criteria
+ *
+ * @phpstan-type VpatEvidence array{checks: ?string, cannot: ?string, findings: int, pages: int}
+ * @phpstan-type VpatOverride array{level?: string, remarks?: string, remarkFindings?: int, remarkSavedAt?: string}
+ * @phpstan-type VpatRevision array{date: string, changes: array<int, array{criterion: string, name: string, from: string, to: string}>, remarkEdits: int}
+ * @phpstan-type VpatCriterionRow array{
+ *     name: string,
+ *     level: string,
+ *     principle: string,
+ *     url: string,
+ *     auto: string,
+ *     desc: string,
+ *     number: string,
+ *     autoLevel: string|null,
+ *     autoBasis: string|null,
+ *     overrideLevel: string|null,
+ *     overrideRemarks: string,
+ *     effectiveLevel: string,
+ *     effectiveRemarks: string,
+ *     evidence: VpatEvidence|null,
+ *     remarkStale: bool,
+ *     remarkSavedAt: string|null,
+ *     remarkFindings: int|null,
+ *     enClause: string|null,
+ * }
+ * @phpstan-type VpatReport array{
+ *     meta: array<string, mixed>,
+ *     levelA: array<string, VpatCriterionRow>,
+ *     levelAA: array<string, VpatCriterionRow>,
+ *     hasScanData: bool,
+ *     en301549: bool,
+ *     en301549Version: string,
+ *     revisions: array<int, VpatRevision>,
+ *     siteId: int,
+ * }
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
+ * @since 1.0.0
  */
 class VpatService extends Component
 {
@@ -606,9 +645,21 @@ class VpatService extends Component
         ],
     ];
 
-    // ─── Public API ──────────────────────────────────────────────────────────
+    // Public Methods
+    // =========================================================================
 
-    /** Returns the full hardcoded criteria list. */
+    /**
+     * Every WCAG criterion this report covers, as defined in code.
+     *
+     * The list is hardcoded rather than stored: it is the standard itself, not
+     * site data, and a report that could drift from it would be worthless.
+     *
+     * @return array<string, array{name: string, level: string, principle: string, url: string, auto: string, desc: string}>
+     *         Keyed by criterion number.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     public function getCriteria(): array
     {
         return self::CRITERIA;
@@ -618,9 +669,13 @@ class VpatService extends Component
      * Returns the stored VPAT record for the given site.
      * Creates a blank record if none exists.
      *
-     * @return array{id: int, meta: array, overrides: array}
+     * @param int $siteId The site whose record to read.
+     * @return array{id: int, meta: array<string, mixed>, overrides: array<string, VpatOverride>}
      * @throws Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function getRecord(int $siteId): array
     {
@@ -635,7 +690,7 @@ class VpatService extends Component
         // merged back in here rather than at each call site, so the editor, the
         // export template and craft.a11y.vpatReport() all keep seeing one flat
         // `meta` array and none of them need to know the storage is split.
-        $shared = AccessibilityAudit::getInstance()->organisation->getMeta($siteId);
+        $shared = AccessibilityAudit::getInstance()->getOrganisation()->getMeta($siteId);
 
         if (!$row) {
             $this->_createRecord($siteId);
@@ -666,6 +721,9 @@ class VpatService extends Component
      * @throws Exception
      * @see OrganisationService::saveMeta()
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function saveMeta(int $siteId, VpatMetaModel $meta): void
     {
@@ -687,8 +745,21 @@ class VpatService extends Component
      * Saves (or clears) the conformance level and remarks for one criterion.
      * Passing empty strings for both $level and $remarks removes the override.
      *
+     * A remark is stored text that nothing recomputes, so the findings behind
+     * it are recorded alongside it and the wording can later be shown as out
+     * of date. This happens on every save, not only on a generated draft: a
+     * remark typed by hand goes stale exactly the same way.
+     *
+     * @param int $siteId The site the report belongs to.
+     * @param string $criterion The WCAG criterion number, e.g. `1.4.3`.
+     * @param string $level The conformance level, or an empty string to clear.
+     * @param string $remarks The author's wording, or an empty string to clear.
+     * @return void
      * @throws Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function saveOverride(int $siteId, string $criterion, string $level, string $remarks): void
     {
@@ -736,7 +807,8 @@ class VpatService extends Component
      * @return bool Whether a snapshot was written.
      * @throws Exception If the insert fails.
      * @throws \yii\base\InvalidConfigException
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
     public function recordRevision(int $siteId): bool
@@ -782,7 +854,8 @@ class VpatService extends Component
      * @param int $siteId The site the report belongs to.
      * @return bool Whether a revision was removed. False when there were none.
      * @throws \yii\db\Exception If the delete fails.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
     public function deleteLatestRevision(int $siteId): bool
@@ -813,7 +886,8 @@ class VpatService extends Component
      *
      * @param int $siteId The site the report belongs to.
      * @return array<int, array{id: int, dateCreated: string, answers: int}>
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
     public function getRevisions(int $siteId): array
@@ -842,7 +916,8 @@ class VpatService extends Component
      * @param int $siteId The site the report belongs to.
      * @return bool Whether a revision was removed.
      * @throws \yii\db\Exception If the delete fails.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
     public function deleteRevision(int $id, int $siteId): bool
@@ -858,7 +933,8 @@ class VpatService extends Component
      * @param int $siteId The site the report belongs to.
      * @return int How many were removed.
      * @throws \yii\db\Exception If the delete fails.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
     public function deleteAllRevisions(int $siteId): int
@@ -873,7 +949,8 @@ class VpatService extends Component
      *
      * @param int $siteId The site the report belongs to.
      * @return int
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
     public function countRevisions(int $siteId): int
@@ -894,8 +971,9 @@ class VpatService extends Component
      *
      * @param int $siteId The site the report belongs to.
      * @param int $limit How many revisions to describe.
-     * @return array<int, array{date: string, changes: array<int, array{criterion: string, name: string, from: string, to: string}>, remarkEdits: int}>
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return array<int, VpatRevision>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
     public function getRevisionHistory(int $siteId, int $limit = 5): array
@@ -949,18 +1027,6 @@ class VpatService extends Component
     }
 
     /**
-     * Derives conformance levels from live scan data.
-     *
-     * For criteria with scan violations:
-     *   - any 'error' severity  → Does Not Support
-     *   - warnings/notices only → Partially Supports
-     *
-     * For 'automated' criteria where pages have been scanned and no
-     * violations were found → Supports.
-     *
-     * @return array<string, array{level: string, basis: string}>
-     */
-    /**
      * What the scans can say about each criterion, for a person deciding how
      * to sign it off.
      *
@@ -971,10 +1037,11 @@ class VpatService extends Component
      * with no way of telling a five-second decision from an afternoon's work.
      *
      * @param int $siteId The site to report on.
-     * @return array<string, array{checks: ?string, cannot: ?string, findings: int, pages: int}>
+     * @return array<string, VpatEvidence>
      *         Keyed by criterion number. checks and cannot are null where no
      *         scanner contributes to that criterion at all.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
     public function getEvidence(int $siteId): array
@@ -993,7 +1060,7 @@ class VpatService extends Component
                 ->select(['wcagCriterion', 'COUNT(*) as n'])
                 ->from('{{%accessibilityaudit_issues}}')
                 ->where(['scanId' => $latestScanIds, 'isResolved' => false])
-                ->andWhere(AccessibilityAudit::getInstance()->audit->definiteCondition())
+                ->andWhere(AccessibilityAudit::getInstance()->getAudit()->definiteCondition())
                 ->andWhere(['not', ['wcagCriterion' => null]])
                 ->groupBy(['wcagCriterion'])
                 ->indexBy('wcagCriterion')
@@ -1015,9 +1082,27 @@ class VpatService extends Component
         return $evidence;
     }
 
+    /**
+     * What the scans alone can say about each criterion.
+     *
+     * A suggestion, never an answer: automated testing reaches a fraction of
+     * WCAG, so this narrows a claim and never widens one. Dismissed questions
+     * and fixed issues are spent, matching how every other report reads the
+     * same findings.
+     *
+     * @param int $siteId The site to assess.
+     * @return array<string, array{level: string, basis: string}> The suggested
+     *         level per criterion, keyed by criterion number. Criteria the
+     *         scanners cannot speak to are absent.
+     * @throws Exception
+     * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     public function getAutoConformance(int $siteId): array
     {
-        $audit = AccessibilityAudit::getInstance()->audit;
+        $audit = AccessibilityAudit::getInstance()->getAudit();
 
         $latestScanIds = (new Query())
             ->select(['MAX(id)'])
@@ -1072,9 +1157,13 @@ class VpatService extends Component
      * Merges criteria definitions, auto-conformance, and manual overrides
      * into a single report structure ready for rendering.
      *
-     * @return array{meta: array, levelA: array, levelAA: array, hasScanData: bool}
+     * @param int $siteId The site whose report to build.
+     * @return VpatReport
      * @throws Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function getFullReport(int $siteId): array
     {
@@ -1153,7 +1242,8 @@ class VpatService extends Component
      *
      * @param string $number The WCAG criterion number, e.g. '1.4.3'.
      * @return string|null The EN clause, e.g. '9.1.4.3', or null where uncovered.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
     public function enClause(string $number): ?string
@@ -1178,7 +1268,8 @@ class VpatService extends Component
      *
      * @param string $number The criterion number, e.g. '1.4.3'.
      * @return array{number: string, name: string, level: string, principle: string, url: string}|null
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function criterionMeta(string $number): ?array
@@ -1215,7 +1306,8 @@ class VpatService extends Component
      * @param string $level The conformance level currently shown for the row.
      * @param string $notes The author's rough notes for the criterion, if any.
      * @return array{success: bool, remark?: string, error?: string, hint?: bool}
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function draftRemark(int $siteId, string $criterion, string $level, string $notes = ''): array
@@ -1251,7 +1343,7 @@ class VpatService extends Component
                 ->select(['ruleId', 'severity', 'MIN(message) as message', 'COUNT(*) as occurrences', 'COUNT(DISTINCT elementId) as pages'])
                 ->from('{{%accessibilityaudit_issues}}')
                 ->where(['scanId' => $latestScanIds, 'wcagCriterion' => $criterion, 'isResolved' => false])
-                ->andWhere(AccessibilityAudit::getInstance()->audit->definiteCondition())
+                ->andWhere(AccessibilityAudit::getInstance()->getAudit()->definiteCondition())
                 ->groupBy(['ruleId', 'severity'])
                 ->orderBy(['occurrences' => SORT_DESC])
                 ->limit(8)
@@ -1372,15 +1464,11 @@ class VpatService extends Component
             'Respond with the remark text only.';
 
         try {
-            $client = Craft::createGuzzleClient(['timeout' => 30]);
-            $response = $client->post('https://api.anthropic.com/v1/messages', [
-                'headers' => [
-                    'x-api-key' => $apiKey,
-                    'anthropic-version' => '2023-06-01',
-                    'content-type' => 'application/json',
-                ],
+            $client = Craft::createGuzzleClient(Anthropic::clientConfig());
+            $response = $client->post(Anthropic::ENDPOINT, [
+                'headers' => Anthropic::headers($apiKey),
                 'json' => [
-                    'model' => 'claude-haiku-4-5-20251001',
+                    'model' => Anthropic::MODEL,
                     'max_tokens' => 300,
                     'messages' => [
                         ['role' => 'user', 'content' => $prompt],
@@ -1396,13 +1484,14 @@ class VpatService extends Component
             }
 
             return ['success' => true, 'remark' => $remark];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Craft::error('VpatService: remark drafting failed: ' . $e->getMessage(), 'accessibility-audit');
             return ['success' => false, 'error' => Craft::t('accessibility-audit', 'Drafting failed. Check the Anthropic API key and try again.')];
         }
     }
 
-    // ─── Private ─────────────────────────────────────────────────────────────
+    // Private Methods
+    // =========================================================================
 
     /**
      * Whether a saved remark was written against a different set of findings
@@ -1412,11 +1501,12 @@ class VpatService extends Component
      * started recording this carries no count, and guessing at one would put a
      * warning on every row an author had already dealt with.
      *
-     * @param array<string, mixed>|null $override The stored override, if any.
-     * @param array{checks: ?string, cannot: ?string, findings: int, pages: int}|null $evidence
+     * @param VpatOverride|null $override The stored override, if any.
+     * @param VpatEvidence|null $evidence
      *        The criterion's current evidence.
      * @return bool Whether the wording predates the current findings.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
     private function _remarkIsStale(?array $override, ?array $evidence): bool
@@ -1440,9 +1530,10 @@ class VpatService extends Component
      * identical sets of answers compare as different. Key order would do the
      * same, since a criterion answered later sits later in the map.
      *
-     * @param array<string, array> $overrides The stored override map.
+     * @param array<string, VpatOverride> $overrides The stored override map.
      * @return array<string, array{level: string, remarks: string}>
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
     private function _answerMap(array $overrides): array
@@ -1462,8 +1553,16 @@ class VpatService extends Component
     }
 
     /**
-     * @throws Exception
+     * Creates the site's record if it has none, so a caller can read or update
+     * it without checking first.
+     *
+     * @param int $siteId The site to ensure a record for.
+     * @return void
+     * @throws Exception When the insert fails.
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _ensureRecord(int $siteId): void
     {
@@ -1478,20 +1577,33 @@ class VpatService extends Component
     }
 
     /**
-     * @throws Exception
+     * Inserts a blank record for a site, with no metadata and no overrides.
+     *
+     * @param int $siteId The site to create a record for.
+     * @return void
+     * @throws Exception When the insert fails.
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _createRecord(int $siteId): void
     {
-        Craft::$app->getDb()->createCommand()
-            ->insert('{{%accessibilityaudit_vpat}}', [
+        // Insert-or-nothing: see StatementService::_createRecord(). Two
+        // readers can both find the row missing, and siteId is unique.
+        Db::upsert(
+            '{{%accessibilityaudit_vpat}}',
+            [
                 'siteId' => $siteId,
                 'meta' => null,
                 'overrides' => null,
                 'dateCreated' => Db::prepareDateForDb(new DateTime()),
                 'dateUpdated' => Db::prepareDateForDb(new DateTime()),
                 'uid' => StringHelper::UUID(),
-            ])
-            ->execute();
+            ],
+            false,
+            [],
+            false,
+        );
     }
 }

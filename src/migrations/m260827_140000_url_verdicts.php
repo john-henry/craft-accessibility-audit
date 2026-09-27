@@ -24,7 +24,7 @@ use DateTime;
  * hashes to "element:{id}", a URL to "url:{url}", and the unique index moves
  * onto that. Existing rows are backfilled from the element they already name.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.2.0
  */
 class m260827_140000_url_verdicts extends Migration
@@ -59,8 +59,13 @@ class m260827_140000_url_verdicts extends Migration
         // back the foreign key on siteId, and will not drop an index a
         // constraint still needs; leading the new one with siteId as well
         // gives the constraint something to fall back on.
-        $this->createIndex(null, $table, ['siteId', 'targetHash', 'ruleId', 'contextHash'], true);
-        $this->createIndex(null, $table, ['siteId', 'targetHash']);
+        if (!Db::findIndex($table, ['siteId', 'targetHash', 'ruleId', 'contextHash'], true, $this->db)) {
+            $this->createIndex(null, $table, ['siteId', 'targetHash', 'ruleId', 'contextHash'], true);
+        }
+
+        if (!Db::findIndex($table, ['siteId', 'targetHash'], false, $this->db)) {
+            $this->createIndex(null, $table, ['siteId', 'targetHash']);
+        }
 
         // Only then the old one, which names an elementId that is now null on
         // URL rows and so enforces nothing for them.
@@ -92,6 +97,9 @@ class m260827_140000_url_verdicts extends Migration
      *
      * @param string $table The verdicts table.
      * @return void
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _backfillTargetHashes(string $table): void
     {

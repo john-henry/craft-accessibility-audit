@@ -20,7 +20,7 @@ use craft\elements\Asset;
  * plugins such as Commerce, as opposed to a third-party plugin's custom
  * element, which stays opt-in.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class ScannableElementTypes
@@ -33,6 +33,9 @@ class ScannableElementTypes
      * label for display in the settings checklist.
      *
      * @return array<class-string, string>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function all(): array
     {
@@ -57,6 +60,9 @@ class ScannableElementTypes
      * types: the default scan set used when nothing has been configured.
      *
      * @return class-string[]
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function native(): array
     {

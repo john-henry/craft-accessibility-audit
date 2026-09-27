@@ -6,6 +6,7 @@
 
 namespace johnhenry\accessibilityaudit\models;
 
+use Craft;
 use craft\base\Model;
 use DateTime;
 use johnhenry\accessibilityaudit\services\StatementProfiles;
@@ -21,7 +22,7 @@ use johnhenry\accessibilityaudit\services\StatementProfiles;
  * conditional rules read the profile rather than hard-requiring fields that are
  * meaningless outside the EU and UK regimes.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class StatementMetaModel extends Model
@@ -147,6 +148,9 @@ class StatementMetaModel extends Model
      * JSON storage.
      *
      * @return array<string, string|bool>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function toStorageArray(): array
     {
@@ -173,6 +177,9 @@ class StatementMetaModel extends Model
      * can be queried by jurisdiction without unpacking JSON.
      *
      * @return string[]
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function storageKeys(): array
     {
@@ -197,6 +204,8 @@ class StatementMetaModel extends Model
 
     /**
      * @inheritdoc
+     *
+     * @return array<int, mixed>
      */
     protected function defineRules(): array
     {
@@ -236,7 +245,7 @@ class StatementMetaModel extends Model
                 'operator' => '>',
                 'type' => 'string',
                 'when' => static fn(self $model): bool => $model->reviewDate !== '' && $model->nextReviewDate !== '',
-                'message' => 'The next review has to fall after the last one.',
+                'message' => Craft::t('accessibility-audit', 'The next review has to fall after the last one.'),
             ],
 
             // Conditional on the profile: an enforcement body is compulsory
@@ -246,7 +255,7 @@ class StatementMetaModel extends Model
                 ['enforcementBody'],
                 'required',
                 'when' => fn(self $model): bool => (bool) StatementProfiles::get($model->profile)['requiresEnforcement'],
-                'message' => 'An enforcement body is required for this jurisdiction.',
+                'message' => Craft::t('accessibility-audit', 'An enforcement body is required for this jurisdiction.'),
             ],
 
             // A third-party claim has to name the third party, otherwise the
@@ -255,7 +264,7 @@ class StatementMetaModel extends Model
                 ['preparedBy'],
                 'required',
                 'when' => fn(self $model): bool => $model->preparationMethod === self::METHOD_THIRD_PARTY,
-                'message' => 'Name the organisation that carried out the evaluation.',
+                'message' => Craft::t('accessibility-audit', 'Name the organisation that carried out the evaluation.'),
             ],
         ]);
     }

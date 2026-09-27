@@ -11,7 +11,7 @@ use craft\web\AssetBundle;
 /**
  * Asset bundle for the accessibility statement editor.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class StatementAsset extends AssetBundle

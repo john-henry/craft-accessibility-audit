@@ -42,8 +42,7 @@ describe('AltController::actionSetDecorativeBulk', function() {
 
         $volume = Craft::$app->getVolumes()->getAllVolumes()[0] ?? null;
         if ($volume === null) {
-            expect(true)->toBeTrue();
-            return;
+            $this->markTestSkipped('Needs an asset volume.');
         }
 
         $imageA = AssetFactory::factory()->volume($volume->handle)->create();
@@ -68,8 +67,7 @@ describe('AltController::actionSetDecorativeBulk', function() {
 
         $volume = Craft::$app->getVolumes()->getAllVolumes()[0] ?? null;
         if ($volume === null) {
-            expect(true)->toBeTrue();
-            return;
+            $this->markTestSkipped('Needs an asset volume.');
         }
 
         $assets = AccessibilityAudit::getInstance()->getAssets();

@@ -20,7 +20,7 @@ use craft\base\ElementInterface;
  * answers. They ask here, so a URL scan is named, linked and addressed the
  * same way wherever it turns up.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.2.0
  */
 class ScanTarget
@@ -33,6 +33,9 @@ class ScanTarget
      *
      * @param array<string, mixed> $scan A scan row.
      * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function isUrl(array $scan): bool
     {
@@ -49,6 +52,9 @@ class ScanTarget
      * @param array<string, mixed> $scan A scan row.
      * @param ElementInterface|null $element The element, when the scan has one.
      * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function label(array $scan, ?ElementInterface $element = null): string
     {
@@ -67,6 +73,9 @@ class ScanTarget
      * @param array<string, mixed> $scan A scan row.
      * @param ElementInterface|null $element The element, when the scan has one.
      * @return string|null
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function url(array $scan, ?ElementInterface $element = null): ?string
     {
@@ -88,6 +97,9 @@ class ScanTarget
      * @param array<string, mixed> $scan A scan row.
      * @param string|null $siteHandle The site handle to carry through.
      * @return array<string, mixed>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function reportParams(array $scan, ?string $siteHandle): array
     {
@@ -111,6 +123,9 @@ class ScanTarget
      *
      * @param string $url An absolute URL.
      * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private static function _path(string $url): string
     {

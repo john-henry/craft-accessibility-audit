@@ -6,7 +6,7 @@
 <div class="btngroup accessibility-audit-filter-chips{% if filterCorner %} accessibility-audit-filter-corner{% endif %}" role="group" aria-label="{{ 'Filter by element type'|t('accessibility-audit') }}"{% if not filterCorner %} style="margin-bottom:14px"{% endif %}>
     <button type="button" class="btn active" data-filter="all" aria-pressed="true">{{ 'All'|t('accessibility-audit') }}</button>
     {% for cat in categories %}
-        <button type="button" class="btn" data-filter="{{ cat|e }}" aria-pressed="false">{{ cat|e }}</button>
+        <button type="button" class="btn" data-filter="{{ cat|e }}" aria-pressed="false">{{ cat|t('accessibility-audit') }}</button>
     {% endfor %}
 </div>
 {% endif %}
@@ -43,7 +43,7 @@
                     <span class="visually-hidden">{{ group.label }}:</span>
                     <a href="{{ url('accessibility-audit/issues/detail', {ruleId: row.ruleId, site: siteHandle}) }}">{{ row.ruleId }}</a>
                     {% if row.elementType is defined and row.elementType %}
-                        <span class="token">{{ row.elementType }}</span>
+                        <span class="token">{{ row.elementType|t('accessibility-audit') }}</span>
                     {% endif %}
                 </span>
             </th>

@@ -9,19 +9,50 @@ namespace johnhenry\accessibilityaudit\migrations;
 use Craft;
 use craft\db\Migration;
 
+/**
+ * Creates every table this plugin stores data in.
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
+ * @since 1.0.0
+ */
 class Install extends Migration
 {
+    // Public Methods
+    // =========================================================================
+
+    /**
+     * @inheritdoc
+     *
+     * Indexes and foreign keys are added only where the tables were created by
+     * this run: an install over existing tables leaves them as they are.
+     *
+     * @return bool Whether the migration succeeded.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     public function safeUp(): bool
     {
         if ($this->createTables()) {
             $this->createIndexes();
             $this->addForeignKeys();
-            Craft::$app->db->schema->refresh();
+            Craft::$app->getDb()->getSchema()->refresh();
         }
 
         return true;
     }
 
+    /**
+     * @inheritdoc
+     *
+     * Dropped in dependency order, issues before scans, so a foreign key never
+     * blocks the drop.
+     *
+     * @return bool Whether the migration succeeded.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     public function safeDown(): bool
     {
         // The issues table first: it has a foreign key to the scans table.
@@ -39,6 +70,14 @@ class Install extends Migration
         return true;
     }
 
+    /**
+     * Creates each table that is not already there.
+     *
+     * @return bool Whether anything was created.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     protected function createTables(): bool
     {
         if (!$this->db->tableExists('{{%accessibilityaudit_scans}}')) {
@@ -122,8 +161,8 @@ class Install extends Migration
             $this->createTable('{{%accessibilityaudit_vpat}}', [
                 'id' => $this->primaryKey(),
                 'siteId' => $this->integer()->notNull(),
-                'meta' => $this->text()->null(),
-                'overrides' => $this->text()->null(),
+                'meta' => $this->mediumText()->null(),
+                'overrides' => $this->mediumText()->null(),
                 'dateCreated' => $this->dateTime()->notNull(),
                 'dateUpdated' => $this->dateTime()->notNull(),
                 'uid' => $this->uid(),
@@ -153,7 +192,7 @@ class Install extends Migration
             $this->createTable('{{%accessibilityaudit_organisation}}', [
                 'id' => $this->primaryKey(),
                 'siteId' => $this->integer()->notNull(),
-                'meta' => $this->text()->null(),
+                'meta' => $this->mediumText()->null(),
                 'dateCreated' => $this->dateTime()->notNull(),
                 'dateUpdated' => $this->dateTime()->notNull(),
                 'uid' => $this->uid(),
@@ -169,8 +208,8 @@ class Install extends Migration
                 'id' => $this->primaryKey(),
                 'siteId' => $this->integer()->notNull(),
                 'profile' => $this->string(20)->notNull()->defaultValue('generic'),
-                'meta' => $this->text()->null(),
-                'exclusions' => $this->text()->null(),
+                'meta' => $this->mediumText()->null(),
+                'exclusions' => $this->mediumText()->null(),
                 'sourceScanDate' => $this->dateTime()->null(),
                 'dateCreated' => $this->dateTime()->notNull(),
                 'dateUpdated' => $this->dateTime()->notNull(),
@@ -228,6 +267,8 @@ class Install extends Migration
                 'wordCount' => $this->integer(),
                 'sentenceCount' => $this->integer(),
                 'avgWordsPerSentence' => $this->float(),
+                'hardSentences' => $this->integer()->null(),
+                'veryHardSentences' => $this->integer()->null(),
                 'wcag315Pass' => $this->boolean()->defaultValue(false),
                 'dateAnalysed' => $this->dateTime(),
                 'dateCreated' => $this->dateTime()->notNull(),
@@ -239,6 +280,14 @@ class Install extends Migration
         return true;
     }
 
+    /**
+     * Adds the indexes the queries rely on.
+     *
+     * @return void
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     protected function createIndexes(): void
     {
         $this->createIndex(null, '{{%accessibilityaudit_scans}}', ['elementId', 'siteId', 'dateScanned']);
@@ -253,7 +302,7 @@ class Install extends Migration
         $this->createIndex(null, '{{%accessibilityaudit_issues}}', ['ruleId']);
         $this->createIndex(null, '{{%accessibilityaudit_issues}}', ['elementId', 'ruleId', 'siteId']);
         $this->createIndex(null, '{{%accessibilityaudit_issues}}', ['isResolved', 'dateResolved']);
-        $this->createIndex(null, '{{%accessibilityaudit_readability}}', ['elementId', 'siteId']);
+        $this->createIndex(null, '{{%accessibilityaudit_readability}}', ['elementId', 'siteId'], true);
         $this->createIndex(null, '{{%accessibilityaudit_readability}}', ['dateAnalysed']);
         $this->createIndex(null, '{{%accessibilityaudit_asset_issues}}', ['assetId', 'ruleId'], true);
         $this->createIndex(null, '{{%accessibilityaudit_asset_issues}}', ['ruleId']);
@@ -267,8 +316,28 @@ class Install extends Migration
         $this->createIndex(null, '{{%accessibilityaudit_vpat_revisions}}', ['siteId', 'dateCreated']);
     }
 
+    /**
+     * Links the issue and verdict tables to the scans they belong to.
+     *
+     * @return void
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     protected function addForeignKeys(): void
     {
+        $this->addForeignKey(
+            null,
+            '{{%accessibilityaudit_readability}}', 'elementId',
+            '{{%elements}}', 'id',
+            'CASCADE', 'CASCADE'
+        );
+        $this->addForeignKey(
+            null,
+            '{{%accessibilityaudit_readability}}', 'siteId',
+            '{{%sites}}', 'id',
+            'CASCADE', 'CASCADE'
+        );
         $this->addForeignKey(
             null,
             '{{%accessibilityaudit_scans}}', 'elementId',

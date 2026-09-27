@@ -11,11 +11,11 @@ use johnhenry\accessibilityaudit\controllers\ReadabilityController;
 //
 // Both analyse endpoints fetch a page from the server and can reach the
 // Anthropic API, so they spend the site's outbound requests and the account's
-// budget. That is the runScans tier's authority. Reading stored results stays
-// on viewReports, which is all the page itself needs.
+// budget. That is the run-scans tier's authority. Reading stored results stays
+// on view-reports, which is all the page itself needs.
 //
 // Rate limiting already capped how fast this could be driven; it never settled
-// who was allowed to drive it, and viewReports is the permission you give
+// who was allowed to drive it, and view-reports is the permission you give
 // someone so they can look at the reports.
 //
 // Checked against the source rather than by calling the endpoints: granting a
@@ -47,15 +47,15 @@ describe('readability permission tiers', function() {
     it('requires the scanning permission to analyse a URL', function() {
         $body = readabilityActionBody('actionAnalyse');
 
-        expect($body)->toContain("requirePermission('accessibility-audit:runScans')")
-            ->and($body)->not->toContain("requirePermission('accessibility-audit:viewReports')");
+        expect($body)->toContain("requirePermission('accessibility-audit:run-scans')")
+            ->and($body)->not->toContain("requirePermission('accessibility-audit:view-reports')");
     });
 
     it('requires the scanning permission to analyse an element', function() {
         $body = readabilityActionBody('actionAnalyseEntry');
 
-        expect($body)->toContain("requirePermission('accessibility-audit:runScans')")
-            ->and($body)->not->toContain("requirePermission('accessibility-audit:viewReports')");
+        expect($body)->toContain("requirePermission('accessibility-audit:run-scans')")
+            ->and($body)->not->toContain("requirePermission('accessibility-audit:view-reports')");
     });
 
     it('keeps both analyse endpoints POST-only', function() {
@@ -69,17 +69,23 @@ describe('readability permission tiers', function() {
         // The tightening is on the act, not on the reporting: whoever can see
         // the audit can still see what it found.
         expect(readabilityActionBody('actionIndex'))
-            ->toContain("requirePermission('accessibility-audit:viewReports')");
+            ->toContain("requirePermission('accessibility-audit:view-reports')");
     });
 
     it('hides the analyse controls from someone who cannot use them', function() {
-        // A button that 403s is worse than no button, and the sidebar link
-        // would otherwise send a reader to a page with nothing on it.
+        // A button that 403s is worse than no button. The sidebar tab only
+        // reports and links, so it has no control to hide.
         $template = (string)file_get_contents(dirname(__DIR__, 2) . '/src/templates/readability.twig');
         $panel = (string)file_get_contents(dirname(__DIR__, 2) . '/src/templates/_sidebar/accessibility-panel.twig');
 
-        expect($template)->toContain('{% if canRunScans %}')
+        expect($template)->toContain('{% if canRunScans')
             ->and($template)->toContain('!v || !canRunScans')
-            ->and($panel)->toContain("currentUser.can('accessibility-audit:runScans')");
+            ->and($panel)->not->toContain('readability/analyse');
+    });
+
+    it('keeps Analyse every page on the scanning permission, POST-only', function() {
+        expect(readabilityActionBody('actionAnalyseAll'))
+            ->toContain('requirePostRequest()')
+            ->toContain("requirePermission('accessibility-audit:run-scans')");
     });
 });

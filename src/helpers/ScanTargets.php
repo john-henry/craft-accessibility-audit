@@ -23,7 +23,7 @@ use yii\db\QueryInterface;
  * elements come first and the URLs last, so a sweep interrupted part way has
  * covered the bulk of the site rather than a slice of each.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.3.0
  */
 class ScanTargets implements Batchable
@@ -51,8 +51,14 @@ class ScanTargets implements Batchable
     // =========================================================================
 
     /**
+     * Holds the elements and the standalone URLs a scan will cover.
+     *
      * @param QueryInterface $query The URL-bearing elements to scan.
      * @param string[] $urls The configured URLs to scan after them.
+     *
+     * @return void
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function __construct(QueryInterface $query, array $urls)
     {

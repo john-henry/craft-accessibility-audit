@@ -27,7 +27,7 @@ namespace johnhenry\accessibilityaudit\helpers;
  * a verdict is still recorded against each one separately, so answering a
  * cluster is the same as answering its members in turn.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.2.0
  */
 class OccurrenceCluster
@@ -54,6 +54,9 @@ class OccurrenceCluster
      * @return array<int, array{signature: string, label: string, count: int, occurrences: array<int, array<string, mixed>>}>
      *         Clusters in first-seen order. A cluster of one is a plain
      *         occurrence and the template renders it as it always did.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function group(array $occurrences): array
     {
@@ -103,6 +106,9 @@ class OccurrenceCluster
      * @param string $context The stored context snippet.
      * @return string A signature, or an empty string when the context is not
      *                markup and so cannot be grouped this way.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function signature(string $context): string
     {
@@ -130,6 +136,9 @@ class OccurrenceCluster
      * @param string $signature The cluster's signature.
      * @param int $count How many occurrences it holds.
      * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function label(string $signature, int $count): string
     {

@@ -182,7 +182,7 @@ function runScriptResult(): array
 
     $script = new ReflectionMethod(HeadlessScanner::class, '_axeRunScript');
     $script->setAccessible(true);
-    $runScript = (string) $script->invoke(AccessibilityAudit::getInstance()->headless);
+    $runScript = (string) $script->invoke(AccessibilityAudit::getInstance()->getHeadless());
 
     $html = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>t</title>'
         . '<style>body{margin:0;font:16px/1.5 sans-serif}'

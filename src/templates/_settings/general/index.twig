@@ -47,7 +47,7 @@
     
     {{ forms.textField({
         label: 'Site Target Score'|t('accessibility-audit'),
-        instructions: 'Set a target score (0–100) to track progress on the dashboard. 0 disables the target.'|t('accessibility-audit'),
+        instructions: 'The score the site is aiming for (0 to 100). The Overview tracks progress against it and the CI endpoint fails a build that falls below it. 90 is a sensible bar for most sites. Set it to 0 to turn the target off.'|t('accessibility-audit'),
         id: 'targetScore',
         name: 'settings[targetScore]',
         value: settings.targetScore,
@@ -121,6 +121,35 @@
 
     {% if isPro %}
        
+
+        {{ forms.lightswitchField({
+            label: 'Readability Preview'|t('accessibility-audit'),
+            instructions: 'Adds a Readability view to the Preview menu of every entry the scanner covers.'|t('accessibility-audit')
+                ~ ' <span class="info">' ~ 'It opens beside the editor and shows the text being written, paragraph by paragraph, with its scores and its hard sentences marked. It refreshes as you edit and saves nothing.'|t('accessibility-audit') ~ '</span>',
+            id: 'readabilityPreviewTarget',
+            name: 'settings[readabilityPreviewTarget]',
+            on: settings.readabilityPreviewTarget,
+            errors: settings.getErrors('readabilityPreviewTarget'),
+            warning: config.readabilityPreviewTarget is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+            disabled: config.readabilityPreviewTarget is defined,
+        }) }}
+
+        {{ forms.selectField({
+            label: 'Readability Target'|t('accessibility-audit'),
+            instructions: 'The reading level the Readability preview marks hard sentences against.'|t('accessibility-audit')
+                ~ ' <span class="info">' ~ 'Accessible marks any sentence past grade 9, the level WCAG 3.1.5 asks for. Default suits most audiences. Technical allows for academic and specialist writing. Anyone can pick a different target in the preview for themselves; this is where it starts.'|t('accessibility-audit') ~ '</span>',
+            id: 'readabilityTarget',
+            name: 'settings[readabilityTarget]',
+            options: [
+                { label: 'Accessible'|t('accessibility-audit'), value: 'accessible' },
+                { label: 'Default'|t('accessibility-audit'), value: 'default' },
+                { label: 'Technical'|t('accessibility-audit'), value: 'technical' },
+            ],
+            value: settings.readabilityTarget,
+            errors: settings.getErrors('readabilityTarget'),
+            warning: config.readabilityTarget is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+            disabled: config.readabilityTarget is defined,
+        }) }}
 
         {{ forms.autosuggestField({
             label: 'VPAT Export Template'|t('accessibility-audit'),

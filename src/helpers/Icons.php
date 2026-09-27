@@ -17,7 +17,7 @@ namespace johnhenry\accessibilityaudit\helpers;
  * (via craft.a11y.icon()) and from client-side JS (injected as
  * window.AccessibilityAudit.icons), so the two render paths cannot drift.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 final class Icons
@@ -40,12 +40,13 @@ final class Icons
     // =========================================================================
 
     /**
-     * Returns the SVG markup for an icon handle, or an empty string for an
+     * Returns the markup for an icon handle, or an empty string for an
      * unknown handle.
      *
      * @param string $name The icon handle.
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public static function get(string $name): string

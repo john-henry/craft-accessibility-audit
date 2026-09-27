@@ -30,7 +30,7 @@ use yii\queue\Queue;
  *
  * @property-read Queue $queue
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class AuditAssets extends BaseBatchedJob
@@ -62,10 +62,13 @@ class AuditAssets extends BaseBatchedJob
 
     /**
      * @inheritdoc
+     * @throws InvalidConfigException
      */
     protected function loadData(): Batchable
     {
-        return new QueryBatcher($this->_imageQuery());
+        // Oldest first by id, so an image uploaded during the sweep lands at
+        // the end rather than shifting every page after it by one.
+        return new QueryBatcher($this->_imageQuery()->orderBy(['elements.id' => SORT_ASC]));
     }
 
     /**
@@ -76,7 +79,14 @@ class AuditAssets extends BaseBatchedJob
      */
     protected function processItem(mixed $item): void
     {
-        AccessibilityAudit::getInstance()->getAssets()->syncAssetAudit($item);
+        // One asset that will not read is logged and passed over rather than
+        // ending the sweep, the same way the page sweep treats a bad page.
+        try {
+            AccessibilityAudit::getInstance()->getAssets()->syncAssetAudit($item);
+        } catch (Throwable $e) {
+            $id = (int) $item->id;
+            Craft::warning("A11y: asset sweep skipped asset {$id}: " . $e->getMessage(), 'accessibility-audit');
+        }
     }
 
     /**
@@ -95,18 +105,14 @@ class AuditAssets extends BaseBatchedJob
      * filtered out at the query level so the batched loop never even receives
      * an excluded image, and the stored total counts only what was audited.
      *
-     * @return AssetQuery
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return AssetQuery<int, Asset>
+     * @throws InvalidConfigException
      * @since 1.0.0
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      */
     private function _imageQuery(): AssetQuery
     {
-        $query = Asset::find()->kind(Asset::KIND_IMAGE);
-        $excludedIds = AccessibilityAudit::getInstance()->getAssets()->excludedVolumeIds();
-        if (!empty($excludedIds)) {
-            $query->andWhere(['not', ['volumeId' => $excludedIds]]);
-        }
-
-        return $query;
+        return AccessibilityAudit::getInstance()->getAssets()->imageQuery();
     }
 }

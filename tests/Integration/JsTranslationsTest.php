@@ -15,7 +15,7 @@ use johnhenry\accessibilityaudit\AccessibilityAudit;
  * silently: Craft.t() falls back to the source message rather than erroring, and
  * an English install looks correct either way. Nothing but this test notices.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 
@@ -83,7 +83,10 @@ it('has no unused entries in JS_TRANSLATIONS', function() {
 it('has a source-language entry for every JS message', function() {
     $translations = require dirname(__DIR__, 2) . '/src/translations/en/accessibility-audit.php';
 
-    $missing = array_values(array_diff(AccessibilityAudit::JS_TRANSLATIONS, array_keys($translations)));
+    $missing = array_values(array_diff(
+        array_merge(AccessibilityAudit::JS_TRANSLATIONS, AccessibilityAudit::JS_DYNAMIC_TRANSLATIONS),
+        array_keys($translations),
+    ));
 
     expect($missing)->toBe([], sprintf(
         "These JS messages have no entry in translations/en, so translators never see them:\n  - %s",

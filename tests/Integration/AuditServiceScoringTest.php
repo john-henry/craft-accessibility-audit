@@ -4,6 +4,7 @@ use craft\db\Query;
 use craft\elements\User;
 use craft\helpers\Db;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\models\SettingsModel;
 use markhuot\craftpest\factories\User as UserFactory;
 
 // ---------------------------------------------------------------------------
@@ -62,7 +63,7 @@ function auditScanFixture(string $body = ''): array
     $elementId = UserFactory::factory()->create()->id;
     $siteId = Craft::$app->getSites()->getPrimarySite()->id;
 
-    $result = AccessibilityAudit::getInstance()->audit->scanHtml(
+    $result = AccessibilityAudit::getInstance()->getAudit()->scanHtml(
         auditScorePage($body),
         $elementId,
         User::class,
@@ -91,7 +92,7 @@ function auditAxeViolation(string $id, string $impact = 'serious'): array
  */
 function auditStoredScore(int $scanId): int
 {
-    return (int) AccessibilityAudit::getInstance()->audit->getScanSummary($scanId)['score'];
+    return (int) AccessibilityAudit::getInstance()->getAudit()->getScanSummary($scanId)['score'];
 }
 
 beforeEach(function() {
@@ -103,7 +104,7 @@ beforeEach(function() {
 
     $settings = AccessibilityAudit::getInstance()->getSettings();
     $settings->ignoreRules = [];
-    $settings->pruneResolvedIssues = true;
+    $settings->resolvedRetention = SettingsModel::RESOLVED_RETENTION_WITH_SCANS;
     $settings->notifyEmailEnabled = false;
     $settings->notifySlackEnabled = false;
     $settings->notifyOnNewError = false;
@@ -119,7 +120,7 @@ describe('AuditService score arithmetic', function() {
         [$scanId, $score, $elementId] = auditScanFixture('');
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
 
-        $latest = AccessibilityAudit::getInstance()->audit->getLatestScan($elementId, $siteId);
+        $latest = AccessibilityAudit::getInstance()->getAudit()->getLatestScan($elementId, $siteId);
 
         expect($score)->toBe(100)
             ->and((int)$latest['scoreA'])->toBe(100)
@@ -140,7 +141,7 @@ describe('AuditService score arithmetic', function() {
         [, , $elementId] = auditScanFixture('<img src="/p.jpg"><h1>Second heading</h1>');
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
 
-        $latest = AccessibilityAudit::getInstance()->audit->getLatestScan($elementId, $siteId);
+        $latest = AccessibilityAudit::getInstance()->getAudit()->getLatestScan($elementId, $siteId);
 
         expect((int)$latest['scoreA'])->toBe(90)
             ->and((int)$latest['scoreAA'])->toBe(89)
@@ -169,7 +170,7 @@ describe('AuditService score arithmetic', function() {
         auditScanFixture('<img src="/a.jpg"><img src="/b.jpg"><h1>Second heading</h1>');
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
 
-        $summary = AccessibilityAudit::getInstance()->audit->getSiteSummary($siteId);
+        $summary = AccessibilityAudit::getInstance()->getAudit()->getSiteSummary($siteId);
 
         // A: just 1.1.1. AA cumulative: 1.1.1 plus the second-h1 criterion. No
         // AAA-only failures, so AAA equals AA.
@@ -183,7 +184,7 @@ describe('AuditService score arithmetic', function() {
         auditScanFixture();
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
 
-        $summary = AccessibilityAudit::getInstance()->audit->getSiteSummary($siteId);
+        $summary = AccessibilityAudit::getInstance()->getAudit()->getSiteSummary($siteId);
 
         expect($summary['failingCriteriaA'])->toBe(0)
             ->and($summary['failingCriteriaAA'])->toBe(0)
@@ -204,14 +205,14 @@ describe('AuditService recalculation invariant', function() {
 
         // Storing an empty axe result set changes no rows but forces the
         // stored-row recalculation path.
-        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, []);
+        AccessibilityAudit::getInstance()->getAudit()->storeAxeIssues($scanId, []);
 
         expect(auditStoredScore($scanId))->toBe($freshScore);
     });
 
     it('replaces a viewport bucket on re-run instead of accumulating it', function() {
         [$scanId] = auditScanFixture('');
-        $audit = AccessibilityAudit::getInstance()->audit;
+        $audit = AccessibilityAudit::getInstance()->getAudit();
         $violation = auditAxeViolation('aria-required-attr');
 
         $audit->storeAxeIssues($scanId, [$violation]);
@@ -225,7 +226,7 @@ describe('AuditService recalculation invariant', function() {
 
     it('unions viewport buckets and keeps the score stable across repeated runs', function() {
         [$scanId] = auditScanFixture('');
-        $audit = AccessibilityAudit::getInstance()->audit;
+        $audit = AccessibilityAudit::getInstance()->getAudit();
         $desktop = auditAxeViolation('aria-required-attr');
         $mobile = auditAxeViolation('target-size');
 
@@ -246,7 +247,7 @@ describe('AuditService recalculation invariant', function() {
         // its cross-engine equivalent and must be skipped.
         [$scanId, $freshScore] = auditScanFixture('<img src="/p.jpg">');
 
-        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [auditAxeViolation('image-alt')]);
+        AccessibilityAudit::getInstance()->getAudit()->storeAxeIssues($scanId, [auditAxeViolation('image-alt')]);
 
         expect($freshScore)->toBe(90)
             ->and(auditStoredScore($scanId))->toBe(90);
@@ -258,14 +259,14 @@ describe('AuditService recalculation invariant', function() {
 // ---------------------------------------------------------------------------
 
 describe('AuditService::pruneScanResults', function() {
-    it('deletes old scans outright when pruneResolvedIssues is on', function() {
+    it('deletes old scans outright when resolved issues are retained with scans', function() {
         [$scanId] = auditScanFixture('<img src="/p.jpg">');
 
         Craft::$app->getDb()->createCommand()->update('{{%accessibilityaudit_scans}}', [
             'dateScanned' => Db::prepareDateForDb((new DateTime())->modify('-60 days')),
         ], ['id' => $scanId])->execute();
 
-        $deleted = AccessibilityAudit::getInstance()->audit->pruneScanResults(30);
+        $deleted = AccessibilityAudit::getInstance()->getAudit()->pruneScanResults(30);
 
         $scanRows = (new Query())->from('{{%accessibilityaudit_scans}}')->where(['id' => $scanId])->count();
         $issueRows = (new Query())->from('{{%accessibilityaudit_issues}}')->where(['scanId' => $scanId])->count();
@@ -275,8 +276,8 @@ describe('AuditService::pruneScanResults', function() {
             ->and((int)$issueRows)->toBe(0);
     });
 
-    it('keeps recently resolved issues (and their scan) when pruneResolvedIssues is off', function() {
-        AccessibilityAudit::getInstance()->getSettings()->pruneResolvedIssues = false;
+    it('keeps recently resolved issues (and their scan) when they retain on their own clock', function() {
+        AccessibilityAudit::getInstance()->getSettings()->resolvedRetention = SettingsModel::RESOLVED_RETENTION_KEEP_DAYS;
 
         // An old scan holding one unresolved issue and one freshly resolved one.
         [$scanId] = auditScanFixture('<img src="/p.jpg"><a href="/x">Click here</a>');
@@ -297,7 +298,7 @@ describe('AuditService::pruneScanResults', function() {
             'dateScanned' => Db::prepareDateForDb((new DateTime())->modify('-60 days')),
         ], ['id' => $scanId])->execute();
 
-        AccessibilityAudit::getInstance()->audit->pruneScanResults(30);
+        AccessibilityAudit::getInstance()->getAudit()->pruneScanResults(30);
 
         // The unresolved img-alt row goes with the old scan; the resolved row
         // lives on its own dateResolved clock, which keeps the scan alive too.
@@ -313,7 +314,7 @@ describe('AuditService::pruneScanResults', function() {
     });
 
     it('prunes resolved issues on their own clock once dateResolved passes the cutoff', function() {
-        AccessibilityAudit::getInstance()->getSettings()->pruneResolvedIssues = false;
+        AccessibilityAudit::getInstance()->getSettings()->resolvedRetention = SettingsModel::RESOLVED_RETENTION_KEEP_DAYS;
 
         [$scanId] = auditScanFixture('<a href="/x">Click here</a>');
         $db = Craft::$app->getDb();
@@ -328,7 +329,7 @@ describe('AuditService::pruneScanResults', function() {
             'dateScanned' => Db::prepareDateForDb((new DateTime())->modify('-60 days')),
         ], ['id' => $scanId])->execute();
 
-        AccessibilityAudit::getInstance()->audit->pruneScanResults(30);
+        AccessibilityAudit::getInstance()->getAudit()->pruneScanResults(30);
 
         // Nothing references the scan any more, so it goes too.
         $issueCount = (new Query())->from('{{%accessibilityaudit_issues}}')->where(['scanId' => $scanId])->count();

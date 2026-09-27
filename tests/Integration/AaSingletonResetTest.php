@@ -13,7 +13,11 @@ use johnhenry\accessibilityaudit\AccessibilityAudit;
 // test collected after it, in whatever order the files happen to land. A test
 // that reads the edition to decide whether to skip then reports as a pass.
 //
-// The file is named to sort early, so the pair below runs before most of the
+// The current site is the same kind of state: refreshSites() drops the site
+// list and the editable-site answer but leaves it alone, so a test that
+// switches site leaves every test after it on that site.
+//
+// The file is named to sort early, so the pairs below run before most of the
 // suite: the first test makes a mess on purpose, and the second has to find it
 // cleaned up.
 // ---------------------------------------------------------------------------
@@ -56,5 +60,35 @@ describe('plugin singleton state between tests', function() {
 
         expect($settings->excludedVolumes)->toBe([])
             ->and($settings->scannedElementTypes)->toBeNull();
+    });
+
+    it('lets a test switch the current site, deliberately leaving it switched', function() {
+        // No finally on purpose. Whether the next test starts clean is the
+        // thing under test, and a test that tidies up after itself would prove
+        // nothing about a test that forgets to.
+        $sites = Craft::$app->getSites();
+        $primary = (int) $sites->getPrimarySite()->id;
+        $other = null;
+
+        foreach ($sites->getAllSites() as $site) {
+            if ((int) $site->id !== $primary) {
+                $other = $site;
+                break;
+            }
+        }
+
+        if ($other === null) {
+            $this->markTestSkipped('Needs a second site.');
+        }
+
+        $sites->setCurrentSite($other);
+
+        expect((int) $sites->getCurrentSite()->id)->toBe((int) $other->id);
+    });
+
+    it('hands the next test the site it started on', function() {
+        $pristine = pristinePluginState();
+
+        expect((int) Craft::$app->getSites()->getCurrentSite()->id)->toBe($pristine['siteId']);
     });
 });

@@ -1,6 +1,8 @@
 <?php
 
 use craft\elements\User;
+use craft\helpers\Db;
+use craft\helpers\StringHelper;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\models\SettingsModel;
 use markhuot\craftpest\factories\User as UserFactory;
@@ -25,7 +27,7 @@ beforeEach(function() {
 
 describe('AuditService::getAxeTags', function() {
     it('returns the A/AA tag set by default', function() {
-        $tags = AccessibilityAudit::getInstance()->audit->getAxeTags();
+        $tags = AccessibilityAudit::getInstance()->getAudit()->getAxeTags();
 
         expect($tags)->toContain('wcag2a')
             ->toContain('wcag2aa')
@@ -38,13 +40,13 @@ describe('AuditService::getAxeTags', function() {
     it('adds the AAA tag at level AAA', function() {
         AccessibilityAudit::getInstance()->getSettings()->wcagLevel = 'AAA';
 
-        expect(AccessibilityAudit::getInstance()->audit->getAxeTags())->toContain('wcag2aaa');
+        expect(AccessibilityAudit::getInstance()->getAudit()->getAxeTags())->toContain('wcag2aaa');
     });
 
     it('adds the EN 301 549 tag when the setting is on', function() {
         AccessibilityAudit::getInstance()->getSettings()->en301549 = true;
 
-        expect(AccessibilityAudit::getInstance()->audit->getAxeTags())->toContain('EN-301-549');
+        expect(AccessibilityAudit::getInstance()->getAudit()->getAxeTags())->toContain('EN-301-549');
     });
 });
 
@@ -108,7 +110,7 @@ describe('ReportService::exportCsv', function() {
         // cascade with them.
         Craft::$app->getDb()->createCommand()->delete('{{%accessibilityaudit_scans}}')->execute();
 
-        $csv = AccessibilityAudit::getInstance()->report->exportCsv(
+        $csv = AccessibilityAudit::getInstance()->getReport()->exportCsv(
             Craft::$app->getSites()->getPrimarySite()->id
         );
 
@@ -119,19 +121,52 @@ describe('ReportService::exportCsv', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
         $elementId = UserFactory::factory()->create()->id;
 
-        AccessibilityAudit::getInstance()->audit->scanHtml(
+        AccessibilityAudit::getInstance()->getAudit()->scanHtml(
             '<!DOCTYPE html><html><head></head><body><img src="/p.jpg"></body></html>',
             $elementId,
             User::class,
             $siteId,
         );
 
-        $csv = AccessibilityAudit::getInstance()->report->exportCsv($siteId);
+        $csv = AccessibilityAudit::getInstance()->getReport()->exportCsv($siteId);
         $lines = array_filter(explode("\n", trim($csv)));
 
         expect($lines[0])->toContain('Page,URL,Score,Severity,Rule,WCAG,Level,Message')
             ->and($csv)->toContain('img-alt')
             ->and($csv)->toContain('html-lang')
             ->and(count($lines))->toBeGreaterThan(2);
+    });
+
+    it('keeps every URL-scanned page rather than folding them into one', function() {
+        // A URL scan has no element, so every one of them carries a null
+        // elementId. Picking the latest scan per element alone collapses the
+        // lot into a single row and all but one address drops out of the file.
+        $siteId = Craft::$app->getSites()->getPrimarySite()->id;
+        $now = Db::prepareDateForDb(new DateTime());
+        $db = Craft::$app->getDb();
+
+        foreach (['/search?q=one', '/search?q=two', '/search?q=three'] as $url) {
+            $db->createCommand()->insert('{{%accessibilityaudit_scans}}', [
+                'elementId' => null, 'elementType' => null, 'siteId' => $siteId, 'url' => $url,
+                'title' => $url, 'score' => 90, 'scoreA' => 90, 'scoreAA' => 90, 'scoreAAA' => 90,
+                'errorCount' => 1, 'warningCount' => 0, 'noticeCount' => 0,
+                'dateScanned' => $now, 'dateCreated' => $now, 'dateUpdated' => $now,
+                'uid' => StringHelper::UUID(),
+            ])->execute();
+
+            $db->createCommand()->insert('{{%accessibilityaudit_issues}}', [
+                'scanId' => (int) $db->getLastInsertID('{{%accessibilityaudit_scans}}'),
+                'elementId' => null, 'elementType' => null, 'siteId' => $siteId,
+                'ruleId' => 'html-lang', 'severity' => 'error', 'message' => 'q',
+                'source' => 'php', 'isResolved' => false, 'firstDetected' => $now,
+                'dateCreated' => $now, 'dateUpdated' => $now, 'uid' => StringHelper::UUID(),
+            ])->execute();
+        }
+
+        $csv = AccessibilityAudit::getInstance()->getReport()->exportCsv($siteId);
+
+        expect($csv)->toContain('/search?q=one')
+            ->and($csv)->toContain('/search?q=two')
+            ->and($csv)->toContain('/search?q=three');
     });
 });

@@ -12,10 +12,12 @@ use craft\helpers\DateTimeHelper;
 use craft\web\Controller;
 use craft\web\View;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
-use johnhenry\accessibilityaudit\models\OrganisationMetaModel;
 use johnhenry\accessibilityaudit\models\StatementExclusionModel;
 use johnhenry\accessibilityaudit\models\StatementMetaModel;
 use johnhenry\accessibilityaudit\services\StatementProfiles;
+use Twig\Error\LoaderError;
+use Twig\Error\RuntimeError;
+use Twig\Error\SyntaxError;
 use yii\base\Exception;
 use yii\web\BadRequestHttpException;
 use yii\web\ForbiddenHttpException;
@@ -34,11 +36,16 @@ use yii\web\Response;
  * and putting a legal obligation behind an upgrade would be a poor way to treat
  * the people who most need it.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class StatementController extends Controller
 {
+    // Traits
+    // =========================================================================
+
+    use OrganisationMetaTrait;
+
     // Protected Properties
     // =========================================================================
 
@@ -64,11 +71,14 @@ class StatementController extends Controller
      * @throws SiteNotFoundException
      * @throws \yii\db\Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionSaveMeta(): Response
     {
         $this->requirePostRequest();
-        $this->requirePermission('accessibility-audit:manageStatement');
+        $this->requirePermission('accessibility-audit:manage-statement');
 
         $siteId = (int) $this->request->getRequiredBodyParam('siteId');
 
@@ -76,22 +86,14 @@ class StatementController extends Controller
             return $refusal;
         }
 
-        $shared = new OrganisationMetaModel();
-        $shared->productName = trim((string) $this->request->getBodyParam('productName', ''));
-        $shared->productDescription = trim((string) $this->request->getBodyParam('productDescription', ''));
-        $shared->contactName = trim((string) $this->request->getBodyParam('contactName', ''));
-        $shared->contactEmail = trim((string) $this->request->getBodyParam('contactEmail', ''));
-        $shared->contactPhone = trim((string) $this->request->getBodyParam('contactPhone', ''));
-        $shared->evalMethodology = trim((string) $this->request->getBodyParam('evalMethodology', ''));
-        $shared->evalMethods = $this->_splitLines((string) $this->request->getBodyParam('evalMethods', ''));
-        $shared->scopePages = $this->_splitLines((string) $this->request->getBodyParam('scopePages', ''));
+        $shared = $this->organisationMetaFromRequest();
 
         $meta = new StatementMetaModel();
         $meta->profile = trim((string) $this->request->getBodyParam('profile', StatementProfiles::PROFILE_GENERIC));
         $meta->statusOverride = trim((string) $this->request->getBodyParam('statusOverride', ''));
-        $meta->statementDate = $this->_dateParamToYmd('statementDate');
-        $meta->reviewDate = $this->_dateParamToYmd('reviewDate');
-        $meta->nextReviewDate = $this->_dateParamToYmd('nextReviewDate');
+        $meta->statementDate = $this->dateParamToYmd('statementDate');
+        $meta->reviewDate = $this->dateParamToYmd('reviewDate');
+        $meta->nextReviewDate = $this->dateParamToYmd('nextReviewDate');
         $meta->preparationMethod = trim((string) $this->request->getBodyParam('preparationMethod', StatementMetaModel::METHOD_SELF));
         $meta->preparedBy = trim((string) $this->request->getBodyParam('preparedBy', ''));
         $meta->enforcementBody = trim((string) $this->request->getBodyParam('enforcementBody', ''));
@@ -101,35 +103,41 @@ class StatementController extends Controller
         $meta->commitmentOverride = trim((string) $this->request->getBodyParam('commitmentOverride', ''));
         $meta->manualReviewConfirmed = (bool) $this->request->getBodyParam('manualReviewConfirmed', false);
 
+        // Entries post with the same form. Row adds/removes are server round-trips
+        // since Craft's date field needs its own picker and locale formatting.
+        // Read before anything is written, so a bad row stops the whole save
+        // rather than leaving the meta stored against rejected entries.
+        $entries = $this->_postedEntries();
+
         $sharedValid = $shared->validate();
         $metaValid = $meta->validate();
+        $entryErrors = $this->_entryErrors($entries ?? []);
 
-        if (!$sharedValid || !$metaValid) {
+        if (!$sharedValid || !$metaValid || $entryErrors !== []) {
             // Flash the actual validation reason, not a generic "couldn't save",
             // so the editor isn't left hunting a long form for the bad field.
             $errors = array_merge($shared->getErrors(), $meta->getErrors());
 
-            $this->setFailFlash(implode(' ', array_merge(...array_values($errors))));
+            $this->setFailFlash(implode(' ', array_merge(
+                ...array_values($errors),
+                ...[$entryErrors],
+            )));
 
             // Redirect back with the flash, not an empty response.
             return $this->redirectToPostedUrl();
         }
 
         $plugin = AccessibilityAudit::getInstance();
-        $plugin->organisation->saveMeta($siteId, $shared);
-        $plugin->statement->saveMeta($siteId, $meta);
-
-        // Entries post with the same form. Row adds/removes are server round-trips
-        // since Craft's date field needs its own picker and locale formatting.
-        $entries = $this->_postedEntries();
+        $plugin->getOrganisation()->saveMeta($siteId, $shared);
+        $plugin->getStatement()->saveMeta($siteId, $meta);
 
         if ($entries !== null) {
-            $plugin->statement->saveExclusions($siteId, $entries);
+            $plugin->getStatement()->saveExclusions($siteId, $entries);
         }
 
         // Refused override isn't a validation error, the save is legitimate but
         // the claim is capped. Say so, or the page looks like it ignored the pick.
-        $resolved = $plugin->statement->resolveComplianceStatus($siteId);
+        $resolved = $plugin->getStatement()->resolveComplianceStatus($siteId);
 
         if ($resolved['refusedOverride']) {
             $this->setFailFlash(Craft::t(
@@ -152,14 +160,17 @@ class StatementController extends Controller
      * @return Response
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
-     * @throws \craft\errors\SiteNotFoundException
+     * @throws SiteNotFoundException
      * @throws \yii\db\Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionSuggestions(): Response
     {
         $this->requireAcceptsJson();
-        $this->requirePermission('accessibility-audit:manageStatement');
+        $this->requirePermission('accessibility-audit:manage-statement');
 
 
         $plugin = AccessibilityAudit::getInstance();
@@ -167,7 +178,7 @@ class StatementController extends Controller
 
         return $this->asJson([
             'success' => true,
-            'suggestions' => $plugin->statement->deriveSuggestions($siteId),
+            'suggestions' => $plugin->getStatement()->deriveSuggestions($siteId),
         ]);
     }
 
@@ -176,27 +187,30 @@ class StatementController extends Controller
      * anybody links to it.
      *
      * Goes through StatementService::render(), the same path the Twig variable
-     * uses, so what is previewed is what is published. Gated on viewReports
-     * rather than manageStatement: reading the document is not editing it.
+     * uses, so what is previewed is what is published. Gated on view-reports
+     * rather than manage-statement: reading the document is not editing it.
      *
      * @return Response
      * @throws ForbiddenHttpException
      * @throws Exception When the statement cannot be rendered.
-     * @throws \Twig\Error\LoaderError
-     * @throws \Twig\Error\RuntimeError
-     * @throws \Twig\Error\SyntaxError
+     * @throws LoaderError
+     * @throws RuntimeError
+     * @throws SyntaxError
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionPreview(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $plugin = AccessibilityAudit::getInstance();
         $siteId = $plugin->requestedSiteId();
 
         return $this->renderTemplate(
             'accessibility-audit/statement-preview',
-            ['html' => $plugin->statement->render($siteId)],
+            ['html' => $plugin->getStatement()->render($siteId)],
             View::TEMPLATE_MODE_CP,
         );
     }
@@ -206,7 +220,7 @@ class StatementController extends Controller
 
     /**
      * Refuses a save that targets a site the current user may not edit. The
-     * `manageStatement` permission is install-wide, so the per-site fence has to
+     * `manage-statement` permission is install-wide, so the per-site fence has to
      * be enforced here, or a Pro multi-site user could write a site outside
      * their permissions. The form posts a full page, so a refusal flashes and
      * redirects back rather than returning JSON. Returns the redirect refusal,
@@ -214,8 +228,9 @@ class StatementController extends Controller
      *
      * @param int $siteId The posted site ID.
      * @return Response|null
-     * @throws SiteNotFoundException
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws SiteNotFoundException|BadRequestHttpException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.1
      */
     private function _requireAllowedSite(int $siteId): ?Response
@@ -237,8 +252,10 @@ class StatementController extends Controller
      * others.
      *
      * @return StatementExclusionModel[]|null Null when the form posted no entries key.
-     * @throws BadRequestHttpException When an entry fails validation.
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _postedEntries(): ?array
     {
@@ -297,6 +314,46 @@ class StatementController extends Controller
     }
 
     /**
+     * The validation messages for the posted entries, one flat list.
+     *
+     * A row nobody has typed into yet is skipped. The form adds rows on the
+     * server, so a blank one rides along with every save from the moment Add is
+     * pressed, and holding it to the rules would turn Add into an error.
+     *
+     * Entries are checked here and not left to the model, because they are
+     * stored as a JSON list rather than rows of their own and nothing else
+     * stands between the request and the published statement. The category in
+     * particular decides which of the three legal headings an entry appears
+     * under, and an unrecognised one is published as a non-compliance: an
+     * admission of failure where the editor claimed an exemption.
+     *
+     * @param StatementExclusionModel[] $entries The posted entries.
+     * @return string[] The messages, empty when every entry is acceptable.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private function _entryErrors(array $entries): array
+    {
+        $messages = [];
+
+        foreach ($entries as $position => $entry) {
+            if ($entry->isBlank() || $entry->validate()) {
+                continue;
+            }
+
+            foreach ($entry->getErrorSummary(true) as $message) {
+                $messages[] = Craft::t('accessibility-audit', 'Entry {number}: {message}', [
+                    'number' => $position + 1,
+                    'message' => $message,
+                ]);
+            }
+        }
+
+        return $messages;
+    }
+
+    /**
      * Builds a pre-filled entry from a scan suggestion.
      *
      * Pre-filled, not published: the wording is the editor's to rewrite, since
@@ -304,15 +361,18 @@ class StatementController extends Controller
      *
      * @param string $criterion The WCAG criterion number.
      * @return StatementExclusionModel
-     * @throws \craft\errors\SiteNotFoundException
+     * @throws SiteNotFoundException
      * @throws \yii\db\Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _entryFromSuggestion(string $criterion): StatementExclusionModel
     {
         $plugin = AccessibilityAudit::getInstance();
 
-        foreach ($plugin->statement->deriveSuggestions($plugin->requestedSiteId()) as $suggestion) {
+        foreach ($plugin->getStatement()->deriveSuggestions($plugin->requestedSiteId()) as $suggestion) {
             if ($suggestion['criterion'] !== $criterion) {
                 continue;
             }
@@ -340,39 +400,5 @@ class StatementController extends Controller
         }
 
         return StatementExclusionModel::fromArray(['criterion' => $criterion, 'content' => '']);
-    }
-
-    /**
-     * Normalises a posted Craft date field back to a flat `Y-m-d` string.
-     *
-     * @param string $param The body parameter name.
-     * @return string The flat date, or an empty string when unset.
-     * @throws \Exception
-     */
-    private function _dateParamToYmd(string $param): string
-    {
-        $value = $this->request->getBodyParam($param);
-
-        if (empty($value) || (is_array($value) && empty($value['date']))) {
-            return '';
-        }
-
-        $date = DateTimeHelper::toDateTime($value);
-
-        return $date !== false ? $date->format('Y-m-d') : '';
-    }
-
-    /**
-     * Splits a newline-separated textarea into trimmed, unique, non-empty lines.
-     *
-     * @param string $value The raw textarea value.
-     * @return string[]
-     */
-    private function _splitLines(string $value): array
-    {
-        $lines = preg_split('/\R/', $value) ?: [];
-        $lines = array_filter(array_map('trim', $lines), static fn(string $line): bool => $line !== '');
-
-        return array_values(array_unique($lines));
     }
 }

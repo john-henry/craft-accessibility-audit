@@ -45,6 +45,24 @@ function oaSchemaErrors(array $document): array
     return $validator->getErrors();
 }
 
+/**
+ * Schema errors for an arbitrary document, skipping the OpenAcr builder.
+ *
+ * The same validator and the same fixture as {@see oaSchemaErrors()}, so what
+ * it proves about the schema holds for every assertion made through that.
+ *
+ * @param array<string, mixed> $document
+ * @return array<int, mixed>
+ */
+function oaSchemaErrorsRaw(array $document): array
+{
+    $data = json_decode((string)json_encode($document));
+    $validator = new Validator();
+    $validator->validate($data, (object)['$ref' => 'file://' . realpath(dirname(__DIR__) . '/fixtures/openacr-0.1.0.json')]);
+
+    return $validator->getErrors();
+}
+
 /** A report shaped like VpatService::getFullReport(), with only what is given. */
 function oaReport(array $overrides = []): array
 {
@@ -77,14 +95,14 @@ describe('The document', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
         saveVpatMetaFlat($siteId, ['productName' => 'Acme Website', 'contactEmail' => 'access@example.com']);
 
-        $report = AccessibilityAudit::getInstance()->vpat->getFullReport($siteId);
+        $report = AccessibilityAudit::getInstance()->getVpat()->getFullReport($siteId);
 
         expect(oaSchemaErrors(OpenAcr::document($report, 'Acme')))->toBe([]);
     });
 
     it('names only criteria the catalog has, in the chapter the catalog puts them', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $report = AccessibilityAudit::getInstance()->vpat->getFullReport($siteId);
+        $report = AccessibilityAudit::getInstance()->getVpat()->getFullReport($siteId);
         $chapters = OpenAcr::document($report, 'Acme')['chapters'];
 
         foreach (OA_CATALOG_CRITERIA as $chapter => $allowed) {
@@ -97,7 +115,7 @@ describe('The document', function() {
 
     it('leaves out 4.1.1 rather than claiming a level nobody chose', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $report = AccessibilityAudit::getInstance()->vpat->getFullReport($siteId);
+        $report = AccessibilityAudit::getInstance()->getVpat()->getFullReport($siteId);
         $numbers = array_column(OpenAcr::document($report, 'Acme')['chapters']['success_criteria_level_a']['criteria'], 'num');
 
         expect($numbers)->not->toContain('4.1.1');
@@ -252,5 +270,52 @@ describe('The export action', function() {
 
         expect($json['success'])->toBeFalse()
             ->and($json['proRequired'])->toBeTrue();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// The schema itself
+//
+// Every other assertion here says a document produced no schema errors. That
+// is only worth anything while the schema produces errors for something: a
+// fixture truncated, emptied or quietly loosened would pass all of them while
+// holding the export to nothing at all. These say what it refuses.
+// ---------------------------------------------------------------------------
+
+describe('the vendored OpenACR schema', function() {
+    it('refuses a document missing a required field', function() {
+        // title, product and author are required at the top level.
+        expect(oaSchemaErrorsRaw([
+            'product' => ['name' => 'Acme'],
+            'author' => ['email' => 'access@example.com'],
+        ]))->not->toBe([]);
+    });
+
+    it('refuses a field of the wrong type', function() {
+        expect(oaSchemaErrorsRaw([
+            'title' => 42,
+            'product' => ['name' => 'Acme'],
+            'author' => ['email' => 'access@example.com'],
+        ]))->not->toBe([]);
+    });
+
+    it('resolves its internal refs, so nested rules are enforced too', function() {
+        // author is a $ref to #/definitions/contact, which requires an email.
+        // An unresolved ref would validate anything put under it.
+        expect(oaSchemaErrorsRaw([
+            'title' => 'Acme Accessibility Conformance Report',
+            'product' => ['name' => 'Acme'],
+            'author' => ['name' => 'No Email Given'],
+        ]))->not->toBe([]);
+    });
+
+    it('accepts the minimum it says it requires', function() {
+        // The counterpart: the three refusals above have to come from the rules
+        // being broken, not from the schema refusing everything put to it.
+        expect(oaSchemaErrorsRaw([
+            'title' => 'Acme Accessibility Conformance Report',
+            'product' => ['name' => 'Acme'],
+            'author' => ['email' => 'access@example.com'],
+        ]))->toBe([]);
     });
 });

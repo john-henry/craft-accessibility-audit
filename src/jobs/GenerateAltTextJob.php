@@ -7,24 +7,26 @@
 namespace johnhenry\accessibilityaudit\jobs;
 
 use Craft;
+use craft\db\Query;
 use craft\elements\Asset;
 use craft\errors\ImageTransformException;
 use craft\errors\InvalidFieldException;
-use craft\fs\Local;
 use craft\helpers\App;
 use craft\queue\BaseJob;
+use craft\queue\Queue;
+use Exception;
 use GuzzleHttp\Exception\ClientException;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\helpers\AltTextPrompt;
+use johnhenry\accessibilityaudit\helpers\ImageSource;
 use johnhenry\accessibilityaudit\helpers\VisionImage;
 use Throwable;
-use yii\base\InvalidConfigException;
 
 /**
  * Generates alt text for a single image asset via the Anthropic API
  * and saves it to the configured alt text field.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class GenerateAltTextJob extends BaseJob
@@ -43,14 +45,17 @@ class GenerateAltTextJob extends BaseJob
     /**
      * @inheritdoc
      * @throws InvalidFieldException
-     * @throws \Exception
+     * @throws Exception
      * @throws ImageTransformException
      */
     public function execute($queue): void
     {
         $asset = Asset::find()->id($this->assetId)->one();
 
-        if (!$asset || $asset->kind !== Asset::KIND_IMAGE) {
+        // instanceof, not a truthiness check: one() is signed to hand back an
+        // array as well as an element, so a falsy test would let one through to
+        // code that reads it as an Asset.
+        if (!$asset instanceof Asset || $asset->kind !== Asset::KIND_IMAGE) {
             return;
         }
 
@@ -70,7 +75,7 @@ class GenerateAltTextJob extends BaseJob
             return;
         }
 
-        $imageSource = $this->resolveImageSource($asset);
+        $imageSource = ImageSource::for($asset, 'alt job');
         if (!$imageSource) {
             Craft::warning(
                 VisionImage::isVector($asset)
@@ -81,23 +86,8 @@ class GenerateAltTextJob extends BaseJob
             return;
         }
 
-        $prompt = AltTextPrompt::build($asset, $settings);
-
         try {
-            $client = Craft::createGuzzleClient();
-            $altText = $this->askClaude($client, $apiKey, $imageSource, $prompt);
-
-            // One more go when the model runs past the length it was asked
-            // for, then a trim.
-            if (AltTextPrompt::exceedsLimit($altText)) {
-                $altText = $this->askClaude(
-                    $client,
-                    $apiKey,
-                    $imageSource,
-                    AltTextPrompt::retryPrompt($prompt, $altText),
-                );
-                $altText = AltTextPrompt::trimToLimit($altText);
-            }
+            $altText = AltTextPrompt::draft($apiKey, $imageSource, $asset, $settings);
 
             if (!$altText) {
                 Craft::warning('A11y: GenerateAltTextJob: empty response from API for asset ' . $this->assetId, 'accessibility-audit');
@@ -121,14 +111,14 @@ class GenerateAltTextJob extends BaseJob
 
             // A billing refusal hits every sibling job the same way, so cancel
             // the rest of the batch. A rate limit (429) is transient, so it doesn't.
-            if ($this->isBillingRefusal($e, $reason)) {
+            if ($this->_isBillingRefusal($e, $reason)) {
                 $cancelled = self::cancelPendingJobs();
                 if ($cancelled > 0) {
                     $reason .= ' ' . "Cancelled {$cancelled} pending alt text job(s), since they would all be refused the same way.";
                 }
             }
 
-            throw new \Exception($reason, 0, $e);
+            throw new Exception($reason, 0, $e);
         } catch (Throwable $e) {
             Craft::error('A11y: GenerateAltTextJob failed for asset ' . $this->assetId . ': ' . $e->getMessage(), 'accessibility-audit');
         }
@@ -149,19 +139,20 @@ class GenerateAltTextJob extends BaseJob
      * no-op, since there is no portable way to enumerate pending jobs.
      *
      * @return int How many jobs were cancelled.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public static function cancelPendingJobs(): int
     {
         $queue = Craft::$app->getQueue();
 
-        if (!$queue instanceof \craft\queue\Queue) {
+        if (!$queue instanceof Queue) {
             Craft::warning('A11y: cannot cancel pending alt text jobs on a non-database queue driver.', 'accessibility-audit');
             return 0;
         }
 
-        $ids = (new \craft\db\Query())
+        $ids = (new Query())
             ->select(['id'])
             ->from('{{%queue}}')
             ->where(['fail' => false, 'dateReserved' => null])
@@ -190,10 +181,11 @@ class GenerateAltTextJob extends BaseJob
      * @param ClientException $e The refusal.
      * @param string $reason The error message extracted from its body.
      * @return bool
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    private function isBillingRefusal(ClientException $e, string $reason): bool
+    private function _isBillingRefusal(ClientException $e, string $reason): bool
     {
         return $e->getResponse()->getStatusCode() === 400
             && stripos($reason, 'credit balance') !== false;
@@ -212,137 +204,10 @@ class GenerateAltTextJob extends BaseJob
 
     // Private Methods
     // =========================================================================
-
-    /**
-     * Resolves the image source payload for the Anthropic API (mirrors AltController).
-     *
-     * @param Asset $asset The asset to resolve.
-     * @return array|null The image source payload, or null if unresolved.
-     * @throws InvalidConfigException
-     * @throws ImageTransformException
-     */
-    private function resolveImageSource(Asset $asset): ?array
-    {
-        // Oversized images are scaled down before the URL tier, which would
-        // otherwise hand over the full-size original.
-        $downscaled = VisionImage::downscaledSource($asset);
-        if ($downscaled !== null) {
-            return $downscaled;
-        }
-
-        // A vector that could not be rendered is never sent as-is: the API
-        // takes raster formats only and would refuse it.
-        if (VisionImage::isVector($asset)) {
-            return null;
-        }
-
-        $url = $asset->getUrl();
-        $mime = $asset->getMimeType() ?: 'image/jpeg';
-
-        if ($url && !$this->isLocalUrl($url)) {
-            return ['type' => 'url', 'url' => $url];
-        }
-
-        $fs = $asset->getVolume()->getFs();
-        if ($fs instanceof Local) {
-            try {
-                $root = rtrim(Craft::getAlias($fs->path), '/\\');
-                $filePath = $root . DIRECTORY_SEPARATOR . ltrim($asset->getPath(), '/\\');
-                if (file_exists($filePath)) {
-                    return ['type' => 'base64', 'media_type' => $mime, 'data' => base64_encode(file_get_contents($filePath))];
-                }
-            } catch (Throwable $e) {
-                Craft::warning('A11y: job local file read failed: ' . $e->getMessage(), 'accessibility-audit');
-            }
-        }
-
-        try {
-            $data = base64_encode($asset->getContents());
-            if ($data) {
-                return ['type' => 'base64', 'media_type' => $mime, 'data' => $data];
-            }
-        } catch (Throwable $e) {
-            Craft::warning('A11y: job stream read failed: ' . $e->getMessage(), 'accessibility-audit');
-        }
-
-        if ($url) {
-            // TLS verification is only bypassed in dev/ephemeral environments
-            // (DDEV/Lando/Valet self-signed certs); production verifies certs.
-            $verifyTls = !App::isEphemeral() && !Craft::$app->getConfig()->getGeneral()->devMode;
-            $ch = curl_init($url);
-            curl_setopt_array($ch, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_SSL_VERIFYPEER => $verifyTls,
-                CURLOPT_SSL_VERIFYHOST => $verifyTls ? 2 : 0,
-                CURLOPT_FOLLOWLOCATION => true,
-                CURLOPT_TIMEOUT => 15,
-            ]);
-            $body = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-            if ($body && $httpCode === 200) {
-                return ['type' => 'base64', 'media_type' => $mime, 'data' => base64_encode($body)];
-            }
-        }
-
-        return null;
-    }
-
     /**
      * Returns whether the given URL is local / non-public.
      *
      * @param string $url The URL to test.
      * @return bool
      */
-    /**
-     * One alt-text request to Claude, returning the text it came back with.
-     *
-     * @param \GuzzleHttp\Client $client The HTTP client.
-     * @param string $apiKey The resolved Anthropic key.
-     * @param array<string, mixed> $imageSource The image content block source.
-     * @param string $prompt The prompt to send.
-     * @return string The alt text, empty if the response carried none.
-     * @throws \JsonException
-     */
-    private function askClaude(\GuzzleHttp\Client $client, string $apiKey, array $imageSource, string $prompt): string
-    {
-        $response = $client->post('https://api.anthropic.com/v1/messages', [
-            'headers' => [
-                'x-api-key' => $apiKey,
-                'anthropic-version' => '2023-06-01',
-                'content-type' => 'application/json',
-            ],
-            'json' => [
-                'model' => 'claude-haiku-4-5-20251001',
-                'max_tokens' => 150,
-                'messages' => [[
-                    'role' => 'user',
-                    'content' => [
-                        ['type' => 'image', 'source' => $imageSource],
-                        ['type' => 'text',  'text' => $prompt],
-                    ],
-                ]],
-            ],
-        ]);
-
-        $body = json_decode((string)$response->getBody(), true, 512, JSON_THROW_ON_ERROR);
-
-        return trim($body['content'][0]['text'] ?? '');
-    }
-
-    private function isLocalUrl(string $url): bool
-    {
-        if (!str_starts_with($url, 'https://')) {
-            return true;
-        }
-        // parse_url keeps the brackets on an IPv6 host ("[::1]"), so trim them
-        // before matching the loopback address, or an internal IPv6 URL would
-        // be handed to the third-party API rather than base64'd.
-        $host = trim((string)(parse_url($url, PHP_URL_HOST) ?? ''), '[]');
-        return in_array($host, ['localhost', '127.0.0.1', '::1'], true)
-            || str_ends_with($host, '.local')
-            || str_ends_with($host, '.test')
-            || str_ends_with($host, '.ddev.site')
-            || str_ends_with($host, '.lndo.site');
-    }
 }

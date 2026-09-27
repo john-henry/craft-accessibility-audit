@@ -52,7 +52,7 @@ use DOMXPath;
  * furniture somebody configured. This one drops markup the browser itself
  * never shows, which is not a setting and should never become one.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.2.0
  */
 final class InertMarkup
@@ -74,7 +74,8 @@ final class InertMarkup
      * covers the inner nodes whose parent has already gone.
      *
      * @param DOMXPath $xpath The scan document's XPath handle.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
     public static function removeFrom(DOMXPath $xpath): void

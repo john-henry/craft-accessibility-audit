@@ -9,8 +9,10 @@ namespace johnhenry\accessibilityaudit\services;
 use Craft;
 use craft\base\Element;
 use craft\base\ElementInterface;
+use craft\errors\SiteNotFoundException;
 use craft\helpers\UrlHelper;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use Throwable;
 use yii\base\Component;
 use yii\base\InvalidConfigException;
 
@@ -26,8 +28,10 @@ use yii\base\InvalidConfigException;
  * requesting page's URL back to a Craft element, and builds the identical
  * config payload the injection path uses, so the two paths cannot drift.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
+ *
+ * @property-read string[] $allowedOrigins
  */
 class OverlayService extends Component
 {
@@ -42,7 +46,8 @@ class OverlayService extends Component
      *
      * @param string $token The plaintext token presented by the loader.
      * @return bool
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function isValidToken(string $token): bool
@@ -61,7 +66,8 @@ class OverlayService extends Component
      *
      * @param string $origin The Origin header value (scheme://host[:port]).
      * @return bool
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function isAllowedOrigin(string $origin): bool
@@ -75,7 +81,8 @@ class OverlayService extends Component
      * All origins allowed to call the overlay endpoints.
      *
      * @return string[]
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getAllowedOrigins(): array
@@ -120,8 +127,10 @@ class OverlayService extends Component
      *
      * @param string $url The full URL of the page the overlay is running on.
      * @return array{element: ElementInterface|null, siteId: int, excluded: bool}
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws SiteNotFoundException|InvalidConfigException
      * @since 1.0.0
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      */
     public function resolveElementFromUrl(string $url): array
     {
@@ -207,9 +216,10 @@ class OverlayService extends Component
      * @param bool $absoluteUrls Whether URLs must carry the CMS origin
      *                           (required cross-origin; the injection path
      *                           keeps Craft's defaults).
-     * @return array The config payload.
-     * @throws InvalidConfigException
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return array<string, mixed> The config payload.
+     * @throws InvalidConfigException|Throwable
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function buildConfig(?ElementInterface $element, int $siteId, bool $absoluteUrls = false): array
@@ -293,6 +303,13 @@ class OverlayService extends Component
             'useShapes' => $useShapes,
             // False inside a preview pane: scan and show, but post nothing.
             'storeResults' => !$isDerivative,
+            // The language every string in `strings` was translated into, so
+            // the JS can set `lang` on the panel and trigger button: neither
+            // path (server injection or the decoupled loader) carries the
+            // page's own `<html lang>`, since a headless front end's markup
+            // is never read here.
+            'lang' => Craft::$app->language,
+            'strings' => $this->_overlayStrings(),
         ];
     }
 
@@ -308,8 +325,10 @@ class OverlayService extends Component
      *                     is no element or the element has no URI.
      * @param int $siteId The site the page belongs to.
      * @return bool
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
      * @since 1.4.0
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      */
     public function isPageExcluded(?ElementInterface $element, string $path, int $siteId): bool
     {
@@ -333,7 +352,8 @@ class OverlayService extends Component
      *
      * @param string $url A root-relative or already-absolute URL.
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function absoluteFromRequest(string $url): string
@@ -353,7 +373,8 @@ class OverlayService extends Component
      *
      * @param string $url
      * @return string|null
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _origin(string $url): ?string
@@ -379,8 +400,10 @@ class OverlayService extends Component
      * @param string $uri The URI with no leading/trailing slashes; '' means home.
      * @param int $siteId
      * @return ElementInterface|null
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
      * @since 1.0.0
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      */
     private function _findByUri(string $uri, int $siteId): ?ElementInterface
     {
@@ -401,5 +424,61 @@ class OverlayService extends Component
         }
 
         return $element;
+    }
+
+    /**
+     * Every visible or accessible-name string the frontend overlay renders,
+     * translated into `Craft::$app->language` (the same language reported
+     * under the config's `lang` key).
+     *
+     * Placeholders such as `{count}` and `{label}` are left unresolved: the
+     * values they carry (a live scan's issue count, a stored scan's date) are
+     * only known client-side, so the overlay substitutes them itself. No
+     * `$params` are passed to [[Craft::t()]] here, which is exactly what
+     * keeps those tokens literal instead of triggering ICU formatting.
+     *
+     * @return array<string, string>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private function _overlayStrings(): array
+    {
+        return [
+            'title' => Craft::t('accessibility-audit', 'Accessibility Audit'),
+            'rescan' => Craft::t('accessibility-audit', 'Re-scan'),
+            'scanning' => Craft::t('accessibility-audit', 'Scanning…'),
+            'closePanel' => Craft::t('accessibility-audit', 'Close panel'),
+            'resultsLabel' => Craft::t('accessibility-audit', 'Results'),
+            'tabIssues' => Craft::t('accessibility-audit', 'Issues'),
+            'tabPassed' => Craft::t('accessibility-audit', 'Passed'),
+            'clickRescanHint' => Craft::t('accessibility-audit', 'Click "Re-scan" to analyse this page for WCAG issues.'),
+            'previewNotSaved' => Craft::t('accessibility-audit', 'Preview: results are not saved'),
+            'scannedPrefix' => Craft::t('accessibility-audit', 'Scanned {label}'),
+            'openFullReport' => Craft::t('accessibility-audit', 'Open full report'),
+            'axeNotFound' => Craft::t('accessibility-audit', 'axe-core could not be located.'),
+            'runningAxe' => Craft::t('accessibility-audit', 'Running axe-core…'),
+            'axeErrorPrefix' => Craft::t('accessibility-audit', 'axe-core error: {message}'),
+            'noIssues' => Craft::t('accessibility-audit', 'No issues found on this page.'),
+            'noPasses' => Craft::t('accessibility-audit', 'No passing checks recorded for this page.'),
+            'highlight' => Craft::t('accessibility-audit', 'Highlight'),
+            'loadingStored' => Craft::t('accessibility-audit', 'Loading stored results…'),
+            'loadFailed' => Craft::t('accessibility-audit', 'Couldn\'t load the stored scan. Click "Re-scan" to run a live check.'),
+            'hiddenTargetNotice' => Craft::t('accessibility-audit', 'The highlighted element is inside a collapsed menu or panel. Open it to see the flash.'),
+            'openPanel' => Craft::t('accessibility-audit', 'Open Accessibility Audit panel'),
+            'openPanelIssueSingular' => Craft::t('accessibility-audit', 'Open Accessibility Audit panel, {count} issue'),
+            'openPanelIssuePlural' => Craft::t('accessibility-audit', 'Open Accessibility Audit panel, {count} issues'),
+            'sevError' => Craft::t('accessibility-audit', 'Error'),
+            'sevWarning' => Craft::t('accessibility-audit', 'Warning'),
+            'sevNotice' => Craft::t('accessibility-audit', 'Notice'),
+            'sevReview' => Craft::t('accessibility-audit', 'Review'),
+            'bestPractice' => Craft::t('accessibility-audit', 'best practice'),
+            'elementSingular' => Craft::t('accessibility-audit', '{count} element'),
+            'elementPlural' => Craft::t('accessibility-audit', '{count} elements'),
+            'contrastBelowMin' => Craft::t('accessibility-audit', 'Colour contrast below the minimum ratio'),
+            'contrastNeedsReview' => Craft::t('accessibility-audit', 'Colour contrast needs manual review'),
+            'scoreEstimated' => Craft::t('accessibility-audit', '/100 est.'),
+            'scoreFinal' => Craft::t('accessibility-audit', '/100'),
+        ];
     }
 }

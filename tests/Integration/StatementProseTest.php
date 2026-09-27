@@ -39,7 +39,7 @@ describe('the commitment sentence', function() {
 
         $meta = new StatementMetaModel();
         $meta->profile = StatementProfiles::PROFILE_GENERIC;
-        AccessibilityAudit::getInstance()->statement->saveMeta($siteId, $meta);
+        AccessibilityAudit::getInstance()->getStatement()->saveMeta($siteId, $meta);
 
         expect(renderProseStatement($siteId))
             ->toContain('committed to making this website accessible.')
@@ -51,7 +51,7 @@ describe('the commitment sentence', function() {
 
         $meta = new StatementMetaModel();
         $meta->profile = StatementProfiles::PROFILE_EU;
-        AccessibilityAudit::getInstance()->statement->saveMeta($siteId, $meta);
+        AccessibilityAudit::getInstance()->getStatement()->saveMeta($siteId, $meta);
 
         expect(renderProseStatement($siteId))
             ->toContain('accessible, in accordance with');
@@ -64,9 +64,9 @@ describe('an exclusion the author ended with a full stop', function() {
 
         $meta = new StatementMetaModel();
         $meta->profile = StatementProfiles::PROFILE_EU;
-        AccessibilityAudit::getInstance()->statement->saveMeta($siteId, $meta);
+        AccessibilityAudit::getInstance()->getStatement()->saveMeta($siteId, $meta);
 
-        AccessibilityAudit::getInstance()->statement->saveExclusions($siteId, [
+        AccessibilityAudit::getInstance()->getStatement()->saveExclusions($siteId, [
             StatementExclusionModel::fromArray([
                 'category' => StatementExclusionModel::CATEGORY_OUT_OF_SCOPE,
                 'content' => 'Third party booking software on the admissions pages.',
@@ -91,7 +91,7 @@ describe('an exclusion the author ended with a full stop', function() {
     it('still separates the two where the author left the full stop off', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
 
-        AccessibilityAudit::getInstance()->statement->saveExclusions($siteId, [
+        AccessibilityAudit::getInstance()->getStatement()->saveExclusions($siteId, [
             StatementExclusionModel::fromArray([
                 'category' => StatementExclusionModel::CATEGORY_OUT_OF_SCOPE,
                 'content' => 'Third party booking software on the admissions pages',
@@ -106,7 +106,7 @@ describe('an exclusion the author ended with a full stop', function() {
     it('keeps the criterion between the content and the reason', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
 
-        AccessibilityAudit::getInstance()->statement->saveExclusions($siteId, [
+        AccessibilityAudit::getInstance()->getStatement()->saveExclusions($siteId, [
             StatementExclusionModel::fromArray([
                 'category' => StatementExclusionModel::CATEGORY_BURDEN,
                 'content' => 'The lecture archive published before 2020.',

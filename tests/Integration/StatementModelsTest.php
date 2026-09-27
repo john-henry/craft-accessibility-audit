@@ -133,11 +133,25 @@ describe('StatementMetaModel', function() {
 // ---------------------------------------------------------------------------
 
 describe('StatementExclusionModel', function() {
-    it('requires content', function() {
-        $model = StatementExclusionModel::fromArray(['content' => '']);
+    it('lets a half-built row save, because that is how rows are built', function() {
+        // The Add button stores an empty row and a scan suggestion stores one
+        // with the criterion filled and the description left to the editor.
+        // Refusing those would mean neither button could work.
+        $model = StatementExclusionModel::fromArray(['content' => '', 'criterion' => '1.3.1']);
 
-        expect($model->validate())->toBeFalse()
-            ->and($model->getErrors('content'))->not->toBeEmpty();
+        expect($model->validate())->toBeTrue();
+    });
+
+    it('knows a row with nothing in it, so the statement can drop it', function() {
+        expect(StatementExclusionModel::fromArray([])->isBlank())->toBeTrue()
+            ->and(StatementExclusionModel::fromArray(['criterion' => '1.3.1'])->isBlank())->toBeFalse()
+            ->and(StatementExclusionModel::fromArray(['content' => 'Archived minutes'])->isBlank())->toBeFalse();
+    });
+
+    it('does not count a planned date on its own as something to say', function() {
+        // "We expect to fix this by March" with no "this" is not a statement.
+        expect(StatementExclusionModel::fromArray(['plannedDate' => '2026-03-01'])->isBlank())
+            ->toBeTrue();
     });
 
     it('accepts each of the three legal categories', function() {
@@ -145,6 +159,7 @@ describe('StatementExclusionModel', function() {
             $model = StatementExclusionModel::fromArray([
                 'category' => $category,
                 'content' => 'PDF menus published before 2023',
+                'reason' => 'Converting them would cost more than the menus earn.',
             ]);
 
             expect($model->validate())->toBeTrue();

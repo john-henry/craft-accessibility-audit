@@ -7,11 +7,47 @@
     // Programmatic scrolls honour the reader's motion preference: an accessibility
     // tool must not animate page-jumps for someone who asked for reduced motion.
     // Checked live rather than cached, so a mid-session preference change is picked up.
+    //
+    // Scrolls only within the element's own document. scrollIntoView() also
+    // scrolls every ancestor scroller, and for an element in the preview
+    // iframe that includes the control panel page around it.
     function scrollToEl(el) {
-        if (!el) { return; }
+        if (!el || !el.getBoundingClientRect) { return; }
         var behavior = (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) ? 'auto' : 'smooth';
-        try { el.scrollIntoView({ behavior: behavior, block: 'center' }); }
-        catch (e) { el.scrollIntoView(); }
+        var doc = el.ownerDocument;
+        var win = doc.defaultView;
+        if (!win) { return; }
+
+        /* Inner scroll containers first, nearest outward and instantly, so
+           the page-level scroll below measures where they leave the element.
+           Vertically centred, horizontally only if it is out of view. */
+        for (var box = el.parentElement; box && box !== doc.documentElement; box = box.parentElement) {
+            var style = win.getComputedStyle(box);
+            var scrollsY = /(auto|scroll|overlay)/.test(style.overflowY) && box.scrollHeight > box.clientHeight;
+            var scrollsX = /(auto|scroll|overlay)/.test(style.overflowX) && box.scrollWidth > box.clientWidth;
+            if (!scrollsY && !scrollsX) { continue; }
+            var r = el.getBoundingClientRect();
+            var b = box.getBoundingClientRect();
+            if (scrollsY) {
+                box.scrollTop += (r.top - b.top) - (box.clientHeight - r.height) / 2;
+            }
+            if (scrollsX && (r.left < b.left || r.right > b.left + box.clientWidth)) {
+                box.scrollLeft += (r.left - b.left) - (box.clientWidth - r.width) / 2;
+            }
+        }
+
+        if (doc === document) { return; }
+
+        var rect = el.getBoundingClientRect();
+        var left = win.scrollX;
+        if (rect.left < 0 || rect.right > win.innerWidth) {
+            left += rect.left - (win.innerWidth - rect.width) / 2;
+        }
+        win.scrollTo({
+            top: win.scrollY + rect.top - (win.innerHeight - rect.height) / 2,
+            left: left,
+            behavior: behavior,
+        });
     }
 
     /* Shared with cp.js and the frontend overlay via accessibility-audit-shared.js */
@@ -229,57 +265,170 @@
         var doc = iframeDoc();
         if (!doc || !doc.body) return false;
 
-        var href = '';
+        var href;
         try { href = doc.location ? doc.location.href : ''; } catch (_) { return false; }
         if (!href || href === 'about:blank') return false;
 
         return doc.readyState === 'complete' && doc.body.children.length > 0;
     }
 
+    /* Highlights are drawn in a layer of their own over the page, not on the
+       element. An outline on the element is clipped by any ancestor with
+       `overflow: hidden`, and restyling the element can move it or change the
+       rendering the contrast pass samples. Elements carry only the
+       data-accessibility-audit-hl marker (and a -label for the counter); the
+       layer redraws when a marker changes and follows scrolling and resizing. */
+    var HL_LAYER_ID = 'accessibility-audit-hl-layer';
+    var HL_GAP = 5; /* 2px clear of the element, then the 3px border */
+    var hlWatched = new WeakMap();
+
     function ensureHighlightStyles(doc) {
         if (doc.getElementById('accessibility-audit-hl-styles')) return;
         var s = doc.createElement('style');
         s.id = 'accessibility-audit-hl-styles';
         s.textContent = [
+            /* Two-tone, like a focus ring built to show on any background: a
+               dark line outside the red and a white line inside it, so the box
+               still reads on a red page, a dark one or a busy photo. The blink
+               fades only the red and its glow; the two lines hold steady. */
             '@keyframes accessibility-audit-blink{',
-            '  0%,100%{outline-color:#e11d48;box-shadow:0 0 0 5px rgba(225,29,72,.2);}',
-            '  50%{outline-color:rgba(225,29,72,.2);box-shadow:none;}',
+            '  0%,100%{border-color:#e11d48;box-shadow:0 0 0 1px #111827,0 0 0 6px rgba(225,29,72,.25),inset 0 0 0 1px #fff;}',
+            '  50%{border-color:rgba(225,29,72,.3);box-shadow:0 0 0 1px #111827,inset 0 0 0 1px #fff;}',
             '}',
-            '[data-accessibility-audit-hl]{',
-            '  outline:3px solid #e11d48!important;',
-            '  outline-offset:2px!important;',
-            '  position:relative!important;z-index:9998!important;',
+            '#' + HL_LAYER_ID + '{',
+            '  position:absolute!important;top:0!important;left:0!important;',
+            '  width:0!important;height:0!important;margin:0!important;padding:0!important;border:0!important;',
+            '  z-index:2147483647!important;pointer-events:none!important;',
+            '}',
+            '.accessibility-audit-hl-box{',
+            '  position:absolute!important;box-sizing:border-box!important;margin:0!important;padding:0!important;',
+            /* Colour and shadow are left without !important, which would
+               otherwise outrank the blink animation and hold the box still. */
+            '  border-width:3px!important;border-style:solid!important;border-radius:3px!important;background:none!important;',
+            '  border-color:#e11d48;box-shadow:0 0 0 1px #111827,inset 0 0 0 1px #fff;',
+            '  pointer-events:none!important;',
             '  animation:accessibility-audit-blink .7s ease-in-out 4!important;',
             '}',
-            /* Never paint a background on highlighted elements: the highlight
-               must not alter the element's own rendering, and the contrast
-               pass samples whatever is rendered. Outline and blink only. */
-            /* Static outline only for users who asked for less motion */
+            /* Square where the badge sits on it, so the two join flush. */
+            '.accessibility-audit-hl-box--badged{border-top-left-radius:0!important;}',
             '@media (prefers-reduced-motion: reduce){',
-            '  [data-accessibility-audit-hl]{animation:none!important;}',
+            '  .accessibility-audit-hl-box{animation:none!important;}',
             '}',
+            /* Sits just above the box, so it never covers the start of a small
+               element's own text. It overlaps the box's red border by 1px,
+               covering the box's dark outer line there, and carries the same
+               dark line on its top and sides as borders: a shadow clipped at
+               the bottom leaks a sliver of dark at the scaled-down preview's
+               fractional pixel positions. */
             '.accessibility-audit-hl-badge{',
-            /* Sits just above the element's own top edge (not inside it as a
-               first child overlapping the element's own text): small inline
-               elements like nav links are otherwise unreadable once badged,
-               since the badge would cover their first few characters. */
-            '  position:absolute!important;top:0!important;left:-1px!important;',
+            '  position:absolute!important;top:-2px!important;left:-4px!important;',
             '  transform:translateY(-100%)!important;',
             '  background:#e11d48!important;color:#fff!important;',
+            '  border:1px solid #111827!important;border-bottom:0!important;',
             '  font:700 10px/18px system-ui,sans-serif!important;',
-            '  padding:0 5px!important;border-radius:4px 4px 0 0!important;',
-            '  z-index:9999!important;pointer-events:none!important;white-space:nowrap!important;',
+            '  padding:0 5px!important;border-radius:4px 4px 0 0!important;white-space:nowrap!important;',
             '}',
         ].join('');
         (doc.head || doc.documentElement).appendChild(s);
+        watchHighlights(doc);
+    }
+
+    function watchHighlights(doc) {
+        var win = doc.defaultView;
+        if (!win || hlWatched.has(doc)) return;
+
+        var state = { boxes: [], frame: 0, rebuild: false };
+        hlWatched.set(doc, state);
+
+        var schedule = function (rebuild) {
+            state.rebuild = state.rebuild || rebuild;
+            if (state.frame) return;
+            state.frame = win.requestAnimationFrame(function () {
+                state.frame = 0;
+                if (state.rebuild) {
+                    state.rebuild = false;
+                    drawHighlights(doc, state);
+                } else {
+                    placeHighlights(doc, state);
+                }
+            });
+        };
+
+        new win.MutationObserver(function () { schedule(true); }).observe(doc.documentElement, {
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['data-accessibility-audit-hl', 'data-accessibility-audit-hl-label'],
+        });
+        doc.addEventListener('scroll', function () { schedule(false); }, { capture: true, passive: true });
+        win.addEventListener('resize', function () { schedule(false); });
+        if (win.ResizeObserver) {
+            new win.ResizeObserver(function () { schedule(false); }).observe(doc.documentElement);
+        }
+    }
+
+    /* Rebuilds the boxes from the marked elements. A fresh box restarts the
+       blink, so marking an element again reads as a response to the click. */
+    function drawHighlights(doc, state) {
+        var layer = doc.getElementById(HL_LAYER_ID);
+        var marked = doc.querySelectorAll('[data-accessibility-audit-hl]');
+
+        state.boxes = [];
+        if (!marked.length) {
+            if (layer) layer.remove();
+            return;
+        }
+        if (!layer) {
+            layer = doc.createElement('div');
+            layer.id = HL_LAYER_ID;
+            layer.setAttribute('aria-hidden', 'true');
+        }
+        layer.textContent = '';
+        doc.documentElement.appendChild(layer);
+
+        Array.prototype.forEach.call(marked, function (el) {
+            var box = doc.createElement('div');
+            box.className = 'accessibility-audit-hl-box';
+            var label = el.getAttribute('data-accessibility-audit-hl-label');
+            if (label) {
+                box.classList.add('accessibility-audit-hl-box--badged');
+                var badge = doc.createElement('span');
+                badge.className = 'accessibility-audit-hl-badge';
+                badge.textContent = label;
+                box.appendChild(badge);
+            }
+            layer.appendChild(box);
+            state.boxes.push({ el: el, box: box });
+        });
+
+        placeHighlights(doc, state);
+    }
+
+    /* Positions each box over its element, measured against the layer itself
+       so a positioned or offset <html> or <body> can't throw it off. */
+    function placeHighlights(doc, state) {
+        var layer = doc.getElementById(HL_LAYER_ID);
+        if (!layer || !state.boxes.length) return;
+        var origin = layer.getBoundingClientRect();
+
+        state.boxes.forEach(function (entry) {
+            var r = entry.el.getBoundingClientRect();
+            if (!entry.el.isConnected || (r.width === 0 && r.height === 0)) {
+                entry.box.style.display = 'none';
+                return;
+            }
+            entry.box.style.display = '';
+            entry.box.style.left = (r.left - origin.left - HL_GAP) + 'px';
+            entry.box.style.top = (r.top - origin.top - HL_GAP) + 'px';
+            entry.box.style.width = (r.width + HL_GAP * 2) + 'px';
+            entry.box.style.height = (r.height + HL_GAP * 2) + 'px';
+        });
     }
 
     function clearHighlights(doc) {
         if (!doc) return;
         doc.querySelectorAll('[data-accessibility-audit-hl]').forEach(function (el) {
             el.removeAttribute('data-accessibility-audit-hl');
-            var b = el.querySelector('.accessibility-audit-hl-badge');
-            if (b) b.remove();
+            el.removeAttribute('data-accessibility-audit-hl-label');
         });
     }
 
@@ -306,10 +455,7 @@
         elements.forEach(function (el, i) {
             el.setAttribute('data-accessibility-audit-hl', i === 0 ? 'first' : 'other');
             if (el.tagName.toLowerCase() !== 'html') {
-                var badge = doc.createElement('span');
-                badge.className = 'accessibility-audit-hl-badge';
-                badge.textContent = (i + 1) + '/' + elements.length;
-                try { el.insertBefore(badge, el.firstChild); } catch (_) {}
+                el.setAttribute('data-accessibility-audit-hl-label', (i + 1) + '/' + elements.length);
             }
             count++;
         });
@@ -400,8 +546,14 @@
         _currentRuleId = null;
     }
 
+    /* Only a hex or rgb() colour goes into a style attribute. */
+    function cssColour(value) {
+        return (typeof value === 'string' && /^#[0-9a-f]{3,8}$|^rgba?\(\s*[0-9.\s,%/]+\)$/i.test(value.trim())) ? value.trim() : '';
+    }
+
     /* Render a colour-contrast occurrence card from JSON context data */
-    function renderContrastOccurrence(data) {
+    function renderContrastOccurrence(data, markup) {
+        data = Object.assign({}, data, { fg: cssColour(data.fg), bg: cssColour(data.bg) });
         var ratio   = data.ratio !== null ? (Math.round(+data.ratio * 100) / 100) + ':1' : '?:1';
         var preview = '<span class="accessibility-audit-pr-swatch-preview" aria-hidden="true" style="color:' + escHtml(data.fg || '#000') + ';background:' + escHtml(data.bg || '#fff') + '">Aa</span>';
         var swatches =
@@ -418,8 +570,9 @@
         /* The failing element's markup, so the card identifies WHICH element
            carries these colours: a same-on-same pair is invisible on the page,
            making the snippet the only human-readable pointer. */
-        var snippet = data.html
-            ? '<code class="accessibility-audit-pr-occ-ctx" title="' + escHtml(data.html) + '">' + escHtml(data.html) + '</code>'
+        var shown = markup || data.html;
+        var snippet = shown
+            ? '<code class="accessibility-audit-pr-occ-ctx" title="' + escHtml(shown) + '">' + escHtml(shown) + '</code>'
             : '';
         return '<div class="accessibility-audit-pr-swatch-pair">' +
             preview +
@@ -447,7 +600,7 @@
     function renderExpandPanel(body, issue, occurrences) {
         var lvl = issue.wcagLevel ? '<span class="accessibility-audit-level">' + escHtml(issue.wcagLevel) + '</span>' : '<span class="accessibility-audit-level accessibility-audit-level--bp">BP</span>';
         var criterion = issue.wcagCriterion ? '<span class="light" style="font-size:11px;margin-left:4px">' + escHtml(issue.wcagCriterion) + '</span>' : '';
-        var helpLink  = issue.helpUrl ? '<a href="' + escHtml(issue.helpUrl) + '" target="_blank" rel="noopener" class="accessibility-audit-pr-help-link">How to fix ↗</a>' : '';
+        var helpLink  = (issue.helpUrl && /^https?:\/\//i.test(issue.helpUrl)) ? '<a href="' + escHtml(issue.helpUrl) + '" target="_blank" rel="noopener" class="accessibility-audit-pr-help-link">How to fix ↗</a>' : '';
         var isContrast = CONTRAST_RULE_IDS.indexOf(issue.ruleId) !== -1;
 
         var occHtml = '';
@@ -458,13 +611,14 @@
                 if (isContrast && occ.context) {
                     try {
                         var cd = JSON.parse(occ.context);
-                        if (cd && cd.fg) { ctxHtml = renderContrastOccurrence(cd); }
+                        if (cd && cd.fg) { ctxHtml = renderContrastOccurrence(cd, occ.markup); }
                     } catch (_) {}
                 }
                 if (!ctxHtml) {
                     /* title carries the full context string so it's reachable on hover
                        even after CSS truncates the single-line display to an ellipsis. */
-                    ctxHtml = occ.context ? '<code class="accessibility-audit-pr-occ-ctx" title="' + escHtml(occ.context) + '">' + escHtml(occ.context) + '</code>' : '';
+                    var shown = occ.markup || occ.context;
+                    ctxHtml = shown ? '<code class="accessibility-audit-pr-occ-ctx" title="' + escHtml(shown) + '">' + escHtml(shown) + '</code>' : '';
                 }
                 /* Template path + selector: populated by enrichOccurrencesWithTemplateInfo
                    when devMode is on and accessibility-audit-tpl comments are present in the iframe. */
@@ -504,45 +658,6 @@
            showing a "1 OCCURRENCE" chip adds no value for those. */
         var singleOccurrenceRule = isPageLevelRule(issue.ruleId);
 
-        /* Build "needs manual review" section for contrast issues */
-        var reviewHtml = '';
-        if (isContrast && _contrastNeedsReview && _contrastNeedsReview.length) {
-            var reviewItems = '';
-            _contrastNeedsReview.forEach(function (item, idx) {
-                var desc = _REVIEW_REASONS[item.reason] || item.reason;
-                var landmarkHtml = '';
-                if (item.landmark) {
-                    var lm = item.landmark;
-                    landmarkHtml = '<span class="accessibility-audit-pr-review-landmark">' +
-                        '&lt;' + escHtml(lm.tag) + '&gt;' +
-                        (lm.name ? ' · ' + escHtml(lm.name) : '') +
-                    '</span>';
-                }
-                var tplHtml = item.template
-                    ? '<span class="accessibility-audit-pr-review-tpl" title="Twig template: ' + escHtml(item.template) + '">' + escHtml(item.template) + '</span>'
-                    : '';
-                reviewItems +=
-                    '<div class="accessibility-audit-pr-review-item" data-review-idx="' + idx + '">' +
-                        '<div class="accessibility-audit-pr-review-hdr">' +
-                            '<div class="accessibility-audit-pr-review-location-wrap">' +
-                                (item.selector ? '<span class="accessibility-audit-pr-review-location" title="' + escHtml(item.selector) + '">' + escHtml(item.selector) + '</span>' : '') +
-                                landmarkHtml +
-                                tplHtml +
-                            '</div>' +
-                            '<button class="accessibility-audit-pr-review-hl-btn" data-review-idx="' + idx + '" type="button">Highlight ↗</button>' +
-                        '</div>' +
-                        '<p class="accessibility-audit-pr-review-reason">' + escHtml(desc) + '</p>' +
-                        '<pre class="accessibility-audit-pr-review-code"><code>' + escHtml(item.html) + '</code></pre>' +
-                    '</div>';
-            });
-            reviewHtml =
-                '<div class="accessibility-audit-pr-needs-review">' +
-                    '<p class="accessibility-audit-pr-needs-review-title">⚠ ' + _contrastNeedsReview.length + ' element' + (_contrastNeedsReview.length !== 1 ? 's' : '') + ' need manual review</p>' +
-                    '<p class="accessibility-audit-pr-needs-review-note">Background colour could not be determined automatically, contrast ratio cannot be calculated. Inspect these elements manually.</p>' +
-                    reviewItems +
-                '</div>';
-        }
-
         /* Message first, then one meta row (level/criterion left, help link
            right), matching the entry sidebar panel. No severity dot: the row
            this panel hangs off already shows one. */
@@ -553,31 +668,7 @@
                 : '') +
             (singleOccurrenceRule ? '' :
                 '<p class="accessibility-audit-pr-expand-occ-heading">' + escHtml(String(issue.occurrences)) + ' occurrence' + (issue.occurrences !== 1 ? 's' : '') + '</p>' +
-                occHtml) +
-            reviewHtml;
-
-        /* Click on needs-review Highlight button → scroll iframe to that element */
-        body.querySelectorAll('.accessibility-audit-pr-review-hl-btn').forEach(function (btn) {
-            btn.addEventListener('click', function (e) {
-                e.stopPropagation();
-                var idx = parseInt(btn.dataset.reviewIdx, 10);
-                var item = _contrastNeedsReview && _contrastNeedsReview[idx];
-                if (!item) return;
-                var doc = iframeDoc();
-                if (!doc) { showCrossOriginNotice(); return; }
-                ensureHighlightStyles(doc);
-                clearHighlights(doc);
-                var found = findElementByContext(doc, item.html);
-                if (!found && item.selector) {
-                    try { found = doc.querySelector(item.selector); } catch (_) {}
-                }
-                if (found) {
-                    found.setAttribute('data-accessibility-audit-hl', 'first');
-                    if (paneContent && paneContent.hidden) switchToView('content');
-                    scrollToEl(found);
-                }
-            });
-        });
+                occHtml);
 
         /* Click on occurrence → scroll iframe to that element */
         body.querySelectorAll('.accessibility-audit-pr-occ-item').forEach(function (item) {
@@ -597,19 +688,17 @@
         });
     }
 
-    /* Marks one element as the focused occurrence and scrolls to it, replaying
-       its flash animation so a repeat click still reads as a response. */
-    function focusOccurrenceElement(doc, el) {
-        doc.querySelectorAll('[data-accessibility-audit-hl="first"]').forEach(function (e) {
-            e.setAttribute('data-accessibility-audit-hl', 'other');
-        });
+    /* Highlights one occurrence on its own, numbered as in the sidebar, and
+       scrolls to it. The marker changes, so the layer redraws and the flash
+       replays even on a repeat click. */
+    function focusOccurrenceElement(doc, el, idx) {
+        clearHighlights(doc);
         ensureLazyLoaded(el);
         el.setAttribute('data-accessibility-audit-hl', 'first');
-        noticeIfAllHidden([el], doc);
+        el.setAttribute('data-accessibility-audit-hl-label', String(idx + 1));
+        var occ = _currentOccurrences && _currentOccurrences[idx];
+        noticeIfAllHidden([el], doc, occ ? occ.viewport : null);
         scrollToEl(el);
-        el.style.animation = 'none';
-        el.offsetHeight; // reflow
-        el.style.animation = '';
     }
 
     function scrollIframeToOccurrence(idx) {
@@ -620,7 +709,7 @@
             if (doc) {
                 var el = findElementByContext(doc, ctx);
                 if (el) {
-                    focusOccurrenceElement(doc, el);
+                    focusOccurrenceElement(doc, el, idx);
                     return;
                 }
 
@@ -629,7 +718,7 @@
                    idx-th match of the broad selector below. */
                 var byText = matchByText(doc, selectorFor(_currentRuleId), ctx);
                 if (byText.length) {
-                    focusOccurrenceElement(doc, byText[0]);
+                    focusOccurrenceElement(doc, byText[0], idx);
                     return;
                 }
             }
@@ -647,7 +736,7 @@
         if (!doc2) return;
         var elements = doc2.querySelectorAll(selector);
         if (elements[idx]) {
-            focusOccurrenceElement(doc2, elements[idx]);
+            focusOccurrenceElement(doc2, elements[idx], idx);
         }
     }
 
@@ -661,14 +750,24 @@
 
     /* Says so when EVERY matched element is hidden (a mixed set still shows
        something); the highlight stays applied for when the menu opens. */
-    function noticeIfAllHidden(found, doc) {
+    /* An occurrence recorded in the other view is usually hidden in this one
+       by the site's own responsive CSS, so the notice points at the view
+       rather than at a menu that isn't there. */
+    function noticeIfAllHidden(found, doc, viewport) {
         if (!found.length) return;
         for (var i = 0; i < found.length; i++) {
             if (!hiddenInPage(found[i], doc)) return;
         }
-        if (window.Craft && Craft.cp && Craft.cp.displayNotice) {
-            Craft.cp.displayNotice(Craft.t('accessibility-audit', 'Highlighted, but the element is inside a collapsed menu or panel. Open it on the page to see it.'));
+        if (!(window.Craft && Craft.cp && Craft.cp.displayNotice)) return;
+        if (viewport === 'desktop' && activeViewport !== 'desktop') {
+            Craft.cp.displayNotice(Craft.t('accessibility-audit', 'Found in the Desktop view. Switch to Desktop to see it.'));
+            return;
         }
+        if (viewport === 'mobile' && activeViewport !== 'mobile') {
+            Craft.cp.displayNotice(Craft.t('accessibility-audit', 'Found in the Mobile view. Switch to Mobile to see it.'));
+            return;
+        }
+        Craft.cp.displayNotice(Craft.t('accessibility-audit', 'Highlighted, but the element is inside a collapsed menu or panel. Open it on the page to see it.'));
     }
 
     /* ── Context-based element matching ────────────────────────────── */
@@ -987,10 +1086,7 @@
             ensureLazyLoaded(el);
             el.setAttribute('data-accessibility-audit-hl', i === 0 ? 'first' : 'other');
             if (el.tagName.toLowerCase() !== 'html') {
-                var badge = doc.createElement('span');
-                badge.className = 'accessibility-audit-hl-badge';
-                badge.textContent = (i + 1) + '/' + found.length;
-                try { el.insertBefore(badge, el.firstChild); } catch (_) {}
+                el.setAttribute('data-accessibility-audit-hl-label', (i + 1) + '/' + found.length);
             }
         });
 
@@ -1110,20 +1206,8 @@
         return out;
     }
 
-    /* An element's own text, ignoring the highlight badge this tool injects
-       as its first child (which would otherwise get counted as text). The
-       clone is only paid for when a badge is actually present. */
     function visibleText(el) {
-        if (!el.querySelector('.accessibility-audit-hl-badge')) {
-            return el.textContent.trim();
-        }
-
-        var clone = el.cloneNode(true);
-        clone.querySelectorAll('.accessibility-audit-hl-badge').forEach(function (badge) {
-            badge.remove();
-        });
-
-        return clone.textContent.trim();
+        return el.textContent.trim();
     }
 
     /* An element's accessible name, in accessible-name order. Mirrors
@@ -1170,6 +1254,20 @@
        cluster boxing every occurrence it stands for. An appended call that
        finds nothing stays quiet: one notice for the cluster, not one per
        occurrence that has since moved. */
+    /* Whether two elements carry the same attributes, leaving out class and
+       style (layout only) and the plugin's own marks. */
+    function sameIdentity(a, b) {
+        function identity(el) {
+            return Array.prototype.filter.call(el.attributes, function (attr) {
+                return attr.name !== 'class' && attr.name !== 'style' && attr.name.indexOf('data-accessibility-audit-') !== 0;
+            }).map(function (attr) {
+                return attr.name + '=' + attr.value;
+            }).sort().join('\n');
+        }
+
+        return identity(a) === identity(b);
+    }
+
     function highlightPotential(ruleId, context, append) {
         var doc = iframeDoc();
         var selector = selectorFor(ruleId);
@@ -1182,13 +1280,15 @@
             var el = findElementByContext(doc, ctx);
             if (el) {
                 found.push(el);
-                /* Box identical-text siblings too (a hero title repeated on a
-                   listing card), so whichever copy the scan recorded, the one
-                   on screen is among the boxed. */
+                /* Box copies the stored markup can't tell apart too (a desktop
+                   and a mobile nav link differing only in layout classes), so
+                   whichever copy the scan recorded, the one on screen is among
+                   the boxed. A copy whose attributes differ, like a Decrease
+                   button labelled for another variant, is a different element. */
                 var twinText = el.textContent.trim();
                 if (twinText) {
                     matchByText(doc, el.tagName.toLowerCase(), twinText).forEach(function (twin) {
-                        if (found.indexOf(twin) === -1) found.push(twin);
+                        if (found.indexOf(twin) === -1 && sameIdentity(el, twin)) found.push(twin);
                     });
                 }
             } else {
@@ -1233,14 +1333,10 @@
             ensureLazyLoaded(el);
             el.setAttribute('data-accessibility-audit-hl', i === 0 && !append ? 'first' : 'other');
 
-            /* An appended element gets no counter badge: the numbering would
-               restart at 1 for every occurrence in the cluster and read as
-               nonsense next to the others. */
+            /* An appended element gets no counter here: a cluster is
+               numbered as a whole once every occurrence is marked. */
             if (!append && el.tagName.toLowerCase() !== 'html') {
-                var badge = doc.createElement('span');
-                badge.className = 'accessibility-audit-hl-badge';
-                badge.textContent = (i + 1) + '/' + found.length;
-                try { el.insertBefore(badge, el.firstChild); } catch (_) {}
+                el.setAttribute('data-accessibility-audit-hl-label', (i + 1) + '/' + found.length);
             }
         });
 
@@ -1275,13 +1371,33 @@
         if (!doc) return;
         occurrences.forEach(function (occ) {
             if (occ.template !== undefined) return; /* already enriched */
-            var contextHtml = _occContextHtml(occ);
-            if (!contextHtml) return;
-            var el = findElementByContext(doc, contextHtml);
+            /* The whole stored context, so a contrast occurrence's selector
+               picks the same element the highlight does, not whichever copy
+               of the markup matches first. */
+            if (!occ.context) return;
+            var el = findElementByContext(doc, occ.context);
             if (!el) return;
             occ.template = _findTemplate(el, doc);
             occ.selector = _cssPath(el, doc);
+            occ.markup = elementSummary(el);
         });
+    }
+
+    /* The element as it stands in the preview: its opening tag, the start of
+       its text and its closing tag. Stored contexts keep only the opening
+       tag, which is enough to identify a finding but not to read one. */
+    function elementSummary(el) {
+        var name = el.tagName.toLowerCase();
+        var attrs = Array.prototype.filter.call(el.attributes, function (attr) {
+            return attr.name.indexOf('data-accessibility-audit-') !== 0;
+        }).map(function (attr) {
+            return ' ' + attr.name + '="' + attr.value.replace(/"/g, '&quot;') + '"';
+        }).join('');
+        var open = '<' + name + attrs + '>';
+        if (VOID_TAGS.indexOf(name) !== -1) return open;
+        var text = el.textContent.replace(/\s+/g, ' ').trim();
+        if (text.length > 80) text = text.slice(0, 80) + '…';
+        return open + text + '</' + name + '>';
     }
 
     async function loadAndShowOccurrences(row, expandBody) {
@@ -1303,8 +1419,6 @@
                 highlightHtmlViewContext(data.occurrences);
                 /* Replace broad-selector highlights with accurate context-based ones */
                 highlightFromOccurrences(data.occurrences, row.dataset.ruleId);
-                /* If the iframe hasn't loaded yet and _contrastNeedsReview is still being
-                   collected, re-render once it arrives (handled via iframe load callback) */
             }
         } catch (err) {
             expandBody.querySelector('.accessibility-audit-loading') && (expandBody.querySelector('.accessibility-audit-loading').textContent = Craft.t('accessibility-audit', 'Failed to load.'));
@@ -1324,26 +1438,199 @@
         return occ.context;
     }
 
+    var VOID_TAGS = ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr'];
+    var RAW_TEXT_TAGS = ['script', 'style', 'textarea', 'title'];
+    var _sourceTokens = { source: null, tokens: null };
+
+    /* Every tag in the fetched source, in order, as {name, start, end,
+       closing, attrs}. Comments, doctypes and the contents of script, style,
+       textarea and title are skipped, so a "<p" inside a script string is
+       never counted as an element. Cached per source. */
+    function sourceTokens(source) {
+        if (_sourceTokens.source === source) return _sourceTokens.tokens;
+        var tokens = [];
+        var i = 0;
+        var len = source.length;
+        while (i < len) {
+            var lt = source.indexOf('<', i);
+            if (lt === -1) break;
+            if (source.substr(lt, 4) === '<!--') {
+                var endComment = source.indexOf('-->', lt + 4);
+                i = endComment === -1 ? len : endComment + 3;
+                continue;
+            }
+            var m = /^<(\/?)([a-zA-Z][a-zA-Z0-9-]*)/.exec(source.substr(lt, 64));
+            if (!m) { i = lt + 1; continue; }
+            /* Find the tag's closing '>', stepping over quoted attribute values. */
+            var j = lt + m[0].length;
+            var quote = null;
+            while (j < len) {
+                var ch = source.charAt(j);
+                if (quote) { if (ch === quote) quote = null; }
+                else if (ch === '"' || ch === "'") { quote = ch; }
+                else if (ch === '>') { break; }
+                j++;
+            }
+            var name = m[2].toLowerCase();
+            var token = {
+                name: name,
+                start: lt,
+                end: Math.min(j + 1, len),
+                closing: m[1] === '/',
+                attrText: source.slice(lt + m[0].length, j),
+            };
+            tokens.push(token);
+            i = token.end;
+            if (!token.closing && RAW_TEXT_TAGS.indexOf(name) !== -1) {
+                var close = source.toLowerCase().indexOf('</' + name, i);
+                i = close === -1 ? len : close;
+            }
+        }
+        _sourceTokens = { source: source, tokens: tokens };
+        return tokens;
+    }
+
+    var _entityDecoder = document.createElement('textarea');
+    function decodeEntities(value) {
+        _entityDecoder.innerHTML = value;
+        return _entityDecoder.value;
+    }
+
+    function tokenAttrs(token) {
+        if (token.attrs) return token.attrs;
+        var attrs = {};
+        var re = /([^\s=/>"']+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
+        var m;
+        while ((m = re.exec(token.attrText))) {
+            var v = m[2] !== undefined ? m[2] : (m[3] !== undefined ? m[3] : (m[4] !== undefined ? m[4] : ''));
+            attrs[m[1].toLowerCase()] = decodeEntities(v);
+        }
+        token.attrs = attrs;
+        return attrs;
+    }
+
+    /* Whether a source tag carries the identifying attributes the live
+       element has. Script can add classes after load, so class only has to
+       be a subset of the live one. */
+    function tokenMatchesElement(token, el) {
+        var attrs = tokenAttrs(token);
+        var ids = ['id', 'href', 'src', 'name', 'type', 'for', 'aria-label'];
+        for (var i = 0; i < ids.length; i++) {
+            var live = el.getAttribute(ids[i]);
+            if (live !== null && attrs[ids[i]] !== undefined && attrs[ids[i]] !== live) return false;
+            if (live === null && attrs[ids[i]] !== undefined) return false;
+        }
+        var srcClass = (attrs['class'] || '').split(/\s+/).filter(Boolean);
+        var liveClass = (el.getAttribute('class') || '').split(/\s+/);
+        return srcClass.every(function (c) { return liveClass.indexOf(c) !== -1; });
+    }
+
+    /* The source range of the element an occurrence points at: from its
+       opening tag to its matching closing tag. The element is located the
+       same way the preview highlight locates it, then matched to the source
+       by its position among same-named tags, checked against its attributes
+       so an element added by script can't shift the count onto a neighbour. */
+    function sourceRangeFor(doc, source, context) {
+        var el = findElementByContext(doc, context);
+        if (!el) return null;
+        var name = el.tagName.toLowerCase();
+        if (name === 'html' || name === 'body') return null;
+
+        var nth = Array.prototype.indexOf.call(doc.getElementsByTagName(name), el);
+        var tokens = sourceTokens(source);
+        var opens = [];
+        tokens.forEach(function (t, ti) {
+            if (t.name === name && !t.closing) opens.push(ti);
+        });
+        var fits = opens.filter(function (ti) { return tokenMatchesElement(tokens[ti], el); });
+        if (!fits.length) return null;
+
+        var openIdx = fits.indexOf(opens[nth]) !== -1 ? opens[nth] : fits.reduce(function (best, ti) {
+            return Math.abs(opens.indexOf(ti) - nth) < Math.abs(opens.indexOf(best) - nth) ? ti : best;
+        });
+        var open = tokens[openIdx];
+        if (VOID_TAGS.indexOf(name) !== -1 || /\/\s*$/.test(open.attrText)) {
+            return { start: open.start, end: open.end };
+        }
+
+        /* Walk forward to the matching close. A close for something opened
+           before this element means the source left this one's end tag out
+           (legal for <p> and <li>), so the range stops there. */
+        var depth = 0;
+        var inner = [];
+        for (var k = openIdx + 1; k < tokens.length; k++) {
+            var t = tokens[k];
+            if (!t.closing) {
+                if (t.name === name) { depth++; }
+                else if (VOID_TAGS.indexOf(t.name) === -1) { inner.push(t.name); }
+                continue;
+            }
+            if (t.name === name) {
+                if (depth === 0) return { start: open.start, end: t.end };
+                depth--;
+                continue;
+            }
+            var at = inner.lastIndexOf(t.name);
+            if (at !== -1) { inner.splice(at); continue; }
+            return { start: open.start, end: source.slice(0, t.start).replace(/\s+$/, '').length };
+        }
+        return { start: open.start, end: open.end };
+    }
+
+    /* Marks each occurrence's element in the source view. Where an element
+       can't be found in the preview, falls back to the first unmarked copy of
+       the stored markup. Two occurrences of one element share a mark. */
     function highlightHtmlViewContext(occurrences) {
         if (!htmlCode || !occurrences || !occurrences.length) return;
         var source = htmlCode.dataset.rawSource;
         if (!source) return;
+        var doc = iframeDoc();
 
-        var highlighted = escHtml(source);
-        var markIdx = 0;
-        occurrences.forEach(function (occ) {
-            var ctx = _occContextHtml(occ);
-            if (!ctx) return;
-            var escaped = escHtml(ctx);
-            var idx = markIdx++;
-            var parts = highlighted.split(escaped);
-            if (parts.length > 1) {
-                highlighted = parts[0] +
-                    '<mark class="accessibility-audit-html-hl" data-html-occ-idx="' + idx + '">' + escaped + '</mark>' +
-                    parts.slice(1).join(escaped);
+        var ranges = [];
+        occurrences.forEach(function (occ, idx) {
+            var range = (doc && occ.context) ? sourceRangeFor(doc, source, occ.context) : null;
+            if (!range) {
+                var ctx = _occContextHtml(occ);
+                if (!ctx) return;
+                var from = 0;
+                var at;
+                while ((at = source.indexOf(ctx, from)) !== -1) {
+                    var taken = ranges.some(function (r) { return r.start === at; });
+                    if (!taken) break;
+                    from = at + 1;
+                }
+                if (at === -1) return;
+                range = { start: at, end: at + ctx.length };
             }
+            var same = ranges.filter(function (r) { return r.start === range.start && r.end === range.end; })[0];
+            if (same) { same.idxs.push(idx); return; }
+            range.idxs = [idx];
+            ranges.push(range);
         });
-        htmlCode.innerHTML = highlighted;
+
+        /* Ranges are whole elements, so they nest; outer ones open first. */
+        ranges.sort(function (a, b) { return a.start - b.start || b.end - a.end; });
+        var out = '';
+        var pos = 0;
+        var stack = [];
+        function closeTo(limit) {
+            while (stack.length && stack[stack.length - 1].end <= limit) {
+                var done = stack.pop();
+                out += escHtml(source.slice(pos, done.end)) + '</mark>';
+                pos = done.end;
+            }
+        }
+        ranges.forEach(function (r) {
+            closeTo(r.start);
+            if (stack.length && r.end > stack[stack.length - 1].end) r.end = stack[stack.length - 1].end;
+            out += escHtml(source.slice(pos, r.start)) +
+                '<mark class="accessibility-audit-html-hl" data-html-occ-idx="' + r.idxs.join(' ') + '">';
+            pos = r.start;
+            stack.push(r);
+        });
+        closeTo(Infinity);
+        out += escHtml(source.slice(pos));
+        htmlCode.innerHTML = out;
     }
 
     /* ── HTML view: scroll to a specific occurrence mark ───────────── */
@@ -1353,7 +1640,7 @@
         htmlCode.querySelectorAll('.accessibility-audit-html-hl--active').forEach(function (m) {
             m.classList.remove('accessibility-audit-html-hl--active');
         });
-        var mark = htmlCode.querySelector('.accessibility-audit-html-hl[data-html-occ-idx="' + idx + '"]');
+        var mark = htmlCode.querySelector('.accessibility-audit-html-hl[data-html-occ-idx~="' + idx + '"]');
         if (!mark) {
             /* Fallback: first mark if specific index not found */
             mark = htmlCode.querySelector('.accessibility-audit-html-hl');
@@ -1406,9 +1693,12 @@
             }
         }
 
-        /* Highlight in iframe */
-        var selector = selectorFor(ruleId);
-        highlightInIframe(ruleId, selector);
+        /* A rule with occurrences is highlighted from them once they load;
+           boxing everything its broad selector matches first only flashes
+           the wrong elements. */
+        if (!expandPanel || isPageLevelRule(ruleId)) {
+            highlightInIframe(ruleId, selectorFor(ruleId));
+        }
     });
 
     document.addEventListener('keydown', function (e) {
@@ -1511,11 +1801,7 @@
 
     /* ── WCAG colour-contrast helpers (used for auto-scan on iframe load) ───
        The contrast math lives in accessibility-audit-shared.js (window.AccessibilityAuditShared), shared
-       with the frontend overlay so the two engines can never drift. Local
-       aliases keep the page-specific helpers below readable. */
-
-    var _parseRgb = AccessibilityAuditShared.parseRgb;
-    var _rgbToHex = AccessibilityAuditShared.rgbToHex;
+       with the frontend overlay so the two engines can never drift. */
 
     /* Collect per-element contrast violations (capped at 150 to avoid huge POST) */
     /* Excluded page furniture (consent banners and the like), resolved
@@ -1538,12 +1824,10 @@
         var opts = {
             limit: 150,
             htmlLength: 200,
-            /* Skip anything this tool injected or is currently decorating:
-               highlight badges carry their own text, and a highlighted
-               element's rendering is ours, not the page's. Excluded page
-               furniture is skipped too, matching the axe pass. */
+            /* Skip the highlight layer, whose badges carry text of their own.
+               Excluded page furniture is skipped too, matching the axe pass. */
             skipEl: function (el) {
-                if (el.closest && el.closest('[data-accessibility-audit-hl], .accessibility-audit-hl-badge')) return true;
+                if (el.closest && el.closest('#' + HL_LAYER_ID)) return true;
                 return inExcluded(el);
             },
         };
@@ -1553,37 +1837,6 @@
            carry a `state` and the server routes on that. */
         return AccessibilityAuditShared.collectContrastFailures(doc, opts)
             .concat(AccessibilityAuditShared.collectStateContrastFailures(doc, opts));
-    }
-
-    /* Human-readable explanation of why the background colour is indeterminate */
-    var _REVIEW_REASONS = {
-        'pseudo-element background': 'A CSS ::before or ::after pseudo-element paints the background, so the actual colour cannot be read from the DOM.',
-        'background image or gradient': 'A background image or CSS gradient is applied, the effective colour cannot be calculated automatically.',
-        'fixed/sticky positioned ancestor': 'An ancestor element uses position: fixed or sticky. Its visual background comes from the viewport stacking context, not DOM ancestry.',
-    };
-
-    /* Returns WHY _effectiveBg would bail on an element, or null if it can resolve the bg.
-       Returns one of the _REVIEW_REASONS keys. */
-    function _whyIndeterminate(el, doc) {
-        var cur = el;
-        while (cur && cur.nodeType === 1) {
-            var style = doc.defaultView.getComputedStyle(cur);
-            if (style.position === 'fixed' || style.position === 'sticky') return 'fixed/sticky positioned ancestor';
-            var bgImg = style.backgroundImage;
-            if (bgImg && bgImg !== 'none') return 'background image or gradient';
-            var pseudos = ['::before', '::after'];
-            for (var pi = 0; pi < pseudos.length; pi++) {
-                var ps = doc.defaultView.getComputedStyle(cur, pseudos[pi]);
-                if (ps.display !== 'none') {
-                    var pBg = _parseRgb(ps.backgroundColor);
-                    if (pBg && pBg.a > 0) return 'pseudo-element background';
-                }
-            }
-            var bg = _parseRgb(style.backgroundColor);
-            if (bg && bg.a >= 1) return null; /* opaque bg found: _effectiveBg resolves from here */
-            cur = cur.parentElement;
-        }
-        return null;
     }
 
     /* Walk the DOM to find the innermost <!-- accessibility-audit-tpl:filename.twig --> comment
@@ -1608,30 +1861,6 @@
         return null;
     }
 
-    /* Find the nearest semantic landmark ancestor and return a display label */
-    function _nearestLandmark(el, doc) {
-        var LANDMARKS = ['nav', 'header', 'main', 'aside', 'footer', 'section', 'article', 'form'];
-        var cur = el.parentElement;
-        while (cur && cur !== doc.body) {
-            var tag = cur.tagName.toLowerCase();
-            if (LANDMARKS.indexOf(tag) !== -1) {
-                /* Prefer aria-label, then aria-labelledby text, then id, then first class */
-                var name = cur.getAttribute('aria-label');
-                if (!name) {
-                    var lbId = cur.getAttribute('aria-labelledby');
-                    if (lbId) {
-                        var lbEl = doc.getElementById(lbId);
-                        if (lbEl) name = lbEl.textContent.trim();
-                    }
-                }
-                if (!name) name = cur.id || (cur.className && typeof cur.className === 'string' && cur.className.trim().split(/\s+/)[0]) || null;
-                return { tag: tag, name: name };
-            }
-            cur = cur.parentElement;
-        }
-        return null;
-    }
-
     /* Build a short CSS selector path for the element location label (up to 3 levels) */
     function _cssPath(el, doc) {
         var parts = [];
@@ -1652,75 +1881,13 @@
         return parts.slice(-3).join(' > ');
     }
 
-    /* Collect text elements whose contrast cannot be auto-checked (capped at 50) */
-    function collectContrastNeedsReview(doc) {
-        if (!doc || !doc.body) return [];
-        var results = [];
-        var walker = doc.createTreeWalker(doc.body, 4 /* SHOW_TEXT */, {
-            acceptNode: function (n) { return n.textContent.trim() ? 1 : 3; }
-        });
-        var parents = [];
-        var n;
-        while ((n = walker.nextNode())) { if (n.parentElement) parents.push(n.parentElement); }
-        parents = parents.filter(function (el, i, a) { return a.indexOf(el) === i; });
-
-        parents.forEach(function (el) {
-            if (results.length >= 50) return;
-            /* Excluded page furniture: same skip as the axe pass and the
-               definite-contrast collector, or the needs-review list fills up
-               with consent-banner text nobody can act on. */
-            if (inExcluded(el)) return;
-            var style = doc.defaultView.getComputedStyle(el);
-            if (style.display === 'none' || style.visibility === 'hidden') return;
-            if (!el.offsetWidth && !el.offsetHeight) return;
-            var cur = el, ariaHidden = false;
-            while (cur && cur.nodeType === 1) {
-                if (cur.getAttribute('aria-hidden') === 'true') { ariaHidden = true; break; }
-                cur = cur.parentElement;
-            }
-            if (ariaHidden) return;
-            var fg = _parseRgb(style.color);
-            if (!fg) return;
-            var reason = _whyIndeterminate(el, doc);
-            if (!reason) return;
-            results.push({
-                html:     el.outerHTML || '',
-                selector: _cssPath(el, doc),
-                landmark: _nearestLandmark(el, doc),
-                template: _findTemplate(el, doc),
-                fg:       _rgbToHex(fg.r, fg.g, fg.b),
-                reason:   reason,
-            });
-        });
-        return results;
-    }
-
     var _contrastStored = {}; /* per-viewport: run once per page load each */
-    var _contrastNeedsReview = null; /* elements where bg colour is indeterminate */
 
     /* Takes the viewport rather than reading the live one: the caller
        snapshots it before awaiting, and a switch mid-await must not have the
        guard check one width's key against another width's results. */
     function contrastSessionKey(viewport) {
         return 'accessibility-audit-contrast-stored-' + CFG.scanId + '-' + (viewport || activeViewport);
-    }
-
-    /* Inject the needs-review section into the contrast expand panel if it is currently open.
-       Called both after the POST completes and after the sessionStorage early-return path. */
-    function _injectNeedsReviewIfOpen() {
-        if (!_contrastNeedsReview || !_contrastNeedsReview.length) return;
-        var activeRow = document.querySelector(
-            CONTRAST_RULE_IDS.map(function (id) {
-                return '.accessibility-audit-pr-issue-row--active[data-rule-id="' + id + '"]';
-            }).join(',')
-        );
-        if (!activeRow) return;
-        var item = activeRow.closest('.accessibility-audit-pr-issue-item');
-        var expandBody = item && item.querySelector('.accessibility-audit-pr-issue-expand-body');
-        if (!expandBody || expandBody.querySelector('.accessibility-audit-pr-needs-review')) return;
-        var issueObj = {};
-        try { issueObj = JSON.parse(activeRow.dataset.issue || '{}'); } catch (_) {}
-        renderExpandPanel(expandBody, issueObj, _currentOccurrences || []);
     }
 
     /* Resolves once every stylesheet link has applied (a link's `sheet` is
@@ -1789,13 +1956,8 @@
         await new Promise(function (resolve) { setTimeout(resolve, 2000); });
         await stylesheetsSettled(doc);
 
-        /* Always collect needs-review items: needed for the expand panel regardless of
-           whether we need to POST violations to the server. */
-        _contrastNeedsReview = collectContrastNeedsReview(doc);
-
         /* Skip the server POST if we already stored violations in this browser session */
         if (sessionStorage.getItem(contrastSessionKey(viewport))) {
-            _injectNeedsReviewIfOpen();
             return;
         }
 
@@ -1835,9 +1997,6 @@
                 if (data.stored > 0) {
                     /* Reload so the Twig-rendered sidebar reflects the new issues */
                     window.location.reload();
-                } else {
-                    /* No new violations stored: inject needs-review into any open panel */
-                    _injectNeedsReviewIfOpen();
                 }
             }
         } catch (err) {
@@ -1900,9 +2059,9 @@
             var sharedCfg = window.AccessibilityAudit || {};
             /* Same exclusions as the headless pass and the overlay, in axe's
                context shape, so a consent banner can't fail one engine and
-               pass another. An empty exclude leaves the context as the whole
-               iframe document. */
-            var axeContext = { exclude: sharedCfg.axeExclude || [] };
+               pass another. The highlight layer is the report's, not the
+               page's. */
+            var axeContext = { exclude: (sharedCfg.axeExclude || []).concat([['#' + HL_LAYER_ID]]) };
             var results = await win.axe.run(axeContext, {
                 runOnly: { type: 'tag', values: sharedCfg.axeTags || ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'] },
                 resultTypes: ['violations', 'incomplete'],
@@ -2110,7 +2269,7 @@
     }
 
     function resumeViewportSweep() {
-        var flag = null;
+        var flag;
         try { flag = sessionStorage.getItem(_sweepFlagKey); } catch (_) { return; }
         if (!flag) return;
 
@@ -2182,9 +2341,10 @@
             if (previewLoading) previewLoading.hidden = true;
 
             if (currentFilter !== 'none') applyColourFilter(currentFilter);
-            if (activeRuleId) {
-                var selector = selectorFor(activeRuleId);
-                highlightInIframe(activeRuleId, selector);
+            if (activeRuleId && _currentRuleId === activeRuleId && _currentOccurrences && _currentOccurrences.length) {
+                highlightFromOccurrences(_currentOccurrences, activeRuleId);
+            } else if (activeRuleId) {
+                highlightInIframe(activeRuleId, selectorFor(activeRuleId));
             }
             /* Auto-store contrast results on first load */
             autoStoreContrastResults();
@@ -2370,6 +2530,16 @@
                     /* The first clears what was framed before; the rest add to it. */
                     highlightPotential(cluster.dataset.ruleId, context || '', i > 0);
                 });
+
+                /* Numbered once the whole cluster is marked, so the badges
+                   count the cluster rather than the first occurrence alone. */
+                var clusterDoc = iframeDoc();
+                if (clusterDoc) {
+                    var marked = clusterDoc.querySelectorAll('[data-accessibility-audit-hl]');
+                    marked.forEach(function (el, i) {
+                        el.setAttribute('data-accessibility-audit-hl-label', (i + 1) + '/' + marked.length);
+                    });
+                }
                 return;
             }
 
@@ -2486,19 +2656,6 @@
                 });
         });
 
-        /* The cluster's own checkbox stands for the cards inside it. */
-        wrap.addEventListener('change', function (e) {
-            if (!e.target.matches('[data-bulk-pick-cluster]')) return;
-
-            var cluster = e.target.closest('[data-accessibility-audit-cluster]');
-            if (!cluster) return;
-
-            cluster.querySelectorAll('[data-bulk-pick]').forEach(function (box) {
-                box.checked = e.target.checked;
-            });
-            refreshBulk();
-        });
-
         /* Bulk dismissal: one judgment repeated fifty times deserves one
            click. Selection is per card; the ruling posts as one request and
            the reload paints the server-rendered counts, same as a single
@@ -2524,6 +2681,19 @@
 
             wrap.addEventListener('change', function (e) {
                 if (!e.target.matches('[data-bulk-pick]')) return;
+                refreshBulk();
+            });
+
+            /* The cluster's own checkbox stands for the cards inside it. */
+            wrap.addEventListener('change', function (e) {
+                if (!e.target.matches('[data-bulk-pick-cluster]')) return;
+
+                var cluster = e.target.closest('[data-accessibility-audit-cluster]');
+                if (!cluster) return;
+
+                cluster.querySelectorAll('[data-bulk-pick]').forEach(function (box) {
+                    box.checked = e.target.checked;
+                });
                 refreshBulk();
             });
 

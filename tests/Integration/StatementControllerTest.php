@@ -27,22 +27,22 @@ describe('StatementController permissions', function() {
         // The whole point of the separate handle: managing a procurement report
         // must not confer the right to publish a public legal declaration.
         expect($matches[1])->not->toBeEmpty()
-            ->and($matches[1])->not->toContain('accessibility-audit:manageVpat');
+            ->and($matches[1])->not->toContain('accessibility-audit:manage-vpat');
     });
 
-    it('gates writes on manageStatement and the read-only preview on viewReports', function() {
+    it('gates writes on manage-statement and the read-only preview on view-reports', function() {
         $source = file_get_contents(dirname(__DIR__, 2) . '/src/controllers/StatementController.php');
 
         // Reading the document somebody published is not editing it, so the
         // preview must not demand the editing permission.
         preg_match('/actionPreview.*?requirePermission\(\s*[\'"]([^\'"]+)[\'"]/s', $source, $preview);
 
-        expect($preview[1])->toBe('accessibility-audit:viewReports');
+        expect($preview[1])->toBe('accessibility-audit:view-reports');
 
         foreach (['actionSaveMeta', 'actionSuggestions'] as $action) {
             preg_match('/' . $action . '.*?requirePermission\(\s*[\'"]([^\'"]+)[\'"]/s', $source, $m);
 
-            expect($m[1])->toBe('accessibility-audit:manageStatement');
+            expect($m[1])->toBe('accessibility-audit:manage-statement');
         }
     });
 
@@ -84,7 +84,7 @@ describe('StatementController::actionSaveMeta', function() {
             'feedbackResponseTime' => 'within 5 working days',
         ]);
 
-        $record = AccessibilityAudit::getInstance()->statement->getRecord($siteId);
+        $record = AccessibilityAudit::getInstance()->getStatement()->getRecord($siteId);
 
         expect($record['profile'])->toBe(StatementProfiles::PROFILE_EU)
             ->and($record['meta']['productName'])->toBe('Acme Council')
@@ -93,7 +93,7 @@ describe('StatementController::actionSaveMeta', function() {
 
     it('rejects an EU statement with no enforcement body', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        AccessibilityAudit::getInstance()->statement->saveMeta($siteId, new StatementMetaModel());
+        AccessibilityAudit::getInstance()->getStatement()->saveMeta($siteId, new StatementMetaModel());
 
         $this->post('actions/accessibility-audit/statement/save-meta', [
             'siteId' => $siteId,
@@ -103,7 +103,7 @@ describe('StatementController::actionSaveMeta', function() {
 
         // Nothing stored: the jurisdiction never takes effect without the body
         // it requires, and the reason is flashed rather than swallowed.
-        expect(AccessibilityAudit::getInstance()->statement->getRecord($siteId)['profile'])
+        expect(AccessibilityAudit::getInstance()->getStatement()->getRecord($siteId)['profile'])
             ->not->toBe(StatementProfiles::PROFILE_EU)
             ->and(Craft::$app->getSession()->getFlash('error'))->toContain('enforcement body');
     });
@@ -123,7 +123,7 @@ describe('StatementController::actionSaveMeta', function() {
 
         // The save succeeds; the claim is capped. The editor has to be told,
         // otherwise the page just appears to ignore what they picked.
-        expect(AccessibilityAudit::getInstance()->statement->resolveComplianceStatus($siteId)['status'])
+        expect(AccessibilityAudit::getInstance()->getStatement()->resolveComplianceStatus($siteId)['status'])
             ->not->toBe(StatementMetaModel::STATUS_FULL)
             ->and(Craft::$app->getSession()->getFlash('error'))->toContain('not applied');
     });
@@ -156,7 +156,7 @@ describe('StatementController entries', function() {
             ],
         ]);
 
-        $stored = AccessibilityAudit::getInstance()->statement->getRecord($siteId)['exclusions'];
+        $stored = AccessibilityAudit::getInstance()->getStatement()->getRecord($siteId)['exclusions'];
 
         expect($stored)->toHaveCount(2)
             ->and($stored[0]['content'])->toBe('Some PDFs');
@@ -177,7 +177,7 @@ describe('StatementController entries', function() {
             ]],
         ]);
 
-        $stored = AccessibilityAudit::getInstance()->statement->getRecord($siteId)['exclusions'];
+        $stored = AccessibilityAudit::getInstance()->getStatement()->getRecord($siteId)['exclusions'];
 
         expect($stored[0]['plannedDate'])->toBe('2027-01-31');
     });
@@ -192,7 +192,7 @@ describe('StatementController entries', function() {
             'entries' => [['content' => 'Typed already']],
         ]);
 
-        $stored = AccessibilityAudit::getInstance()->statement->getRecord($siteId)['exclusions'];
+        $stored = AccessibilityAudit::getInstance()->getStatement()->getRecord($siteId)['exclusions'];
 
         expect($stored)->toHaveCount(2)
             ->and($stored[0]['content'])->toBe('Typed already')
@@ -212,7 +212,7 @@ describe('StatementController entries', function() {
             ],
         ]);
 
-        $stored = AccessibilityAudit::getInstance()->statement->getRecord($siteId)['exclusions'];
+        $stored = AccessibilityAudit::getInstance()->getStatement()->getRecord($siteId)['exclusions'];
 
         expect($stored)->toHaveCount(1)
             ->and($stored[0]['content'])->toBe('Stays');
@@ -220,13 +220,13 @@ describe('StatementController entries', function() {
 
     it('pre-fills a row from a scan suggestion', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $suggestions = AccessibilityAudit::getInstance()->statement->deriveSuggestions($siteId);
 
-        if (empty($suggestions)) {
-            expect(true)->toBeTrue();
+        // Suggestions come from scan issues. Reading whatever scans happen to be
+        // in the database means the test skips itself on a clean install, which
+        // is the one place the coverage is worth having.
+        seedComplianceScan($siteId);
 
-            return;
-        }
+        $suggestions = AccessibilityAudit::getInstance()->getStatement()->deriveSuggestions($siteId);
 
         $this->post('actions/accessibility-audit/statement/save-meta', [
             'siteId' => $siteId,
@@ -235,7 +235,7 @@ describe('StatementController entries', function() {
             'entries' => [],
         ]);
 
-        $stored = AccessibilityAudit::getInstance()->statement->getRecord($siteId)['exclusions'];
+        $stored = AccessibilityAudit::getInstance()->getStatement()->getRecord($siteId)['exclusions'];
 
         // The row carries the criterion and a factual note about the scan.
         // "What is affected" stays empty on purpose: it asks for what a member
@@ -266,7 +266,7 @@ describe('StatementController editions', function() {
             'productName' => 'Acme Council',
         ]);
 
-        expect(AccessibilityAudit::getInstance()->statement->getRecord($siteId)['meta']['productName'])
+        expect(AccessibilityAudit::getInstance()->getStatement()->getRecord($siteId)['meta']['productName'])
             ->toBe('Acme Council');
     });
 });
@@ -292,7 +292,7 @@ describe('StatementController add buttons on an empty list', function() {
             'addEntry' => '1',
         ]);
 
-        expect(AccessibilityAudit::getInstance()->statement->getRecord($siteId)['exclusions'])
+        expect(AccessibilityAudit::getInstance()->getStatement()->getRecord($siteId)['exclusions'])
             ->toHaveCount(1);
     });
 
@@ -305,7 +305,7 @@ describe('StatementController add buttons on an empty list', function() {
             'addSuggestion' => '1.4.3',
         ]);
 
-        $stored = AccessibilityAudit::getInstance()->statement->getRecord($siteId)['exclusions'];
+        $stored = AccessibilityAudit::getInstance()->getStatement()->getRecord($siteId)['exclusions'];
 
         expect($stored)->toHaveCount(1)
             ->and($stored[0]['criterion'])->toBe('1.4.3');
@@ -319,7 +319,7 @@ describe('StatementController add buttons on an empty list', function() {
         // comply" it describes the site working correctly, which is worse than
         // saying nothing.
         $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
-        $criteria = AccessibilityAudit::getInstance()->vpat->getCriteria();
+        $criteria = AccessibilityAudit::getInstance()->getVpat()->getCriteria();
 
         $this->post('actions/accessibility-audit/statement/save-meta', [
             'siteId' => $siteId,
@@ -327,7 +327,7 @@ describe('StatementController add buttons on an empty list', function() {
             'addSuggestion' => '3.2.2',
         ]);
 
-        $stored = AccessibilityAudit::getInstance()->statement->getRecord($siteId)['exclusions'];
+        $stored = AccessibilityAudit::getInstance()->getStatement()->getRecord($siteId)['exclusions'];
 
         expect($stored)->toHaveCount(1)
             ->and($stored[0]['content'])->toBe('')

@@ -151,10 +151,10 @@
             {% endif %}
         </div>
     {% else %}
-        <div id="accessibility-audit-generate-progress" class="light mb-m" aria-live="polite" hidden></div>
+        <div id="accessibility-audit-generate-progress" class="light mb-m" role="status" aria-live="polite" hidden></div>
 
         <div id="accessibility-audit-bulk-bar" class="accessibility-audit-bulk-bar mb-m" role="region" aria-label="{{ 'Selected'|t('app') }}" hidden>
-            <span class="accessibility-audit-bulk-count" id="accessibility-audit-bulk-count" aria-live="polite"></span>
+            <span class="accessibility-audit-bulk-count" id="accessibility-audit-bulk-count" role="status" aria-live="polite"></span>
             <span class="accessibility-audit-spacer"></span>
             <button type="button" class="btn small accessibility-audit-bulk-mark">{{ 'Mark decorative'|t('accessibility-audit') }}</button>
             <button type="button" class="btn small accessibility-audit-bulk-clear">{{ 'Clear decorative'|t('accessibility-audit') }}</button>

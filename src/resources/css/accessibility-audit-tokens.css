@@ -10,7 +10,10 @@
   --aa-ink: #24201c; /* dark surfaces only (dark buttons, code/subnav bg); text uses native --text-color */
   --aa-text-body: var(--text-color); /* body / help copy (native CP text) */
   --aa-text-secondary: var(--medium-text-color); /* secondary text, meta (native) */
-  --aa-text-faint: #8a8178; /* faint labels; also used as a border colour, so kept as a literal */
+  /* Borders only. 3.82:1 on white clears the 3:1 that non-text content needs
+     and misses the 4.5:1 that text does, so this cannot colour a label at body
+     size however much the name invites it. */
+  --aa-text-faint: #8a8178;
 
   /* ---- Surfaces & borders ---------------------------------------------- */
   --aa-surface: #fff; /* page + cards (Craft CP is white) */

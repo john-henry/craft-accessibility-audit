@@ -8,7 +8,7 @@ use markhuot\craftpest\factories\User as UserFactory;
 // Finding 3 (statement/VPAT writes unfenced to editable sites)
 //
 // Both save actions read a raw siteId and wrote to it with no per-site check.
-// The manageStatement / manageVpat permissions are install-wide, so a Pro
+// The manage-statement / manage-vpat permissions are install-wide, so a Pro
 // multi-site user could write a site outside their permissions, and a Standard
 // user could write a non-primary site.
 //
@@ -58,7 +58,7 @@ describe('StatementController::actionSaveMeta site fence', function() {
         ]);
 
         // Nothing was written to the disallowed site, and the refusal is flashed.
-        expect(AccessibilityAudit::getInstance()->statement->getRecord($otherSiteId)['meta']['productName'] ?? '')
+        expect(AccessibilityAudit::getInstance()->getStatement()->getRecord($otherSiteId)['meta']['productName'] ?? '')
             ->toBe('')
             ->and(Craft::$app->getSession()->getFlash('error'))->toContain('permission');
     });
@@ -73,7 +73,7 @@ describe('StatementController::actionSaveMeta site fence', function() {
             'profile' => StatementProfiles::PROFILE_GENERIC,
         ]);
 
-        expect(AccessibilityAudit::getInstance()->statement->getRecord($primaryId)['meta']['productName'])
+        expect(AccessibilityAudit::getInstance()->getStatement()->getRecord($primaryId)['meta']['productName'])
             ->toBe('Acme Council');
     });
 });

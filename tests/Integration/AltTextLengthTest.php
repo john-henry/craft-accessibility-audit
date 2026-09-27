@@ -87,7 +87,13 @@ it('renders the assets page without a Twig error', function() {
     try {
         $view->setTemplateMode(View::TEMPLATE_MODE_CP);
 
+        // Passed in rather than left to the global: Twig works its globals out
+        // once per process, so in a test run it can still hold no user.
+        $admin = \markhuot\craftpest\factories\User::factory()->admin(true)->create();
+        $this->actingAs($admin);
+
         expect($view->renderPageTemplate('accessibility-audit/assets', [
+            'currentUser' => $admin,
             'assetIssues' => [],
             'stats' => ['missing' => 0, 'filename' => 0, 'short' => 0, 'pdf' => 0, 'decorative' => 0],
             'storedStats' => [],
@@ -100,6 +106,9 @@ it('renders the assets page without a Twig error', function() {
             'hasApiKey' => false,
             'volumes' => [],
             'currentVolume' => null,
+            'currentSearch' => '',
+            'activeFilter' => 'all',
+            'decorativeCount' => 0,
             'altGuideline' => PotentialScanner::MAX_ALT_LENGTH,
         ]))->toContain('const ALT_GUIDELINE = 150;');
     } finally {

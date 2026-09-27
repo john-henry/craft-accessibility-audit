@@ -18,7 +18,7 @@ use johnhenry\accessibilityaudit\AccessibilityAudit;
  * styled. Dropping them is safe either way, since a genuine failure comes
  * back on the next scan.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.1.1
  */
 class m260827_000000_clear_unstyled_contrast_findings extends Migration

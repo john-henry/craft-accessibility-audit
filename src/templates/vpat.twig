@@ -22,14 +22,14 @@
 
 {% block actionButton %}
     {% if isPro %}
-        {% if currentUser.can('accessibility-audit:manageVpat') %}
+        {% if currentUser.can('accessibility-audit:manage-vpat') %}
             <button type="button" id="a11y-vpat-record" class="btn">{{ 'Record this revision'|t('accessibility-audit') }}</button>
             {% if revisionCount ?? 0 %}
                 <button type="button" id="a11y-vpat-undo-record" class="btn">{{ 'Undo last revision'|t('accessibility-audit') }}</button>
             {% endif %}
         {% endif %}
         <a href="{{ cpUrl('accessibility-audit/vpat/export-openacr', { site: siteHandle }) }}" class="btn">{{ 'Export OpenACR'|t('accessibility-audit') }}</a>
-        <a href="{{ exportUrl }}" target="_blank" class="btn submit">Export HTML</a>
+        <a href="{{ exportUrl }}" target="_blank" class="btn submit">{{ 'Export HTML'|t('accessibility-audit') }}</a>
     {% endif %}
 {% endblock %}
 
@@ -141,9 +141,9 @@
 
     {% if not report.hasScanData %}
         <div class="accessibility-audit-callout accessibility-audit-callout--notice">
-            <span><strong>No scan data yet.</strong>
-            Run scans from the <a href="{{ cpUrl('accessibility-audit') }}">Overview</a> page to enable
-            automated conformance suggestions. You can still fill in the VPAT manually below.</span>
+            {% set overviewLink = '<a href="' ~ cpUrl('accessibility-audit') ~ '">' ~ 'Overview'|t('accessibility-audit') ~ '</a>' %}
+            <span><strong>{{ 'No scan data yet.'|t('accessibility-audit') }}</strong>
+            {{ 'Run scans from the {overview} page to enable automated conformance suggestions. You can still fill in the VPAT manually below.'|t('accessibility-audit', { overview: overviewLink })|raw }}</span>
         </div>
     {% endif %}
 
@@ -173,7 +173,7 @@
         <h2 class="accessibility-audit-vpat-card__heading accessibility-audit-vpat-card__heading--toggle">
             <button type="button" class="accessibility-audit-vpat-card__toggle" id="vpat-meta-toggle"
                     aria-expanded="{{ metaHasData ? 'false' : 'true' }}" aria-controls="vpat-meta-body">
-                <span class="accessibility-audit-vpat-card__toggle-label">Product &amp; Report Information</span>
+                <span class="accessibility-audit-vpat-card__toggle-label">{{ 'Product & Report Information'|t('accessibility-audit') }}</span>
                 <span class="accessibility-audit-vpat-meta-summary">{{ metaSummary }}</span>
                 <span class="accessibility-audit-vpat-toggle-hint" aria-hidden="true">
                     <span class="accessibility-audit-vpat-toggle-hint__show">{{ 'Show'|t('accessibility-audit') }}</span>
@@ -360,7 +360,7 @@
 
         <div class="accessibility-audit-vpat-meta-actions">
             <button type="button" class="btn submit" id="vpat-save-meta">{{ 'Save information'|t('accessibility-audit') }}</button>
-            <span id="vpat-meta-status" class="accessibility-audit-vpat-status" aria-live="polite"></span>
+            <span id="vpat-meta-status" class="accessibility-audit-vpat-status" role="status" aria-live="polite"></span>
         </div>
         </div>
     </div>
@@ -474,8 +474,8 @@
                                 {% endif %}
                                 <div class="select fullwidth">
                                     <select class="accessibility-audit-vpat-select" data-criterion="{{ num }}"
-                                            aria-label="Conformance level for {{ row.name }}">
-                                        <option value="">— Select —</option>
+                                            aria-label="{{ 'Conformance level for {name}'|t('accessibility-audit', { name: row.name }) }}">
+                                        <option value="">{{ '— Select —'|t('accessibility-audit') }}</option>
                                         {% for opt in ['Supports', 'Partially Supports', 'Does Not Support', 'Not Applicable', 'Not Evaluated'] %}
                                             <option value="{{ opt }}"
                                                     {% if conformanceValue == opt %}selected{% endif %}>
@@ -523,7 +523,7 @@
                                             }) }}
                                         </span>
                                     {% endif %}
-                                    <span class="accessibility-audit-vpat-row-status" aria-live="polite"></span>
+                                    <span class="accessibility-audit-vpat-row-status" role="status" aria-live="polite"></span>
                                 </div>
                             </td>
                         </tr>

@@ -6,6 +6,7 @@
 
 namespace johnhenry\accessibilityaudit\models;
 
+use Craft;
 use craft\base\Model;
 use DateTime;
 
@@ -22,7 +23,7 @@ use DateTime;
  * a locale payload that the controller normalises back to `Y-m-d` before it
  * reaches this model, and the export template consumes the flat value unchanged.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class VpatMetaModel extends Model
@@ -78,6 +79,9 @@ class VpatMetaModel extends Model
      * `Y-m-d` strings).
      *
      * @return array<string, string>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function toStorageArray(): array
     {
@@ -95,6 +99,9 @@ class VpatMetaModel extends Model
      * The storage keys this model owns.
      *
      * @return string[]
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function storageKeys(): array
     {
@@ -113,6 +120,8 @@ class VpatMetaModel extends Model
 
     /**
      * @inheritdoc
+     *
+     * @return array<int, mixed>
      */
     protected function defineRules(): array
     {
@@ -142,7 +151,7 @@ class VpatMetaModel extends Model
                 'operator' => '>=',
                 'type' => 'string',
                 'when' => static fn(self $model): bool => $model->reportPeriodFrom !== '' && $model->reportPeriodTo !== '',
-                'message' => 'The evaluation period cannot end before it starts.',
+                'message' => Craft::t('accessibility-audit', 'The evaluation period cannot end before it starts.'),
             ],
         ]);
     }

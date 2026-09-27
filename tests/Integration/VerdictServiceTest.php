@@ -81,15 +81,15 @@ describe('VerdictService', function() {
         verdictIssue($scanId, $elementId, 'potential:decorative-image', '<img src="a.jpg">', 'error', $siteId);
 
         // Unreviewed: a question, not a failure.
-        $plugin->audit->recalculateScoreForScan($scanId);
+        $plugin->getAudit()->recalculateScoreForScan($scanId);
         expect(verdictScore($scanId))->toBe(100);
 
         // Confirmed: now it is a failure and costs the error weight.
-        $plugin->verdicts->setVerdict($siteId, $elementId, 'potential:decorative-image', '<img src="a.jpg">', VerdictService::VERDICT_CONFIRMED);
+        $plugin->getVerdicts()->setVerdict($siteId, $elementId, 'potential:decorative-image', '<img src="a.jpg">', VerdictService::VERDICT_CONFIRMED);
         expect(verdictScore($scanId))->toBe(90);
 
         // Dismissed: back out of the score again.
-        $plugin->verdicts->setVerdict($siteId, $elementId, 'potential:decorative-image', '<img src="a.jpg">', VerdictService::VERDICT_DISMISSED);
+        $plugin->getVerdicts()->setVerdict($siteId, $elementId, 'potential:decorative-image', '<img src="a.jpg">', VerdictService::VERDICT_DISMISSED);
         expect(verdictScore($scanId))->toBe(100);
     });
 
@@ -101,11 +101,11 @@ describe('VerdictService', function() {
         verdictIssue($scanId, $elementId, 'potential:decorative-image', '<img src="a.jpg">', 'error', $siteId);
         verdictIssue($scanId, $elementId, 'potential:long-alt', '<img src="b.jpg">', 'notice', $siteId);
 
-        expect($plugin->audit->getPendingPotentialForScan($scanId))->toHaveCount(2);
+        expect($plugin->getAudit()->getPendingPotentialForScan($scanId))->toHaveCount(2);
 
-        $plugin->verdicts->setVerdict($siteId, $elementId, 'potential:long-alt', '<img src="b.jpg">', VerdictService::VERDICT_DISMISSED);
+        $plugin->getVerdicts()->setVerdict($siteId, $elementId, 'potential:long-alt', '<img src="b.jpg">', VerdictService::VERDICT_DISMISSED);
 
-        expect($plugin->audit->getPendingPotentialForScan($scanId))->toHaveCount(1);
+        expect($plugin->getAudit()->getPendingPotentialForScan($scanId))->toHaveCount(1);
     });
 
     it('rules on one occurrence without answering the others', function() {
@@ -118,9 +118,9 @@ describe('VerdictService', function() {
         verdictIssue($scanId, $elementId, 'potential:decorative-image', '<img src="a.jpg">', 'error', $siteId);
         verdictIssue($scanId, $elementId, 'potential:decorative-image', '<img src="b.jpg">', 'error', $siteId);
 
-        $plugin->verdicts->setVerdict($siteId, $elementId, 'potential:decorative-image', '<img src="a.jpg">', VerdictService::VERDICT_DISMISSED);
+        $plugin->getVerdicts()->setVerdict($siteId, $elementId, 'potential:decorative-image', '<img src="a.jpg">', VerdictService::VERDICT_DISMISSED);
 
-        $pending = $plugin->audit->getPendingPotentialForScan($scanId);
+        $pending = $plugin->getAudit()->getPendingPotentialForScan($scanId);
 
         expect($pending)->toHaveCount(1)
             ->and($pending[0]['context'])->toBe('<img src="b.jpg">');
@@ -133,13 +133,13 @@ describe('VerdictService', function() {
         $scanId = verdictScanId($elementId, $siteId);
         verdictIssue($scanId, $elementId, 'potential:decorative-image', '<img src="a.jpg">', 'error', $siteId);
 
-        $plugin->verdicts->setVerdict($siteId, $elementId, 'potential:decorative-image', '<img src="a.jpg">', VerdictService::VERDICT_CONFIRMED);
-        expect($plugin->audit->getPendingPotentialForScan($scanId))->toBeEmpty()
+        $plugin->getVerdicts()->setVerdict($siteId, $elementId, 'potential:decorative-image', '<img src="a.jpg">', VerdictService::VERDICT_CONFIRMED);
+        expect($plugin->getAudit()->getPendingPotentialForScan($scanId))->toBeEmpty()
             ->and(verdictScore($scanId))->toBe(90);
 
-        $plugin->verdicts->setVerdict($siteId, $elementId, 'potential:decorative-image', '<img src="a.jpg">', null);
+        $plugin->getVerdicts()->setVerdict($siteId, $elementId, 'potential:decorative-image', '<img src="a.jpg">', null);
 
-        expect($plugin->audit->getPendingPotentialForScan($scanId))->toHaveCount(1)
+        expect($plugin->getAudit()->getPendingPotentialForScan($scanId))->toHaveCount(1)
             ->and(verdictScore($scanId))->toBe(100);
     });
 
@@ -154,11 +154,11 @@ describe('VerdictService', function() {
         verdictIssue($scanId, $elementId, 'potential:possible-heading', 'Table:', 'notice', $siteId);
         verdictIssue($scanId, $elementId, 'potential:possible-heading', 'Ordered List:', 'notice', $siteId);
 
-        $plugin->verdicts->setVerdict($siteId, $elementId, 'potential:possible-heading', 'Bold', VerdictService::VERDICT_CONFIRMED);
-        $plugin->verdicts->setVerdict($siteId, $elementId, 'potential:possible-heading', 'Table:', VerdictService::VERDICT_DISMISSED);
+        $plugin->getVerdicts()->setVerdict($siteId, $elementId, 'potential:possible-heading', 'Bold', VerdictService::VERDICT_CONFIRMED);
+        $plugin->getVerdicts()->setVerdict($siteId, $elementId, 'potential:possible-heading', 'Table:', VerdictService::VERDICT_DISMISSED);
 
-        $grouped = $plugin->audit->getIssuesGroupedByScan($scanId);
-        $occurrences = $plugin->audit->getOccurrencesForRule($scanId, 'potential:possible-heading');
+        $grouped = $plugin->getAudit()->getIssuesGroupedByScan($scanId);
+        $occurrences = $plugin->getAudit()->getOccurrencesForRule($scanId, 'potential:possible-heading');
 
         // Confirming one occurrence used to promote the rule and then list
         // every occurrence under it, so the count and the list disagreed.
@@ -175,13 +175,13 @@ describe('VerdictService', function() {
         $scanId = verdictScanId($elementId, $siteId);
         verdictIssue($scanId, $elementId, 'potential:possible-heading', 'Bold', 'notice', $siteId);
 
-        expect($plugin->audit->getIssues($scanId))->toHaveCount(1);
+        expect($plugin->getAudit()->getIssues($scanId))->toHaveCount(1);
 
         // The entry sidebar and craft.a11y read this: a question the author has
         // answered must not reappear beside the entry.
-        $plugin->verdicts->setVerdict($siteId, $elementId, 'potential:possible-heading', 'Bold', VerdictService::VERDICT_DISMISSED);
+        $plugin->getVerdicts()->setVerdict($siteId, $elementId, 'potential:possible-heading', 'Bold', VerdictService::VERDICT_DISMISSED);
 
-        expect($plugin->audit->getIssues($scanId))->toBeEmpty();
+        expect($plugin->getAudit()->getIssues($scanId))->toBeEmpty();
     });
 
     it('survives a re-scan, so the author is not asked twice', function() {
@@ -192,16 +192,16 @@ describe('VerdictService', function() {
         // Answer the question on one scan.
         $firstScan = verdictScanId($elementId, $siteId);
         verdictIssue($firstScan, $elementId, 'potential:decorative-image', '<img src="a.jpg">', 'error', $siteId);
-        $plugin->verdicts->setVerdict($siteId, $elementId, 'potential:decorative-image', '<img src="a.jpg">', VerdictService::VERDICT_DISMISSED);
+        $plugin->getVerdicts()->setVerdict($siteId, $elementId, 'potential:decorative-image', '<img src="a.jpg">', VerdictService::VERDICT_DISMISSED);
 
         // A later scan finds the same thing again. The stored ruling is keyed to
         // the element, rule and markup, so the map still resolves it.
-        $map = $plugin->verdicts->mapForElement($elementId, $siteId);
+        $map = $plugin->getVerdicts()->mapForElement($elementId, $siteId);
 
-        expect($plugin->verdicts->lookup($map, 'potential:decorative-image', '<img src="a.jpg">'))
+        expect($plugin->getVerdicts()->lookup($map, 'potential:decorative-image', '<img src="a.jpg">'))
             ->toBe(VerdictService::VERDICT_DISMISSED)
             // Different markup is a different question, still unanswered.
-            ->and($plugin->verdicts->lookup($map, 'potential:decorative-image', '<img src="b.jpg">'))
+            ->and($plugin->getVerdicts()->lookup($map, 'potential:decorative-image', '<img src="b.jpg">'))
             ->toBeNull();
     });
 
@@ -219,12 +219,12 @@ describe('VerdictService', function() {
 
         $scanId = verdictScanId($elementId, $siteId);
         verdictIssue($scanId, $elementId, 'potential:decorative-image', $legacyContext, 'error', $siteId);
-        $plugin->verdicts->setVerdict($siteId, $elementId, 'potential:decorative-image', $legacyContext, VerdictService::VERDICT_DISMISSED);
+        $plugin->getVerdicts()->setVerdict($siteId, $elementId, 'potential:decorative-image', $legacyContext, VerdictService::VERDICT_DISMISSED);
 
-        $map = $plugin->verdicts->mapForElement($elementId, $siteId);
+        $map = $plugin->getVerdicts()->mapForElement($elementId, $siteId);
 
         // The next scan presents the longer snippet; the old ruling still holds.
-        expect($plugin->verdicts->lookup($map, 'potential:decorative-image', $longContext))
+        expect($plugin->getVerdicts()->lookup($map, 'potential:decorative-image', $longContext))
             ->toBe(VerdictService::VERDICT_DISMISSED);
     });
 
@@ -242,11 +242,11 @@ describe('VerdictService', function() {
 
         $scanId = verdictScanId($elementId, $siteId);
         verdictIssue($scanId, $elementId, 'potential:decorative-image', $legacyContext, 'error', $siteId);
-        $plugin->verdicts->setVerdict($siteId, $elementId, 'potential:decorative-image', $legacyContext, VerdictService::VERDICT_DISMISSED);
+        $plugin->getVerdicts()->setVerdict($siteId, $elementId, 'potential:decorative-image', $legacyContext, VerdictService::VERDICT_DISMISSED);
 
-        $map = $plugin->verdicts->mapForElement($elementId, $siteId);
+        $map = $plugin->getVerdicts()->mapForElement($elementId, $siteId);
 
-        expect($plugin->verdicts->lookup($map, 'potential:decorative-image', $longContext))
+        expect($plugin->getVerdicts()->lookup($map, 'potential:decorative-image', $longContext))
             ->toBe(VerdictService::VERDICT_DISMISSED);
     });
 
@@ -262,7 +262,7 @@ describe('VerdictService', function() {
 
         $scanId = verdictScanId($elementId, $siteId);
         verdictIssue($scanId, $elementId, 'potential:contrast-unmeasurable', $stored, 'error', $siteId);
-        $plugin->verdicts->setVerdict($siteId, $elementId, 'potential:contrast-unmeasurable', $posted, VerdictService::VERDICT_DISMISSED);
+        $plugin->getVerdicts()->setVerdict($siteId, $elementId, 'potential:contrast-unmeasurable', $posted, VerdictService::VERDICT_DISMISSED);
 
         // The ruling must land on the stored row despite the line-ending change.
         $verdict = (new \craft\db\Query())
@@ -274,8 +274,8 @@ describe('VerdictService', function() {
         expect($verdict)->toBe(VerdictService::VERDICT_DISMISSED);
 
         // And the render-time lookup resolves it from the stored LF context.
-        $map = $plugin->verdicts->mapForElement($elementId, $siteId);
-        expect($plugin->verdicts->lookup($map, 'potential:contrast-unmeasurable', $stored))
+        $map = $plugin->getVerdicts()->mapForElement($elementId, $siteId);
+        expect($plugin->getVerdicts()->lookup($map, 'potential:contrast-unmeasurable', $stored))
             ->toBe(VerdictService::VERDICT_DISMISSED);
     });
 });

@@ -30,7 +30,7 @@ use DOMXPath;
  * had from static HTML. It does not resolve CSS-generated content or anything
  * that depends on layout.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.2.0
  */
 class AccessibleName
@@ -44,32 +44,16 @@ class AccessibleName
      * @param DOMElement $el The element to name.
      * @param DOMXPath $xpath The document, for resolving aria-labelledby.
      * @return string The name, empty when the element has none.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function for(DOMElement $el, DOMXPath $xpath): string
     {
-        $labelledBy = trim($el->getAttribute('aria-labelledby'));
+        $name = self::fromLabelledBy($el, $xpath);
 
-        if ($labelledBy !== '') {
-            $parts = [];
-
-            foreach (preg_split('/\s+/', $labelledBy) ?: [] as $id) {
-                // A double quote would break out of the XPath literal below.
-                if ($id === '' || str_contains($id, '"')) {
-                    continue;
-                }
-
-                foreach ($xpath->query('//*[@id="' . $id . '"]') as $ref) {
-                    if ($ref instanceof DOMElement) {
-                        $parts[] = self::fromContent($ref);
-                    }
-                }
-            }
-
-            $name = trim(implode(' ', array_filter($parts)));
-
-            if ($name !== '') {
-                return $name;
-            }
+        if ($name !== '') {
+            return $name;
         }
 
         $ariaLabel = trim($el->getAttribute('aria-label'));
@@ -84,15 +68,69 @@ class AccessibleName
     }
 
     /**
+     * The name built from the elements an `aria-labelledby` points at, in the
+     * order it lists them.
+     *
+     * Shared rather than written out at each call site, because the ids come
+     * from the page and are interpolated into an XPath literal: one copy of
+     * that escaping is one place to get it right.
+     *
+     * A referenced element contributes even when it carries `aria-hidden`.
+     * Pointing at something by id is a deliberate act, and screen readers
+     * announce it, so treating it as hidden reports a named control as
+     * unnamed. Hidden elements *within* that subtree are still skipped, which
+     * is what the accessible name computation asks for.
+     *
+     * @param DOMElement $el The element carrying the attribute.
+     * @param DOMXPath $xpath The document, for resolving the references.
+     * @return string The name, empty when there is no attribute or nothing it
+     *         points at has any content.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public static function fromLabelledBy(DOMElement $el, DOMXPath $xpath): string
+    {
+        $labelledBy = trim($el->getAttribute('aria-labelledby'));
+
+        if ($labelledBy === '') {
+            return '';
+        }
+
+        $parts = [];
+
+        foreach (preg_split('/\s+/', $labelledBy) ?: [] as $id) {
+            // A double quote would break out of the XPath literal below.
+            if ($id === '' || str_contains($id, '"')) {
+                continue;
+            }
+
+            foreach ($xpath->query('//*[@id="' . $id . '"]') as $ref) {
+                if ($ref instanceof DOMElement) {
+                    $parts[] = self::fromContent($ref, true);
+                }
+            }
+        }
+
+        return trim(implode(' ', array_filter($parts)));
+    }
+
+    /**
      * The name an element contributes from its own subtree: text, image alt
      * text and SVG titles. Subtrees hidden from assistive tech are skipped.
      *
      * @param DOMElement $el The element whose subtree should be read.
+     * @param bool $referenced Whether an `aria-labelledby` points straight at
+     *                         this element, which makes it count even when it
+     *                         is hidden. Never passed on to its children.
      * @return string The collapsed subtree name, empty if there is nothing.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
-    public static function fromContent(DOMElement $el): string
+    public static function fromContent(DOMElement $el, bool $referenced = false): string
     {
-        if (strtolower($el->getAttribute('aria-hidden')) === 'true') {
+        if (!$referenced && strtolower($el->getAttribute('aria-hidden')) === 'true') {
             return '';
         }
 

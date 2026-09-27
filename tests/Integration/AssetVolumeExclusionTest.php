@@ -100,14 +100,13 @@ afterEach(function() {
 
 describe('AssetScanner::excludedVolumeIds', function() {
     it('is empty when nothing is configured', function() {
-        expect(AccessibilityAudit::getInstance()->assets->excludedVolumeIds())->toBe([]);
+        expect(AccessibilityAudit::getInstance()->getAssets()->excludedVolumeIds())->toBe([]);
     });
 
     it('resolves configured UIDs to ids and drops unknown ones', function() {
         $volume = Craft::$app->getVolumes()->getAllVolumes()[0] ?? null;
         if ($volume === null) {
-            expect(true)->toBeTrue();
-            return;
+            $this->markTestSkipped('Needs an asset volume.');
         }
 
         AccessibilityAudit::getInstance()->getSettings()->excludedVolumes = [
@@ -115,7 +114,7 @@ describe('AssetScanner::excludedVolumeIds', function() {
             'not-a-real-volume-uid',
         ];
 
-        expect(AccessibilityAudit::getInstance()->assets->excludedVolumeIds())
+        expect(AccessibilityAudit::getInstance()->getAssets()->excludedVolumeIds())
             ->toBe([(int)$volume->id]);
     });
 });
@@ -126,11 +125,10 @@ describe('AssetScanner::excludedVolumeIds', function() {
 
 describe('AssetScanner per-save exclusion', function() {
     it('raises nothing from scanAsset for an image in an excluded volume', function() {
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
         $volume = Craft::$app->getVolumes()->getAllVolumes()[0] ?? null;
         if ($volume === null) {
-            expect(true)->toBeTrue();
-            return;
+            $this->markTestSkipped('Needs an asset volume.');
         }
 
         $asset = new Asset();
@@ -150,11 +148,10 @@ describe('AssetScanner per-save exclusion', function() {
     });
 
     it('stores nothing from syncAssetAudit for an excluded volume, but does otherwise', function() {
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
         $volume = Craft::$app->getVolumes()->getAllVolumes()[0] ?? null;
         if ($volume === null) {
-            expect(true)->toBeTrue();
-            return;
+            $this->markTestSkipped('Needs an asset volume.');
         }
 
         $asset = makeVolumeAuditAsset((int)$volume->id, null);
@@ -179,10 +176,9 @@ describe('AssetScanner volume-scoped clear and stats', function() {
     it('clears the excluded volume\'s stored rows and leaves other volumes alone', function() {
         $volumes = Craft::$app->getVolumes()->getAllVolumes();
         if (count($volumes) < 2) {
-            expect(true)->toBeTrue();
-            return;
+            $this->markTestSkipped('Needs two asset volumes.');
         }
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
 
         $inExcluded = makeVolumeAuditAsset((int)$volumes[0]->id, null);
         $inKept = makeVolumeAuditAsset((int)$volumes[1]->id, null);
@@ -198,10 +194,9 @@ describe('AssetScanner volume-scoped clear and stats', function() {
     it('drops an excluded volume\'s images from the stored stats', function() {
         $volumes = Craft::$app->getVolumes()->getAllVolumes();
         if (count($volumes) < 2) {
-            expect(true)->toBeTrue();
-            return;
+            $this->markTestSkipped('Needs two asset volumes.');
         }
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
 
         $inExcluded = makeVolumeAuditAsset((int)$volumes[0]->id, null);
         $inKept = makeVolumeAuditAsset((int)$volumes[1]->id, null);
@@ -239,10 +234,9 @@ describe('AssetScanner::scanImagesPaged exclusion', function() {
     it('drops a real image in an excluded volume from the listing while keeping others', function() {
         $volume = Craft::$app->getVolumes()->getAllVolumes()[0] ?? null;
         if ($volume === null) {
-            expect(true)->toBeTrue();
-            return;
+            $this->markTestSkipped('Needs an asset volume.');
         }
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
 
         // A real asset element, so the Asset::find()-backed listing returns it.
         $asset = AssetFactory::factory()->volume($volume->handle)->create();
@@ -260,7 +254,7 @@ describe('AssetScanner::scanImagesPaged exclusion', function() {
     });
 
     it('empties the listing total when every volume is excluded', function() {
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
 
         AccessibilityAudit::getInstance()->getSettings()->excludedVolumes = array_map(
             static fn($volume): string => $volume->uid,

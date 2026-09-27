@@ -691,10 +691,6 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
   gap: 12px;
 }
 
-.accessibility-audit-col--g14 {
-  gap: 14px;
-}
-
 .accessibility-audit-rowline {
   display: flex;
   align-items: center;
@@ -759,8 +755,7 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
    columns stay legible instead of being crushed and the page itself never
    scrolls horizontally. */
 @media (width <= 900px) {
-  .accessibility-audit-statcards,
-  .accessibility-audit-statcards--3 {
+  .accessibility-audit-statcards {
     grid-template-columns: 1fr;
   }
 
@@ -1140,68 +1135,20 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
   padding: 14px 18px;
 }
 
-/* Readability tiles */
-.accessibility-audit-panel__tiles {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-
-.accessibility-audit-panel__tile {
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--aa-border-section);
-}
-
-.accessibility-audit-panel__tile:first-child {
-  border-right: 1px solid var(--aa-border-section);
-}
-
-.accessibility-audit-panel__tile-label {
+.accessibility-audit-panel__basis {
+  margin: 0;
+  padding: 10px 18px 0;
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--aa-text-secondary);
 }
 
-.accessibility-audit-panel__tile-row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-top: 5px;
-}
-
-.accessibility-audit-panel__tile-num {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-color);
-}
-
-.accessibility-audit-panel__target {
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--aa-border-section);
-}
-
-.accessibility-audit-panel__target-head {
+.accessibility-audit-panel__rline {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-color);
-}
-
-.accessibility-audit-panel__longest {
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--aa-border-section);
-}
-
-.accessibility-audit-panel__longest-text {
-  margin: 6px 0 0;
-  font-size: 12px;
-  font-style: italic;
-  color: var(--aa-text-secondary);
-  line-height: 1.55;
+  gap: 8px;
+  margin: 0;
+  padding: 14px 18px 0;
+  font-size: 15px;
 }
 
 /* Dashed empty-state hint for the readability inline-results area. */
@@ -1501,11 +1448,6 @@ body.use-shapes .accessibility-audit-pr-dot--error {
   gap: 12px;
 }
 
-.accessibility-audit-statcards--3 {
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
 .accessibility-audit-statcard {
   background: var(--aa-surface-tint);
   border: 1px solid var(--aa-border-card);
@@ -1514,12 +1456,6 @@ body.use-shapes .accessibility-audit-pr-dot--error {
   display: flex;
   flex-direction: column;
   gap: 3px;
-}
-
-.accessibility-audit-statcard--white {
-  background: var(--aa-surface);
-  gap: 4px;
-  padding: 14px 16px;
 }
 
 .accessibility-audit-statcard--fail {
@@ -1547,10 +1483,6 @@ body.use-shapes .accessibility-audit-pr-dot--error {
 
 .accessibility-audit-statcard__num--pass {
   color: var(--aa-pass);
-}
-
-.accessibility-audit-statcard__num--sm {
-  font-size: 26px;
 }
 
 .accessibility-audit-statcard__hint {
@@ -1639,67 +1571,69 @@ body.use-shapes .accessibility-audit-pr-dot--error {
   max-width: none;
 }
 
-.accessibility-audit-rl-url-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.accessibility-audit-rl-claude-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-  font-size: 12px;
-}
-
-.accessibility-audit-rl-claude-label label {
-  margin: 0;
-}
-
-/* Longest-sentence rows: created by readability.twig's inline JS, so the class
-   names only ever appear there, not in template markup. */
-.accessibility-audit-rl-sentence {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 14px;
-  background: var(--gray-050);
-  border: 1px solid var(--aa-border-section);
-  border-radius: 6px;
-}
-
-.accessibility-audit-rl-sentence__n {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  margin-top: 1px;
-  border-radius: 50%;
-  background: var(--gray-100);
-  color: var(--gray-600);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.accessibility-audit-rl-sentence__text {
-  flex: 1;
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--text-color);
-  overflow-wrap: anywhere;
-}
-
-.accessibility-audit-rl-sentence__count {
-  flex-shrink: 0;
-  align-self: flex-start;
+/* Page results table: a long URL is cut to one line rather than wrapping the
+   row three lines deep; the full address is in the title and the link. */
+.accessibility-audit-rl-url {
   margin-top: 2px;
   font-size: 11px;
+}
+
+/* A link out to the live page: the text truncates, the arrow never does. */
+.accessibility-audit-rl-ext {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  max-width: 100%;
+}
+
+.accessibility-audit-rl-url .accessibility-audit-rl-ext {
+  max-width: 28ch;
+}
+
+.accessibility-audit-rl-ext__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--medium-text-color);
+}
+
+.accessibility-audit-rl-ext__icon {
+  flex: none;
+  font-size: 0.85em;
+}
+
+.accessibility-audit-rl-ext--muted {
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-rl-ext--muted:hover {
+  color: var(--link-color, #0b69a3);
+  text-decoration: underline;
+}
+
+/* Page results: the Re-analyse label shows while the table has room for it,
+   and gives way to the icon alone when it doesn't. Sized on the table's own
+   width, since the control panel sidebar and details pane both take from it. */
+#accessibility-audit-rl-table {
+  container: aa-rl-table / inline-size;
+}
+
+@container aa-rl-table (width < 840px) {
+  #accessibility-audit-rl-table .accessibility-audit-rowbtn__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .btn.accessibility-audit-rowbtn[data-icon]:not(:empty)::before {
+    margin-inline-end: 0;
+  }
 }
 
 .accessibility-audit-error {
@@ -1723,69 +1657,10 @@ body.use-shapes .accessibility-audit-pr-dot--error {
   font-weight: 600;
 }
 
-/* Readability: inline analysis results (JS-populated after Analyse). Reuses
-   .accessibility-audit-statcards / .accessibility-audit-statcard / .accessibility-audit-sentence / .accessibility-audit-progress from the design system; these
-   add the ease-bar fill colours, the stat row, and the AI-suggestion cards. */
-.accessibility-audit-progress__fill--pass {
-  background: var(--aa-pass);
-}
-
-.accessibility-audit-progress__fill--warn {
-  background: var(--aa-warning-edge);
-}
-
-.accessibility-audit-progress__fill--error {
-  background: var(--aa-error);
-}
-
-.accessibility-audit-hr {
-  margin: 20px 0;
-  border: none;
-  border-top: 1px solid var(--aa-border-card);
-}
-
-.accessibility-audit-statrow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 22px;
-  padding: 2px;
-}
-
 .accessibility-audit-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-
-.accessibility-audit-suggest {
-  border: 1px solid var(--aa-border-card);
-  border-radius: var(--aa-radius-control);
-  padding: 12px 14px;
-}
-
-.accessibility-audit-suggest + .accessibility-audit-suggest {
-  margin-top: 10px;
-}
-
-.accessibility-audit-suggest__from {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--aa-text-body);
-  margin: 0 0 6px;
-}
-
-.accessibility-audit-suggest__why {
-  font-size: 11px;
-  color: var(--aa-text-secondary);
-  margin: 0 0 6px;
-}
-
-.accessibility-audit-suggest__to {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--aa-pass-deep);
-  font-weight: 500;
-  margin: 0;
 }
 
 /* Reference panels in the CP sidebar (Readability + VPAT #details blocks).
@@ -2184,7 +2059,7 @@ body.use-shapes .accessibility-audit-pr-dot--error {
   margin: 0 0 10px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--aa-text, #3f4d5a);
+  color: var(--aa-text-body);
 }
 
 .accessibility-audit-subcard {
@@ -2482,7 +2357,7 @@ body.use-shapes .accessibility-audit-pr-dot--error {
 .accessibility-audit-decorative-note {
   font-size: 12px;
   font-weight: 600;
-  color: var(--aa-ok, #3f8f5b);
+  color: var(--aa-pass);
 }
 
 .accessibility-audit-asset-item--decorative .accessibility-audit-no-alt,
@@ -2765,7 +2640,8 @@ table.data td.rightalign,
    getting wide. The label stays in the DOM (clipped, not display:none) so the
    button keeps its accessible name, and a title gives a sighted tooltip. Craft
    gives a labelled [data-icon] a 5px trailing margin, zeroed here so the lone
-   glyph sits clean. */
+   glyph sits clean; the selector has to outrank Craft's
+   `.btn[data-icon]:not(:empty,.btn-empty)::before` to do it. */
 @media (width <= 1100px) {
   .accessibility-audit-rowbtn__label {
     position: absolute;
@@ -2779,7 +2655,7 @@ table.data td.rightalign,
     border: 0;
   }
 
-  .accessibility-audit-rowbtn[data-icon]::before {
+  .btn.accessibility-audit-rowbtn[data-icon]:not(:empty)::before {
     margin-inline-end: 0;
   }
 }
@@ -3016,37 +2892,6 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   font-weight: 600;
 }
 
-.accessibility-audit-rl-ease-bar {
-  height: 100%;
-  border-radius: 3px;
-  transition:
-    width 0.4s ease,
-    background 0.4s ease;
-}
-
-.accessibility-audit-rl-suggestion {
-  border: 1px solid var(--aa-border-card);
-  border-radius: 6px;
-  padding: 12px 14px;
-  margin-bottom: 10px;
-}
-
-.accessibility-audit-rl-jargon-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.accessibility-audit-rl-jargon-tag {
-  background: var(--accessibility-audit-warn-bg);
-  color: var(--accessibility-audit-warn-text);
-  border: 1px solid var(--accessibility-audit-warn-border);
-  border-radius: 4px;
-  padding: 2px 8px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
 .accessibility-audit-note {
   font-size: 11px;
 }
@@ -3251,11 +3096,11 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   cursor: pointer;
   padding: 6px 10px;
   font-size: 12px;
-  color: var(--aa-text-muted, #596673);
+  color: var(--aa-text-secondary);
 }
 
 .accessibility-audit-pr-cluster__each > summary:hover {
-  color: var(--aa-text, #3f4d5a);
+  color: var(--aa-text-body);
 }
 
 /* Indented so an occurrence reads as belonging to the cluster above it. */
@@ -3596,7 +3441,7 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
 }
 
 .accessibility-audit-pr-review__confirm:focus-visible {
-  outline: 2px solid var(--aa-focus-ring, currentColor);
+  outline: 2px solid var(--link-color);
   outline-offset: 1px;
 }
 

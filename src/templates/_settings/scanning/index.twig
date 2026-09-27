@@ -19,7 +19,8 @@
     
     {{ forms.lightswitchField({
         label: 'Scan on Entry Save'|t('accessibility-audit'),
-        instructions: 'Automatically queue an accessibility scan when a live entry is saved. Scans run via the Craft queue worker.'|t('accessibility-audit'),
+        instructions: 'Automatically queue an accessibility scan when a live entry is saved. Scans run via the Craft queue worker.'|t('accessibility-audit')
+            ~ ((isPro ?? false) ? ' <span class="info">' ~ 'On Pro, saving also records the entry\'s readability from its own text, so the Readability report stays current.'|t('accessibility-audit') ~ '</span>' : ''),
         id: 'scanOnSave',
         name: 'settings[scanOnSave]',
         on: settings.scanOnSave,
@@ -141,7 +142,7 @@
     {% set siteOptions = [{ value: '', label: 'All sites'|t('accessibility-audit') }] %}
     {% if craft.app.isMultiSite %}
         {% for s in craft.app.sites.getAllSites() %}
-            {% set siteOptions = siteOptions|merge([{ value: s.id, label: s.name }]) %}
+            {% set siteOptions = siteOptions|merge([{ value: s.uid, label: s.name }]) %}
         {% endfor %}
     {% endif %}
 
@@ -150,14 +151,14 @@
     } %}
     {% if craft.app.isMultiSite %}
         {% set uriCols = uriCols|merge({
-            siteId: { type: 'select', heading: 'Site'|t('accessibility-audit'), options: siteOptions, thin: true },
+            siteUid: { type: 'select', heading: 'Site'|t('accessibility-audit'), options: siteOptions, thin: true },
         }) %}
     {% endif %}
     {% set uriCols = uriCols|merge({
         uriPattern: {
             type: 'singleline',
             heading: 'URI Pattern'|t('accessibility-audit'),
-            placeholder: 'Leave blank to match the homepage'|t('accessibility-audit'),
+            placeholder: '^checkout'|t('accessibility-audit'),
             code: true,
         },
     }) %}
@@ -165,13 +166,14 @@
     {{ forms.editableTableField({
         label: 'Excluded URI Patterns'|t('accessibility-audit'),
         instructions: 'Pages whose URI matches one of these regular expressions are excluded from every scan.'|t('accessibility-audit')
-            ~ ' <span class="info">' ~ 'The PHP scan, the browser pass and the overlay all honour them. One per line, for example <code>^checkout</code>, <code>print$</code> or <code>^admin/</code>.'|t('accessibility-audit') ~ '</span>',
+            ~ ' <span class="info">' ~ 'The PHP scan, the browser pass and the overlay all honour them. One per line, for example <code>^checkout</code>, <code>print$</code> or <code>^admin/</code>. The homepage is <code>^$</code>. A row left blank matches nothing.'|t('accessibility-audit') ~ '</span>',
         warning: config.excludedUriPatterns is defined ? 'Overridden by config file.'|t('accessibility-audit'),
         id: 'excludedUriPatterns',
         name: 'settings[excludedUriPatterns]',
         cols: uriCols,
         rows: settings.excludedUriPatterns,
         addRowLabel: 'Add a URI pattern'|t('accessibility-audit'),
+        defaultValues: { enabled: true },
         allowAdd: not (config.excludedUriPatterns is defined),
         allowDelete: not (config.excludedUriPatterns is defined),
         allowReorder: not (config.excludedUriPatterns is defined),
@@ -199,7 +201,7 @@
     } %}
     {% if craft.app.isMultiSite %}
         {% set customUrlCols = customUrlCols|merge({
-            siteId: { type: 'select', heading: 'Site'|t('accessibility-audit'), options: siteOptions, thin: true },
+            siteUid: { type: 'select', heading: 'Site'|t('accessibility-audit'), options: siteOptions, thin: true },
         }) %}
     {% endif %}
     {% set customUrlCols = customUrlCols|merge({
@@ -221,6 +223,7 @@
         cols: customUrlCols,
         rows: settings.customUrls,
         addRowLabel: 'Add a URL'|t('accessibility-audit'),
+        defaultValues: { enabled: true },
         allowAdd: not (config.customUrls is defined),
         allowDelete: not (config.customUrls is defined),
         allowReorder: not (config.customUrls is defined),

@@ -22,7 +22,7 @@ use DOMXPath;
  * A rule that cannot see context cannot tell those apart, and reporting both at
  * the same weight is what teaches people to dismiss the queue unread.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.2.0
  */
 class LinkContext
@@ -58,33 +58,6 @@ class LinkContext
      */
     private const SECTIONING_TAGS = ['article', 'aside', 'main', 'nav', 'section'];
 
-    // Public Methods
-    // =========================================================================
-
-    /**
-     * The landmark and heading a link sits under.
-     *
-     * @param DOMElement $link The link.
-     * @param DOMXPath $xpath The document.
-     * @return array{landmark: ?DOMElement, tag: string, name: string, heading: string, label: string}
-     *         `label` is for display, e.g. "nav[Documentation]" or "nav[unnamed]".
-     */
-    public static function for(DOMElement $link, DOMXPath $xpath): array
-    {
-        $landmark = self::landmarkFor($link);
-        $tag = $landmark !== null ? strtolower($landmark->nodeName) : '';
-        $name = $landmark !== null ? self::nameOf($landmark, $xpath) : '';
-        $heading = self::headingFor($link, $landmark, $xpath);
-
-        return [
-            'landmark' => $landmark,
-            'tag' => $tag,
-            'name' => $name,
-            'heading' => $heading,
-            'label' => self::label($tag, $name, $heading),
-        ];
-    }
-
     /**
      * @var string A landmark carrying its own accessible name. A reader hears
      *      "navigation, Main" before the link, which is context anybody can
@@ -105,6 +78,36 @@ class LinkContext
      */
     public const STRENGTH_NONE = 'none';
 
+    // Public Methods
+    // =========================================================================
+
+    /**
+     * The landmark and heading a link sits under.
+     *
+     * @param DOMElement $link The link.
+     * @param DOMXPath $xpath The document.
+     * @return array{landmark: ?DOMElement, tag: string, name: string, heading: string, label: string}
+     *         `label` is for display, e.g. "nav[Documentation]" or "nav[unnamed]".
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    public static function for(DOMElement $link, DOMXPath $xpath): array
+    {
+        $landmark = self::landmarkFor($link);
+        $tag = $landmark !== null ? strtolower($landmark->nodeName) : '';
+        $name = $landmark !== null ? self::nameOf($landmark, $xpath) : '';
+        $heading = self::_headingFor($link, $landmark, $xpath);
+
+        return [
+            'landmark' => $landmark,
+            'tag' => $tag,
+            'name' => $name,
+            'heading' => $heading,
+            'label' => self::_label($tag, $name, $heading),
+        ];
+    }
+
     /**
      * How much the surroundings actually tell a reader about where this link
      * goes.
@@ -122,7 +125,8 @@ class LinkContext
      *        The link's resolved context, from {@see self::for()}.
      * @param string $linkName The link's own announced name.
      * @return string One of the STRENGTH_* constants.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
     public static function strength(array $context, string $linkName): string
@@ -155,7 +159,8 @@ class LinkContext
      *
      * @param DOMElement|null $landmark The landmark, if the link is in one.
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
     public static function describe(?DOMElement $landmark): string
@@ -182,12 +187,16 @@ class LinkContext
      * never be reached at the same time are not a duplicate anyone experiences.
      *
      * Only the attribute-level cases are visible from here: `hidden`,
-     * `aria-hidden`, and an inline display:none. Hiding by class, which is what
+     * `aria-hidden`, and an inline display:none or visibility:hidden. Hiding by
+     * class, which is what
      * a utility framework does, needs the browser pass to see, so a pair hidden
      * that way is still reported. Worth knowing when reading a finding.
      *
      * @param DOMElement $link The link to test.
      * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function isHidden(DOMElement $link): bool
     {
@@ -202,7 +211,10 @@ class LinkContext
 
             $style = strtolower(preg_replace('/\s+/', '', $node->getAttribute('style')) ?? '');
 
-            if (str_contains($style, 'display:none')) {
+            // opacity:0 is deliberately not here: it leaves the link in the
+            // accessibility tree and reachable by keyboard, so it is still a
+            // link a reader meets.
+            if (str_contains($style, 'display:none') || str_contains($style, 'visibility:hidden')) {
                 return true;
             }
         }
@@ -215,6 +227,9 @@ class LinkContext
      *
      * @param DOMElement $link The link.
      * @return DOMElement|null
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function landmarkFor(DOMElement $link): ?DOMElement
     {
@@ -237,12 +252,12 @@ class LinkContext
             }
 
             // A form or section is only a landmark once it has a name.
-            if (in_array($tag, ['form', 'section'], true) && !self::hasNameAttribute($node)) {
+            if (in_array($tag, ['form', 'section'], true) && !self::_hasNameAttribute($node)) {
                 continue;
             }
 
             // header and footer are landmarks only at page level.
-            if (in_array($tag, ['header', 'footer'], true) && self::insideSectioning($node)) {
+            if (in_array($tag, ['header', 'footer'], true) && self::_insideSectioning($node)) {
                 continue;
             }
 
@@ -258,37 +273,22 @@ class LinkContext
      * @param DOMElement $landmark The landmark element.
      * @param DOMXPath $xpath The document, for resolving aria-labelledby.
      * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function nameOf(DOMElement $landmark, DOMXPath $xpath): string
     {
-        $label = trim($landmark->getAttribute('aria-label'));
+        // aria-labelledby first: it outranks aria-label in the accessible name
+        // computation, so a landmark carrying both is announced by what it
+        // points at, not by its own label.
+        $name = AccessibleName::fromLabelledBy($landmark, $xpath);
 
-        if ($label !== '') {
-            return $label;
+        if ($name !== '') {
+            return $name;
         }
 
-        $labelledBy = trim($landmark->getAttribute('aria-labelledby'));
-
-        if ($labelledBy === '') {
-            return '';
-        }
-
-        $parts = [];
-
-        foreach (preg_split('/\s+/', $labelledBy) ?: [] as $id) {
-            // A double quote would break out of the XPath literal below.
-            if ($id === '' || str_contains($id, '"')) {
-                continue;
-            }
-
-            foreach ($xpath->query('//*[@id="' . $id . '"]') as $ref) {
-                if ($ref instanceof DOMElement) {
-                    $parts[] = AccessibleName::fromContent($ref);
-                }
-            }
-        }
-
-        return trim(implode(' ', array_filter($parts)));
+        return trim($landmark->getAttribute('aria-label'));
     }
 
     // Private Methods
@@ -302,8 +302,11 @@ class LinkContext
      * @param DOMElement|null $landmark The landmark it sits in, if any.
      * @param DOMXPath $xpath The document.
      * @return string The heading text, or an empty string.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
-    private static function headingFor(DOMElement $link, ?DOMElement $landmark, DOMXPath $xpath): string
+    private static function _headingFor(DOMElement $link, ?DOMElement $landmark, DOMXPath $xpath): string
     {
         $headings = $xpath->query(
             'preceding::*[self::h1 or self::h2 or self::h3 or self::h4 or self::h5 or self::h6]',
@@ -322,7 +325,7 @@ class LinkContext
                 continue;
             }
 
-            if ($landmark !== null && !self::isWithin($heading, $landmark)) {
+            if ($landmark !== null && !self::_isWithin($heading, $landmark)) {
                 // Everything earlier is further away and equally outside.
                 return '';
             }
@@ -335,8 +338,14 @@ class LinkContext
 
     /**
      * Whether a node is inside a given ancestor.
+     *
+     * @return bool
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     * @param DOMElement $node The element to place.
+     * @param DOMElement $ancestor The element it may sit inside.
      */
-    private static function isWithin(DOMElement $node, DOMElement $ancestor): bool
+    private static function _isWithin(DOMElement $node, DOMElement $ancestor): bool
     {
         for ($cur = $node->parentNode; $cur instanceof DOMElement; $cur = $cur->parentNode) {
             if ($cur === $ancestor) {
@@ -349,8 +358,13 @@ class LinkContext
 
     /**
      * Whether an element carries a naming attribute at all.
+     *
+     * @return bool
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     * @param DOMElement $el The element to read.
      */
-    private static function hasNameAttribute(DOMElement $el): bool
+    private static function _hasNameAttribute(DOMElement $el): bool
     {
         return trim($el->getAttribute('aria-label')) !== ''
             || trim($el->getAttribute('aria-labelledby')) !== '';
@@ -359,8 +373,13 @@ class LinkContext
     /**
      * Whether a header or footer sits inside sectioning content, which takes
      * its landmark role away.
+     *
+     * @return bool
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     * @param DOMElement $el The element to place.
      */
-    private static function insideSectioning(DOMElement $el): bool
+    private static function _insideSectioning(DOMElement $el): bool
     {
         for ($node = $el->parentNode; $node instanceof DOMElement; $node = $node->parentNode) {
             if (in_array(strtolower($node->nodeName), self::SECTIONING_TAGS, true)) {
@@ -376,8 +395,15 @@ class LinkContext
      *
      * An unnamed landmark is shown as such rather than hidden, because that is
      * usually the actual defect: naming it is what would separate the links.
+     *
+     * @return string
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     * @param string $tag The region's tag name.
+     * @param string $name The region's accessible name, if it has one.
+     * @param string $heading The heading the region leans on, if any.
      */
-    private static function label(string $tag, string $name, string $heading): string
+    private static function _label(string $tag, string $name, string $heading): string
     {
         if ($tag === '') {
             return $heading !== '' ? 'under "' . $heading . '"' : 'no landmark';

@@ -21,7 +21,7 @@ use Throwable;
  * the model sees it. So an SVG is rasterised and an oversized raster is scaled
  * down before either is sent.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.1.1
  */
 class VisionImage
@@ -53,6 +53,9 @@ class VisionImage
      * @param Asset $asset The image asset to prepare.
      * @return array{type:string,media_type:string,data:string}|null A base64
      *         source ready to send, or null to leave the asset alone.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function downscaledSource(Asset $asset): ?array
     {
@@ -127,6 +130,9 @@ class VisionImage
      *
      * @param Asset $asset The asset to check.
      * @return bool True for SVG.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function isVector(Asset $asset): bool
     {
@@ -137,6 +143,9 @@ class VisionImage
      * Whether this server can read SVG at all.
      *
      * @return bool True when Imagick is present and knows the format.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function canReadVectors(): bool
     {
@@ -156,6 +165,9 @@ class VisionImage
      * rendered and the result checked for ink.
      *
      * @return bool True when strokes survive the render.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function rendersStrokes(): bool
     {
@@ -182,7 +194,9 @@ class VisionImage
             // drops them leaves the probe uniformly white.
             $capable = $imagick->getImageColors() > 1;
             $imagick->clear();
-        } catch (Throwable $e) {
+        } catch (Throwable) {
+            // Any failure to probe means the renderer cannot be relied on for
+            // strokes, which is what a false says.
             $capable = false;
         }
 
@@ -204,6 +218,9 @@ class VisionImage
      *
      * @param string $svg The SVG source.
      * @return bool True when the source declares a stroke that draws.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function usesStrokes(string $svg): bool
     {
@@ -221,6 +238,9 @@ class VisionImage
      * @param Asset $asset The vector asset to render.
      * @return array{type:string,media_type:string,data:string}|null A base64
      *         PNG source, or null when this asset cannot be rendered here.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function rasterisedSource(Asset $asset): ?array
     {
@@ -331,6 +351,9 @@ class VisionImage
      *
      * @param Asset $asset The image asset to measure.
      * @return bool True when the asset exceeds the long-edge limit.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function needsDownscale(Asset $asset): bool
     {

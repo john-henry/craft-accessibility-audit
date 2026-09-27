@@ -20,7 +20,7 @@ use craft\base\ElementInterface;
  * URI, and which usually has no title at all) is named outright rather than
  * left as whatever its slug happens to be.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class ElementLabel
@@ -38,17 +38,20 @@ class ElementLabel
      * @param string $fallback A final fallback, such as the page URL, preferred
      *                         over "Element #id" when it is given.
      * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function for(?ElementInterface $element, ?int $elementId = null, string $fallback = ''): string
     {
         if ($element !== null) {
             // The homepage is the common case with no title at all, and
             // "__home__" is not a thing to show anybody.
-            if ($element->uri === '__home__' && (string)($element->title ?? '') === '') {
+            if ($element->uri === '__home__' && ($element->title ?? '') === '') {
                 return Craft::t('accessibility-audit', 'Home page');
             }
 
-            $label = trim((string) $element->getUiLabel());
+            $label = trim($element->getUiLabel());
 
             if ($label !== '') {
                 return $label;
@@ -59,6 +62,8 @@ class ElementLabel
             return $fallback;
         }
 
-        return Craft::t('accessibility-audit', 'Element #') . ($elementId ?? $element->id ?? '');
+        return Craft::t('accessibility-audit', 'Element #{id}', [
+            'id' => $elementId ?? $element->id ?? '',
+        ]);
     }
 }

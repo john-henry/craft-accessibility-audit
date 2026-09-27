@@ -6,6 +6,7 @@
 
 namespace johnhenry\accessibilityaudit\models;
 
+use Craft;
 use craft\base\Model;
 
 /**
@@ -21,7 +22,7 @@ use craft\base\Model;
  * Stored JSON-encoded in one row per site. Document-specific metadata (report
  * periods, disclaimers, statement dates) stays with its own document model.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class OrganisationMetaModel extends Model
@@ -81,6 +82,9 @@ class OrganisationMetaModel extends Model
      * JSON storage.
      *
      * @return array<string, string|string[]>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function toStorageArray(): array
     {
@@ -104,6 +108,9 @@ class OrganisationMetaModel extends Model
      * the two drift apart.
      *
      * @return string[]
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function storageKeys(): array
     {
@@ -124,6 +131,8 @@ class OrganisationMetaModel extends Model
 
     /**
      * @inheritdoc
+     *
+     * @return array<int, mixed>
      */
     protected function defineRules(): array
     {
@@ -138,7 +147,7 @@ class OrganisationMetaModel extends Model
             // Phone numbers vary widely: cap length and restrict to a sane
             // character set rather than enforcing a single national format.
             [['contactPhone'], 'string', 'max' => 40],
-            [['contactPhone'], 'match', 'pattern' => '/^[0-9+()\-.\s]*$/', 'message' => '{attribute} contains invalid characters.'],
+            [['contactPhone'], 'match', 'pattern' => '/^[0-9+()\-.\s]*$/', 'message' => Craft::t('accessibility-audit', '{attribute} contains invalid characters.')],
         ]);
     }
 }

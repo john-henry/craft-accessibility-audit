@@ -11,7 +11,7 @@ use johnhenry\accessibilityaudit\services\StatementProfiles;
 
 function statementService(): \johnhenry\accessibilityaudit\services\StatementService
 {
-    return AccessibilityAudit::getInstance()->statement;
+    return AccessibilityAudit::getInstance()->getStatement();
 }
 
 function primarySiteId(): int
@@ -39,7 +39,7 @@ function resetStatement(int $siteId): void
  */
 function confirmAllManualCriteria(int $siteId): void
 {
-    $vpat = AccessibilityAudit::getInstance()->vpat;
+    $vpat = AccessibilityAudit::getInstance()->getVpat();
     $report = $vpat->getFullReport($siteId);
 
     foreach (array_merge($report['levelA'], $report['levelAA']) as $number => $row) {
@@ -187,7 +187,7 @@ describe('StatementService::deriveComplianceStatus', function() {
         // With the failures cleared too, the claim is now reachable without the
         // VPAT, which is the whole point on a Standard install.
         foreach ($derivation['failingCriteria'] as $number) {
-            AccessibilityAudit::getInstance()->vpat->saveOverride($siteId, $number, 'Supports', 'Fixed.');
+            AccessibilityAudit::getInstance()->getVpat()->saveOverride($siteId, $number, 'Supports', 'Fixed.');
         }
 
         expect(statementService()->deriveComplianceStatus($siteId)['canClaimFull'])->toBeTrue();
@@ -202,7 +202,7 @@ describe('StatementService::deriveComplianceStatus', function() {
         $meta->manualReviewConfirmed = true;
         statementService()->saveMeta($siteId, $meta);
 
-        AccessibilityAudit::getInstance()->vpat->saveOverride($siteId, '1.1.1', 'Does Not Support', 'Images lack alt text.');
+        AccessibilityAudit::getInstance()->getVpat()->saveOverride($siteId, '1.1.1', 'Does Not Support', 'Images lack alt text.');
 
         expect(statementService()->deriveComplianceStatus($siteId)['canClaimFull'])->toBeFalse();
     });
@@ -210,7 +210,7 @@ describe('StatementService::deriveComplianceStatus', function() {
     it('drops back below full when a single criterion is marked as failing', function() {
         $siteId = primarySiteId();
         confirmAllManualCriteria($siteId);
-        AccessibilityAudit::getInstance()->vpat->saveOverride($siteId, '1.1.1', 'Does Not Support', 'Images lack alt text.');
+        AccessibilityAudit::getInstance()->getVpat()->saveOverride($siteId, '1.1.1', 'Does Not Support', 'Images lack alt text.');
 
         $derivation = statementService()->deriveComplianceStatus($siteId);
 
@@ -220,7 +220,7 @@ describe('StatementService::deriveComplianceStatus', function() {
 
     it('reports not compliant when most criteria are failing', function() {
         $siteId = primarySiteId();
-        $vpat = AccessibilityAudit::getInstance()->vpat;
+        $vpat = AccessibilityAudit::getInstance()->getVpat();
         $report = $vpat->getFullReport($siteId);
         $all = array_keys(array_merge($report['levelA'], $report['levelAA']));
 

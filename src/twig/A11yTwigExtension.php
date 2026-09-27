@@ -14,11 +14,19 @@ use Twig\NodeVisitor\NodeVisitorInterface;
  * output is wrapped with <!-- accessibility-audit-tpl:filename.twig --> comment markers.
  *
  * Only added to the Twig environment when devMode is true.
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
+ * @since 1.0.0
  */
 class A11yTwigExtension extends AbstractExtension
 {
     /**
+     * Returns the node visitors this extension adds to Twig.
+     *
      * @return NodeVisitorInterface[]
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function getNodeVisitors(): array
     {

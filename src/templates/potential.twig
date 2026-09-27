@@ -60,12 +60,9 @@
     {% js %}
     (() => {
        
-        const RESP = {
-            content:     ['content',   Craft.t('accessibility-audit', 'Content writing')],
-            design:      ['design',    Craft.t('accessibility-audit', 'Visual design')],
-            development: ['dev',       Craft.t('accessibility-audit', 'Development')],
-            technical:   ['technical', Craft.t('accessibility-audit', 'Technical')],
-        };
+        // The same map the responsibility macro renders from, so a row drawn
+        // here cannot say something different to one drawn server-side.
+        const RESP = {{ craft.a11y.responsibilities()|json_encode|raw }};
 
         const columns = [
             { name: 'question', title: Craft.t('accessibility-audit', 'Potential issue'), callback: (p) => p
@@ -76,10 +73,10 @@
             { name: 'sc', title: Craft.t('accessibility-audit', 'SC'), callback: (v) => '<span class="code">' + Craft.escapeHtml(v || '—') + '</span>' },
             { name: 'responsibility', title: Craft.t('accessibility-audit', 'Responsibility'), callback: (v) => {
                 const r = RESP[v];
-                return r ? '<span class="token accessibility-audit-owner--' + r[0] + '">' + Craft.escapeHtml(r[1]) + '</span>' : '<span class="light">—</span>';
+                return r ? '<span class="token accessibility-audit-owner--' + r.modifier + '">' + Craft.escapeHtml(r.label) + '</span>' : '<span class="light">—</span>';
             } },
             { name: 'elementType', title: Craft.t('accessibility-audit', 'Element type'), callback: (v) => v
-                ? '<span class="token">' + Craft.escapeHtml(v) + '</span>' : '<span class="light">—</span>' },
+                ? '<span class="token">' + Craft.escapeHtml(Craft.t('accessibility-audit', v)) + '</span>' : '<span class="light">—</span>' },
             { name: 'count', title: Craft.t('accessibility-audit', 'Count'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
             { name: 'pages', title: Craft.t('accessibility-audit', 'Pages'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
         ];
@@ -126,7 +123,7 @@
             : '';
 
         const rescanCell = (value) => value
-            ? '<button class="btn small accessibility-audit-rowbtn" data-icon="refresh" title="' + Craft.t('accessibility-audit', 'Re-scan') + '" data-accessibility-audit-scan-entry="' + value + '" data-site-id="' + siteId + '" aria-live="polite">'
+            ? '<button class="btn small accessibility-audit-rowbtn" data-icon="refresh" title="' + Craft.t('accessibility-audit', 'Re-scan') + '" data-accessibility-audit-scan-entry="' + value + '" data-site-id="' + siteId + '">'
                 + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'Re-scan') + '</span></button>'
             : '';
 

@@ -8,6 +8,7 @@ namespace johnhenry\accessibilityaudit\controllers;
 
 use Craft;
 use craft\errors\MissingComponentException;
+use craft\helpers\ProjectConfig as ProjectConfigHelper;
 use craft\helpers\StringHelper;
 use craft\helpers\UrlHelper;
 use craft\web\Controller;
@@ -16,6 +17,7 @@ use johnhenry\accessibilityaudit\helpers\ScannableElementTypes;
 use johnhenry\accessibilityaudit\models\SettingsModel;
 use johnhenry\accessibilityaudit\services\AuditService;
 use yii\base\InvalidConfigException;
+use yii\db\Exception;
 use yii\web\BadRequestHttpException;
 use yii\web\ForbiddenHttpException;
 use yii\web\MethodNotAllowedHttpException;
@@ -24,7 +26,7 @@ use yii\web\Response;
 /**
  * Renders and persists the plugin's tabbed settings pages.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class SettingsController extends Controller
@@ -43,7 +45,13 @@ class SettingsController extends Controller
     protected array|bool|int $allowAnonymous = false;
 
     /**
+     * Sends the bare settings URL on to the General tab.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionIndex(): Response
     {
@@ -53,7 +61,13 @@ class SettingsController extends Controller
     }
 
     /**
+     * Renders the General settings tab.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionEditGeneral(): Response
     {
@@ -74,7 +88,13 @@ class SettingsController extends Controller
     }
 
     /**
+     * Renders the Scanning settings tab.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionEditScanning(): Response
     {
@@ -91,14 +111,20 @@ class SettingsController extends Controller
             'config' => Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'),
             'isPro' => $plugin->isPro(),
             'readOnly' => !Craft::$app->getConfig()->getGeneral()->allowAdminChanges,
-            'headlessAvailable' => $plugin->headless->isAvailable(),
+            'headlessAvailable' => $plugin->getHeadless()->isAvailable(),
             'elementTypeOptions' => ScannableElementTypes::all(),
             'scannedElementTypes' => $settings->resolvedScannedElementTypes(),
         ]);
     }
 
     /**
+     * Renders the Maintenance settings tab.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionEditMaintenance(): Response
     {
@@ -120,8 +146,14 @@ class SettingsController extends Controller
     }
 
     /**
+     * Renders the Tools settings tab.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
      * @throws MissingComponentException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionEditTools(): Response
     {
@@ -154,7 +186,13 @@ class SettingsController extends Controller
     }
 
     /**
+     * Renders the Notifications settings tab.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionEditNotifications(): Response
     {
@@ -175,11 +213,17 @@ class SettingsController extends Controller
     }
 
     /**
+     * Saves the General settings tab.
+     *
+     * @return Response
      * @throws MissingComponentException
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws MethodNotAllowedHttpException
-     * @throws \yii\db\Exception
+     * @throws Exception|InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionSaveGeneral(): Response
     {
@@ -187,11 +231,17 @@ class SettingsController extends Controller
     }
 
     /**
+     * Saves the Scanning settings tab.
+     *
+     * @return Response
      * @throws MissingComponentException
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws MethodNotAllowedHttpException
-     * @throws \yii\db\Exception
+     * @throws Exception|InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionSaveScanning(): Response
     {
@@ -199,11 +249,17 @@ class SettingsController extends Controller
     }
 
     /**
+     * Saves the Maintenance settings tab.
+     *
+     * @return Response
      * @throws MissingComponentException
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws MethodNotAllowedHttpException
-     * @throws \yii\db\Exception
+     * @throws Exception|InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionSaveMaintenance(): Response
     {
@@ -211,11 +267,17 @@ class SettingsController extends Controller
     }
 
     /**
+     * Saves the Tools settings tab.
+     *
+     * @return Response
      * @throws MissingComponentException
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws MethodNotAllowedHttpException
-     * @throws \yii\db\Exception
+     * @throws Exception|InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionSaveTools(): Response
     {
@@ -223,11 +285,17 @@ class SettingsController extends Controller
     }
 
     /**
+     * Saves the Notifications settings tab, which is a Pro feature.
+     *
+     * @return Response
      * @throws MissingComponentException
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws MethodNotAllowedHttpException
-     * @throws \yii\db\Exception
+     * @throws Exception|InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionSaveNotifications(): Response
     {
@@ -242,11 +310,15 @@ class SettingsController extends Controller
      * Generates a fresh CI/CD API token, saves it, and redirects back so it can
      * be shown to the admin once.
      *
+     * @return Response
      * @throws MissingComponentException
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws MethodNotAllowedHttpException
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionGenerateCiToken(): Response
     {
@@ -267,7 +339,7 @@ class SettingsController extends Controller
         $token = StringHelper::UUID();
         $settings->ciApiToken = hash('sha256', $token);
 
-        if (!Craft::$app->getPlugins()->savePluginSettings($plugin, $settings->toArray())) {
+        if (!Craft::$app->getPlugins()->savePluginSettings($plugin, $this->_persistable($settings))) {
             Craft::$app->getSession()->setError(Craft::t('app', 'Could not save plugin settings.'));
             return $this->redirectToPostedUrl();
         }
@@ -292,11 +364,15 @@ class SettingsController extends Controller
      * land in project config), the plaintext goes in a flash var read by
      * actionEditTools().
      *
+     * @return Response
      * @throws MissingComponentException
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws MethodNotAllowedHttpException
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionGenerateOverlayToken(): Response
     {
@@ -313,7 +389,7 @@ class SettingsController extends Controller
         $token = StringHelper::UUID();
         $settings->overlayApiToken = hash('sha256', $token);
 
-        if (!Craft::$app->getPlugins()->savePluginSettings($plugin, $settings->toArray())) {
+        if (!Craft::$app->getPlugins()->savePluginSettings($plugin, $this->_persistable($settings))) {
             Craft::$app->getSession()->setError(Craft::t('app', 'Could not save plugin settings.'));
             return $this->redirectToPostedUrl();
         }
@@ -343,12 +419,16 @@ class SettingsController extends Controller
      * Dummy subjects are prefixed with "[Test]" so nobody mistakes a preview
      * for a live regression.
      *
+     * @return Response
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws MethodNotAllowedHttpException
      * @throws MissingComponentException
      * @throws InvalidConfigException
      * @throws \yii\base\Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionTestNotification(): Response
     {
@@ -415,11 +495,15 @@ class SettingsController extends Controller
     /**
      * Legacy generic save, kept for backward compat.
      *
+     * @return Response
      * @throws MissingComponentException
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws MethodNotAllowedHttpException
-     * @throws \yii\db\Exception
+     * @throws Exception|InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionSave(): Response
     {
@@ -427,11 +511,20 @@ class SettingsController extends Controller
     }
 
     /**
+     * Reads the posted settings, validates them and writes them back.
+     *
+     * Shared by every tab's save action, so one tab cannot drift from another
+     * in how it validates or what it redirects to.
+     *
+     * @return Response
      * @throws MissingComponentException
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws MethodNotAllowedHttpException
-     * @throws \yii\db\Exception
+     * @throws Exception|InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _saveSettings(): Response
     {
@@ -468,6 +561,12 @@ class SettingsController extends Controller
         $settings->scannerUserAgent = (string) $this->request->getBodyParam('settings[scannerUserAgent]', $settings->scannerUserAgent);
         $settings->excludedSelectors = (string) $this->request->getBodyParam('settings[excludedSelectors]', $settings->excludedSelectors);
         $settings->en301549 = (bool)   $this->request->getBodyParam('settings[en301549]',        $settings->en301549);
+        // Pro only and not rendered on Standard, so the stored value stands there
+        // rather than being read as off.
+        if ($plugin->isPro()) {
+            $settings->readabilityPreviewTarget = (bool)$this->request->getBodyParam('settings[readabilityPreviewTarget]', $settings->readabilityPreviewTarget);
+            $settings->readabilityTarget = (string)$this->request->getBodyParam('settings[readabilityTarget]', $settings->readabilityTarget);
+        }
         $settings->vpatExportTemplate = (string) $this->request->getBodyParam('settings[vpatExportTemplate]', $settings->vpatExportTemplate);
         $settings->statementTemplate = (string) $this->request->getBodyParam('settings[statementTemplate]', $settings->statementTemplate);
         $settings->retainDays = (int)    $this->request->getBodyParam('settings[retainDays]',      $settings->retainDays);
@@ -522,16 +621,15 @@ class SettingsController extends Controller
                         continue;
                     }
                     $pattern = trim((string)($row['uriPattern'] ?? ''));
-                    $siteId = trim((string)($row['siteId'] ?? ''));
-                    // Keep an empty pattern only when it is deliberately scoped
-                    // or toggled off: on its own an empty row is just an unfilled
-                    // "add row", not a homepage exclusion.
-                    if ($pattern === '' && $siteId === '' && !array_key_exists('enabled', $row)) {
+                    // The pattern is the whole point of the row, so an empty
+                    // one is an unfilled "add row" whatever else it carries.
+                    // The homepage is `^$`, not a blank.
+                    if ($pattern === '') {
                         continue;
                     }
                     $clean[] = [
                         'enabled' => (bool)($row['enabled'] ?? true),
-                        'siteId' => $siteId === '' ? '' : (int)$siteId,
+                        'siteUid' => $this->_siteUid($row['siteUid'] ?? ''),
                         'uriPattern' => $pattern,
                     ];
                 }
@@ -553,10 +651,9 @@ class SettingsController extends Controller
                     if ($url === '') {
                         continue;
                     }
-                    $siteId = trim((string)($row['siteId'] ?? ''));
                     $clean[] = [
                         'enabled' => (bool)($row['enabled'] ?? true),
-                        'siteId' => $siteId === '' ? '' : (int)$siteId,
+                        'siteUid' => $this->_siteUid($row['siteUid'] ?? ''),
                         'url' => $url,
                     ];
                 }
@@ -591,7 +688,7 @@ class SettingsController extends Controller
                 : [];
         }
 
-        if (!Craft::$app->getPlugins()->savePluginSettings($plugin, $settings->toArray())) {
+        if (!Craft::$app->getPlugins()->savePluginSettings($plugin, $this->_persistable($settings))) {
             Craft::$app->getSession()->setError(Craft::t('app', 'Could not save plugin settings.'));
             return $this->redirectToPostedUrl();
         }
@@ -606,13 +703,13 @@ class SettingsController extends Controller
         // scanner will no longer visit.
         $newlyExcludedTypes = array_values(array_diff($previousScannedTypes, $settings->resolvedScannedElementTypes()));
         if ($newlyExcludedTypes !== []) {
-            $plugin->audit->pruneScansForElementTypes($newlyExcludedTypes);
+            $plugin->getAudit()->pruneScansForElementTypes($newlyExcludedTypes);
         }
 
         // Changing which field stores alt text makes every stored asset finding
         // stale, so clear the asset audit and tell the editor to re-scan.
         if ($settings->altTextField !== $previousAltField) {
-            $plugin->assets->clearAssetAudit();
+            $plugin->getAssets()->clearAssetAudit();
             Craft::$app->getSession()->setNotice(Craft::t(
                 'accessibility-audit',
                 'Settings saved. The alt text field changed, so run “Scan all assets” to refresh the asset report against the new field.',
@@ -625,11 +722,80 @@ class SettingsController extends Controller
         return $this->redirectToPostedUrl();
     }
 
+    /**
+     * Renders the Support tab.
+     *
+     * @return Response
+     * @throws ForbiddenHttpException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     public function actionSupport(): Response
     {
         $this->requireAdmin(false);
 
         return $this->renderTemplate('accessibility-audit/_settings/support');
+    }
+
+    /**
+     * The settings to write to project config, with anything set in
+     * `config/accessibility-audit.php` left as project config already had it.
+     *
+     * Craft has already merged the config file into the settings model, so
+     * saving the model as it stands would copy those values, secrets and
+     * per-environment paths included, into the committed YAML.
+     *
+     * @param SettingsModel $settings The settings to save.
+     * @return array<string, mixed> The values to hand to savePluginSettings().
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private function _persistable(SettingsModel $settings): array
+    {
+        $data = $settings->toArray();
+        $fromFile = Craft::$app->getConfig()->getConfigFromFile('accessibility-audit');
+
+        if ($fromFile === []) {
+            return $data;
+        }
+
+        $stored = ProjectConfigHelper::unpackAssociativeArrays(
+            (array)(Craft::$app->getProjectConfig()->get('plugins.accessibility-audit.settings') ?? []),
+        );
+
+        foreach (array_keys($fromFile) as $key) {
+            if (array_key_exists($key, $stored)) {
+                $data[$key] = $stored[$key];
+            } else {
+                unset($data[$key]);
+            }
+        }
+
+        return $data;
+    }
+
+    /**
+     * A posted site UID, or an empty string (every site) when it names no site.
+     *
+     * @param mixed $value The posted value.
+     * @return string The site UID, or an empty string.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private function _siteUid(mixed $value): string
+    {
+        $uid = is_scalar($value) ? trim((string)$value) : '';
+
+        foreach (Craft::$app->getSites()->getAllSites(true) as $site) {
+            if ($site->uid === $uid) {
+                return $uid;
+            }
+        }
+
+        return '';
     }
 
     /**
@@ -640,8 +806,9 @@ class SettingsController extends Controller
      *
      * @param string[] $previous The excluded volume UIDs before the save.
      * @param string[] $current The excluded volume UIDs after the save.
-     * @throws \yii\db\Exception
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws Exception|InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _clearNewlyExcludedVolumes(array $previous, array $current): void

@@ -11,6 +11,8 @@ use craft\helpers\App;
 use craft\helpers\Html;
 use craft\helpers\Json;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\exceptions\UnsafeUrlException;
+use johnhenry\accessibilityaudit\helpers\UrlSafety;
 use Throwable;
 use yii\base\Component;
 use yii\base\Exception;
@@ -20,7 +22,7 @@ use yii\base\Exception;
  * crosses a configured threshold: a newly introduced error-severity issue, or
  * a sharp drop in the element's score compared to its previous scan.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class NotificationService extends Component
@@ -66,6 +68,9 @@ class NotificationService extends Component
      * @param array{score: int, errorRuleIds: string[], label?: string, reportUrl?: string} $newResult
      * @param array{score: int, errorRuleIds: string[]}|null $previousResult
      * @throws Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function evaluateScan(array $newResult, ?array $previousResult): void
     {
@@ -96,8 +101,16 @@ class NotificationService extends Component
         }
 
         if ($settings->notifyOnScoreDrop) {
+            // Floored at one here as well as in validation, because a config
+            // file sets settings without going through the model rules (same
+            // reasoning as the browser settle time). At zero the comparison
+            // below is true of any score that merely failed to improve, which
+            // over a full sweep is a message for every page on the site; below
+            // zero it is true of scores that went up.
+            $threshold = max(1, $settings->notifyScoreDropThreshold);
             $drop = $previousResult['score'] - $newResult['score'];
-            if ($drop >= $settings->notifyScoreDropThreshold) {
+
+            if ($drop >= $threshold) {
                 $message = $this->buildScoreDropNotification($label, $previousResult['score'], $newResult['score']);
                 $this->dispatch($message['subject'], $message['body'], $message['color'], $reportUrl);
             }
@@ -113,7 +126,8 @@ class NotificationService extends Component
      * @param string $label A human-readable label for the element/page.
      * @param string[] $newErrorRuleIds Rule IDs of the newly introduced errors.
      * @return array{subject: string, body: string, color: string}
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function buildNewErrorNotification(string $label, array $newErrorRuleIds): array
@@ -137,7 +151,8 @@ class NotificationService extends Component
      * @param int $previousScore The score before this scan.
      * @param int $newScore The score after this scan.
      * @return array{subject: string, body: string, color: string}
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function buildScoreDropNotification(string $label, int $previousScore, int $newScore): array
@@ -169,7 +184,8 @@ class NotificationService extends Component
      * @param string|null $color Slack attachment bar colour (a COLOR_* constant), or null for informational blue.
      * @param string|null $actionUrl A CP URL to attach: a plain link line on email, a button on Slack.
      * @throws Exception
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function dispatch(string $subject, string $body, ?string $color = null, ?string $actionUrl = null): void
@@ -198,7 +214,8 @@ class NotificationService extends Component
      * @param string|null $color Accent colour (a COLOR_* constant), or null for informational blue.
      * @param string|null $actionUrl A CP URL rendered as a button (HTML) and plain link line (text), or null for none.
      * @param string $contextLine Muted footer line (plugin, site, environment), or empty to omit.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function notifyEmail(string $subject, string $body, ?string $color = null, ?string $actionUrl = null, string $contextLine = ''): void
@@ -248,7 +265,8 @@ class NotificationService extends Component
      * @param string|null $color The attachment bar colour (a COLOR_* constant), or null for informational blue.
      * @param string $contextLine Muted footer line (site name and environment), or empty to omit.
      * @param string|null $actionUrl A URL rendered as a link button under the message, or null for none.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function notifySlack(string $subject, string $body, ?string $color = null, string $contextLine = '', ?string $actionUrl = null): void
@@ -257,6 +275,22 @@ class NotificationService extends Component
         $webhookUrl = trim(App::parseEnv($settings->notifySlackWebhookUrl) ?: '');
 
         if ($webhookUrl === '') {
+            return;
+        }
+
+        // Held to the same guard as every other address this plugin fetches.
+        // The value is an admin's to set, but it can arrive from an env var a
+        // deploy pipeline writes, and a webhook pointed at something on this
+        // network would have the notifier reach it on every scan. A malformed
+        // one is worth a sentence in the log rather than a Guzzle exception.
+        try {
+            $pinned = UrlSafety::pinnedRequestOptions($webhookUrl);
+        } catch (UnsafeUrlException $e) {
+            Craft::warning(
+                'A11y: the Slack notification was not sent: ' . $e->getMessage(),
+                'accessibility-audit',
+            );
+
             return;
         }
 
@@ -297,7 +331,7 @@ class NotificationService extends Component
 
         try {
             Craft::createGuzzleClient(['timeout' => 10, 'connect_timeout' => 5])
-                ->post($webhookUrl, [
+                ->post($webhookUrl, $pinned + [
                     'headers' => ['Content-Type' => 'application/json'],
                     'body' => Json::encode([
                         // Honoured by legacy webhooks; app-based webhooks use
@@ -338,6 +372,9 @@ class NotificationService extends Component
      * @param string|null $actionUrl Button URL, or null for no button.
      * @param string $contextLine Muted footer line, or empty to omit.
      * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _emailHtml(string $subject, string $body, ?string $color, ?string $actionUrl, string $contextLine): string
     {
@@ -402,6 +439,9 @@ class NotificationService extends Component
      *
      * @return string
      * @throws Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _contextLine(): string
     {
@@ -423,6 +463,9 @@ class NotificationService extends Component
      *
      * @param string $text The raw text.
      * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _slackEscape(string $text): string
     {
@@ -434,6 +477,10 @@ class NotificationService extends Component
      * of email addresses.
      *
      * @return string[]
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     * @param string $raw The configured recipients, one per line or comma separated.
      */
     private function _parseRecipients(string $raw): array
     {

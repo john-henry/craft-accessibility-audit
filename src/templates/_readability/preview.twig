@@ -1,0 +1,504 @@
+{% set jsonFlags = constant('JSON_HEX_TAG') b-or constant('JSON_HEX_APOS') b-or constant('JSON_HEX_QUOT') b-or constant('JSON_HEX_AMP') %}
+{% set r = preview.result %}
+{% set counts = preview.counts %}
+{% set levels = targets[target] %}
+{% set hardLabel = 'Hard to read, grade {n}:'|t('accessibility-audit') %}
+{% set veryHardLabel = 'Very hard to read, grade {n}:'|t('accessibility-audit') %}
+{% set hardHint = '{words} words or more, at grade {from} to {to}'|t('accessibility-audit') %}
+{% set veryHardHint = '{words} words or more, at grade {from} or above'|t('accessibility-audit') %}
+{% set targetOptions = {
+    accessible: {
+        label: 'Accessible'|t('accessibility-audit'),
+        description: 'For accessibility and younger readers. Marks anything past grade 9, the level WCAG 3.1.5 asks for.'|t('accessibility-audit'),
+    },
+    default: {
+        label: 'Default'|t('accessibility-audit'),
+        description: 'For most audiences, at an average adult reading level.'|t('accessibility-audit'),
+    },
+    technical: {
+        label: 'Technical'|t('accessibility-audit'),
+        description: 'For academic and specialist writing.'|t('accessibility-audit'),
+    },
+} %}
+
+{% macro segments(sentence) %}
+    {%- for segment in sentence.segments -%}
+        {%- if segment.mark == 'complex' -%}
+            <mark class="rp-complex"><span class="rp-sr">{{ 'Plainer wording available:'|t('accessibility-audit') }} </span>{{ segment.text }}<span class="rp-alt"> ({{ segment.alternative }})</span></mark>
+        {%- elseif segment.mark == 'passive' -%}
+            <mark class="rp-passive"><span class="rp-sr">{{ 'Passive voice:'|t('accessibility-audit') }} </span>{{ segment.text }}</mark>
+        {%- elseif segment.mark == 'adverb' -%}
+            <mark class="rp-adverb"><span class="rp-sr">{{ 'Adverb:'|t('accessibility-audit') }} </span>{{ segment.text }}</mark>
+        {%- else -%}
+            {{ segment.text }}
+        {%- endif -%}
+    {%- endfor -%}
+{% endmacro %}
+
+{% macro eye(kind, label) %}
+    <button type="button" class="rp-eye" data-rp-toggle="{{ kind }}" aria-pressed="true">
+        <span class="rp-sr">{{ label }}</span>
+        <svg class="rp-eye-on" aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        <svg class="rp-eye-off" aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18M10.6 5.1A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a10 10 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+    </button>
+{% endmacro %}
+{% import _self as marks %}
+<!DOCTYPE html>
+<html lang="{{ craft.app.language }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="noindex, nofollow">
+<title>{{ 'Readability'|t('accessibility-audit') }}{% if element.title %}: {{ element.title }}{% endif %}</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html { background: #fff; color-scheme: light; }
+body { margin: 0; background: #fff; color: #1f2933; font: 16px/1.65 -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+.rp { display: grid; grid-template-columns: minmax(0, 1fr) 17rem; grid-template-areas: "main side"; gap: 2.5rem; max-width: 70rem; margin: 0 auto; padding: 1.75rem 1.5rem 3rem; }
+.rp-main { grid-area: main; min-width: 0; }
+.rp-side { grid-area: side; align-self: start; position: sticky; top: 1.25rem; }
+@media (max-width: 52rem) {
+    .rp { grid-template-columns: minmax(0, 1fr); grid-template-areas: "side" "main"; gap: 1.5rem; }
+    .rp-side { position: static; }
+}
+.rp h1 { margin: 0 0 .25rem; font-size: 1.5rem; line-height: 1.25; }
+.rp-muted { margin: 0; color: #52606d; font-size: .875rem; }
+.rp-text { margin-top: 1.5rem; }
+.rp-text p { margin: 0 0 1rem; }
+
+.rp-panel { padding: 1rem; border: 1px solid #d9e2ec; border-radius: 8px; background: #fff; }
+.rp-eyebrow { margin: 0 0 .35rem; font-size: .6875rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #52606d; }
+.rp-grade { margin: 0; font-size: 1.625rem; font-weight: 700; line-height: 1.2; }
+.rp-meter { position: relative; height: .5rem; margin: .75rem 0 .35rem; border-radius: 999px; background: #e4e7eb; }
+.rp-meter-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 999px; }
+.rp-panel--pass .rp-meter-fill { background: #15803d; }
+.rp-panel--fail .rp-meter-fill { background: #b91c1c; }
+.rp-meter-target { position: absolute; top: -.3rem; bottom: -.3rem; width: 2px; margin-left: -1px; background: #1f2933; }
+.rp-stat { display: flex; justify-content: space-between; gap: .75rem; margin: .5rem 0 0; font-size: .875rem; }
+.rp-stat dt { color: #52606d; }
+.rp-stat dd { margin: 0; font-weight: 600; text-align: right; }
+.rp-target { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .5rem; margin: .5rem 0 .25rem; font-size: .8125rem; color: #52606d; }
+.rp-panel--pass { border-top: 3px solid #15803d; }
+.rp-panel--fail { border-top: 3px solid #b91c1c; }
+.rp-panel--pass .rp-grade { color: #166534; }
+.rp-panel--fail .rp-grade { color: #991b1b; }
+.rp-badge { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .5rem; border-radius: 999px; font-weight: 700; white-space: nowrap; }
+.rp-badge--pass { background: #dcfce7; color: #166534; }
+.rp-badge--fail { background: #fde2e2; color: #991b1b; }
+
+.rp-targets { margin-top: .75rem; border: 1px solid #d9e2ec; border-radius: 8px; font-size: .875rem; }
+.rp-targets summary { padding: .6rem 1rem; cursor: pointer; font-weight: 600; }
+.rp-targets summary:focus-visible { outline: 3px solid #1f5eeb; outline-offset: 2px; border-radius: 8px; }
+.rp-targets fieldset { margin: 0; padding: 0 1rem .75rem; border: 0; }
+.rp-targets legend { padding: 0; }
+.rp-option { display: grid; grid-template-columns: auto 1fr; gap: 0 .5rem; margin-top: .6rem; cursor: pointer; }
+.rp-option input { margin: .3rem 0 0; }
+.rp-option span { font-weight: 600; }
+.rp-option small { grid-column: 2; color: #52606d; font-size: .8125rem; line-height: 1.4; }
+
+.rp-group { margin-top: 1rem; border: 1px solid #d9e2ec; border-radius: 8px; }
+.rp-group h3 { margin: 0; padding: .6rem 1rem; border-bottom: 1px solid #d9e2ec; font-size: .6875rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #52606d; }
+.rp-cards { list-style: none; margin: 0; padding: 0; }
+.rp-card { display: flex; align-items: flex-start; gap: .625rem; padding: .7rem .5rem .7rem 1rem; font-size: .875rem; line-height: 1.4; }
+.rp-card + .rp-card { border-top: 1px solid #e4e7eb; }
+.rp-card:last-child { border-radius: 0 0 8px 8px; }
+.rp-card-body { flex: 1; font-weight: 600; }
+.rp-card-count { flex: none; min-width: 1.75rem; padding: .1rem .35rem; border: 1px solid rgba(31, 41, 51, .15); border-radius: 4px; background: #fff; font-weight: 700; text-align: center; }
+.rp-card-hint { display: block; margin-top: .2rem; font-size: .75rem; font-weight: 400; color: #52606d; }
+.rp-key { flex: none; width: 1.75rem; margin-top: .1rem; padding: 0 .15rem; font-weight: 400; line-height: 1.3; text-align: center; }
+
+.rp-eye { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; margin: -.3rem 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #3e4c59; cursor: pointer; }
+.rp-eye:hover { background: rgba(255, 255, 255, .7); }
+.rp-eye:focus-visible { outline: 3px solid #1f5eeb; outline-offset: 1px; }
+.rp-eye-off, .rp-eye[aria-pressed="false"] .rp-eye-on { display: none; }
+.rp-eye[aria-pressed="false"] .rp-eye-off { display: block; }
+.rp-card:has(.rp-eye[aria-pressed="false"]) { background: #f5f7fa; }
+.rp-card:has(.rp-eye[aria-pressed="false"]) .rp-card-body { color: #52606d; }
+
+/* Sentences are shaded in one warm hue at two strengths; word marks are
+   underlines alone, in one ink colour. Each kind of mark has its own
+   underline style, so the marks can be told apart without relying on colour.
+   Sentence underlines sit lower than word underlines, so both show where
+   they meet. */
+mark { color: inherit; background: none; }
+.rp-long, .rp-verylong { padding: .05em .1em; border-radius: 3px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.rp-long { background: #fff1d6; text-decoration: underline dashed #8a5300 2px; text-underline-offset: .4em; }
+.rp-verylong { background: #fcd9b6; text-decoration: underline solid #9a3412 2px; text-underline-offset: .4em; }
+.rp-adverb { text-decoration: underline double #334e68; text-underline-offset: .2em; }
+.rp-passive { text-decoration: underline dotted #334e68 2px; text-underline-offset: .2em; }
+.rp-complex { text-decoration: underline wavy #334e68 1.5px; text-underline-offset: .2em; }
+.rp-alt { font-size: .75em; font-weight: 700; color: #334e68; }
+.rp-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+.rp-hide-hard .rp-long, .rp-hide-veryHard .rp-verylong,
+.rp-hide-adverb .rp-adverb, .rp-hide-passive .rp-passive, .rp-hide-complex .rp-complex { padding: 0; background: none; text-decoration: none; }
+.rp-hide-hard .rp-long > .rp-s-label, .rp-hide-veryHard .rp-verylong > .rp-s-label,
+.rp-hide-adverb .rp-adverb > .rp-sr, .rp-hide-passive .rp-passive > .rp-sr,
+.rp-hide-complex .rp-complex > .rp-sr, .rp-hide-complex .rp-alt { display: none; }
+
+.rp-suggestions { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #d9e2ec; }
+.rp-sug-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; }
+.rp-sug-head h2 { margin: 0; font-size: 1.125rem; }
+.rp-sug-count { font-weight: 400; color: #52606d; }
+.rp-ai { padding: .05rem .5rem; border: 1px solid #bfdbfe; border-radius: 999px; background: #eff6ff; color: #1e40af; font-size: .75rem; font-weight: 700; }
+.rp-sug-when { margin: .35rem 0 .75rem; font-size: .75rem; color: #52606d; }
+.rp-sug-summary { margin: 0 0 1rem; }
+.rp-sug { margin: 0 0 .9rem; overflow: hidden; border: 1px solid #d9e2ec; border-radius: 8px; background: #fff; }
+.rp-sug-pair { display: grid; gap: .6rem; margin: 0; padding: 1rem 1.1rem; }
+.rp-sug-row { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: .75rem; padding-left: .75rem; border-left: 3px solid; }
+.rp-sug-row--from { border-left-color: #e8a3a3; }
+.rp-sug-row--to { border-left-color: #8cc7a0; }
+.rp-sug-row dt { padding-top: .15em; font-size: .6875rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #52606d; }
+.rp-sug-row dd { margin: 0; font-size: .875rem; line-height: 1.55; }
+.rp-sug-from { color: #52606d; text-decoration: line-through; }
+.rp-sug-to { font-weight: 600; color: #1f2933; }
+.rp-sug-why { margin: 0; padding: .7rem 1.1rem; border-top: 1px solid #d9e2ec; background: #f8fafc; font-size: .8125rem; color: #3e4c59; }
+.rp-sug-why strong { color: #1f2933; }
+.rp-sug-label { margin: 1.25rem 0 .5rem; font-size: .6875rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #52606d; }
+.rp-tags { display: flex; flex-wrap: wrap; gap: .3rem; margin: 0; padding: 0; list-style: none; }
+.rp-tags li { padding: .05rem .5rem; border: 1px solid #d9e2ec; border-radius: 999px; background: #f1f5f9; font-size: .75rem; line-height: 1.6; }
+@media (max-width: 30rem) {
+    .rp-sug-row { grid-template-columns: minmax(0, 1fr); gap: .1rem; }
+}
+
+.rp-actions { margin-top: .75rem; }
+.rp-btn { width: 100%; font: inherit; font-size: .875rem; font-weight: 600; padding: .5rem .9rem; border: 1px solid #9fb3c8; border-radius: 6px; background: #f0f4f8; color: #1f2933; cursor: pointer; }
+.rp-btn:focus-visible { outline: 3px solid #1f5eeb; outline-offset: 2px; }
+.rp-btn[disabled] { opacity: .6; cursor: default; }
+.rp-actions .rp-muted { display: block; margin-top: .4rem; font-size: .75rem; }
+</style>
+</head>
+<body>
+<div class="rp" id="rp">
+    <aside class="rp-side" aria-labelledby="rp-side-heading">
+        <h2 id="rp-side-heading" class="rp-sr">{{ 'Scores'|t('accessibility-audit') }}</h2>
+
+        {% if r.gradeLevel is defined %}
+            {% set gradeOver = r.gradeLevel > 9 %}
+            <div class="rp-panel rp-panel--{{ gradeOver ? 'fail' : 'pass' }}">
+                <p class="rp-eyebrow">{{ 'WCAG 3.1.5 target: Grade 9'|t('accessibility-audit') }}</p>
+                <p class="rp-grade">{{ 'Grade level'|t('accessibility-audit') }} {{ r.gradeLevel }}</p>
+                <div class="rp-meter" aria-hidden="true">
+                    <span class="rp-meter-fill" style="width: {{ (min(max(r.gradeLevel, 0), 18) / 18 * 100)|round(1) }}%"></span>
+                    <span class="rp-meter-target" style="left: 50%"></span>
+                </div>
+                <p class="rp-target">
+                    <span class="rp-badge rp-badge--{{ gradeOver ? 'fail' : 'pass' }}">
+                        <span aria-hidden="true">{{ gradeOver ? '!' : '✓' }}</span>
+                        {{ gradeOver ? '{n} over'|t('accessibility-audit', { n: (r.gradeLevel - 9)|number_format(1) }) : 'Meets target'|t('accessibility-audit') }}
+                    </span>
+                </p>
+                <dl>
+                    <div class="rp-stat"><dt>{{ 'Reading ease'|t('accessibility-audit') }}</dt><dd>{{ r.readingEase }}, {{ r.readingEaseLabel|t('accessibility-audit') }}</dd></div>
+                    <div class="rp-stat"><dt>{{ 'Words'|t('accessibility-audit') }}</dt><dd>{{ r.wordCount }}</dd></div>
+                    <div class="rp-stat"><dt>{{ 'Reading age'|t('accessibility-audit') }}</dt><dd>{{ '~age {n}'|t('accessibility-audit', { n: r.readingAge }) }}</dd></div>
+                </dl>
+            </div>
+        {% elseif r.charactersNeeded is defined %}
+            <p class="rp-panel rp-muted">{{ 'Keep writing. Readability needs {n, plural, =1{# more character} other{# more characters}} to go on.'|t('accessibility-audit', { n: r.charactersNeeded }) }}</p>
+        {% elseif r.error is defined %}
+            <p class="rp-panel rp-muted">{{ r.error }}</p>
+        {% endif %}
+
+        {% if preview.blocks|length %}
+            <details class="rp-targets" id="rp-targets" hidden>
+                <summary>{{ 'Target readability'|t('accessibility-audit') }}: <span id="rp-target-name">{{ targetOptions[target].label }}</span></summary>
+                <fieldset>
+                    <legend class="rp-sr">{{ 'Target readability'|t('accessibility-audit') }}</legend>
+                    {% for key, option in targetOptions %}
+                        <label class="rp-option">
+                            <input type="radio" name="rp-target" value="{{ key }}" {{ key == target ? 'checked' }}>
+                            <span>{{ option.label }}</span>
+                            <small>{{ option.description }}</small>
+                        </label>
+                    {% endfor %}
+                </fieldset>
+            </details>
+
+            <section class="rp-group" aria-labelledby="rp-group-sentences">
+                <h3 id="rp-group-sentences">{{ 'Sentences'|t('accessibility-audit') }}</h3>
+                <ul class="rp-cards">
+                    <li class="rp-card rp-card--veryHard">
+                        <span class="rp-card-count" data-rp-count="veryHard">{{ counts.veryHard }}</span>
+                        <span class="rp-key rp-verylong" aria-hidden="true">Aa</span>
+                        <span class="rp-card-body">
+                            {{ 'of {total, plural, =1{# sentence} other{# sentences}}, very hard to read'|t('accessibility-audit', { total: counts.sentences }) }}
+                            <span class="rp-card-hint" data-rp-hint="veryHard">{{ veryHardHint|replace({ '{words}': minWords, '{from}': levels.veryHard }) }}</span>
+                        </span>
+                        {{ marks.eye('veryHard', 'Highlight very hard sentences'|t('accessibility-audit')) }}
+                    </li>
+                    <li class="rp-card rp-card--hard">
+                        <span class="rp-card-count" data-rp-count="hard">{{ counts.hard }}</span>
+                        <span class="rp-key rp-long" aria-hidden="true">Aa</span>
+                        <span class="rp-card-body">
+                            {{ 'of {total, plural, =1{# sentence} other{# sentences}}, hard to read'|t('accessibility-audit', { total: counts.sentences }) }}
+                            <span class="rp-card-hint" data-rp-hint="hard">{{ hardHint|replace({ '{words}': minWords, '{from}': levels.hard, '{to}': levels.veryHard - 1 }) }}</span>
+                        </span>
+                        {{ marks.eye('hard', 'Highlight hard sentences'|t('accessibility-audit')) }}
+                    </li>
+                </ul>
+            </section>
+
+            <section class="rp-group" aria-labelledby="rp-group-words">
+                <h3 id="rp-group-words">{{ 'Word choice'|t('accessibility-audit') }}</h3>
+                <ul class="rp-cards">
+                    <li class="rp-card rp-card--adverb">
+                        <span class="rp-card-count">{{ counts.adverb }}</span>
+                        <span class="rp-key rp-adverb" aria-hidden="true">Aa</span>
+                        <span class="rp-card-body">
+                            {{ '{n, plural, =1{adverb} other{adverbs}}'|t('accessibility-audit', { n: counts.adverb }) }}
+                            <span class="rp-card-hint">{{ counts.adverb ? 'A stronger verb often does the job better'|t('accessibility-audit') : 'None found. Well done.'|t('accessibility-audit') }}</span>
+                        </span>
+                        {{ marks.eye('adverb', 'Highlight adverbs'|t('accessibility-audit')) }}
+                    </li>
+                    <li class="rp-card rp-card--passive">
+                        <span class="rp-card-count">{{ counts.passive }}</span>
+                        <span class="rp-key rp-passive" aria-hidden="true">Aa</span>
+                        <span class="rp-card-body">
+                            {{ '{n, plural, =1{use of the passive voice} other{uses of the passive voice}}'|t('accessibility-audit', { n: counts.passive }) }}
+                            <span class="rp-card-hint">{{ counts.passive ? 'Prefer active constructions'|t('accessibility-audit') : 'None found. Well done.'|t('accessibility-audit') }}</span>
+                        </span>
+                        {{ marks.eye('passive', 'Highlight the passive voice'|t('accessibility-audit')) }}
+                    </li>
+                    <li class="rp-card rp-card--complex">
+                        <span class="rp-card-count">{{ counts.complex }}</span>
+                        <span class="rp-key rp-complex" aria-hidden="true">Aa</span>
+                        <span class="rp-card-body">
+                            {{ '{n, plural, =1{word or phrase with a plainer alternative} other{words or phrases with plainer alternatives}}'|t('accessibility-audit', { n: counts.complex }) }}
+                            <span class="rp-card-hint">{{ counts.complex ? 'The plainer word is shown in brackets'|t('accessibility-audit') : 'None found. Well done.'|t('accessibility-audit') }}</span>
+                        </span>
+                        {{ marks.eye('complex', 'Highlight wording with a plainer alternative'|t('accessibility-audit')) }}
+                    </li>
+                </ul>
+            </section>
+        {% endif %}
+
+        {% if canSuggest %}
+            <div class="rp-actions">
+                <button type="button" class="rp-btn" id="rp-suggest"
+                        data-action-url="{{ actionUrl('accessibility-audit/readability/analyse-entry') }}"
+                        data-element-id="{{ element.id }}"
+                        data-site-id="{{ element.siteId }}">
+                    {{ 'Suggest plainer wording'|t('accessibility-audit') }}
+                </button>
+                <span class="rp-muted">{{ (isDraft ?? false) ? 'Sends the last autosaved text to Claude.'|t('accessibility-audit') : 'Sends the saved text to Claude.'|t('accessibility-audit') }}</span>
+                <span class="rp-muted" id="rp-status" role="status"></span>
+            </div>
+        {% endif %}
+    </aside>
+
+    <main class="rp-main">
+        <h1>{{ element.title ?: 'Readability'|t('accessibility-audit') }}</h1>
+        <p class="rp-muted">{{ (isDraft ?? false) ? 'The readability of the text in this draft. It refreshes as you edit, and nothing is saved.'|t('accessibility-audit') : 'The readability of the saved text. Nothing here is saved.'|t('accessibility-audit') }}</p>
+
+        {% if preview.blocks|length %}
+            <section class="rp-text" aria-label="{{ 'The text, sentence by sentence'|t('accessibility-audit') }}">
+                {% for block in preview.blocks %}
+                    <p>
+                        {%- for sentence in block -%}
+                            {%- set label = sentence.difficulty == 'veryHard' ? veryHardLabel : (sentence.difficulty == 'hard' ? hardLabel : null) -%}
+                            <span class="rp-s{{ sentence.difficulty == 'veryHard' ? ' rp-verylong' : (sentence.difficulty == 'hard' ? ' rp-long') }}" data-words="{{ sentence.words }}" data-level="{{ sentence.level }}">
+                                {%- if sentence.words >= minWords -%}
+                                    <span class="rp-sr rp-s-label">{{ label ? label|replace({ '{n}': sentence.level }) ~ ' ' }}</span>
+                                {%- endif -%}
+                                {{ marks.segments(sentence) -}}
+                            </span>
+                            {{- not loop.last ? ' ' -}}
+                        {%- endfor -%}
+                    </p>
+                {% endfor %}
+            </section>
+        {% endif %}
+
+        {% if suggestions %}
+            <section class="rp-suggestions" aria-labelledby="rp-sug-heading">
+                {% set suggestionList = suggestions.suggestions ?? [] %}
+                <div class="rp-sug-head">
+                    <h2 id="rp-sug-heading">
+                        {{ 'Plain-language suggestions'|t('accessibility-audit') }}
+                        {% if suggestionList|length %}<span class="rp-sug-count">({{ suggestionList|length }})</span>{% endif %}
+                    </h2>
+                    <span class="rp-ai" title="{{ 'Written by Claude'|t('accessibility-audit') }}">
+                        <span aria-hidden="true">AI</span><span class="rp-sr">{{ 'Written by Claude'|t('accessibility-audit') }}</span>
+                    </span>
+                </div>
+                {% if suggestedAt %}
+                    <p class="rp-sug-when">{{ 'Suggested at {time} · the text may have changed since'|t('accessibility-audit', { time: suggestedAt }) }}</p>
+                {% endif %}
+                {% if suggestions.summary ?? false %}
+                    <p class="rp-sug-summary">{{ suggestions.summary }}</p>
+                {% endif %}
+                {% for suggestion in suggestionList %}
+                    <div class="rp-sug">
+                        <dl class="rp-sug-pair">
+                            <div class="rp-sug-row rp-sug-row--from">
+                                <dt>{{ 'Original'|t('accessibility-audit') }}</dt>
+                                <dd class="rp-sug-from">{{ suggestion.original ?? '' }}</dd>
+                            </div>
+                            <div class="rp-sug-row rp-sug-row--to">
+                                <dt>{{ 'Suggested'|t('accessibility-audit') }}</dt>
+                                <dd class="rp-sug-to">{{ suggestion.simplified ?? '' }}</dd>
+                            </div>
+                        </dl>
+                        {% if suggestion.reason ?? false %}
+                            <p class="rp-sug-why"><strong>{{ 'Why:'|t('accessibility-audit') }}</strong> {{ suggestion.reason }}</p>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+                {% if (suggestions.jargon ?? [])|length %}
+                    <h3 class="rp-sug-label">{{ 'Jargon found'|t('accessibility-audit') }}</h3>
+                    <ul class="rp-tags">
+                        {% for term in suggestions.jargon %}
+                            <li>{{ term }}</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+            </section>
+        {% endif %}
+    </main>
+</div>
+
+{% if preview.blocks|length %}
+    <script>
+    (function () {
+        'use strict';
+
+        // The preview reloads on every autosave, so the reader's choices are
+        // kept in the browser and applied again each time.
+        var STORE = 'accessibility-audit:readability:';
+        var root = document.getElementById('rp');
+        var targets = {{ targets|json_encode(jsonFlags)|raw }};
+        var names = {{ targetOptions|map(o => o.label)|json_encode(jsonFlags)|raw }};
+        var minWords = {{ minWords }};
+        var labels = { hard: {{ hardLabel|json_encode(jsonFlags)|raw }}, veryHard: {{ veryHardLabel|json_encode(jsonFlags)|raw }} };
+        var hints = { hard: {{ hardHint|json_encode(jsonFlags)|raw }}, veryHard: {{ veryHardHint|json_encode(jsonFlags)|raw }} };
+
+        function read(key) {
+            try { return window.localStorage.getItem(STORE + key); } catch (e) { return null; }
+        }
+
+        function write(key, value) {
+            try { window.localStorage.setItem(STORE + key, value); } catch (e) { /* not kept */ }
+        }
+
+        function fill(template, values) {
+            return template.replace(/\{(\w+)\}/g, function (match, name) {
+                return Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : match;
+            });
+        }
+
+        function applyTarget(key) {
+            var levels = targets[key];
+            var counts = { hard: 0, veryHard: 0 };
+
+            document.querySelectorAll('.rp-s').forEach(function (sentence) {
+                var words = Number(sentence.dataset.words);
+                var level = Number(sentence.dataset.level);
+                var difficulty = words < minWords ? null
+                    : level >= levels.veryHard ? 'veryHard'
+                    : level >= levels.hard ? 'hard'
+                    : null;
+                var label = sentence.querySelector('.rp-s-label');
+
+                sentence.classList.toggle('rp-long', difficulty === 'hard');
+                sentence.classList.toggle('rp-verylong', difficulty === 'veryHard');
+                if (label) {
+                    label.textContent = difficulty ? fill(labels[difficulty], { n: level }) + ' ' : '';
+                }
+                if (difficulty) {
+                    counts[difficulty]++;
+                }
+            });
+
+            ['hard', 'veryHard'].forEach(function (kind) {
+                document.querySelector('[data-rp-count="' + kind + '"]').textContent = counts[kind];
+                document.querySelector('[data-rp-hint="' + kind + '"]').textContent = fill(hints[kind], {
+                    words: minWords,
+                    from: levels[kind],
+                    to: levels.veryHard - 1,
+                });
+            });
+
+            document.getElementById('rp-target-name').textContent = names[key];
+        }
+
+        function applyToggle(button, shown) {
+            button.setAttribute('aria-pressed', shown ? 'true' : 'false');
+            root.classList.toggle('rp-hide-' + button.dataset.rpToggle, !shown);
+        }
+
+        var picker = document.getElementById('rp-targets');
+        var stored = read('target');
+
+        picker.hidden = false;
+        if (stored && Object.prototype.hasOwnProperty.call(targets, stored)) {
+            picker.querySelector('input[value="' + stored + '"]').checked = true;
+            applyTarget(stored);
+        }
+        picker.addEventListener('change', function (event) {
+            write('target', event.target.value);
+            applyTarget(event.target.value);
+        });
+
+        var hidden = (read('hidden') || '').split(',');
+
+        document.querySelectorAll('[data-rp-toggle]').forEach(function (button) {
+            applyToggle(button, hidden.indexOf(button.dataset.rpToggle) === -1);
+            button.addEventListener('click', function () {
+                applyToggle(button, button.getAttribute('aria-pressed') !== 'true');
+                write('hidden', Array.prototype.map.call(
+                    document.querySelectorAll('[data-rp-toggle][aria-pressed="false"]'),
+                    function (off) { return off.dataset.rpToggle; }
+                ).join(','));
+            });
+        });
+    })();
+    </script>
+{% endif %}
+
+{% if canSuggest %}
+    <script>
+    (function () {
+        'use strict';
+
+        var button = document.getElementById('rp-suggest');
+        var status = document.getElementById('rp-status');
+        if (!button || !status) { return; }
+
+        var working = {{ 'Analysing…'|t('accessibility-audit')|json_encode(jsonFlags)|raw }};
+        var failed = {{ 'Analysis request failed. Check your connection and try again.'|t('accessibility-audit')|json_encode(jsonFlags)|raw }};
+        var csrfName = {{ craft.app.config.general.csrfTokenName|json_encode(jsonFlags)|raw }};
+        var csrfValue = {{ craft.app.request.csrfToken|json_encode(jsonFlags)|raw }};
+
+        button.addEventListener('click', function () {
+            button.disabled = true;
+            status.textContent = working;
+
+            var body = new FormData();
+            body.append(csrfName, csrfValue);
+            body.append('elementId', button.dataset.elementId);
+            body.append('siteId', button.dataset.siteId);
+            body.append('withClaude', '1');
+            body.append('textOnly', '1');
+
+            fetch(button.dataset.actionUrl, { method: 'POST', body: body, credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                .then(function (response) { return response.json(); })
+                .then(function (data) {
+                    if (data.success) {
+                        window.location.reload();
+                        return;
+                    }
+                    status.textContent = data.error || failed;
+                    button.disabled = false;
+                })
+                .catch(function () {
+                    status.textContent = failed;
+                    button.disabled = false;
+                });
+        });
+    })();
+    </script>
+{% endif %}
+</body>
+</html>

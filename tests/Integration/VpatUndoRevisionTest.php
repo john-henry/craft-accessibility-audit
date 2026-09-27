@@ -23,7 +23,7 @@ use markhuot\craftpest\factories\User as UserFactory;
 /** The VPAT service. */
 function vurVpat(): VpatService
 {
-    return AccessibilityAudit::getInstance()->vpat;
+    return AccessibilityAudit::getInstance()->getVpat();
 }
 
 /** The primary site's id. */
@@ -119,7 +119,7 @@ describe('The undo action', function() {
         Craft::$app->getUserPermissions()->saveUserPermissions((int)$user->id, [
             'accesscp',
             'accessplugin-accessibility-audit',
-            'accessibility-audit:viewReports',
+            'accessibility-audit:view-reports',
         ]);
 
         $this->actingAs($user);

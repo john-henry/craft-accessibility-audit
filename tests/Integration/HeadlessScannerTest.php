@@ -35,28 +35,28 @@ describe('HeadlessScanner::isAvailable', function() {
         // isAvailable() checks existence, not that it really is a browser.
         headlessSetChromePath('/bin/sh');
 
-        expect(AccessibilityAudit::getInstance()->headless->isAvailable())->toBeFalse();
+        expect(AccessibilityAudit::getInstance()->getHeadless()->isAvailable())->toBeFalse();
     });
 
     it('is unavailable on Pro when no path is configured', function() {
         AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
         headlessSetChromePath('');
 
-        expect(AccessibilityAudit::getInstance()->headless->isAvailable())->toBeFalse();
+        expect(AccessibilityAudit::getInstance()->getHeadless()->isAvailable())->toBeFalse();
     });
 
     it('is unavailable on Pro when the configured path does not exist', function() {
         AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
         headlessSetChromePath('/definitely/not/a/browser');
 
-        expect(AccessibilityAudit::getInstance()->headless->isAvailable())->toBeFalse();
+        expect(AccessibilityAudit::getInstance()->getHeadless()->isAvailable())->toBeFalse();
     });
 
     it('is available on Pro when the configured path exists', function() {
         AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
         headlessSetChromePath('/bin/sh');
 
-        expect(AccessibilityAudit::getInstance()->headless->isAvailable())->toBeTrue();
+        expect(AccessibilityAudit::getInstance()->getHeadless()->isAvailable())->toBeTrue();
     });
 
     it('is available on Pro with only a remote endpoint and no local binary', function() {
@@ -64,14 +64,14 @@ describe('HeadlessScanner::isAvailable', function() {
         headlessSetChromePath('');
         headlessSetWsEndpoint('ws://chrome:3000');
 
-        expect(AccessibilityAudit::getInstance()->headless->isAvailable())->toBeTrue();
+        expect(AccessibilityAudit::getInstance()->getHeadless()->isAvailable())->toBeTrue();
     });
 
     it('is unavailable on the Standard edition even with a remote endpoint', function() {
         AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_STANDARD;
         headlessSetWsEndpoint('ws://chrome:3000');
 
-        expect(AccessibilityAudit::getInstance()->headless->isAvailable())->toBeFalse();
+        expect(AccessibilityAudit::getInstance()->getHeadless()->isAvailable())->toBeFalse();
     });
 });
 
@@ -83,13 +83,13 @@ describe('HeadlessScanner::chromeWsEndpoint', function() {
     it('is empty when unset', function() {
         headlessSetWsEndpoint('');
 
-        expect(AccessibilityAudit::getInstance()->headless->chromeWsEndpoint())->toBe('');
+        expect(AccessibilityAudit::getInstance()->getHeadless()->chromeWsEndpoint())->toBe('');
     });
 
     it('trims surrounding whitespace so a pasted URI still connects', function() {
         headlessSetWsEndpoint("  ws://chrome:3000\n");
 
-        expect(AccessibilityAudit::getInstance()->headless->chromeWsEndpoint())->toBe('ws://chrome:3000/');
+        expect(AccessibilityAudit::getInstance()->getHeadless()->chromeWsEndpoint())->toBe('ws://chrome:3000/');
     });
 
     it('resolves an environment variable reference, which is how a tokenised endpoint is stored', function() {
@@ -98,7 +98,7 @@ describe('HeadlessScanner::chromeWsEndpoint', function() {
         headlessSetWsEndpoint('$AA_TEST_WS_ENDPOINT');
 
         try {
-            expect(AccessibilityAudit::getInstance()->headless->chromeWsEndpoint())
+            expect(AccessibilityAudit::getInstance()->getHeadless()->chromeWsEndpoint())
                 ->toBe('ws://chrome:3000/?token=secret');
         } finally {
             putenv('AA_TEST_WS_ENDPOINT');
@@ -112,20 +112,20 @@ describe('HeadlessScanner::chromeWsEndpoint', function() {
     it('adds a root path to a bare host, which is the form hosted services give you', function() {
         headlessSetWsEndpoint('wss://production-lon.browserless.io?token=secret');
 
-        expect(AccessibilityAudit::getInstance()->headless->chromeWsEndpoint())
+        expect(AccessibilityAudit::getInstance()->getHeadless()->chromeWsEndpoint())
             ->toBe('wss://production-lon.browserless.io/?token=secret');
     });
 
     it('adds a root path when there is no query string either', function() {
         headlessSetWsEndpoint('ws://chrome:3000');
 
-        expect(AccessibilityAudit::getInstance()->headless->chromeWsEndpoint())->toBe('ws://chrome:3000/');
+        expect(AccessibilityAudit::getInstance()->getHeadless()->chromeWsEndpoint())->toBe('ws://chrome:3000/');
     });
 
     it('leaves a URI that already carries a path alone', function() {
         headlessSetWsEndpoint('wss://host/chromium?token=secret');
 
-        expect(AccessibilityAudit::getInstance()->headless->chromeWsEndpoint())
+        expect(AccessibilityAudit::getInstance()->getHeadless()->chromeWsEndpoint())
             ->toBe('wss://host/chromium?token=secret');
     });
 });
@@ -139,7 +139,7 @@ describe('HeadlessScanner::scanUrl', function() {
         AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_STANDARD;
         headlessSetChromePath('');
 
-        expect(AccessibilityAudit::getInstance()->headless->scanUrl('https://example.com/'))->toBeNull();
+        expect(AccessibilityAudit::getInstance()->getHeadless()->scanUrl('https://example.com/'))->toBeNull();
     });
 
     it('never signs off a VPAT criterion on the strength of a clean sweep', function() {
@@ -179,10 +179,10 @@ describe('HeadlessScanner::scanUrl', function() {
         ])->execute();
 
         headlessSetChromePath('');
-        $off = AccessibilityAudit::getInstance()->vpat->getAutoConformance(1);
+        $off = AccessibilityAudit::getInstance()->getVpat()->getAutoConformance(1);
 
         headlessSetChromePath('/bin/sh');
-        $on = AccessibilityAudit::getInstance()->vpat->getAutoConformance(1);
+        $on = AccessibilityAudit::getInstance()->getVpat()->getAutoConformance(1);
 
         // Having a browser changes what gets measured, never what gets claimed.
         foreach (['1.4.11', '2.5.8', '2.4.7'] as $criterion) {
@@ -208,7 +208,7 @@ describe('HeadlessScanner::scanUrl', function() {
         $general->devMode = true;
 
         try {
-            $findings = AccessibilityAudit::getInstance()->headless->scanUrl('https://craft-5-boilerplate.ddev.site/');
+            $findings = AccessibilityAudit::getInstance()->getHeadless()->scanUrl('https://craft-5-boilerplate.ddev.site/');
         } finally {
             $general->devMode = $previousDevMode;
         }
@@ -239,7 +239,7 @@ describe('HeadlessScanner::scanUrl', function() {
         headlessSetChromePath('/usr/bin/chromium');
         headlessSetWsEndpoint('ws://127.0.0.1:1/devtools/browser/nope');
 
-        expect(AccessibilityAudit::getInstance()->headless->scanUrl('https://example.com/'))->toBeNull();
+        expect(AccessibilityAudit::getInstance()->getHeadless()->scanUrl('https://example.com/'))->toBeNull();
     })->skip(fn() => !file_exists('/usr/bin/chromium'), 'chromium is not installed in this environment');
 
     it('returns null instead of throwing when the remote endpoint is unreachable', function() {
@@ -250,6 +250,6 @@ describe('HeadlessScanner::scanUrl', function() {
         headlessSetChromePath('');
         headlessSetWsEndpoint('ws://127.0.0.1:1/devtools/browser/nope');
 
-        expect(AccessibilityAudit::getInstance()->headless->scanUrl('https://example.com/'))->toBeNull();
+        expect(AccessibilityAudit::getInstance()->getHeadless()->scanUrl('https://example.com/'))->toBeNull();
     });
 });

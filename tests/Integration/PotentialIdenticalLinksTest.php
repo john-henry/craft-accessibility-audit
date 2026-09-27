@@ -14,7 +14,7 @@ use johnhenry\accessibilityaudit\AccessibilityAudit;
 /** @return string[] The identical-links rule ids found in some markup. */
 function identicalLinkHits(string $html): array
 {
-    $issues = AccessibilityAudit::getInstance()->potential->scan($html);
+    $issues = AccessibilityAudit::getInstance()->getPotential()->scan($html);
 
     return array_values(array_filter(
         array_map(static fn($issue) => $issue->ruleId, $issues),
@@ -88,6 +88,27 @@ describe('identical links judged on the announced name', function() {
         expect(identicalLinkHits(
             '<a href="/news/one">Read more<span aria-hidden="true"> →</span></a>'
             . '<a href="/news/two">Read more</a>'
+        ))->toHaveCount(1);
+    });
+
+    it('leaves a pair alone when one of them is hidden inline', function() {
+        // A desktop rail and a mobile drawer both sit in the markup, and CSS
+        // decides which one a reader gets. Two links nobody meets at the same
+        // time are not a duplicate anybody experiences.
+        foreach (['display:none', 'visibility:hidden', 'display: none'] as $style) {
+            expect(identicalLinkHits(
+                '<a href="/news/one">Read more</a>'
+                . '<div style="' . $style . '"><a href="/news/two">Read more</a></div>'
+            ))->toBeEmpty();
+        }
+    });
+
+    it('still flags a pair hidden only by opacity, which a reader still meets', function() {
+        // opacity:0 leaves the link in the accessibility tree and reachable by
+        // keyboard, so it is not hidden in the sense this cares about.
+        expect(identicalLinkHits(
+            '<a href="/news/one">Read more</a>'
+            . '<div style="opacity:0"><a href="/news/two">Read more</a></div>'
         ))->toHaveCount(1);
     });
 });

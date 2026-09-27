@@ -50,7 +50,7 @@ it('keeps a dismissed contrast question dismissed after the browser pass runs ag
         ]],
     ]];
 
-    $audit = AccessibilityAudit::getInstance()->audit;
+    $audit = AccessibilityAudit::getInstance()->getAudit();
 
     // First browser pass raises the question.
     $audit->storeAxeIssues($scanId, [], 'desktop', $incomplete);
@@ -64,7 +64,7 @@ it('keeps a dismissed contrast question dismissed after the browser pass runs ag
 
     expect($posted)->toBe('<span class="badge">');
 
-    AccessibilityAudit::getInstance()->verdicts->setVerdict(
+    AccessibilityAudit::getInstance()->getVerdicts()->setVerdict(
         $siteId, $elementId, 'potential:contrast-unmeasurable', $posted, 'dismissed',
     );
     expect($audit->getPendingPotentialForScan($scanId))->toHaveCount(0);

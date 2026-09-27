@@ -26,7 +26,7 @@ use johnhenry\accessibilityaudit\services\AuditService;
  * The scanner strips its own marks now. This clears the ones already stored
  * and moves any ruling made against a marked form onto the clean key.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.2.0
  */
 class m260830_110000_strip_own_marks_from_contexts extends Migration
@@ -39,7 +39,7 @@ class m260830_110000_strip_own_marks_from_contexts extends Migration
      */
     public function safeUp(): bool
     {
-        $verdicts = AccessibilityAudit::getInstance()->verdicts;
+        $verdicts = AccessibilityAudit::getInstance()->getVerdicts();
 
         $stored = [];
 

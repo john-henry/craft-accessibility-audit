@@ -40,7 +40,7 @@ use yii\web\Response;
 /**
  * Renders the Accessibility Audit CP dashboard, issue reports, and detail pages.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class DashboardController extends Controller
@@ -58,6 +58,17 @@ class DashboardController extends Controller
      */
     private const TABLE_PER_PAGE = 100;
 
+    /**
+     * @var int The largest page a table endpoint will answer with.
+     *
+     * per_page comes off the query string, and floored without a ceiling one
+     * request can ask for the whole table in a single page. The listings carry
+     * issue context and page titles, so that is a lot of rows to build in
+     * memory on an endpoint any reader can call. Well clear of the hundred the
+     * table actually asks for.
+     */
+    private const TABLE_PER_PAGE_MAX = 200;
+
     // Protected Properties
     // =========================================================================
 
@@ -67,29 +78,35 @@ class DashboardController extends Controller
     protected array|bool|int $allowAnonymous = false;
 
     /**
+     * Renders the Overview screen: the site's current score and what is driving it.
+     *
+     * @return Response
      * @throws SiteNotFoundException
      * @throws ForbiddenHttpException
      * @throws InvalidConfigException
      * @throws \yii\base\Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionIndex(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $plugin = AccessibilityAudit::getInstance();
         $siteId = $plugin->requestedSiteId();
         $siteHandle = $plugin->requestedSite()->handle;
         $sites = $plugin->allowedSites();
 
-        $summary = $plugin->audit->getSiteSummary($siteId);
+        $summary = $plugin->getAudit()->getSiteSummary($siteId);
 
         // Compute totals from the whole site, not the top-10 slice, so the
         // severity-band totals and subhead match the Issues page.
-        $byImpactAll = $plugin->audit->getIssuesByImpact($siteId, PHP_INT_MAX);
+        $byImpactAll = $plugin->getAudit()->getIssuesByImpact($siteId, PHP_INT_MAX);
         $byImpact = array_slice($byImpactAll, 0, 10);
-        $templateIssues = $plugin->audit->getTemplateIssues($siteId);
-        $resolvedIssues = $plugin->audit->getResolvedIssues($siteId, 10);
-        $scoreHistory = array_reverse($plugin->audit->getScoreHistory($siteId, 30));
+        $templateIssues = $plugin->getAudit()->getTemplateIssues($siteId);
+        $resolvedIssues = $plugin->getAudit()->getResolvedIssues($siteId, 10);
+        $scoreHistory = array_reverse($plugin->getAudit()->getScoreHistory($siteId, 30));
         $settings = $plugin->getSettings();
 
         $isPro = $plugin->isPro();
@@ -103,13 +120,13 @@ class DashboardController extends Controller
         // thing as a site that has been through them, and the headline could
         // not tell the difference because nothing here knew the questions
         // existed.
-        $potentialRows = $plugin->audit->getPotentialIssues($siteId);
+        $potentialRows = $plugin->getAudit()->getPotentialIssues($siteId);
         $pendingPotential = array_sum(array_map(
             static fn(array $row): int => (int) $row['occurrences'],
             $potentialRows,
         ));
         $potentialPages = $pendingPotential > 0
-            ? $plugin->audit->getPagesWithPotentialIssues($siteId, 1, 1)['total']
+            ? $plugin->getAudit()->getPagesWithPotentialIssues($siteId, 1, 1)['total']
             : 0;
 
         // The review screen counts one row per rule, this counts one per
@@ -118,7 +135,7 @@ class DashboardController extends Controller
 
         return $this->renderTemplate('accessibility-audit/index', [
             'summary' => $summary,
-            'coverage' => $plugin->audit->getCoverage($siteId),
+            'coverage' => $plugin->getAudit()->getCoverage($siteId),
             'pendingPotential' => $pendingPotential,
             'potentialPages' => $potentialPages,
             'potentialKinds' => $potentialKinds,
@@ -139,20 +156,26 @@ class DashboardController extends Controller
             'assetStats' => $plugin->getAssets()->getStoredAssetStats(),
             'isPro' => $isPro,
             'isMultiSite' => $isMultiSite,
-            'scannedElementCount' => $isPro ? 0 : $plugin->audit->getScannedElementCount(),
+            'scannedElementCount' => $isPro ? 0 : $plugin->getAudit()->getScannedElementCount(),
             'scanLimit' => AuditService::STANDARD_SCAN_LIMIT,
         ]);
     }
 
     /**
+     * Renders the Issues screen, listing every outstanding issue for the site.
+     *
+     * @return Response
      * @throws SiteNotFoundException
      * @throws ForbiddenHttpException
      * @throws Exception
      * @throws \yii\base\Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionIssues(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $plugin = AccessibilityAudit::getInstance();
         $siteId = $plugin->requestedSiteId();
@@ -164,12 +187,12 @@ class DashboardController extends Controller
         // The tab is named for pages with issues, so it lists those. The full
         // count is kept separately: a clean site and a site nobody has scanned
         // both produce an empty list, and they need different words.
-        $result = $plugin->audit->getScannedElements($siteId, $page, $perPage, withIssuesOnly: true);
-        $scannedCount = $plugin->audit->getScannedElements($siteId, 1, 1)['total'];
+        $result = $plugin->getAudit()->getScannedElements($siteId, $page, $perPage, withIssuesOnly: true);
+        $scannedCount = $plugin->getAudit()->getScannedElements($siteId, 1, 1)['total'];
         // The Issues tab is the full list, so no rule cap: a silently
         // truncated "full list" would contradict the dashboard.
-        $byRule = $plugin->audit->getIssuesByImpact($siteId, PHP_INT_MAX);
-        $resolvedByRule = $plugin->audit->getResolvedIssuesByImpact($siteId);
+        $byRule = $plugin->getAudit()->getIssuesByImpact($siteId, PHP_INT_MAX);
+        $resolvedByRule = $plugin->getAudit()->getResolvedIssuesByImpact($siteId);
         $sites = $plugin->allowedSites();
         $totalPages = (int) ceil($result['total'] / $perPage);
 
@@ -177,7 +200,7 @@ class DashboardController extends Controller
         // so its data is fetched only then (the range persists via ?range=).
         $resolvedTrendRange = max(1, min(365, (int) ($this->request->getQueryParam('range') ?? 90)));
         $resolvedTrend = $activeTab === 'resolved'
-            ? $plugin->audit->getResolvedTrend($siteId, $resolvedTrendRange)
+            ? $plugin->getAudit()->getResolvedTrend($siteId, $resolvedTrendRange)
             : [];
 
         return $this->renderTemplate('accessibility-audit/issues', [
@@ -198,13 +221,19 @@ class DashboardController extends Controller
     }
 
     /**
+     * Renders the report for a single scanned page.
+     *
+     * @return Response
      * @throws SiteNotFoundException
      * @throws ForbiddenHttpException
      * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionPageReport(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $plugin = AccessibilityAudit::getInstance();
         $elementId = (int)($this->request->getQueryParam('elementId') ?? 0);
@@ -216,7 +245,7 @@ class DashboardController extends Controller
             return $this->redirect(UrlHelper::cpUrl('accessibility-audit/issues'));
         }
 
-        $audit = $plugin->audit;
+        $audit = $plugin->getAudit();
 
         // A page with no element behind it is addressed by scan ID, and the
         // scan is loaded scoped to the requested site so an ID from another
@@ -355,7 +384,7 @@ class DashboardController extends Controller
             'potential' => $potential,
             'dismissed' => $dismissed,
             'potentialCount' => array_sum(array_map(static fn(array $g): int => count($g['occurrences']), $potential)),
-            'canRunScans' => Craft::$app->getUser()->checkPermission('accessibility-audit:runScans'),
+            'canRunScans' => Craft::$app->getUser()->checkPermission('accessibility-audit:run-scans'),
             'siteId' => $siteId,
             'siteHandle' => $siteHandle,
             'sites' => $sites,
@@ -363,12 +392,18 @@ class DashboardController extends Controller
     }
 
     /**
+     * Returns the occurrences of one rule on one scanned page.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
      * @throws SiteNotFoundException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionPageRuleOccurrences(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $scanId = (int)($this->request->getQueryParam('scanId') ?? 0);
         $ruleId = trim((string)($this->request->getQueryParam('ruleId') ?? ''));
@@ -381,18 +416,24 @@ class DashboardController extends Controller
             return $refusal;
         }
 
-        $occurrences = AccessibilityAudit::getInstance()->audit->getOccurrencesForRule($scanId, $ruleId);
+        $occurrences = AccessibilityAudit::getInstance()->getAudit()->getOccurrencesForRule($scanId, $ruleId);
 
         return $this->asJson(['success' => true, 'occurrences' => $occurrences]);
     }
 
     /**
+     * Returns the issues found by one scan.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
      * @throws SiteNotFoundException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionPageIssues(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $scanId = (int)($this->request->getQueryParam('scanId') ?? 0);
         if ($scanId === 0) {
@@ -403,19 +444,25 @@ class DashboardController extends Controller
             return $refusal;
         }
 
-        $issues = AccessibilityAudit::getInstance()->audit->getIssuesGroupedByScan($scanId);
+        $issues = AccessibilityAudit::getInstance()->getAudit()->getIssuesGroupedByScan($scanId);
 
         return $this->asJson(['success' => true, 'issues' => $issues]);
     }
 
     /**
+     * Renders the detail screen for a single rule.
+     *
+     * @return Response
      * @throws SiteNotFoundException
      * @throws ForbiddenHttpException
      * @throws \yii\base\Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionIssueDetail(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $plugin = AccessibilityAudit::getInstance();
         $ruleId = trim((string)($this->request->getQueryParam('ruleId') ?? ''));
@@ -428,7 +475,7 @@ class DashboardController extends Controller
             return $this->redirect(UrlHelper::cpUrl('accessibility-audit/issues'));
         }
 
-        $audit = $plugin->audit;
+        $audit = $plugin->getAudit();
         $detail = $audit->getIssueRuleSummary($ruleId, $siteId);
         $pages = $audit->getPagesForRule($ruleId, $siteId, $page, $perPage);
         $meta = RuleRegistry::get($ruleId);
@@ -459,13 +506,19 @@ class DashboardController extends Controller
     }
 
     /**
+     * Renders the Potential Issues screen: the things a scan can only flag for a person to judge.
+     *
+     * @return Response
      * @throws SiteNotFoundException
      * @throws ForbiddenHttpException
      * @throws \yii\base\Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionPotential(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $plugin = AccessibilityAudit::getInstance();
         $siteId = $plugin->requestedSiteId();
@@ -474,7 +527,7 @@ class DashboardController extends Controller
         $page = max(1, (int) ($this->request->getQueryParam('page') ?? 1));
         $perPage = self::TABLE_PER_PAGE;
 
-        $audit = $plugin->audit;
+        $audit = $plugin->getAudit();
         $potentialRules = $audit->getPotentialIssues($siteId);
         $pages = $audit->getPagesWithPotentialIssues($siteId, $page, $perPage);
         $sites = $plugin->allowedSites();
@@ -491,19 +544,25 @@ class DashboardController extends Controller
             'activeTab' => in_array($activeTab, ['issues', 'pages', 'dismissed'], true) ? $activeTab : 'issues',
             // Count only, for the tab label. The rows come from the table
             // endpoint like every other paginated listing.
-            'dismissedTotal' => $plugin->audit->getDismissedPotential($siteId, 1, 1)['total'],
-            'canRunScans' => Craft::$app->getUser()->checkPermission('accessibility-audit:runScans'),
+            'dismissedTotal' => $plugin->getAudit()->getDismissedPotential($siteId, 1, 1)['total'],
+            'canRunScans' => Craft::$app->getUser()->checkPermission('accessibility-audit:run-scans'),
             'pageInfo' => $this->_pageInfo('accessibility-audit/potential', $page, $perPage, (int) $pages['total'], $totalPages, ['site' => $siteHandle, 'tab' => 'pages']),
         ]);
     }
 
     /**
+     * Renders the Utilities screen.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
      * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionUtilities(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         // utilities.js needs nothing from the server, so there's no config to
         // inject alongside it.
@@ -527,16 +586,22 @@ class DashboardController extends Controller
     }
 
     /**
+     * Renders the VPAT screen.
+     *
+     * @return Response
      * @throws SiteNotFoundException
      * @throws ForbiddenHttpException
      * @throws InvalidConfigException
      * @throws Exception
      * @throws \yii\base\Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionVpat(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $plugin = AccessibilityAudit::getInstance();
         $siteId = $plugin->requestedSiteId();
@@ -547,7 +612,7 @@ class DashboardController extends Controller
         // an upsell state on Standard instead of throwing. The report is only
         // built when it will actually be shown.
         $isPro = $plugin->isPro();
-        $report = $isPro ? $plugin->vpat->getFullReport($siteId) : null;
+        $report = $isPro ? $plugin->getVpat()->getFullReport($siteId) : null;
 
         // AI remark drafting is only offered when an Anthropic API key is
         // configured; without one the button would just error.
@@ -559,7 +624,7 @@ class DashboardController extends Controller
         // evidence rather than memory.
         $scopeSuggestions = [];
         if ($isPro) {
-            $scanned = $plugin->audit->getScannedElements($siteId, 1, 200);
+            $scanned = $plugin->getAudit()->getScannedElements($siteId, 1, 200);
             foreach ($scanned['entries'] as $row) {
                 $element = $row['element'] ?? null;
                 if ($element === null) {
@@ -602,14 +667,14 @@ class DashboardController extends Controller
             'sites' => $sites,
             'canDraftRemarks' => $canDraftRemarks,
             'scopeSuggestions' => $scopeSuggestions,
-            'revisionCount' => $isPro ? $plugin->vpat->countRevisions($siteId) : 0,
+            'revisionCount' => $isPro ? $plugin->getVpat()->countRevisions($siteId) : 0,
         ]);
     }
 
     /**
      * Renders the accessibility statement editor.
      *
-     * Viewing is gated on viewReports like every other report page; editing is
+     * Viewing is gated on view-reports like every other report page; editing is
      * gated separately inside StatementController, so a reader can see what the
      * organisation has published without being able to change it.
      *
@@ -619,10 +684,13 @@ class DashboardController extends Controller
      * @throws InvalidConfigException
      * @throws Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionStatement(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $plugin = AccessibilityAudit::getInstance();
         $siteId = $plugin->requestedSiteId();
@@ -631,15 +699,15 @@ class DashboardController extends Controller
 
         // Available on every edition: in the EU and UK a statement is legally
         // required, so it is not something to hold back for an upgrade.
-        $statement = $plugin->statement->getFullStatement($siteId);
-        $derivation = $plugin->statement->deriveComplianceStatus($siteId);
-        $suggestions = $plugin->statement->deriveSuggestions($siteId);
+        $statement = $plugin->getStatement()->getFullStatement($siteId);
+        $derivation = $plugin->getStatement()->deriveComplianceStatus($siteId);
+        $suggestions = $plugin->getStatement()->deriveSuggestions($siteId);
 
         // Turn the bare criterion numbers into a readable checklist so a
         // reviewer can see which criteria still need a human eye, not just the
         // count. Unknown numbers are filtered out defensively.
         $unconfirmedDetails = array_values(array_filter(array_map(
-            static fn(string $number): ?array => $plugin->vpat->criterionMeta($number),
+            static fn(string $number): ?array => $plugin->getVpat()->criterionMeta($number),
             $derivation['unconfirmedCriteria'],
         )));
 
@@ -671,8 +739,8 @@ class DashboardController extends Controller
             // fields, and a criterion name is developer wording that has no
             // business in a document written for the public.
             'criteriaNames' => array_map(
-                static fn(array $criterion): string => (string)($criterion['name'] ?? ''),
-                $plugin->vpat->getCriteria(),
+                static fn(array $criterion): string => (string)$criterion['name'],
+                $plugin->getVpat()->getCriteria(),
             ),
             // Placeholders, not values: shown greyed and never saved, so a
             // published statement can only ever carry what somebody wrote.
@@ -680,8 +748,8 @@ class DashboardController extends Controller
                 array_map(
                     static fn(string $number): string => AffectedExample::for($number),
                     array_combine(
-                        array_keys($plugin->vpat->getCriteria()),
-                        array_keys($plugin->vpat->getCriteria()),
+                        array_keys($plugin->getVpat()->getCriteria()),
+                        array_keys($plugin->getVpat()->getCriteria()),
                     ),
                 ),
                 ['*' => AffectedExample::for('')],
@@ -695,14 +763,20 @@ class DashboardController extends Controller
     }
 
     /**
+     * Renders the Assets screen, covering the alt text on the site's images.
+     *
+     * @return Response
      * @throws SiteNotFoundException
      * @throws ForbiddenHttpException
      * @throws InvalidConfigException
      * @throws \yii\base\Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionAssets(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $plugin = AccessibilityAudit::getInstance();
         $settings = $plugin->getSettings();
@@ -743,9 +817,9 @@ class DashboardController extends Controller
         // so a marked image can be reviewed and switched back off; every other
         // filter runs the issue scan.
         $paged = $filter === 'decorative'
-            ? $plugin->assets->listDecorativePaged($page, $perPage, $volume ?: null, $search ?: null)
-            : $plugin->assets->scanImagesPaged($page, $perPage, $volume ?: null, $search ?: null, $filter ?: null);
-        $stats = $plugin->assets->getSiteAssetStats();
+            ? $plugin->getAssets()->listDecorativePaged($page, $perPage, $volume ?: null, $search ?: null)
+            : $plugin->getAssets()->scanImagesPaged($page, $perPage, $volume ?: null, $search ?: null, $filter ?: null);
+        $stats = $plugin->getAssets()->getSiteAssetStats();
 
         // Preserve the volume filter, filename search, and issue-type filter
         // across pagination links.
@@ -759,7 +833,7 @@ class DashboardController extends Controller
             'assetIssues' => $paged['results'],
             'stats' => $stats,
             'storedStats' => $plugin->getAssets()->getStoredAssetStats(),
-            'canRunScans' => Craft::$app->getUser()->checkPermission('accessibility-audit:runScans'),
+            'canRunScans' => Craft::$app->getUser()->checkPermission('accessibility-audit:run-scans'),
             'page' => $paged['page'],
             'perPage' => $paged['perPage'],
             'total' => $paged['total'],
@@ -773,7 +847,7 @@ class DashboardController extends Controller
             'currentVolume' => $volume,
             'currentSearch' => $search,
             'activeFilter' => $filter,
-            'decorativeCount' => $plugin->assets->getDecorativeCount($volume ?: null, $search ?: null),
+            'decorativeCount' => $plugin->getAssets()->getDecorativeCount($volume ?: null, $search ?: null),
         ]);
     }
 
@@ -783,19 +857,25 @@ class DashboardController extends Controller
     // param via resolveSiteId() rather than the `site` handle.
 
     /**
+     * Returns the scanned-pages table, a page at a time.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws SiteNotFoundException
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionScannedPagesTable(): Response
     {
         $this->requireAcceptsJson();
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $siteId = AccessibilityAudit::getInstance()->resolveSiteId($this->request->getParam('siteId'));
         $page = max(1, (int)$this->request->getParam('page', 1));
-        $limit = max(1, (int)$this->request->getParam('per_page', self::TABLE_PER_PAGE));
+        $limit = max(1, min(self::TABLE_PER_PAGE_MAX, (int)$this->request->getParam('per_page', self::TABLE_PER_PAGE)));
         $search = trim((string)($this->request->getParam('search') ?? ''));
 
         $sortField = match ($this->request->getParam('sort.0.field')) {
@@ -809,7 +889,7 @@ class DashboardController extends Controller
         // Filtered the same way the tab's own count is. Filtering one and not
         // the other is how the heading came to say nothing while the rows
         // underneath it listed the whole site.
-        $result = AccessibilityAudit::getInstance()->audit->getScannedElements(
+        $result = AccessibilityAudit::getInstance()->getAudit()->getScannedElements(
             $siteId,
             $page,
             $limit,
@@ -826,19 +906,25 @@ class DashboardController extends Controller
     }
 
     /**
+     * Exports the scanned pages as a CSV.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
      * @throws SiteNotFoundException
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionScannedPagesExport(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $siteId = AccessibilityAudit::getInstance()->resolveSiteId($this->request->getParam('siteId'));
 
         $site = Craft::$app->getSites()->getSiteById($siteId);
         $baseUrl = $site !== null ? rtrim((string)$site->getBaseUrl(), '/') : '';
-        $rows = AccessibilityAudit::getInstance()->audit->getScannedElementsExport($siteId);
+        $rows = AccessibilityAudit::getInstance()->getAudit()->getScannedElementsExport($siteId);
 
         $handle = fopen('php://temp', 'r+');
         assert($handle !== false);
@@ -864,33 +950,33 @@ class DashboardController extends Controller
         $csv = (string)stream_get_contents($handle);
         fclose($handle);
 
-        $response = Craft::$app->getResponse();
-        $response->format = Response::FORMAT_RAW;
-        $response->headers->set('Content-Type', 'text/csv; charset=utf-8');
-        $response->headers->set('Content-Disposition', 'attachment; filename="accessibility-scanned-pages.csv"');
-        $response->content = $csv;
-
-        return $response;
+        return Csv::download($csv, 'accessibility-scanned-pages.csv');
     }
 
     /**
+     * Returns the resolved-issues table, a page at a time.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws Exception
      * @throws SiteNotFoundException
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionResolvedTable(): Response
     {
         $this->requireAcceptsJson();
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $siteId = AccessibilityAudit::getInstance()->resolveSiteId($this->request->getParam('siteId'));
         $page = max(1, (int)$this->request->getParam('page', 1));
-        $limit = max(1, (int)$this->request->getParam('per_page', self::TABLE_PER_PAGE));
+        $limit = max(1, min(self::TABLE_PER_PAGE_MAX, (int)$this->request->getParam('per_page', self::TABLE_PER_PAGE)));
         $sortDir = $this->request->getParam('sort.0.direction') === 'asc' ? SORT_ASC : SORT_DESC;
 
-        $rows = AccessibilityAudit::getInstance()->audit->getResolvedIssuesByImpact($siteId);
+        $rows = AccessibilityAudit::getInstance()->getAudit()->getResolvedIssuesByImpact($siteId);
 
         // The list is bounded (one row per rule) and its points/owner columns are
         // derived after the query, so it is sorted and paged in PHP here.
@@ -915,56 +1001,79 @@ class DashboardController extends Controller
     }
 
     /**
+     * Returns the resolved-issue counts over time, for the trend chart.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws Exception
      * @throws SiteNotFoundException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionResolvedTrend(): Response
     {
         $this->requireAcceptsJson();
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $siteId = AccessibilityAudit::getInstance()->resolveSiteId($this->request->getParam('siteId'));
         $range = max(1, min(365, (int)$this->request->getParam('range', 90)));
 
         return $this->asJson([
-            'trend' => AccessibilityAudit::getInstance()->audit->getResolvedTrend($siteId, $range),
+            'success' => true,
+            'trend' => AccessibilityAudit::getInstance()->getAudit()->getResolvedTrend($siteId, $range),
         ]);
     }
 
     /**
+     * Returns one rule's occurrence counts over time, for its trend chart.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws SiteNotFoundException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionRuleTrend(): Response
     {
         $this->requireAcceptsJson();
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $ruleId = trim((string)($this->request->getParam('ruleId') ?? ''));
         $siteId = AccessibilityAudit::getInstance()->resolveSiteId($this->request->getParam('siteId'));
-        $range = max(1, (int)$this->request->getParam('range', 90));
+        // Bounded at both ends, as the resolved-issues trend beside it is: the
+        // range comes off the query string, and without a ceiling one request
+        // can ask for a span of any length.
+        $range = max(1, min(365, (int)$this->request->getParam('range', 90)));
 
         return $this->asJson([
-            'trend' => AccessibilityAudit::getInstance()->audit->getRuleTrend($ruleId, $siteId, $range),
+            'success' => true,
+            'trend' => AccessibilityAudit::getInstance()->getAudit()->getRuleTrend($ruleId, $siteId, $range),
         ]);
     }
 
     /**
+     * Returns the potential-issues table, a page at a time.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws SiteNotFoundException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionPotentialTable(): Response
     {
         $this->requireAcceptsJson();
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $siteId = AccessibilityAudit::getInstance()->resolveSiteId($this->request->getParam('siteId'));
         $page = max(1, (int)$this->request->getParam('page', 1));
-        $limit = max(1, (int)$this->request->getParam('per_page', self::TABLE_PER_PAGE));
+        $limit = max(1, min(self::TABLE_PER_PAGE_MAX, (int)$this->request->getParam('per_page', self::TABLE_PER_PAGE)));
 
         $sortField = match ($this->request->getParam('sort.0.field')) {
             'count' => 'occurrences',
@@ -972,7 +1081,7 @@ class DashboardController extends Controller
         };
         $asc = $this->request->getParam('sort.0.direction') === 'asc';
 
-        $rows = AccessibilityAudit::getInstance()->audit->getPotentialIssues($siteId);
+        $rows = AccessibilityAudit::getInstance()->getAudit()->getPotentialIssues($siteId);
         usort($rows, static fn(array $a, array $b): int => $asc
             ? ((int)$a[$sortField] <=> (int)$b[$sortField])
             : ((int)$b[$sortField] <=> (int)$a[$sortField]));
@@ -986,19 +1095,25 @@ class DashboardController extends Controller
     }
 
     /**
+     * Returns the pages carrying potential issues, a page at a time.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws SiteNotFoundException
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionPotentialPagesTable(): Response
     {
         $this->requireAcceptsJson();
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $siteId = AccessibilityAudit::getInstance()->resolveSiteId($this->request->getParam('siteId'));
         $page = max(1, (int)$this->request->getParam('page', 1));
-        $limit = max(1, (int)$this->request->getParam('per_page', self::TABLE_PER_PAGE));
+        $limit = max(1, min(self::TABLE_PER_PAGE_MAX, (int)$this->request->getParam('per_page', self::TABLE_PER_PAGE)));
         $search = trim((string)($this->request->getParam('search') ?? ''));
 
         $sortField = match ($this->request->getParam('sort.0.field')) {
@@ -1009,7 +1124,7 @@ class DashboardController extends Controller
         };
         $sortDir = $this->request->getParam('sort.0.direction') === 'asc' ? SORT_ASC : SORT_DESC;
 
-        $result = AccessibilityAudit::getInstance()->audit->getPagesWithPotentialIssues($siteId, $page, $limit, $search, $sortField, $sortDir);
+        $result = AccessibilityAudit::getInstance()->getAudit()->getPagesWithPotentialIssues($siteId, $page, $limit, $search, $sortField, $sortDir);
 
         return $this->asSuccess(data: [
             'pagination' => AdminTable::paginationLinks($page, (int)$result['total'], $limit),
@@ -1024,16 +1139,19 @@ class DashboardController extends Controller
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws SiteNotFoundException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionDismissedTable(): Response
     {
         $this->requireAcceptsJson();
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $plugin = AccessibilityAudit::getInstance();
         $siteId = $plugin->resolveSiteId($this->request->getParam('siteId'));
         $page = max(1, (int)$this->request->getParam('page', 1));
-        $limit = max(1, (int)$this->request->getParam('per_page', self::TABLE_PER_PAGE));
+        $limit = max(1, min(self::TABLE_PER_PAGE_MAX, (int)$this->request->getParam('per_page', self::TABLE_PER_PAGE)));
         $search = trim((string)($this->request->getParam('search') ?? ''));
 
         $sortField = match ($this->request->getParam('sort.0.field')) {
@@ -1042,7 +1160,7 @@ class DashboardController extends Controller
         };
         $sortDir = $this->request->getParam('sort.0.direction') === 'desc' ? SORT_DESC : SORT_ASC;
 
-        $result = $plugin->audit->getDismissedPotential($siteId, $page, $limit, $search, $sortField, $sortDir);
+        $result = $plugin->getAudit()->getDismissedPotential($siteId, $page, $limit, $search, $sortField, $sortDir);
 
         return $this->asSuccess(data: [
             'pagination' => AdminTable::paginationLinks($page, $result['total'], $limit),
@@ -1060,6 +1178,9 @@ class DashboardController extends Controller
      * @param array<int, array<string, mixed>> $rows Dismissed issue rows.
      * @param int $siteId The site being listed.
      * @return array<int, array<string, mixed>>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _dismissedTableData(array $rows, int $siteId): array
     {
@@ -1069,9 +1190,9 @@ class DashboardController extends Controller
         // One query for the whole page of rows, not one per row. Keyed on the
         // target rather than the element, so a row from a page scanned by URL
         // finds its ruling too.
-        $verdicts = AccessibilityAudit::getInstance()->verdicts;
+        $verdicts = AccessibilityAudit::getInstance()->getVerdicts();
         $targetHashes = array_map(
-            static fn(array $r): string => AccessibilityAudit::getInstance()->verdicts->targetHash(
+            static fn(array $r): string => AccessibilityAudit::getInstance()->getVerdicts()->targetHash(
                 $r['elementId'] !== null ? (int)$r['elementId'] : null,
                 $r['url'] ?? null,
             ),
@@ -1144,31 +1265,44 @@ class DashboardController extends Controller
      * @throws BadRequestHttpException
      * @throws SiteNotFoundException
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionReadabilityTable(): Response
     {
         $this->requireAcceptsJson();
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $plugin = AccessibilityAudit::getInstance();
         $siteId = $plugin->resolveSiteId($this->request->getParam('siteId'));
         $page = max(1, (int)$this->request->getParam('page', 1));
-        $limit = max(1, (int)$this->request->getParam('per_page', self::TABLE_PER_PAGE));
+        $limit = max(1, min(self::TABLE_PER_PAGE_MAX, (int)$this->request->getParam('per_page', self::TABLE_PER_PAGE)));
         $search = trim((string)($this->request->getParam('search') ?? ''));
 
         // The table posts the column name; map it to a real column rather than
         // letting a query parameter reach ORDER BY.
         $sortField = match ($this->request->getParam('sort.0.field')) {
             'page' => 'title',
-            'ease' => 'readingEase',
             'grade' => 'gradeLevel',
             'words' => 'wordCount',
-            'wcag' => 'wcag315Pass',
-            default => 'dateAnalysed',
+            'hard' => 'hardSentences',
+            'veryHard' => 'veryHardSentences',
+            'analysed' => 'dateAnalysed',
+            default => 'worst',
         };
         $sortDir = $this->request->getParam('sort.0.direction') === 'asc' ? SORT_ASC : SORT_DESC;
 
-        $result = $plugin->readability->getResultsPaged($siteId, $page, $limit, $search, $sortField, $sortDir);
+        $elementId = $this->request->getParam('elementId');
+        $result = $plugin->getReadability()->getResultsPaged(
+            $siteId,
+            $page,
+            $limit,
+            $search,
+            $sortField,
+            $sortDir,
+            $elementId !== null && $elementId !== '' ? (int)$elementId : null,
+        );
 
         return $this->asSuccess(data: [
             'pagination' => AdminTable::paginationLinks($page, $result['total'], $limit),
@@ -1186,14 +1320,17 @@ class DashboardController extends Controller
      * @param array<int, array<string, mixed>> $rows Stored readability results.
      * @return array<int, array<string, mixed>>
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _readabilityTableData(array $rows): array
     {
         $data = [];
+        $editUrls = $this->_editUrls($rows);
 
         foreach ($rows as $row) {
             $analysed = $row['dateAnalysed'] ? DateTimeHelper::toDateTime($row['dateAnalysed']) : false;
-            $ease = (float)$row['readingEase'];
             $grade = (float)$row['gradeLevel'];
 
             $data[] = [
@@ -1201,19 +1338,17 @@ class DashboardController extends Controller
                 'page' => [
                     'title' => (string)($row['title'] ?: $row['url']),
                     'url' => (string)($row['url'] ?? ''),
-                ],
-                'ease' => [
-                    'value' => $ease,
-                    'label' => (string)($row['readingEaseLabel'] ?? ''),
-                    'class' => $ease >= 70 ? 'pass' : ($ease >= 50 ? 'warn' : 'error'),
+                    'editUrl' => $editUrls[(int)($row['elementId'] ?? 0) . ':' . (int)($row['siteId'] ?? 0)] ?? null,
                 ],
                 'grade' => [
                     'value' => $grade,
-                    'age' => (int)$row['readingAge'],
                     'class' => $grade <= 9 ? 'pass' : ($grade <= 12 ? 'warn' : 'error'),
+                    'pass' => (bool)$row['wcag315Pass'],
                 ],
                 'words' => (int)$row['wordCount'],
-                'wcag' => (bool)$row['wcag315Pass'],
+                // Null until the page is next analysed.
+                'hard' => isset($row['hardSentences']) ? (int)$row['hardSentences'] : null,
+                'veryHard' => isset($row['veryHardSentences']) ? (int)$row['veryHardSentences'] : null,
                 'analysed' => $analysed !== false ? $analysed->format('d M Y') : '—',
                 // Elements re-analyse through analyse-entry (live field values);
                 // URL-only rows re-fetch through analyse, matching the split
@@ -1230,18 +1365,65 @@ class DashboardController extends Controller
     }
 
     /**
+     * The control panel edit URLs of the elements a page of stored results
+     * belongs to, for the ones the current user may view.
+     *
+     * One query per element type and site rather than one per row.
+     *
+     * @param array<int, array<string, mixed>> $rows Stored readability results.
+     * @return array<string, string> Edit URLs keyed by "elementId:siteId".
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private function _editUrls(array $rows): array
+    {
+        $idsBySite = [];
+
+        foreach ($rows as $row) {
+            if (!empty($row['elementId']) && !empty($row['siteId'])) {
+                $idsBySite[(int)$row['siteId']][] = (int)$row['elementId'];
+            }
+        }
+
+        $elementsService = Craft::$app->getElements();
+        $urls = [];
+
+        foreach ($idsBySite as $siteId => $ids) {
+            /** @var class-string<\craft\base\ElementInterface> $type */
+            foreach ($elementsService->getElementTypesByIds($ids) as $type) {
+                foreach ($type::find()->id($ids)->siteId($siteId)->status(null)->all() as $element) {
+                    $url = $elementsService->canView($element) ? $element->getCpEditUrl() : null;
+
+                    if ($url !== null) {
+                        $urls[$element->id . ':' . $siteId] = $url;
+                    }
+                }
+            }
+        }
+
+        return $urls;
+    }
+
+    /**
+     * Exports the pages carrying potential issues as a CSV.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
      * @throws SiteNotFoundException
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionPotentialPagesExport(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $siteId = AccessibilityAudit::getInstance()->resolveSiteId($this->request->getParam('siteId'));
         $site = Craft::$app->getSites()->getSiteById($siteId);
         $baseUrl = $site !== null ? rtrim((string)$site->getBaseUrl(), '/') : '';
-        $rows = AccessibilityAudit::getInstance()->audit->getPotentialPagesExport($siteId);
+        $rows = AccessibilityAudit::getInstance()->getAudit()->getPotentialPagesExport($siteId);
 
         $handle = fopen('php://temp', 'r+');
         assert($handle !== false);
@@ -1265,31 +1447,31 @@ class DashboardController extends Controller
         $csv = (string)stream_get_contents($handle);
         fclose($handle);
 
-        $response = Craft::$app->getResponse();
-        $response->format = Response::FORMAT_RAW;
-        $response->headers->set('Content-Type', 'text/csv; charset=utf-8');
-        $response->headers->set('Content-Disposition', 'attachment; filename="accessibility-potential-pages.csv"');
-        $response->content = $csv;
-
-        return $response;
+        return Csv::download($csv, 'accessibility-potential-pages.csv');
     }
 
     /**
+     * Returns the pages one rule was found on, a page at a time.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws SiteNotFoundException
      * @throws \yii\base\Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionIssuePagesTable(): Response
     {
         $this->requireAcceptsJson();
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $ruleId = trim((string)($this->request->getParam('ruleId') ?? ''));
         $siteId = AccessibilityAudit::getInstance()->resolveSiteId($this->request->getParam('siteId'));
         $page = max(1, (int)$this->request->getParam('page', 1));
-        $limit = max(1, (int)$this->request->getParam('per_page', self::TABLE_PER_PAGE));
+        $limit = max(1, min(self::TABLE_PER_PAGE_MAX, (int)$this->request->getParam('per_page', self::TABLE_PER_PAGE)));
         $search = trim((string)($this->request->getParam('search') ?? ''));
 
         $sortField = match ($this->request->getParam('sort.0.field')) {
@@ -1303,7 +1485,7 @@ class DashboardController extends Controller
 
         // Pagination, title search, and sorting all run in SQL (see
         // getPagesForRule), so only the current page's rows are ever loaded.
-        $result = AccessibilityAudit::getInstance()->audit->getPagesForRule($ruleId, $siteId, $page, $limit, $search, $sortField, $sortDir);
+        $result = AccessibilityAudit::getInstance()->getAudit()->getPagesForRule($ruleId, $siteId, $page, $limit, $search, $sortField, $sortDir);
 
         return $this->asSuccess(data: [
             'pagination' => AdminTable::paginationLinks($page, (int)$result['total'], $limit),
@@ -1312,20 +1494,26 @@ class DashboardController extends Controller
     }
 
     /**
+     * Exports the pages one rule was found on as a CSV.
+     *
+     * @return Response
      * @throws ForbiddenHttpException
      * @throws SiteNotFoundException
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionIssuePagesExport(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $ruleId = trim((string)($this->request->getParam('ruleId') ?? ''));
         $siteId = AccessibilityAudit::getInstance()->resolveSiteId($this->request->getParam('siteId'));
 
         $site = Craft::$app->getSites()->getSiteById($siteId);
         $baseUrl = $site !== null ? rtrim((string)$site->getBaseUrl(), '/') : '';
-        $rows = AccessibilityAudit::getInstance()->audit->getPagesForRuleExport($ruleId, $siteId);
+        $rows = AccessibilityAudit::getInstance()->getAudit()->getPagesForRuleExport($ruleId, $siteId);
 
         $handle = fopen('php://temp', 'r+');
         assert($handle !== false);
@@ -1353,13 +1541,7 @@ class DashboardController extends Controller
 
         $filename = 'accessibility-' . (string)preg_replace('/[^a-z0-9]+/i', '-', $ruleId) . '-pages.csv';
 
-        $response = Craft::$app->getResponse();
-        $response->format = Response::FORMAT_RAW;
-        $response->headers->set('Content-Type', 'text/csv; charset=utf-8');
-        $response->headers->set('Content-Disposition', 'attachment; filename="' . $filename . '"');
-        $response->content = $csv;
-
-        return $response;
+        return Csv::download($csv, $filename);
     }
 
     // ─── Table data builders ─────────────────────────────────────────────────
@@ -1368,9 +1550,14 @@ class DashboardController extends Controller
     // links carry the `site` handle, matching the navigable page routes.
 
     /**
+     * Shapes scanned-page rows for the table.
+     *
      * @param array<int, array<string, mixed>> $entries
      * @return array<int, array<string, mixed>>
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _scannedPagesTableData(array $entries, int $siteId): array
     {
@@ -1411,8 +1598,13 @@ class DashboardController extends Controller
     }
 
     /**
+     * Shapes potential-issue rows for the table.
+     *
      * @param array<int, array<string, mixed>> $rows
      * @return array<int, array<string, mixed>>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _potentialTableData(array $rows, int $siteId): array
     {
@@ -1443,6 +1635,9 @@ class DashboardController extends Controller
      *
      * @param string[] $viewports The viewports the question was recorded at.
      * @return string|null
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _viewportLabel(array $viewports): ?string
     {
@@ -1468,6 +1663,9 @@ class DashboardController extends Controller
      * @param string|null $criterion The criterion this grouping is for, where
      *                               the caller groups on it.
      * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _potentialQuestion(string $ruleId, ?string $criterion = null): string
     {
@@ -1494,9 +1692,14 @@ class DashboardController extends Controller
     }
 
     /**
+     * Shapes potential-issue page rows for the table.
+     *
      * @param array<int, array<string, mixed>> $entries
      * @return array<int, array<string, mixed>>
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _potentialPagesTableData(array $entries, int $siteId): array
     {
@@ -1531,9 +1734,14 @@ class DashboardController extends Controller
     }
 
     /**
+     * Shapes issue-page rows for the table.
+     *
      * @param array<int, array<string, mixed>> $entries
      * @return array<int, array<string, mixed>>
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _issuePagesTableData(array $entries, int $siteId): array
     {
@@ -1569,9 +1777,14 @@ class DashboardController extends Controller
     }
 
     /**
+     * Shapes resolved-issue rows for the table.
+     *
      * @param array<int, array<string, mixed>> $rows
      * @return array<int, array<string, mixed>>
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _resolvedTableData(array $rows, int $siteId): array
     {
@@ -1606,7 +1819,7 @@ class DashboardController extends Controller
 
     /**
      * Refuses an issue-detail read whose `scanId` belongs to a site the edition
-     * or user is not allowed to view. The install-wide `viewReports` permission
+     * or user is not allowed to view. The install-wide `view-reports` permission
      * does not scope by site, so the per-site fence has to be enforced here, or
      * a crafted scanId would expose another site's findings. Returns a JSON
      * refusal, or null when the scan's site is allowed (or the scan is unknown).
@@ -1614,13 +1827,14 @@ class DashboardController extends Controller
      * @param int $scanId The requested scan ID.
      * @return Response|null
      * @throws SiteNotFoundException
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.1
      */
     private function _requireAllowedScanSite(int $scanId): ?Response
     {
         $plugin = AccessibilityAudit::getInstance();
-        $scanSiteId = $plugin->audit->getScanSiteId($scanId);
+        $scanSiteId = $plugin->getAudit()->getScanSiteId($scanId);
 
         if ($scanSiteId !== null && !$plugin->isSiteAllowed($scanSiteId)) {
             return $this->asJson([
@@ -1643,7 +1857,8 @@ class DashboardController extends Controller
      * @param int $totalPages Total page count.
      * @param array<string, mixed> $extraParams Additional query params to preserve on prev/next URLs (e.g. site, tab).
      * @return array{total: int, first: int, last: int, prevUrl: string|null, nextUrl: string|null}
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _pageInfo(string $route, int $page, int $perPage, int $total, int $totalPages, array $extraParams = []): array

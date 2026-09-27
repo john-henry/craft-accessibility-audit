@@ -20,7 +20,7 @@ use craft\db\Migration;
  * time are only as good as the code that wrote them, and a snapshot can be
  * re-read against any future definition of what counts as a change.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.3.0
  */
 class m260910_000000_vpat_revisions extends Migration

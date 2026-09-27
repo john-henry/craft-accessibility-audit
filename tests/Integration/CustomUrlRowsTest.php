@@ -48,9 +48,9 @@ describe('The old newline-separated setting', function() {
         $settings = curSettings("/live\n# /parked\n/also-live");
 
         expect($settings->customUrls)->toBe([
-            ['enabled' => true, 'siteId' => '', 'url' => '/live'],
-            ['enabled' => false, 'siteId' => '', 'url' => '/parked'],
-            ['enabled' => true, 'siteId' => '', 'url' => '/also-live'],
+            ['enabled' => true, 'siteUid' => '', 'url' => '/live'],
+            ['enabled' => false, 'siteUid' => '', 'url' => '/parked'],
+            ['enabled' => true, 'siteUid' => '', 'url' => '/also-live'],
         ])
             ->and($settings->resolvedCustomUrls())->toBe(['/live', '/also-live']);
     });
@@ -119,9 +119,9 @@ describe('Saving the table', function() {
         $this->post('actions/accessibility-audit/settings/save-scanning', [
             'settings' => [
                 'customUrls' => [
-                    ['enabled' => '1', 'siteId' => '', 'url' => '/search/results?q=craft'],
-                    ['enabled' => '', 'siteId' => '', 'url' => '/parked'],
-                    ['enabled' => '1', 'siteId' => '', 'url' => '  '],
+                    ['enabled' => '1', 'siteUid' => '', 'url' => '/search/results?q=craft'],
+                    ['enabled' => '', 'siteUid' => '', 'url' => '/parked'],
+                    ['enabled' => '1', 'siteUid' => '', 'url' => '  '],
                 ],
             ],
             'redirect' => Craft::$app->getSecurity()->hashData('accessibility-audit/settings/scanning'),
@@ -133,8 +133,8 @@ describe('Saving the table', function() {
 
         // The blank row is the unfilled "add row", not a URL somebody meant.
         expect($stored['customUrls'])->toBe([
-            ['enabled' => true, 'siteId' => '', 'url' => '/search/results?q=craft'],
-            ['enabled' => false, 'siteId' => '', 'url' => '/parked'],
+            ['enabled' => true, 'siteUid' => '', 'url' => '/search/results?q=craft'],
+            ['enabled' => false, 'siteUid' => '', 'url' => '/parked'],
         ]);
     });
 
@@ -142,7 +142,7 @@ describe('Saving the table', function() {
         $this->post('actions/accessibility-audit/settings/save-scanning', [
             'settings' => [
                 'customUrls' => [
-                    ['enabled' => '1', 'siteId' => '', 'url' => '/search'],
+                    ['enabled' => '1', 'siteUid' => '', 'url' => '/search'],
                 ],
             ],
             'redirect' => Craft::$app->getSecurity()->hashData('accessibility-audit/settings/scanning'),

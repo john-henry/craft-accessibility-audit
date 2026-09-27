@@ -22,8 +22,18 @@ use Craft;
  * rename is a plugin release. The profile marks the field required and the
  * editor supplies the body; that stays correct without maintenance.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
+ *
+ * @phpstan-type StatementProfile array{
+ *     label: string,
+ *     legislation: string,
+ *     standard: string,
+ *     requiresEnforcement: bool,
+ *     requiresExclusionCategories: bool,
+ *     requiresPreparationMethod: bool,
+ *     minimumLevel: string,
+ * }
  */
 class StatementProfiles
 {
@@ -52,15 +62,8 @@ class StatementProfiles
     // =========================================================================
 
     /**
-     * @var array<string, array{
-     *     label: string,
-     *     legislation: string,
-     *     standard: string,
-     *     requiresEnforcement: bool,
-     *     requiresExclusionCategories: bool,
-     *     requiresPreparationMethod: bool,
-     *     minimumLevel: string,
-     * }> Profile definitions, keyed by profile handle.
+     * @var array<string, StatementProfile> Profile definitions, keyed by
+     * profile handle.
      *
      * requiresEnforcement:         the statement must name a body to complain to.
      * requiresExclusionCategories: shortfalls must be split into non-compliance,
@@ -70,7 +73,7 @@ class StatementProfiles
      * minimumLevel:                the WCAG level the legislation demands; a
      *                              target below this cannot satisfy it.
      */
-    private static array $profiles = [
+    private static array $_profiles = [
         self::PROFILE_GENERIC => [
             'label' => 'General (W3C WAI)',
             'legislation' => '',
@@ -109,33 +112,42 @@ class StatementProfiles
      * rather than throwing on a page the editor needs to fix it from.
      *
      * @param string $profile The profile handle.
-     * @return array<string, mixed> The profile definition.
+     * @return StatementProfile The profile definition.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function get(string $profile): array
     {
-        return self::$profiles[$profile] ?? self::$profiles[self::PROFILE_GENERIC];
+        return self::$_profiles[$profile] ?? self::$_profiles[self::PROFILE_GENERIC];
     }
 
     /**
      * All profile handles.
      *
      * @return string[]
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function handles(): array
     {
-        return array_keys(self::$profiles);
+        return array_keys(self::$_profiles);
     }
 
     /**
      * Profiles as select options for the editor.
      *
      * @return array<int, array{value: string, label: string}>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function options(): array
     {
         $options = [];
 
-        foreach (self::$profiles as $handle => $definition) {
+        foreach (self::$_profiles as $handle => $definition) {
             $options[] = [
                 'value' => $handle,
                 'label' => Craft::t('accessibility-audit', $definition['label']),
@@ -151,6 +163,9 @@ class StatementProfiles
      *
      * @param string $profile The profile handle.
      * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function requiresExclusionCategories(string $profile): bool
     {
@@ -167,6 +182,9 @@ class StatementProfiles
      * @param string $profile The profile handle.
      * @param string $targetLevel The configured target WCAG level (A/AA/AAA).
      * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function targetLevelSatisfies(string $profile, string $targetLevel): bool
     {

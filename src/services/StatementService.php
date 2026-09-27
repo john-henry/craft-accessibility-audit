@@ -14,6 +14,7 @@ use craft\helpers\StringHelper;
 use craft\web\View;
 use DateTime;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\helpers\InLanguage;
 use johnhenry\accessibilityaudit\models\OrganisationMetaModel;
 use johnhenry\accessibilityaudit\models\StatementExclusionModel;
 use johnhenry\accessibilityaudit\models\StatementMetaModel;
@@ -33,7 +34,25 @@ use yii\db\Exception;
  * {@see deriveComplianceStatus()} cannot return "fully compliant" from scan
  * results alone.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @phpstan-type StatementExclusion array<string, string>
+ * @phpstan-type StatementDocument array{
+ *     profile: string,
+ *     profileLabel: string,
+ *     legislation: string,
+ *     standard: string,
+ *     meta: array<string, mixed>,
+ *     exclusions: array<string, array<int, StatementExclusion>>,
+ *     entries: array<int, StatementExclusion>,
+ *     status: string,
+ *     derivedStatus: string,
+ *     isOverridden: bool,
+ *     sourceScanDate: string|null,
+ *     isStale: bool,
+ *     targetLevelSatisfies: bool,
+ *     targetLevel: string,
+ * }
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class StatementService extends Component
@@ -83,9 +102,12 @@ class StatementService extends Component
      * flat array and never needs to know storage is split three ways.
      *
      * @param int $siteId The site to read.
-     * @return array{id: int, profile: string, meta: array<string, mixed>, exclusions: array<int, array<string, string>>, sourceScanDate: string|null}
+     * @return array{id: int, profile: string, meta: array<string, mixed>, exclusions: array<int, StatementExclusion>, sourceScanDate: string|null}
      * @throws Exception When the record cannot be created.
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function getRecord(int $siteId): array
     {
@@ -96,7 +118,7 @@ class StatementService extends Component
             '',
         );
 
-        $shared = array_merge($defaults, AccessibilityAudit::getInstance()->organisation->getMeta($siteId));
+        $shared = array_merge($defaults, AccessibilityAudit::getInstance()->getOrganisation()->getMeta($siteId));
 
         $row = (new Query())
             ->select(['id', 'profile', 'meta', 'exclusions', 'sourceScanDate'])
@@ -140,6 +162,9 @@ class StatementService extends Component
      * @throws Exception When the update fails.
      * @throws \Exception
      * @see OrganisationService::saveMeta()
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function saveMeta(int $siteId, StatementMetaModel $meta): void
     {
@@ -166,6 +191,9 @@ class StatementService extends Component
      * @return void
      * @throws Exception When the update fails.
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function saveExclusions(int $siteId, array $entries): void
     {
@@ -211,10 +239,13 @@ class StatementService extends Component
      * }
      * @throws Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function deriveComplianceStatus(int $siteId): array
     {
-        $report = AccessibilityAudit::getInstance()->vpat->getFullReport($siteId);
+        $report = AccessibilityAudit::getInstance()->getVpat()->getFullReport($siteId);
         $rows = array_merge($report['levelA'], $report['levelAA']);
 
         // A blanket attestation stands in for per-criterion VPAT sign-off. The
@@ -227,7 +258,7 @@ class StatementService extends Component
         $unconfirmed = [];
 
         foreach ($rows as $number => $row) {
-            $effective = (string) ($row['effectiveLevel'] ?? '');
+            $effective = (string) $row['effectiveLevel'];
 
             if ($effective !== '' && $effective !== self::LEVEL_SUPPORTS) {
                 $failing[] = (string) $number;
@@ -237,7 +268,7 @@ class StatementService extends Component
             // A criterion no scanner can test counts as unconfirmed until a
             // person has said otherwise on the VPAT. An empty level is equally
             // unconfirmed: nothing has been established either way.
-            $needsHuman = ($row['auto'] ?? '') === 'manual';
+            $needsHuman = $row['auto'] === 'manual';
 
             if (($effective === '' || ($needsHuman && ($row['overrideLevel'] ?? null) === null)) && !$attested) {
                 $unconfirmed[] = (string) $number;
@@ -282,6 +313,9 @@ class StatementService extends Component
      * @return array{status: string, derived: string, isOverridden: bool, refusedOverride: bool}
      * @throws Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function resolveComplianceStatus(int $siteId): array
     {
@@ -330,16 +364,19 @@ class StatementService extends Component
      * @return array<int, array{criterion: string, name: string, reason: string, occurrences: int}>
      * @throws Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function deriveSuggestions(int $siteId): array
     {
         $plugin = AccessibilityAudit::getInstance();
-        $criteria = $plugin->vpat->getCriteria();
+        $criteria = $plugin->getVpat()->getCriteria();
         $covered = $this->_coveredCriteria($siteId);
 
         $grouped = [];
 
-        foreach ($plugin->audit->getIssuesByImpact($siteId, 500) as $issue) {
+        foreach ($plugin->getAudit()->getIssuesByImpact($siteId, 500) as $issue) {
             $criterion = (string) ($issue['wcagCriterion'] ?? '');
 
             if ($criterion === '' || isset($covered[$criterion]) || !isset($criteria[$criterion])) {
@@ -377,6 +414,9 @@ class StatementService extends Component
      * @return bool
      * @throws Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function isStale(int $siteId): bool
     {
@@ -387,9 +427,12 @@ class StatementService extends Component
      * Assembles everything a statement template needs.
      *
      * @param int $siteId The site to render.
-     * @return array<string, mixed>
+     * @return StatementDocument Everything the statement template reads.
      * @throws Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function getFullStatement(int $siteId): array
     {
@@ -430,7 +473,8 @@ class StatementService extends Component
      * than what gets published.
      *
      * @param int $siteId The site to render.
-     * @param array<string, mixed> $options Presentation options. `headingLevel`
+     * @param array{headingLevel?: int, title?: string} $options Presentation
+     *        options. `headingLevel`
      *        (1 to 6, default 1) sets the level the statement's own title
      *        renders at, with its subheadings stepping down from there, so the
      *        statement can be dropped into a page that already has a heading
@@ -441,8 +485,41 @@ class StatementService extends Component
      * @throws SyntaxError
      * @throws \yii\base\Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function render(int $siteId, array $options = []): string
+    {
+        // The statement is a legal claim, and its translations have not been
+        // checked by native speakers against the official wording, so it is
+        // published in English until they have been. A site already in some
+        // form of English keeps its own spelling and date formats.
+        $language = Craft::$app->getSites()->getSiteById($siteId, true)->language ?? Craft::$app->language;
+
+        if (str_starts_with(strtolower($language), 'en')) {
+            return $this->_render($siteId, $options);
+        }
+
+        return InLanguage::run('en', fn(): string => $this->_render($siteId, $options));
+    }
+
+    // Private Methods
+    // =========================================================================
+
+    /**
+     * Renders the statement in whatever language is current.
+     *
+     * @param int $siteId The site to render.
+     * @param array{headingLevel?: int, title?: string} $options Presentation
+     *        options.
+     * @return string The statement markup.
+     * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private function _render(int $siteId, array $options): string
     {
         $statement = $this->getFullStatement($siteId);
         $view = Craft::$app->getView();
@@ -485,19 +562,15 @@ class StatementService extends Component
             );
         }
 
-        // Site mode, not CP: this markup goes into a page of the site, and a CP
-        // template rendered from a site request hangs the request rather than
-        // failing. The template lives under src/templates/public, registered as
-        // a site template root.
+        // Site mode, not CP: this markup goes into a page of the site. The
+        // template lives under src/templates/public, registered as a site
+        // template root.
         return $view->renderTemplate(
             'accessibility-audit/statement-render',
             $vars,
             View::TEMPLATE_MODE_SITE,
         );
     }
-
-    // Private Methods
-    // =========================================================================
 
     /**
      * The WCAG criteria already written into the statement's entries.
@@ -506,6 +579,9 @@ class StatementService extends Component
      * @return array<string, true> Criterion numbers as keys.
      * @throws Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _coveredCriteria(int $siteId): array
     {
@@ -526,14 +602,25 @@ class StatementService extends Component
      * Splits stored entries into the three categories a statement renders under
      * their own headings.
      *
-     * @param array<int, array<string, string>> $exclusions The stored entries.
-     * @return array<string, array<int, array<string, string>>>
+     * @param array<int, StatementExclusion> $exclusions The stored entries.
+     * @return array<string, array<int, StatementExclusion>> Keyed by category.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _groupExclusions(array $exclusions): array
     {
         $grouped = array_fill_keys(StatementExclusionModel::categories(), []);
 
         foreach ($exclusions as $entry) {
+            // A row somebody added and never filled in would otherwise publish
+            // an empty bullet in a legal document. Entries are saved half-built
+            // on purpose, so the unfinished ones are dropped at the point they
+            // would be read rather than refused at the point they are typed.
+            if (StatementExclusionModel::rowIsBlank($entry)) {
+                continue;
+            }
+
             $category = (string) ($entry['category'] ?? StatementExclusionModel::CATEGORY_NON_COMPLIANCE);
 
             if (!isset($grouped[$category])) {
@@ -553,6 +640,9 @@ class StatementService extends Component
      * @return void
      * @throws Exception When the insert fails.
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _ensureRecord(int $siteId): void
     {
@@ -573,13 +663,22 @@ class StatementService extends Component
      * @return void
      * @throws Exception When the insert fails.
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _createRecord(int $siteId): void
     {
         $now = Db::prepareDateForDb(new DateTime());
 
-        Craft::$app->getDb()->createCommand()
-            ->insert('{{%accessibilityaudit_statement}}', [
+        // Insert-or-nothing rather than a plain insert behind an existence
+        // check. Two requests can both find the row missing, and the unique
+        // index on siteId turns the second insert into an error the reader
+        // sees. Conflicting means somebody else created it, which is the
+        // outcome this method wanted.
+        Db::upsert(
+            '{{%accessibilityaudit_statement}}',
+            [
                 'siteId' => $siteId,
                 'profile' => StatementProfiles::PROFILE_GENERIC,
                 'meta' => null,
@@ -588,7 +687,10 @@ class StatementService extends Component
                 'dateCreated' => $now,
                 'dateUpdated' => $now,
                 'uid' => StringHelper::UUID(),
-            ])
-            ->execute();
+            ],
+            false,
+            [],
+            false,
+        );
     }
 }

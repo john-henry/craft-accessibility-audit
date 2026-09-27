@@ -14,7 +14,7 @@ use johnhenry\accessibilityaudit\AccessibilityAudit;
  * cannot edit. A silent regression here is a cross-site data-exposure bug, so
  * every branch is asserted directly.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 

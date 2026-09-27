@@ -27,14 +27,64 @@ use Twig\NodeVisitor\NodeVisitorInterface;
  * a specific element (used for the "needs review" contrast panel).
  *
  * Only registered when devMode is true; has no effect in production.
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
+ * @since 1.0.0
  */
 class A11yTemplateNodeVisitor implements NodeVisitorInterface
 {
+    // Public Methods
+    // =========================================================================
+
+    /**
+     * Removes the template markers from rendered output.
+     *
+     * The markers go in when a template is compiled, before anything knows what
+     * the response will be, so a template that outputs JSON, XML or plain text
+     * gets them too, and they break that output for whatever reads it.
+     *
+     * @param string $content The rendered output.
+     * @return string The output without markers.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public static function stripMarkers(string $content): string
+    {
+        return preg_replace('/<!-- \/?accessibility-audit-tpl(?::[^>]*?)? -->/', '', $content) ?? $content;
+    }
+
+    /**
+     * @inheritdoc
+     *
+     * Nothing is done on the way in: the marker comments wrap a module's whole
+     * body, which is only complete on the way out.
+     *
+     * @param Node $node The node being entered.
+     * @param Environment $env The Twig environment.
+     * @return Node The node, unchanged.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     public function enterNode(Node $node, Environment $env): Node
     {
         return $node;
     }
 
+    /**
+     * @inheritdoc
+     *
+     * Wraps a template's body in the marker comments the page report reads to
+     * tell which template rendered a given element.
+     *
+     * @param Node $node The node being left.
+     * @param Environment $env The Twig environment.
+     * @return Node The node, wrapped where it is a template module.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     public function leaveNode(Node $node, Environment $env): Node
     {
         if (!$node instanceof ModuleNode) {
@@ -85,6 +135,14 @@ class A11yTemplateNodeVisitor implements NodeVisitorInterface
         return $node;
     }
 
+    /**
+     * @inheritdoc
+     *
+     * @return int The visitor's priority, zero being the default order.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     public function getPriority(): int
     {
         return 0;
@@ -100,7 +158,8 @@ class A11yTemplateNodeVisitor implements NodeVisitorInterface
      *
      * @param Node $body The module's body node.
      * @return bool
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
     private function _opensDocument(Node $body): bool
@@ -122,7 +181,8 @@ class A11yTemplateNodeVisitor implements NodeVisitorInterface
      *
      * @param Node $body The module's body node.
      * @return bool
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
     private function _writesMarkup(Node $body): bool
@@ -142,7 +202,8 @@ class A11yTemplateNodeVisitor implements NodeVisitorInterface
      *
      * @param Node $body The module's body node.
      * @return string|null
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
     private function _leadingText(Node $body): ?string

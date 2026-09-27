@@ -7,11 +7,16 @@
 namespace johnhenry\accessibilityaudit\controllers;
 
 use Craft;
+use craft\errors\SiteNotFoundException;
 use craft\helpers\Json;
 use craft\web\Controller;
+use Exception;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
-use johnhenry\accessibilityaudit\services\AuditService;
+use Throwable;
 use yii\base\Action;
+use yii\base\InvalidConfigException;
+use yii\web\BadRequestHttpException;
+use yii\web\MethodNotAllowedHttpException;
 use yii\web\Response;
 
 /**
@@ -32,7 +37,7 @@ use yii\web\Response;
  * only token holders may see; the loader script itself is public and identical
  * for everyone, so it is served cacheable instead.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class OverlayController extends Controller
@@ -40,6 +45,7 @@ class OverlayController extends Controller
     // Traits
     // =========================================================================
 
+    use AxeResultsTrait;
     use ProGateTrait;
 
     // Properties
@@ -64,8 +70,10 @@ class OverlayController extends Controller
      *
      * @param Action $action
      * @return bool
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
      * @since 1.0.0
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      */
     public function beforeAction($action): bool
     {
@@ -110,8 +118,9 @@ class OverlayController extends Controller
      * break on a licence or settings change.
      *
      * @return Response
-     * @throws \yii\base\InvalidConfigException
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function actionScript(): Response
@@ -168,9 +177,12 @@ class OverlayController extends Controller
      * the loader to forget a revoked token.
      *
      * @return Response
-     * @throws \yii\base\InvalidConfigException
-     * @throws \yii\web\BadRequestHttpException
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
+     * @throws BadRequestHttpException
+     * @throws MethodNotAllowedHttpException
+     * @throws SiteNotFoundException|Throwable
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function actionResolve(): Response
@@ -214,10 +226,11 @@ class OverlayController extends Controller
      * URI exclusions still apply through ensureScan().
      *
      * @return Response
-     * @throws \yii\base\InvalidConfigException
-     * @throws \yii\web\BadRequestHttpException
-     * @throws \Exception
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
+     * @throws BadRequestHttpException
+     * @throws Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function actionStoreAxeResults(): Response
@@ -251,20 +264,7 @@ class OverlayController extends Controller
             $scanId = $audit->ensureScan($elementId, $elementType, $siteId);
         }
 
-        $summary = null;
-        if ($scanId > 0) {
-            $audit->storeAxeIssues($scanId, $violations, $this->_resolveViewport(), $incomplete);
-            $scan = $audit->getScanSummary($scanId);
-            if ($scan !== null) {
-                $summary = [
-                    'score' => (int)$scan['score'],
-                    'errorCount' => (int)$scan['errorCount'],
-                    'warningCount' => (int)$scan['warningCount'],
-                    'noticeCount' => (int)$scan['noticeCount'],
-                    'scannedLabel' => Craft::$app->getFormatter()->asDatetime($scan['dateScanned'], 'short'),
-                ];
-            }
-        }
+        $summary = $this->storeAxeResults($audit, $scanId, $violations, $incomplete);
 
         return $this->asJson(['success' => true, 'scanId' => $scanId, 'scan' => $summary]);
     }
@@ -277,8 +277,9 @@ class OverlayController extends Controller
      * feeding the overlay's stored-scan hydration.
      *
      * @return Response
-     * @throws \yii\base\InvalidConfigException
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function actionPageIssues(): Response
@@ -309,8 +310,10 @@ class OverlayController extends Controller
      * "revoked, forget the token" apart from a plain failure.
      *
      * @return Response|null
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
      * @since 1.0.0
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      */
     private function _requireOverlayAccess(): ?Response
     {
@@ -347,7 +350,8 @@ class OverlayController extends Controller
      *
      * @param int $siteId
      * @return Response|null
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _requireExistingSite(int $siteId): ?Response
@@ -360,25 +364,5 @@ class OverlayController extends Controller
             'success' => false,
             'error' => Craft::t('accessibility-audit', 'Unknown site.'),
         ]);
-    }
-
-    /**
-     * The viewport bucket for the posted results, mirroring
-     * AuditController::_resolveViewport() so both store surfaces bucket
-     * desktop/mobile findings identically.
-     *
-     * @return string
-     * @author JohnHenry <info@johnhenry.ie>
-     * @since 1.0.0
-     */
-    private function _resolveViewport(): string
-    {
-        $viewport = (string)$this->request->getBodyParam('viewport', '');
-
-        if (in_array($viewport, [AuditService::VIEWPORT_DESKTOP, AuditService::VIEWPORT_MOBILE], true)) {
-            return $viewport;
-        }
-
-        return AuditService::viewportForWidth((int)$this->request->getBodyParam('viewportWidth', 0));
     }
 }

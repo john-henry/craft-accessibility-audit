@@ -13,6 +13,7 @@
 // teardown, keeping the database clean between tests.
 use craft\elements\Entry;
 use craft\elements\User;
+use craft\helpers\Cp;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\models\OrganisationMetaModel;
 use johnhenry\accessibilityaudit\models\VpatMetaModel;
@@ -46,6 +47,28 @@ uses()->beforeEach(function() {
         );
     }
 
+    // The transaction only holds for what it can roll back; MySQL commits
+    // implicitly on ALTER TABLE, which a Field factory triggers. So the
+    // database itself has to be the test one. phpunit.xml.dist pins it, and
+    // craft-pest reads that file from the working directory, so running from
+    // anywhere but the repo root silently leaves the pin unapplied.
+    $database = Craft::$app->getDb()->createCommand('SELECT DATABASE()')->queryScalar();
+
+    if ($database !== 'db_test') {
+        throw new RuntimeException(sprintf(
+            'Refusing to run: connected to database "%s", expected "db_test". Run the suite '
+            . 'from the repo root via `composer test:aa`.',
+            $database,
+        ));
+    }
+
+    // Project config is kept in config/project on disk as well as in the
+    // database, and the rollback only reaches the database. A test that saves
+    // plugin settings would otherwise rewrite those files with whatever it
+    // posted, and the next save in the control panel would carry it into the
+    // dev install for real.
+    Craft::$app->getProjectConfig()->writeYamlAutomatically = false;
+
     // The plugin, its settings model and its edition are process-level
     // singletons, and RefreshesDatabase rolls back the database and nothing
     // else. Without this, a test that changes a setting or drops the edition to
@@ -59,6 +82,7 @@ uses()->beforeEach(function() {
         pristinePluginState([
             'edition' => $plugin->edition,
             'settings' => $settings->getAttributes(),
+            'siteId' => (int)Craft::$app->getSites()->getCurrentSite()->id,
         ]);
     }
 
@@ -78,18 +102,35 @@ uses()->beforeEach(function() {
     // every test after it, whatever user those act as. Anything gated on
     // editable sites then passes or fails on test order.
     Craft::$app->getSites()->refreshSites();
+
+    // refreshSites() drops the site list and the editable-site answer, but not
+    // the current site, which is process-wide in exactly the same way. A test
+    // that switches site to check a multi-site path switches it for every test
+    // collected after it, so it is put back here rather than left to each test
+    // to remember.
+    Craft::$app->getSites()->setCurrentSite($pristine['siteId']);
+
+    // Cp::requestedSite() answers once and keeps the answer in a private
+    // static for the rest of the process. One web request is one site, so that
+    // is right in the control panel and wrong in a suite: the first test to
+    // ask pins the site, and every test after it that switches site and then
+    // exercises a control-panel path is quietly answered with the old one. It
+    // does not fail, it agrees with whatever came first, which is worse.
+    $memo = new ReflectionProperty(Cp::class, '_requestedSite');
+    $memo->setValue(null, null);
 })->in('Integration');
 
 /**
- * The plugin's edition and settings as they were before any test touched them.
+ * The plugin's edition, settings and current site as they were before any test
+ * touched them.
  *
  * Held in a static rather than a global so nothing can overwrite it by
  * accident: passing a value stores it once and only once, and later calls read
  * it back.
  *
- * @param array{edition: string, settings: array<string, mixed>}|null $capture
+ * @param array{edition: string, settings: array<string, mixed>, siteId: int}|null $capture
  *        The snapshot to store, on the first call only.
- * @return array{edition: string, settings: array<string, mixed>}|null
+ * @return array{edition: string, settings: array<string, mixed>, siteId: int}|null
  */
 function pristinePluginState(?array $capture = null): ?array
 {
@@ -159,8 +200,8 @@ function saveVpatMetaFlat(int $siteId, array $values): void
     }
 
     $plugin = AccessibilityAudit::getInstance();
-    $plugin->organisation->saveMeta($siteId, $shared);
-    $plugin->vpat->saveMeta($siteId, $vpat);
+    $plugin->getOrganisation()->saveMeta($siteId, $shared);
+    $plugin->getVpat()->saveMeta($siteId, $vpat);
 }
 
 /**
@@ -232,10 +273,40 @@ function seedComplianceScan(int $siteId): void
 {
     $elementId = UserFactory::factory()->create()->id;
 
-    AccessibilityAudit::getInstance()->audit->scanHtml(
+    AccessibilityAudit::getInstance()->getAudit()->scanHtml(
         '<html><body><img src="a.jpg"><a href="#"></a></body></html>',
         $elementId,
         User::class,
         $siteId,
     );
+}
+
+/**
+ * The source of one method on the plugin class, wherever it is declared.
+ *
+ * Several registrations happen once at plugin init and cannot be re-run inside
+ * a test, so they are asserted against their source. Resolved through
+ * reflection rather than a file path: the methods live on a trait the plugin
+ * class pulls in, and a path-based read goes quietly green the moment one
+ * moves, which is exactly when the assertion is worth having.
+ *
+ * @param string $method The method to read.
+ * @return string Its source, or an empty string where it does not exist.
+ * @throws ReflectionException
+ */
+function pluginMethodSource(string $method): string
+{
+    if (!method_exists(AccessibilityAudit::class, $method)) {
+        return '';
+    }
+
+    $reflected = new ReflectionMethod(AccessibilityAudit::class, $method);
+    $file = (string) $reflected->getFileName();
+    $lines = file($file) ?: [];
+
+    return implode('', array_slice(
+        $lines,
+        $reflected->getStartLine() - 1,
+        $reflected->getEndLine() - $reflected->getStartLine() + 1,
+    ));
 }

@@ -14,7 +14,7 @@ function withExcluded(array $patterns, callable $fn): void
     $original = $settings->excludedUriPatterns;
     $settings->excludedUriPatterns = $patterns;
     try {
-        $fn(AccessibilityAudit::getInstance()->audit);
+        $fn(AccessibilityAudit::getInstance()->getAudit());
     } finally {
         $settings->excludedUriPatterns = $original;
     }
@@ -28,10 +28,21 @@ it('matches a URI against a regular expression', function() {
     });
 });
 
-it('treats an empty pattern as the homepage only', function() {
-    withExcluded([['uriPattern' => '']], function($audit) {
+it('matches the homepage on ^$', function() {
+    withExcluded([['uriPattern' => '^$']], function($audit) {
         expect($audit->isUriExcluded('__home__', 1))->toBeTrue()
             ->and($audit->isUriExcluded(null, 1))->toBeTrue()
+            ->and($audit->isUriExcluded('about', 1))->toBeFalse();
+    });
+});
+
+it('matches nothing on an empty pattern', function() {
+    // Not merely inert: an empty expression delimited for the matcher is `~~`,
+    // which matches every URI, so a blank that gets past the guard excludes the
+    // whole site rather than nothing.
+    withExcluded([['uriPattern' => '']], function($audit) {
+        expect($audit->isUriExcluded('__home__', 1))->toBeFalse()
+            ->and($audit->isUriExcluded(null, 1))->toBeFalse()
             ->and($audit->isUriExcluded('about', 1))->toBeFalse();
     });
 });

@@ -6,8 +6,10 @@
 
 namespace johnhenry\accessibilityaudit\helpers;
 
+use Exception;
 use Wrench\Client;
 use Wrench\Exception\HandshakeException;
+use Wrench\Exception\SocketException;
 
 /**
  * A WebSocket client that waits for the opening handshake to actually arrive.
@@ -25,7 +27,7 @@ use Wrench\Exception\HandshakeException;
  * synchronous call off a blocking read. Both are needed for a remote browser to
  * be usable.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class RemoteChromeClient extends Client
@@ -57,10 +59,13 @@ class RemoteChromeClient extends Client
     // =========================================================================
 
     /**
+     * Opens a client against a browser someone else is running.
+     *
      * @param string $uri The browser's WebSocket URI.
      * @param string $origin Origin to send on the opening handshake.
-     * @param array $options Passed through to the underlying client.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @param array<string, mixed> $options Passed through to the underlying client.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function __construct(string $uri, string $origin, array $options = [])
@@ -76,9 +81,10 @@ class RemoteChromeClient extends Client
      * until the response arrives or the timeout expires.
      *
      * @return bool Whether the connection is established.
-     * @throws HandshakeException If the server answers with anything other than
+     * @throws HandshakeException|SocketException If the server answers with anything other than
      * a valid 101 upgrade.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function connect(): bool
@@ -89,7 +95,7 @@ class RemoteChromeClient extends Client
 
         try {
             $this->socket->connect();
-        } catch (\Exception) {
+        } catch (Exception) {
             return false;
         }
 
@@ -115,26 +121,39 @@ class RemoteChromeClient extends Client
     // =========================================================================
 
     /**
-     * Reads from the socket until the handshake response arrives or the timeout
-     * expires, returning an empty string if nothing ever came.
+     * Reads from the socket until the whole handshake response arrives or the
+     * timeout expires, returning an empty string if nothing ever came.
+     *
+     * Reads are accumulated until the blank line that ends an HTTP header
+     * block, not returned on the first one that carries anything. A response
+     * split across segments would otherwise reach the validator truncated, and
+     * a healthy browser would be rejected for answering in two pieces: the same
+     * failure this class exists to fix, one layer down.
+     *
+     * Whatever arrived is returned if the terminator never does, so the
+     * validator reports a malformed handshake rather than an unreachable host.
      *
      * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _readHandshakeResponse(): string
     {
         $deadline = microtime(true) + self::HANDSHAKE_TIMEOUT;
+        $response = '';
 
         do {
-            $response = (string)$this->socket->receive(
+            $response .= (string)$this->socket->receive(
                 self::MAX_HANDSHAKE_RESPONSE,
                 self::HANDSHAKE_POLL_INTERVAL,
             );
 
-            if ($response !== '') {
+            if (str_contains($response, "\r\n\r\n")) {
                 return $response;
             }
         } while (microtime(true) < $deadline);
 
-        return '';
+        return $response;
     }
 }

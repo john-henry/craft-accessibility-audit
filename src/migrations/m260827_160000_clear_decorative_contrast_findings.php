@@ -21,7 +21,7 @@ use johnhenry\accessibilityaudit\AccessibilityAudit;
  * Genuine findings are untouched, and anything cleared here that turns out to
  * be real comes back on the next scan.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.2.0
  */
 class m260827_160000_clear_decorative_contrast_findings extends Migration

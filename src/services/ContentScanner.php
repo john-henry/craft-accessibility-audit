@@ -6,6 +6,7 @@
 
 namespace johnhenry\accessibilityaudit\services;
 
+use DOMAttr;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
@@ -18,6 +19,9 @@ use yii\base\Component;
 /**
  * Scans HTML using DOMDocument and returns IssueModel instances.
  * Covers WCAG 2.2 A and AA success criteria checkable server-side.
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
+ * @since 1.0.0
  */
 class ContentScanner extends Component
 {
@@ -110,16 +114,35 @@ class ContentScanner extends Component
      */
     private array $_origins = [];
 
-    /** @return IssueModel[] */
+    /**
+     * Runs every content check over a rendered page.
+     *
+     * The page is parsed once and each check queries that one DOM. Excluded
+     * page furniture (consent banners, chat widgets) is taken out before any
+     * check runs, mirroring the browser engines' axe exclude context, so no
+     * engine reports what another skips.
+     *
+     * @param string $html The rendered page.
+     * @param string[] $ignoreRules Rule ids to leave out of the findings.
+     * @return IssueModel[] The findings, worst first.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     public function scan(string $html, array $ignoreRules = []): array
     {
         $issues = [];
-        $this->forgetOrigins();
+        $this->_forgetOrigins();
 
+        // libxml's error mode is process-wide, not per-document. Leaving it
+        // switched on silences parse errors for everything that comes after,
+        // which in a queue worker is every later job in that process, not just
+        // the rest of this scan. Put back whatever it was.
         $dom = new DOMDocument('1.0', 'utf-8');
-        libxml_use_internal_errors(true);
+        $libxmlErrors = libxml_use_internal_errors(true);
         $dom->loadHTML('<?xml encoding="utf-8" ?>' . $html, LIBXML_NOWARNING | LIBXML_NOERROR);
         libxml_clear_errors();
+        libxml_use_internal_errors($libxmlErrors);
 
         $xpath = new DOMXPath($dom);
 
@@ -134,42 +157,48 @@ class ContentScanner extends Component
         InertMarkup::removeFrom($xpath);
 
         $checks = [
-            'block-in-paragraph' => fn() => $this->checkBlockInParagraph($html),
-            'unescaped-markup-in-code' => fn() => $this->checkUnescapedMarkupInCode($xpath, $html),
-            'img-alt' => fn() => $this->checkImgAlt($dom, $xpath),
-            'img-alt-filename' => fn() => $this->checkImgAltFilename($dom, $xpath),
-            'heading-order' => fn() => $this->checkHeadingOrder($dom, $xpath),
-            'empty-heading' => fn() => $this->checkEmptyHeadings($dom, $xpath),
-            'multiple-h1' => fn() => $this->checkMultipleH1($dom, $xpath),
-            'link-name' => fn() => $this->checkLinkName($dom, $xpath),
-            'link-generic' => fn() => $this->checkLinkGeneric($dom, $xpath),
-            'symbol-only-content' => fn() => $this->checkSymbolOnlyContent($xpath),
-            'link-new-window' => fn() => $this->checkLinkNewWindow($dom, $xpath),
-            'button-name' => fn() => $this->checkButtonName($dom, $xpath),
-            'form-label' => fn() => $this->checkFormLabels($dom, $xpath),
-            'table-header' => fn() => $this->checkTableHeaders($dom, $xpath),
-            'html-lang' => fn() => $this->checkHtmlLang($dom, $xpath),
-            'page-title' => fn() => $this->checkPageTitle($dom, $xpath),
-            'skip-link' => fn() => $this->checkSkipLink($dom, $xpath),
-            'landmark-main' => fn() => $this->checkLandmarkMain($dom, $xpath),
-            'iframe-title' => fn() => $this->checkIframeTitle($dom, $xpath),
-            'video-captions' => fn() => $this->checkVideoCaptions($dom, $xpath),
-            'autoplay' => fn() => $this->checkAutoplay($dom, $xpath),
-            'duplicate-id' => fn() => $this->checkDuplicateIds($dom, $xpath),
-            'meta-description' => fn() => $this->checkMetaDescription($dom, $xpath),
-            'aria-hidden-focus' => fn() => $this->checkAriaHiddenFocus($dom, $xpath),
-            'landmark-regions' => fn() => $this->checkLandmarkRegions($dom, $xpath),
-            'list-structure' => fn() => $this->checkListStructure($dom, $xpath),
-            'input-type' => fn() => $this->checkInputTypes($dom, $xpath),
-            'select-label' => fn() => $this->checkSelectLabels($dom, $xpath),
+            'block-in-paragraph' => fn() => $this->_checkBlockInParagraph($html),
+            'unescaped-markup-in-code' => fn() => $this->_checkUnescapedMarkupInCode($xpath, $html),
+            'img-alt' => fn() => $this->_checkImgAlt($xpath),
+            'img-alt-filename' => fn() => $this->_checkImgAltFilename($xpath),
+            'heading-order' => fn() => $this->_checkHeadingOrder($xpath),
+            'empty-heading' => fn() => $this->_checkEmptyHeadings($xpath),
+            'multiple-h1' => fn() => $this->_checkMultipleH1($xpath),
+            'link-name' => fn() => $this->_checkLinkName($xpath),
+            'link-generic' => fn() => $this->_checkLinkGeneric($xpath),
+            'symbol-only-content' => fn() => $this->_checkSymbolOnlyContent($xpath),
+            'link-new-window' => fn() => $this->_checkLinkNewWindow($xpath),
+            'button-name' => fn() => $this->_checkButtonName($xpath),
+            'form-label' => fn() => $this->_checkFormLabels($xpath),
+            'table-header' => fn() => $this->_checkTableHeaders($xpath),
+            'html-lang' => fn() => $this->_checkHtmlLang($xpath),
+            'page-title' => fn() => $this->_checkPageTitle($xpath),
+            'skip-link' => fn() => $this->_checkSkipLink($xpath),
+            'landmark-main' => fn() => $this->_checkLandmarkMain($xpath),
+            'iframe-title' => fn() => $this->_checkIframeTitle($xpath),
+            'video-captions' => fn() => $this->_checkVideoCaptions($xpath),
+            'autoplay' => fn() => $this->_checkAutoplay($xpath),
+            'duplicate-id' => fn() => $this->_checkDuplicateIds($xpath),
+            'meta-description' => fn() => $this->_checkMetaDescription($xpath),
+            'aria-hidden-focus' => fn() => $this->_checkAriaHiddenFocus($xpath),
+            'landmark-regions' => fn() => $this->_checkLandmarkRegions($xpath),
+            'list-structure' => fn() => $this->_checkListStructure($xpath),
+            'input-type' => fn() => $this->_checkInputTypes($xpath),
+            'select-label' => fn() => $this->_checkSelectLabels($xpath),
         ];
 
         foreach ($checks as $ruleId => $check) {
-            if (!in_array($ruleId, $ignoreRules, true)) {
-                $found = $check();
-                if ($found) {
-                    $issues = array_merge($issues, $found);
-                }
+            if (in_array($ruleId, $ignoreRules, true)) {
+                continue;
+            }
+
+            // Appended in place rather than merged: a merge inside the loop
+            // rebuilds the whole list on every check, which on a page carrying
+            // a lot of findings is the list copied twenty-odd times over.
+            $found = $check();
+
+            if ($found) {
+                array_push($issues, ...$found);
             }
         }
 
@@ -184,7 +213,8 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    // ─── Markup shown as text ────────────────────────────────────────────────
+    // Markup Shown as Text
+    // =========================================================================
 
     /**
      * Markup rendering inside a `<code>` where it was meant to be read.
@@ -204,10 +234,11 @@ class ContentScanner extends Component
      * @param DOMXPath $xpath The parsed page.
      * @param string $html The raw source, for measuring what a tag swallowed.
      * @return IssueModel[]
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
-    private function checkUnescapedMarkupInCode(DOMXPath $xpath, string $html): array
+    private function _checkUnescapedMarkupInCode(DOMXPath $xpath, string $html): array
     {
         $issues = [];
         $seen = [];
@@ -261,7 +292,7 @@ class ContentScanner extends Component
                     // content-integrity problem, not a failure of a success
                     // criterion, and claiming one would be wrong.
                     null, null,
-                    $this->outerHtml($holder),
+                    $this->_outerHtml($holder),
                     null,
                     'php',
                 );
@@ -281,6 +312,9 @@ class ContentScanner extends Component
      * @param string $html The raw page source.
      * @param string $tag The tag found rendering inside a code sample.
      * @return int Characters swallowed, or 0 when the tag is closed or void.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _swallowedLength(string $html, string $tag): int
     {
@@ -300,7 +334,8 @@ class ContentScanner extends Component
         return $at === false ? 0 : strlen($html) - $at;
     }
 
-    // ─── Paragraph nesting ───────────────────────────────────────────────────
+    // Paragraph Nesting
+    // =========================================================================
 
     /**
      * Block content inside a paragraph, read from the raw HTML.
@@ -320,10 +355,11 @@ class ContentScanner extends Component
      *
      * @param string $html The raw page source, before parsing.
      * @return IssueModel[]
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
-    private function checkBlockInParagraph(string $html): array
+    private function _checkBlockInParagraph(string $html): array
     {
         $issues = [];
         $masked = $this->_maskUnparsedRegions($html);
@@ -363,6 +399,9 @@ class ContentScanner extends Component
      * @param string $html The raw page source.
      * @return string The source with comments, templates, scripts and styles
      *                replaced by spaces.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _maskUnparsedRegions(string $html): string
     {
@@ -384,10 +423,21 @@ class ContentScanner extends Component
         return $html;
     }
 
-    // ─── Images ──────────────────────────────────────────────────────────────
+    // Images
+    // =========================================================================
 
-    /** WCAG 1.1.1 (A): images must have alt text */
-    private function checkImgAlt(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * Images carry an alt attribute.
+     *
+     * Reports `img-alt` against WCAG 1.1.1 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkImgAlt(DOMXPath $xpath): array
     {
         $issues = [];
         /** @var DOMElement $img */
@@ -397,7 +447,7 @@ class ContentScanner extends Component
                     'img-alt', 'error',
                     'Image is missing an alt attribute.',
                     '1.1.1', 'A',
-                    $this->outerHtml($img),
+                    $this->_outerHtml($img),
                     self::WCAG_HELP_BASE . 'non-text-content'
                 );
             }
@@ -405,8 +455,18 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    /** WCAG 1.1.1 (A): alt text should not be a filename */
-    private function checkImgAltFilename(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * Alt text is not just the image's filename.
+     *
+     * Reports `img-alt-filename` against WCAG 1.1.1 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkImgAltFilename(DOMXPath $xpath): array
     {
         $issues = [];
         foreach ($xpath->query('//img[@alt]') as $img) {
@@ -424,7 +484,7 @@ class ContentScanner extends Component
                     'img-alt-filename', 'warning',
                     'Image alt text appears to be a filename: "' . htmlspecialchars($alt) . '".',
                     '1.1.1', 'A',
-                    $this->outerHtml($img),
+                    $this->_outerHtml($img),
                     self::WCAG_HELP_BASE . 'non-text-content'
                 );
             }
@@ -432,10 +492,21 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    // ─── Headings ────────────────────────────────────────────────────────────
+    // Headings
+    // =========================================================================
 
-    /** WCAG 1.3.1, 2.4.6: heading levels must not skip */
-    private function checkHeadingOrder(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * Heading levels do not skip a step.
+     *
+     * Reports `heading-order` against WCAG 1.3.1, 2.4.6.
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkHeadingOrder(DOMXPath $xpath): array
     {
         $issues = [];
         $headings = $xpath->query('//*[self::h1 or self::h2 or self::h3 or self::h4 or self::h5 or self::h6]');
@@ -449,7 +520,7 @@ class ContentScanner extends Component
                     'heading-order', 'warning',
                     "Heading level skipped: h{$prev} followed by h{$level}.",
                     '1.3.1', 'A',
-                    $this->outerHtml($heading),
+                    $this->_outerHtml($heading),
                     self::WCAG_HELP_BASE . 'info-and-relationships'
                 );
             }
@@ -458,8 +529,18 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    /** WCAG 1.3.1: headings must not be empty */
-    private function checkEmptyHeadings(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * Headings are not empty.
+     *
+     * Reports `empty-heading` against WCAG 1.3.1.
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkEmptyHeadings(DOMXPath $xpath): array
     {
         $issues = [];
         foreach ($xpath->query('//*[self::h1 or self::h2 or self::h3 or self::h4 or self::h5 or self::h6]') as $h) {
@@ -469,7 +550,7 @@ class ContentScanner extends Component
                     'empty-heading', 'error',
                     "Empty <{$h->nodeName}> heading found.",
                     '1.3.1', 'A',
-                    $this->outerHtml($h),
+                    $this->_outerHtml($h),
                     self::WCAG_HELP_BASE . 'info-and-relationships'
                 );
             }
@@ -477,8 +558,18 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    /** Best practice: only one h1 per page */
-    private function checkMultipleH1(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * The page carries one h1, not several.
+     *
+     * Reports `multiple-h1` against best practice.
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkMultipleH1(DOMXPath $xpath): array
     {
         $h1s = $xpath->query('//h1');
         if ($h1s->length > 1) {
@@ -493,10 +584,21 @@ class ContentScanner extends Component
         return [];
     }
 
-    // ─── Links ───────────────────────────────────────────────────────────────
+    // Links
+    // =========================================================================
 
-    /** WCAG 4.1.2, 2.4.4 (A): links must have a discernible name */
-    private function checkLinkName(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * Links have a name a screen reader can announce.
+     *
+     * Reports `link-name` against WCAG 4.1.2, 2.4.4 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkLinkName(DOMXPath $xpath): array
     {
         $issues = [];
         foreach ($xpath->query('//a[@href]') as $a) {
@@ -506,7 +608,7 @@ class ContentScanner extends Component
                     'link-name', 'error',
                     'Link has no discernible name (no text, aria-label, title, or image alt).',
                     '4.1.2', 'A',
-                    $this->outerHtml($a),
+                    $this->_outerHtml($a),
                     self::WCAG_HELP_BASE . 'name-role-value'
                 );
             }
@@ -514,8 +616,18 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    /** WCAG 2.4.4 (A): link text should describe destination */
-    private function checkLinkGeneric(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * Link text describes where the link goes.
+     *
+     * Reports `link-generic` against WCAG 2.4.4 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkLinkGeneric(DOMXPath $xpath): array
     {
         $issues = [];
         foreach ($xpath->query('//a[@href]') as $a) {
@@ -528,7 +640,7 @@ class ContentScanner extends Component
                     'link-generic', 'warning',
                     'Link text "' . htmlspecialchars($text) . '" does not describe its destination.',
                     '2.4.4', 'A',
-                    $this->outerHtml($a),
+                    $this->_outerHtml($a),
                     self::WCAG_HELP_BASE . 'link-purpose-in-context'
                 );
             }
@@ -553,10 +665,11 @@ class ContentScanner extends Component
      *
      * @param DOMXPath $xpath The document to search.
      * @return IssueModel[]
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
-    private function checkSymbolOnlyContent(DOMXPath $xpath): array
+    private function _checkSymbolOnlyContent(DOMXPath $xpath): array
     {
         $issues = [];
         $pattern = '/^[' . self::MEANING_BY_SHAPE . '\s\x{00A0}]+$/u';
@@ -591,7 +704,7 @@ class ContentScanner extends Component
                         . 'means and mark the symbol aria-hidden.',
                 $criterion,
                 'A',
-                $this->outerHtml($node),
+                $this->_outerHtml($node),
                 self::WCAG_HELP_BASE . $help
             );
         }
@@ -599,8 +712,18 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    /** Best practice: links opening in new tab should warn users */
-    private function checkLinkNewWindow(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * A link opening a new tab says so.
+     *
+     * Reports `link-new-window` against best practice.
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkLinkNewWindow(DOMXPath $xpath): array
     {
         $issues = [];
         foreach ($xpath->query('//a[@target="_blank"]') as $a) {
@@ -615,7 +738,7 @@ class ContentScanner extends Component
                     'link-new-window', 'warning',
                     'Link opens in a new tab but does not warn users via aria-label or title.',
                     '3.2.2', 'A',
-                    $this->outerHtml($a),
+                    $this->_outerHtml($a),
                     self::WCAG_HELP_BASE . 'on-input'
                 );
             }
@@ -623,10 +746,21 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    // ─── Buttons ─────────────────────────────────────────────────────────────
+    // Buttons
+    // =========================================================================
 
-    /** WCAG 4.1.2 (A): buttons must have a name */
-    private function checkButtonName(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * Buttons have a name.
+     *
+     * Reports `button-name` against WCAG 4.1.2 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkButtonName(DOMXPath $xpath): array
     {
         $issues = [];
         foreach ($xpath->query('//button') as $btn) {
@@ -647,7 +781,7 @@ class ContentScanner extends Component
                         'button-name', 'error',
                         'Button has no discernible name.',
                         '4.1.2', 'A',
-                        $this->outerHtml($btn),
+                        $this->_outerHtml($btn),
                         self::WCAG_HELP_BASE . 'name-role-value'
                     );
                 }
@@ -656,10 +790,21 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    // ─── Forms ───────────────────────────────────────────────────────────────
+    // Forms
+    // =========================================================================
 
-    /** WCAG 1.3.1, 3.3.2 (A): form controls must have labels */
-    private function checkFormLabels(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * Form inputs have a label, and a placeholder is not counted as one.
+     *
+     * Reports `form-label` against WCAG 1.3.1, 3.3.2 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkFormLabels(DOMXPath $xpath): array
     {
         $issues = [];
         $skipTypes = ['hidden', 'submit', 'button', 'reset', 'image'];
@@ -698,7 +843,7 @@ class ContentScanner extends Component
                     'form-label', $placeholder !== '' ? 'warning' : 'error',
                     $msg,
                     '1.3.1', 'A',
-                    $this->outerHtml($input),
+                    $this->_outerHtml($input),
                     self::WCAG_HELP_BASE . 'info-and-relationships'
                 );
             }
@@ -706,8 +851,18 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    /** WCAG 1.3.1: select elements must have labels */
-    private function checkSelectLabels(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * Select elements have a label.
+     *
+     * Reports `select-label` against WCAG 1.3.1.
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkSelectLabels(DOMXPath $xpath): array
     {
         $issues = [];
         foreach ($xpath->query('//select') as $select) {
@@ -729,7 +884,7 @@ class ContentScanner extends Component
                     'select-label', 'error',
                     'Select element is missing an associated label.',
                     '1.3.1', 'A',
-                    $this->outerHtml($select),
+                    $this->_outerHtml($select),
                     self::WCAG_HELP_BASE . 'info-and-relationships'
                 );
             }
@@ -737,10 +892,21 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    // ─── Tables ──────────────────────────────────────────────────────────────
+    // Tables
+    // =========================================================================
 
-    /** WCAG 1.3.1 (A): data tables need header cells */
-    private function checkTableHeaders(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * Data tables have header cells.
+     *
+     * Reports `table-header` against WCAG 1.3.1 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkTableHeaders(DOMXPath $xpath): array
     {
         $issues = [];
         foreach ($xpath->query('//table') as $table) {
@@ -764,10 +930,21 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    // ─── Document structure ───────────────────────────────────────────────────
+    // Document Structure
+    // =========================================================================
 
-    /** WCAG 3.1.1 (A): html element must have lang attribute */
-    private function checkHtmlLang(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * The html element declares a language.
+     *
+     * Reports `html-lang` against WCAG 3.1.1 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkHtmlLang(DOMXPath $xpath): array
     {
         $html = $xpath->query('//html')->item(0);
         if ($html instanceof DOMElement) {
@@ -785,8 +962,18 @@ class ContentScanner extends Component
         return [];
     }
 
-    /** WCAG 2.4.2 (A): page must have a title */
-    private function checkPageTitle(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * The page has a title.
+     *
+     * Reports `page-title` against WCAG 2.4.2 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkPageTitle(DOMXPath $xpath): array
     {
         $titles = $xpath->query('//title');
         if ($titles->length === 0 || trim($titles->item(0)->textContent) === '') {
@@ -801,8 +988,18 @@ class ContentScanner extends Component
         return [];
     }
 
-    /** WCAG 2.4.1 (A): skip navigation link */
-    private function checkSkipLink(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * The page offers a skip-navigation link.
+     *
+     * Reports `skip-link` against WCAG 2.4.1 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkSkipLink(DOMXPath $xpath): array
     {
         // Look for a skip link in the first 3 links on the page
         $links = $xpath->query('//a[@href]');
@@ -828,8 +1025,18 @@ class ContentScanner extends Component
         )];
     }
 
-    /** Best practice: page should have a <main> landmark */
-    private function checkLandmarkMain(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * The page has a main landmark.
+     *
+     * Reports `landmark-main` against best practice.
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkLandmarkMain(DOMXPath $xpath): array
     {
         $main = $xpath->query('//main | //*[@role="main"]');
         if ($main->length === 0) {
@@ -844,8 +1051,18 @@ class ContentScanner extends Component
         return [];
     }
 
-    /** WCAG 1.3.1: page should use landmark regions */
-    private function checkLandmarkRegions(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * The page uses landmark regions.
+     *
+     * Reports `landmark-regions` against WCAG 1.3.1.
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkLandmarkRegions(DOMXPath $xpath): array
     {
         $landmarks = $xpath->query(
             '//header | //nav | //main | //footer | //aside | //section[@aria-label or @aria-labelledby] ' .
@@ -863,10 +1080,21 @@ class ContentScanner extends Component
         return [];
     }
 
-    // ─── Iframes & Media ─────────────────────────────────────────────────────
+    // Iframes & Media
+    // =========================================================================
 
-    /** WCAG 4.1.2 (A): iframes must have title */
-    private function checkIframeTitle(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * Iframes have a title.
+     *
+     * Reports `iframe-title` against WCAG 4.1.2 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkIframeTitle(DOMXPath $xpath): array
     {
         $issues = [];
         foreach ($xpath->query('//iframe') as $iframe) {
@@ -877,7 +1105,7 @@ class ContentScanner extends Component
                     'iframe-title', 'error',
                     'iframe is missing a title attribute.',
                     '4.1.2', 'A',
-                    $this->outerHtml($iframe),
+                    $this->_outerHtml($iframe),
                     self::WCAG_HELP_BASE . 'name-role-value'
                 );
             }
@@ -885,8 +1113,18 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    /** WCAG 1.2.2 (A): video must have captions */
-    private function checkVideoCaptions(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * Video carries captions.
+     *
+     * Reports `video-captions` against WCAG 1.2.2 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkVideoCaptions(DOMXPath $xpath): array
     {
         $issues = [];
         foreach ($xpath->query('//video') as $video) {
@@ -905,8 +1143,18 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    /** WCAG 1.4.2 (A): auto-playing media must have controls */
-    private function checkAutoplay(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * Auto-playing media can be stopped.
+     *
+     * Reports `autoplay` against WCAG 1.4.2 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkAutoplay(DOMXPath $xpath): array
     {
         $issues = [];
         foreach ($xpath->query('//video[@autoplay] | //audio[@autoplay]') as $el) {
@@ -925,10 +1173,21 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    // ─── ARIA & IDs ──────────────────────────────────────────────────────────
+    // ARIA & IDs
+    // =========================================================================
 
-    /** WCAG 4.1.1 (A): duplicate IDs */
-    private function checkDuplicateIds(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * No id is used twice on the page.
+     *
+     * Reports `duplicate-id` against WCAG 4.1.1 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkDuplicateIds(DOMXPath $xpath): array
     {
         $ids = [];
         $duplicates = [];
@@ -962,8 +1221,18 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    /** WCAG 4.1.2 (A): focusable elements inside aria-hidden */
-    private function checkAriaHiddenFocus(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * Nothing focusable sits inside aria-hidden.
+     *
+     * Reports `aria-hidden-focus` against WCAG 4.1.2 (A).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkAriaHiddenFocus(DOMXPath $xpath): array
     {
         $issues = [];
         $focusable = 'a[@href] | button | input | select | textarea | *[@tabindex]';
@@ -975,7 +1244,7 @@ class ContentScanner extends Component
                     'aria-hidden-focus', 'error',
                     'Focusable element found inside aria-hidden="true". Hidden content must not receive focus.',
                     '4.1.2', 'A',
-                    $this->outerHtml($hidden),
+                    $this->_outerHtml($hidden),
                     self::WCAG_HELP_BASE . 'name-role-value'
                 );
             }
@@ -983,10 +1252,21 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    // ─── Meta ────────────────────────────────────────────────────────────────
+    // Meta
+    // =========================================================================
 
-    /** Best practice: meta description */
-    private function checkMetaDescription(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * The page has a meta description.
+     *
+     * Reports `meta-description` against best practice.
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkMetaDescription(DOMXPath $xpath): array
     {
         $meta = $xpath->query('//meta[@name="description"]');
         $metaNode = $meta->length > 0 ? $meta->item(0) : null;
@@ -1002,10 +1282,21 @@ class ContentScanner extends Component
         return [];
     }
 
-    // ─── Lists ───────────────────────────────────────────────────────────────
+    // Lists
+    // =========================================================================
 
-    /** WCAG 1.3.1: list items must be in a list */
-    private function checkListStructure(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * List items sit inside a list.
+     *
+     * Reports `list-structure` against WCAG 1.3.1.
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkListStructure(DOMXPath $xpath): array
     {
         $issues = [];
         // li that is not inside ul, ol, or menu
@@ -1014,17 +1305,28 @@ class ContentScanner extends Component
                 'list-structure', 'error',
                 '<li> element is not inside a <ul> or <ol>.',
                 '1.3.1', 'A',
-                $li instanceof DOMElement ? $this->outerHtml($li) : null,
+                $li instanceof DOMElement ? $this->_outerHtml($li) : null,
                 self::WCAG_HELP_BASE . 'info-and-relationships'
             );
         }
         return $issues;
     }
 
-    // ─── Input types ─────────────────────────────────────────────────────────
+    // Input Types
+    // =========================================================================
 
-    /** WCAG 1.3.5 (AA): input purpose should be identified */
-    private function checkInputTypes(DOMDocument $dom, DOMXPath $xpath): array
+    /**
+     * Inputs name the purpose they collect.
+     *
+     * Reports `input-type` against WCAG 1.3.5 (AA).
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @return IssueModel[] The findings, empty where the page passes.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _checkInputTypes(DOMXPath $xpath): array
     {
         $issues = [];
         $purposeMap = [
@@ -1051,7 +1353,7 @@ class ContentScanner extends Component
                             'input-type', 'warning',
                             "Input field \"{$input->getAttribute('name')}\" looks like a {$type} field but has no autocomplete attribute.",
                             '1.3.5', 'AA',
-                            $this->outerHtml($input),
+                            $this->_outerHtml($input),
                             self::WCAG_HELP_BASE . 'identify-input-purpose'
                         );
                         break 2;
@@ -1062,7 +1364,8 @@ class ContentScanner extends Component
         return $issues;
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────
+    // Private Methods
+    // =========================================================================
 
     /**
      * Whether the alt text is the image's own filename in disguise.
@@ -1079,6 +1382,9 @@ class ContentScanner extends Component
      * @param string $alt The alt text as rendered.
      * @param string $src The image's src attribute.
      * @return bool True when the alt is the filename by another name.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _altMatchesFilename(string $alt, string $src): bool
     {
@@ -1113,6 +1419,9 @@ class ContentScanner extends Component
      *
      * @param string $name The accessible name.
      * @return string The name reduced to its purpose, lowercased.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _linkPurposeText(string $name): string
     {
@@ -1144,10 +1453,11 @@ class ContentScanner extends Component
      * does not narrow the property to an empty array for the rest of the call.
      *
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
-    private function forgetOrigins(): void
+    private function _forgetOrigins(): void
     {
         $this->_origins = [];
     }
@@ -1167,10 +1477,11 @@ class ContentScanner extends Component
      *
      * @param DOMElement $el The element to place.
      * @return string|null The component's name, or null when it is not in one.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
-    private function componentOrigin(DOMElement $el): ?string
+    private function _componentOrigin(DOMElement $el): ?string
     {
         for ($node = $el; $node instanceof DOMElement; $node = $node->parentNode) {
             if (!$node->hasAttribute(self::COMPONENT_ATTR)) {
@@ -1187,15 +1498,24 @@ class ContentScanner extends Component
         return null;
     }
 
-    private function outerHtml(DOMElement $el): string
+    /**
+     * An element's markup, as the context string a finding is keyed to.
+     *
+     * @param DOMElement $el The element a finding is about.
+     * @return string The element's outer HTML.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _outerHtml(DOMElement $el): string
     {
         // Recorded against the context string rather than passed along, so that
         // the thirty-odd checks that build issues do not each need changing.
         // Two elements with byte-identical markup and preview text share an
         // origin, which is what you would want anyway.
-        $this->_origins[$this->outerHtmlString($el)] = $this->componentOrigin($el) ?? 'authored';
+        $this->_origins[$this->_outerHtmlString($el)] = $this->_componentOrigin($el) ?? 'authored';
 
-        return $this->outerHtmlString($el);
+        return $this->_outerHtmlString($el);
     }
 
     /**
@@ -1203,15 +1523,16 @@ class ContentScanner extends Component
      *
      * @param DOMElement $el The element.
      * @return string The context.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
-    private function outerHtmlString(DOMElement $el): string
+    private function _outerHtmlString(DOMElement $el): string
     {
         $tag = '<' . $el->nodeName;
         for ($i = 0; $i < $el->attributes->length; $i++) {
             $attr = $el->attributes->item($i);
-            if (!$attr instanceof \DOMAttr) {
+            if (!$attr instanceof DOMAttr) {
                 continue;
             }
             $tag .= ' ' . $attr->name . '="' . htmlspecialchars($attr->value) . '"';

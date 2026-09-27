@@ -532,7 +532,7 @@ describe('AuditService::storeAxeIssues level score recalculation', function() {
         $scanId = axeTestScanId(axeTestElementId());
 
         // wcag22aa / wcag258, serious impact -> a Level AA error (10 points).
-        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [axeTestViolation()]);
+        AccessibilityAudit::getInstance()->getAudit()->storeAxeIssues($scanId, [axeTestViolation()]);
 
         $scores = axeTestScanScores($scanId);
 
@@ -545,7 +545,7 @@ describe('AuditService::storeAxeIssues level score recalculation', function() {
     it('drops every level for a Level A failure, since AA and AAA include A', function() {
         $scanId = axeTestScanId(axeTestElementId());
 
-        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [
+        AccessibilityAudit::getInstance()->getAudit()->storeAxeIssues($scanId, [
             axeTestViolation([
                 'id' => 'link-name',
                 'tags' => ['cat.name-role-value', 'wcag2a', 'wcag412'],
@@ -565,7 +565,7 @@ describe('AuditService::storeAxeIssues level score recalculation', function() {
 
         // No wcag* tag, so the rule carries no level: a real finding, but not
         // a conformance failure. It must not be counted against Level A.
-        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [
+        AccessibilityAudit::getInstance()->getAudit()->storeAxeIssues($scanId, [
             axeTestViolation([
                 'id' => 'region',
                 'tags' => ['cat.keyboard', 'best-practice'],
@@ -625,7 +625,7 @@ describe('AuditService::storeAxeIssues undecided contrast', function() {
     it('stores an incomplete contrast node as a needs-review notice', function() {
         $scanId = axeTestScanId(axeTestElementId());
 
-        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [], AuditService::VIEWPORT_DESKTOP, [
+        AccessibilityAudit::getInstance()->getAudit()->storeAxeIssues($scanId, [], AuditService::VIEWPORT_DESKTOP, [
             axeTestIncompleteContrast(),
         ]);
 
@@ -647,7 +647,7 @@ describe('AuditService::storeAxeIssues undecided contrast', function() {
     it('keeps an undecided contrast node out of the score, unlike a real violation', function() {
         $scanId = axeTestScanId(axeTestElementId());
 
-        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [], AuditService::VIEWPORT_DESKTOP, [
+        AccessibilityAudit::getInstance()->getAudit()->storeAxeIssues($scanId, [], AuditService::VIEWPORT_DESKTOP, [
             axeTestIncompleteContrast(),
         ]);
 
@@ -660,7 +660,7 @@ describe('AuditService::storeAxeIssues undecided contrast', function() {
     it('phrases the question from the reason axe gave', function() {
         $scanId = axeTestScanId(axeTestElementId());
 
-        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [], AuditService::VIEWPORT_DESKTOP, [
+        AccessibilityAudit::getInstance()->getAudit()->storeAxeIssues($scanId, [], AuditService::VIEWPORT_DESKTOP, [
             axeTestIncompleteContrast(['messageKey' => 'bgImage']),
         ]);
 
@@ -670,7 +670,7 @@ describe('AuditService::storeAxeIssues undecided contrast', function() {
     it('ignores incomplete results for every rule other than contrast', function() {
         $scanId = axeTestScanId(axeTestElementId());
 
-        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [], AuditService::VIEWPORT_DESKTOP, [
+        AccessibilityAudit::getInstance()->getAudit()->storeAxeIssues($scanId, [], AuditService::VIEWPORT_DESKTOP, [
             array_merge(axeTestIncompleteContrast(), ['id' => 'aria-hidden-focus']),
             array_merge(axeTestIncompleteContrast(), ['id' => 'nested-interactive']),
         ]);
@@ -680,7 +680,7 @@ describe('AuditService::storeAxeIssues undecided contrast', function() {
 
     it('replaces only its own viewport bucket on a re-scan', function() {
         $scanId = axeTestScanId(axeTestElementId());
-        $audit = AccessibilityAudit::getInstance()->audit;
+        $audit = AccessibilityAudit::getInstance()->getAudit();
 
         $audit->storeAxeIssues($scanId, [], AuditService::VIEWPORT_DESKTOP, [axeTestIncompleteContrast()]);
         $audit->storeAxeIssues($scanId, [], AuditService::VIEWPORT_MOBILE, [
@@ -698,7 +698,7 @@ describe('AuditService::storeAxeIssues undecided contrast', function() {
     it('drops a node with no markup, since the report matches elements by it', function() {
         $scanId = axeTestScanId(axeTestElementId());
 
-        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [], AuditService::VIEWPORT_DESKTOP, [
+        AccessibilityAudit::getInstance()->getAudit()->storeAxeIssues($scanId, [], AuditService::VIEWPORT_DESKTOP, [
             axeTestIncompleteContrast([], ''),
         ]);
 

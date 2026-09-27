@@ -6,12 +6,14 @@
 
 namespace johnhenry\accessibilityaudit\services;
 
+use Craft;
+
 /**
  * Static registry mapping accessibility rule IDs to metadata used by the CP
  * reports: difficulty, responsibility, affected element type, and the user
  * abilities each rule impacts.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class RuleRegistry
@@ -27,7 +29,7 @@ class RuleRegistry
     /**
      * @var array<string, array{difficulty: string, responsibility: string, elementType: string, abilities: string[]}> Rule metadata, keyed by rule ID.
      */
-    private static array $rules = [
+    private static array $_rules = [
         'img-alt' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Images',         'abilities' => ['vision']],
         'img-alt-filename' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Images',         'abilities' => ['vision']],
         'heading-order' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Headings',       'abilities' => ['cognition']],
@@ -50,6 +52,8 @@ class RuleRegistry
         'autoplay' => ['difficulty' => 'intermediate', 'responsibility' => 'content',     'elementType' => 'Media',          'abilities' => ['cognition', 'motor']],
         'duplicate-id' => ['difficulty' => 'advanced',     'responsibility' => 'technical',   'elementType' => 'Page',           'abilities' => ['cognition']],
         'meta-description' => ['difficulty' => 'beginner',     'responsibility' => 'content',     'elementType' => 'Page',           'abilities' => ['cognition']],
+        'aria-tab-name' => ['difficulty' => 'intermediate', 'responsibility' => 'development', 'elementType' => 'Interactive',    'abilities' => ['vision', 'cognition']],
+        'summary-name' => ['difficulty' => 'intermediate', 'responsibility' => 'development', 'elementType' => 'Interactive',    'abilities' => ['vision', 'cognition']],
         'aria-hidden-focus' => ['difficulty' => 'advanced',     'responsibility' => 'development', 'elementType' => 'Interactive',    'abilities' => ['vision']],
         'list-structure' => ['difficulty' => 'beginner',     'responsibility' => 'development', 'elementType' => 'Lists',          'abilities' => ['cognition']],
         'contrast-hover' => ['difficulty' => 'beginner',     'responsibility' => 'design',      'elementType' => 'Text',           'abilities' => ['vision']],
@@ -113,7 +117,7 @@ class RuleRegistry
     /**
      * @var array{difficulty: string, responsibility: string, elementType: string, abilities: string[]} Fallback metadata for unknown rules.
      */
-    private static array $fallback = [
+    private static array $_fallback = [
         'difficulty' => 'intermediate',
         'responsibility' => 'technical',
         'elementType' => 'Other',
@@ -128,43 +132,70 @@ class RuleRegistry
      *
      * @param string $ruleId The rule identifier, optionally prefixed with `axe:`.
      * @return array{difficulty: string, responsibility: string, elementType: string, abilities: string[]}
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function get(string $ruleId): array
     {
         $baseId = str_starts_with($ruleId, 'axe:') ? substr($ruleId, 4) : $ruleId;
-        return self::$rules[$baseId] ?? self::$fallback;
+        return self::$_rules[$baseId] ?? self::$_fallback;
     }
 
     /**
-     * Returns a human-readable label for a difficulty value.
-     *
-     * @param string $d The difficulty value.
-     * @return string
-     */
-    public static function difficultyLabel(string $d): string
-    {
-        return match ($d) {
-            'beginner' => 'Beginner',
-            'intermediate' => 'Intermediate',
-            'advanced' => 'Advanced',
-            default => 'Unknown',
-        };
-    }
-
-    /**
-     * Returns a human-readable label for a responsibility value.
+     * Who a rule is for, in words, translated.
      *
      * @param string $r The responsibility value.
-     * @return string
+     * @return string The label, or a general one where the value is unknown.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function responsibilityLabel(string $r): string
     {
-        return match ($r) {
-            'content' => 'Content writing',
-            'design' => 'Visual design',
-            'development' => 'Development',
-            'technical' => 'Technical',
-            default => 'Other',
-        };
+        return self::responsibilityLabels()[$r]
+            ?? Craft::t('accessibility-audit', 'Other');
+    }
+
+    /**
+     * Every responsibility, with the label to print and the class modifier the
+     * badge is styled by.
+     *
+     * The one source for these. The same badge is built server-side by the Twig
+     * macro and client-side by the table renderers, so the map is handed to the
+     * JavaScript rather than written out again there. It had been written out
+     * again: the client copy said "Content" where the server said "Content
+     * writing", and never went through the translation file at all.
+     *
+     * @return array<string, array{modifier: string, label: string}> Keyed by
+     *         responsibility value.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public static function responsibilities(): array
+    {
+        return [
+            'content' => ['modifier' => 'content', 'label' => Craft::t('accessibility-audit', 'Content writing')],
+            'design' => ['modifier' => 'design', 'label' => Craft::t('accessibility-audit', 'Visual design')],
+            'development' => ['modifier' => 'dev', 'label' => Craft::t('accessibility-audit', 'Development')],
+            'technical' => ['modifier' => 'technical', 'label' => Craft::t('accessibility-audit', 'Technical')],
+        ];
+    }
+
+    /**
+     * Every responsibility label, keyed by value.
+     *
+     * @return array<string, string> The labels, keyed by responsibility value.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public static function responsibilityLabels(): array
+    {
+        return array_map(
+            static fn(array $r): string => $r['label'],
+            self::responsibilities(),
+        );
     }
 }

@@ -152,3 +152,28 @@ describe('rendering an included stylesheet', function() {
         expect($out)->toContain('<!-- accessibility-audit-tpl:card.twig -->');
     });
 });
+
+// ---------------------------------------------------------------------------
+// A template that outputs JSON is marked like any other, because nothing knows
+// the response type when it compiles. The markers are stripped from any
+// response that isn't HTML, or whatever parses the JSON rejects it.
+// ---------------------------------------------------------------------------
+
+describe('stripMarkers()', function() {
+    it('leaves JSON output parseable', function() {
+        $out = markerRender([
+            'data.twig' => "{% set rows = [{ value: 'CO', label: 'Cork' }] %}{{ rows|json_encode|raw }}",
+            'endpoint.twig' => "{% include 'data.twig' %}",
+        ], 'endpoint.twig');
+
+        expect($out)->toContain('accessibility-audit-tpl')
+            ->and(json_decode(A11yTemplateNodeVisitor::stripMarkers($out), true))
+            ->toBe([['value' => 'CO', 'label' => 'Cork']]);
+    });
+
+    it('removes only the markers', function() {
+        $html = '<!-- accessibility-audit-tpl:a.twig --><p><!-- keep me -->x</p><!-- /accessibility-audit-tpl -->';
+
+        expect(A11yTemplateNodeVisitor::stripMarkers($html))->toBe('<p><!-- keep me -->x</p>');
+    });
+});

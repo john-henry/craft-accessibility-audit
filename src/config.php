@@ -20,8 +20,16 @@ return [
     // Include EN 301 549 (the European standard) rules alongside WCAG.
     // 'en301549' => false,
 
-    // Target score (0-100) tracked on the dashboard. 0 disables the target.
-    // 'targetScore' => 0,
+    // Add a Readability view to the Preview menu of entries the scanner covers (Pro).
+    // 'readabilityPreviewTarget' => true,
+
+    // The reading target the Readability preview marks sentences against unless
+    // someone picks their own: 'accessible', 'default' or 'technical' (Pro).
+    // 'readabilityTarget' => 'default',
+
+    // The score the site is aiming for (0-100), tracked on the dashboard and
+    // enforced by the CI endpoint. Defaults to 90. 0 turns the target off.
+    // 'targetScore' => 90,
 
     // Accessibility statement
     // ---------------------------------------------------------------------
@@ -52,22 +60,23 @@ return [
     // 'ignoreRules' => [],
 
     // Pages to exclude from every scan. Each row is a regular expression
-    // tested against the page URI; an empty 'uriPattern' matches the homepage.
-    // Scope a row to one site with 'siteId', or leave it out to match all
-    // sites. 'enabled' defaults to true.
+    // tested against the page URI, with no leading slash. The homepage is
+    // '^$'; a blank pattern matches nothing. Scope a row to one site with
+    // 'siteUid', or leave it out to match all sites. 'enabled' defaults to true.
     // 'excludedUriPatterns' => [
     //     ['uriPattern' => '^checkout'],
-    //     ['uriPattern' => 'print$', 'siteId' => 1],
+    //     ['uriPattern' => '^$'],
+    //     ['uriPattern' => 'print$', 'siteUid' => 'a site UID'],
     // ],
 
     // Extra pages to scan, for the ones Craft routes with no element behind
     // them: search results, filtered listings, paginated archives. A 'url'
     // starting with a slash is resolved against whichever site is being
-    // scanned; scope a row to one site with 'siteId' where the path only
+    // scanned; scope a row to one site with 'siteUid' where the path only
     // exists there. 'enabled' defaults to true.
     // 'customUrls' => [
     //     ['url' => '/search/results?q=craft'],
-    //     ['url' => '/recherche/resultats', 'siteId' => 2],
+    //     ['url' => '/recherche/resultats', 'siteUid' => 'a site UID'],
     // ],
 
     // Asset volumes to leave out of the alt-text audit, by volume UID. Images
