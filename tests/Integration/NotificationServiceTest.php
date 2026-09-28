@@ -223,3 +223,37 @@ describe('NotificationService::evaluateScan with both triggers crossed', functio
             ->and($spy->sent[1]['url'])->toContain('page-report');
     });
 });
+
+describe('the Slack webhook address', function() {
+    it('is held to the same guard as every other address the plugin fetches', function() {
+        // The value is an admin's to set, but it can arrive from an env var a
+        // deploy pipeline writes, and a webhook pointed at something on this
+        // network would have the notifier reach it on every scan. The post is
+        // also pinned to the address that was checked, with redirects off.
+        $source = (string) file_get_contents(
+            dirname(__DIR__, 2) . '/src/services/NotificationService.php',
+        );
+
+        preg_match('/public function notifySlack\(.*?\n    \}/s', $source, $m);
+        $body = $m[0] ?? '';
+
+        expect($body)->not->toBeEmpty();
+
+        $guardAt = strpos($body, 'pinnedRequestOptions(');
+        $postAt = strpos($body, 'createGuzzleClient(');
+
+        expect($guardAt)->not->toBeFalse()
+            ->and($postAt)->not->toBeFalse()
+            ->and($guardAt)->toBeLessThan($postAt);
+    });
+
+    it('returns quietly for a webhook it will not post to', function() {
+        // Only that nothing escapes the notifier: a refused connection lands in
+        // the same catch the guard's refusal does, so this cannot tell which of
+        // the two stopped it. The ordering test above is what pins the guard.
+        $plugin = AccessibilityAudit::getInstance();
+        $plugin->getSettings()->notifySlackWebhookUrl = 'http://127.0.0.1/services/hooks';
+
+        $plugin->getNotifications()->notifySlack('Subject', 'Body');
+    })->throwsNoExceptions();
+});

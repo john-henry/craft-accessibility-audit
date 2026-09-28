@@ -17,7 +17,7 @@ use johnhenry\accessibilityaudit\services\VpatService;
 
 describe('VpatService::enClause', function() {
     it('prefixes the WCAG number with clause 9', function() {
-        $vpat = AccessibilityAudit::getInstance()->vpat;
+        $vpat = AccessibilityAudit::getInstance()->getVpat();
 
         expect($vpat->enClause('1.1.1'))->toBe('9.1.1.1')
             ->and($vpat->enClause('1.4.3'))->toBe('9.1.4.3')
@@ -25,7 +25,7 @@ describe('VpatService::enClause', function() {
     });
 
     it('gives no clause for the criteria WCAG 2.2 added', function() {
-        $vpat = AccessibilityAudit::getInstance()->vpat;
+        $vpat = AccessibilityAudit::getInstance()->getVpat();
 
         foreach (['2.4.11', '2.5.7', '2.5.8', '3.2.6', '3.3.7', '3.3.8'] as $number) {
             expect($vpat->enClause($number))->toBeNull();
@@ -33,7 +33,7 @@ describe('VpatService::enClause', function() {
     });
 
     it('gives no clause for a criterion it does not carry', function() {
-        expect(AccessibilityAudit::getInstance()->vpat->enClause('9.9.9'))->toBeNull();
+        expect(AccessibilityAudit::getInstance()->getVpat()->enClause('9.9.9'))->toBeNull();
     });
 
     it('names the harmonised version it maps to', function() {
@@ -44,7 +44,7 @@ describe('VpatService::enClause', function() {
 describe('the full report', function() {
     it('carries the clause on every row it covers', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $report = AccessibilityAudit::getInstance()->vpat->getFullReport($siteId);
+        $report = AccessibilityAudit::getInstance()->getVpat()->getFullReport($siteId);
 
         $rows = $report['levelA'] + $report['levelAA'];
 
@@ -56,7 +56,7 @@ describe('the full report', function() {
 
     it('maps every covered criterion or says why not', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $report = AccessibilityAudit::getInstance()->vpat->getFullReport($siteId);
+        $report = AccessibilityAudit::getInstance()->getVpat()->getFullReport($siteId);
 
         // The guard against a criterion being added later and silently
         // arriving with no clause and no reason for having none.

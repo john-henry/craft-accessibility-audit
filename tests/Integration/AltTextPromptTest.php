@@ -74,7 +74,8 @@ it('keeps the length ceiling in step with the constant', function() {
 it('is the only place either generation path builds a prompt', function() {
     // The two drifted before. If a prompt is ever assembled inline again, the
     // Generate button and the queued job can describe the same image
-    // differently, and only one of them gets fixed next time.
+    // differently, and only one of them gets fixed next time. Both now ask
+    // through draft(), which is the one place the prompt is put together.
     foreach ([
         dirname(__DIR__, 2) . '/src/controllers/AltController.php',
         dirname(__DIR__, 2) . '/src/jobs/GenerateAltTextJob.php',
@@ -82,7 +83,7 @@ it('is the only place either generation path builds a prompt', function() {
         $source = file_get_contents($path);
 
         expect($source)
-            ->toContain('AltTextPrompt::build($asset, $settings)')
+            ->toContain('AltTextPrompt::draft(')
             ->not->toContain('Write concise, descriptive alt text');
     }
 });
@@ -127,17 +128,25 @@ it('leaves no trailing punctuation after a trim', function() {
     expect(AltTextPrompt::trimToLimit(str_repeat('beta, ', 40)))->not->toEndWith(',');
 });
 
-it('has both generation paths retry before they trim', function() {
+it('retries before it trims, on the one path both callers share', function() {
     // A trim on its own loses meaning; the retry is what usually saves it.
-    foreach ([
-        dirname(__DIR__, 2) . '/src/controllers/AltController.php',
-        dirname(__DIR__, 2) . '/src/jobs/GenerateAltTextJob.php',
-    ] as $path) {
-        $source = file_get_contents($path);
+    // Asserted against draft() rather than against each caller, because that
+    // is now the only place the sequence exists: a caller cannot skip the
+    // retry without going around draft() entirely, which the test above pins.
+    $source = (string) file_get_contents(
+        (new ReflectionClass(AltTextPrompt::class))->getFileName()
+    );
 
-        expect($source)
-            ->toContain('AltTextPrompt::exceedsLimit(')
-            ->toContain('AltTextPrompt::retryPrompt(')
-            ->toContain('AltTextPrompt::trimToLimit(');
-    }
+    $method = new ReflectionMethod(AltTextPrompt::class, 'draft');
+    $lines = explode("\n", $source);
+    $body = implode("\n", array_slice(
+        $lines,
+        $method->getStartLine() - 1,
+        $method->getEndLine() - $method->getStartLine() + 1,
+    ));
+
+    expect($body)
+        ->toContain('self::exceedsLimit(')
+        ->toContain('self::retryPrompt(')
+        ->toContain('self::trimToLimit(');
 });

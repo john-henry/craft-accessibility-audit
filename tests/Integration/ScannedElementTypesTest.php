@@ -60,7 +60,7 @@ it('resolves an explicit empty allow-list to scanning nothing', function() {
 it('drops an entry from scan discovery once its type is unticked', function() {
     $entry = scannableEntry('Element type filter fixture');
     $siteId = (int) $entry->siteId;
-    $audit = AccessibilityAudit::getInstance()->audit;
+    $audit = AccessibilityAudit::getInstance()->getAudit();
     $settings = AccessibilityAudit::getInstance()->getSettings();
 
     $default = array_map('intval', array_column($audit->getUrlElementsQuery($siteId)->all(), 'elementId'));
@@ -77,7 +77,7 @@ it('drops an entry from scan discovery once its type is unticked', function() {
 
 it('marks an element excluded when its type is not in the scan set', function() {
     $entry = scannableEntry('Exclusion gate fixture');
-    $audit = AccessibilityAudit::getInstance()->audit;
+    $audit = AccessibilityAudit::getInstance()->getAudit();
     $settings = AccessibilityAudit::getInstance()->getSettings();
 
     expect($audit->isElementExcluded($entry))->toBeFalse();
@@ -92,7 +92,7 @@ it('marks an element excluded when its type is not in the scan set', function() 
 
 it('prunes stored scans for the given element types', function() {
     $entry = scannableEntry('Prune fixture');
-    $audit = AccessibilityAudit::getInstance()->audit;
+    $audit = AccessibilityAudit::getInstance()->getAudit();
 
     $scanId = $audit->ensureScan((int) $entry->id, Entry::class, (int) $entry->siteId);
     expect($scanId)->toBeGreaterThan(0);

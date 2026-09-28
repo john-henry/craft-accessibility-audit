@@ -16,8 +16,7 @@ describe('_vpat/export example template', function() {
         // root (e.g. running the plugin suite outside this boilerplate).
         $exists = Craft::$app->getView()->doesTemplateExist('_vpat/export', View::TEMPLATE_MODE_SITE);
         if (!$exists) {
-            expect(true)->toBeTrue();
-            return;
+            $this->markTestSkipped('The _vpat/export example template is not in this template root.');
         }
 
         AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
@@ -33,7 +32,7 @@ describe('_vpat/export example template', function() {
             'notes' => 'General notes about the report.',
         ]);
 
-        $report = AccessibilityAudit::getInstance()->vpat->getFullReport($siteId);
+        $report = AccessibilityAudit::getInstance()->getVpat()->getFullReport($siteId);
         $html = Craft::$app->getView()->renderTemplate('_vpat/export', ['report' => $report], View::TEMPLATE_MODE_SITE);
 
         expect($html)

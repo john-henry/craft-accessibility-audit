@@ -121,3 +121,21 @@ it('describes the rule on a rule page, rather than quoting one page', function()
     expect($twig)->toContain('{{ ruleDescription ?? detail.message }}')
         ->and($twig)->toContain("'One of these findings'|t('accessibility-audit')");
 });
+
+it('stores the question in English whoever runs the scan', function() {
+    // The question is saved once and read by everybody, so it is stored in
+    // English like every other finding, not in the language of whichever
+    // request happened to run the scan.
+    Craft::$app->language = 'de';
+
+    try {
+        $sentence = reasonFor('bgImage');
+    } finally {
+        Craft::$app->language = 'en-US';
+    }
+
+    expect($sentence)
+        ->toContain('Does this text have enough contrast?')
+        ->toContain('it sits on a background image')
+        ->not->toContain('Hintergrundbild');
+});

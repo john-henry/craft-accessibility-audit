@@ -21,7 +21,7 @@ use johnhenry\accessibilityaudit\AccessibilityAudit;
  */
 function originsFor(string $html): array
 {
-    $issues = AccessibilityAudit::getInstance()->content->scan($html);
+    $issues = AccessibilityAudit::getInstance()->getContent()->scan($html);
     $origins = [];
 
     foreach ($issues as $issue) {
@@ -76,7 +76,7 @@ it('leaves a page-level finding unattributed, because it belongs to no element',
     $html = '<html lang="en"><head><title>A page</title></head>'
         . '<body><main><p>Fine</p></main></body></html>';
 
-    $issues = AccessibilityAudit::getInstance()->content->scan($html);
+    $issues = AccessibilityAudit::getInstance()->getContent()->scan($html);
     $pageLevel = array_values(array_filter(
         $issues,
         static fn($issue): bool => $issue->context === null
@@ -90,7 +90,7 @@ it('leaves a page-level finding unattributed, because it belongs to no element',
 });
 
 it('counts the split for a site', function() {
-    $counts = AccessibilityAudit::getInstance()->audit->getIssuesByOrigin(
+    $counts = AccessibilityAudit::getInstance()->getAudit()->getIssuesByOrigin(
         Craft::$app->getSites()->getPrimarySite()->id
     );
 

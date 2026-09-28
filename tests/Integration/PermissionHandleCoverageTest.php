@@ -28,7 +28,9 @@ function permSourceFiles(): array
     $files = [];
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(permSrcRoot(), FilesystemIterator::SKIP_DOTS));
     foreach ($it as $file) {
-        if ($file->isFile() && $file->getExtension() === 'php') {
+        // Migrations name the old handles they rename, which are neither
+        // enforced nor registered any more.
+        if ($file->isFile() && $file->getExtension() === 'php' && !str_contains($file->getPathname(), '/migrations/')) {
             $files[] = $file->getPathname();
         }
     }
@@ -48,7 +50,7 @@ function permUsedHandles(): array
     foreach (permSourceFiles() as $file) {
         $lines = file($file, FILE_IGNORE_NEW_LINES);
         foreach ($lines as $i => $line) {
-            if (preg_match_all('/(?:requirePermission|checkPermission)\(\s*[\'"](accessibility-audit:\w+)[\'"]/', $line, $m)) {
+            if (preg_match_all('/(?:requirePermission|checkPermission)\(\s*[\'"](accessibility-audit:[\w-]+)[\'"]/', $line, $m)) {
                 foreach ($m[1] as $handle) {
                     $used[$handle] ??= basename($file) . ':' . ($i + 1);
                 }
@@ -64,7 +66,7 @@ function permRegisteredHandles(): array
     $registered = [];
     foreach (permSourceFiles() as $file) {
         $src = file_get_contents($file);
-        if (preg_match_all('/[\'"](accessibility-audit:\w+)[\'"]\s*=>/', $src, $m)) {
+        if (preg_match_all('/[\'"](accessibility-audit:[\w-]+)[\'"]\s*=>/', $src, $m)) {
             foreach ($m[1] as $handle) {
                 $registered[$handle] = true;
             }

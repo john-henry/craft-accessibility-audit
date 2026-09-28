@@ -28,7 +28,7 @@ function readabilitySimplePage(int $sentences = 15): string
 
 describe('ReadabilityService::analyseHtml maths', function() {
     it('computes exact scores for a fully deterministic text', function() {
-        $result = AccessibilityAudit::getInstance()->readability->analyseHtml(readabilitySimplePage());
+        $result = AccessibilityAudit::getInstance()->getReadability()->analyseHtml(readabilitySimplePage());
 
         expect($result)->not->toHaveKey('error')
             ->and($result['readingEase'])->toBe(100.0)
@@ -46,7 +46,7 @@ describe('ReadabilityService::analyseHtml maths', function() {
         $sentence = 'Notwithstanding the organisational implementation of comprehensive administrative '
             . 'accessibility remediation methodologies, considerable infrastructural complications '
             . 'necessitate additional interdepartmental collaboration and systematic evaluation procedures. ';
-        $result = AccessibilityAudit::getInstance()->readability->analyseHtml(
+        $result = AccessibilityAudit::getInstance()->getReadability()->analyseHtml(
             '<html><body><main><p>' . str_repeat($sentence, 5) . '</p></main></body></html>'
         );
 
@@ -57,7 +57,7 @@ describe('ReadabilityService::analyseHtml maths', function() {
     });
 
     it('refuses to analyse fewer than 100 characters of text', function() {
-        $result = AccessibilityAudit::getInstance()->readability->analyseHtml(
+        $result = AccessibilityAudit::getInstance()->getReadability()->analyseHtml(
             '<html><body><main><p>Too short to score.</p></main></body></html>'
         );
 
@@ -75,15 +75,33 @@ describe('ReadabilityService::analyseHtml maths', function() {
             . '<footer>Supplementary infrastructural documentation</footer>'
             . '</body></html>';
 
-        $result = AccessibilityAudit::getInstance()->readability->analyseHtml($html);
+        $result = AccessibilityAudit::getInstance()->getReadability()->analyseHtml($html);
 
         expect($result['wordCount'])->toBe(105)
             ->and($result['readingEase'])->toBe(100.0);
     });
 
+    it('ends a sentence where a heading, card or list item ends', function() {
+        // None of these blocks has a full stop. Read as one run of text they
+        // would be a single 28-word sentence, and the grade would be the
+        // length of the page rather than of its sentences.
+        $html = '<html><body><main>'
+            . '<h2>Plan your visit today</h2>'
+            . '<div class="card"><h3>Opening hours and prices</h3><p>The museum opens at ten every day of the week</p></div>'
+            . '<ul><li>View the museum map here</li><li>See all our current exhibits</li></ul>'
+            . '</main></body></html>';
+
+        $result = AccessibilityAudit::getInstance()->getReadability()->analyseHtml($html);
+
+        expect($result)->not->toHaveKey('error')
+            ->and($result['sentenceCount'])->toBe(5)
+            ->and($result['wordCount'])->toBe(28)
+            ->and($result['complexSentences'][0])->toBe('The museum opens at ten every day of the week');
+    });
+
     it('surfaces the longest sentences as complex', function() {
         $long = 'This one very long and winding sentence keeps going on and on with many more words than any of the short ones do here. ';
-        $result = AccessibilityAudit::getInstance()->readability->analyseHtml(
+        $result = AccessibilityAudit::getInstance()->getReadability()->analyseHtml(
             '<html><body><main><p>' . str_repeat('The cat ran off to the den. ', 10) . $long . '</p></main></body></html>'
         );
 
@@ -97,7 +115,7 @@ describe('ReadabilityService::analyseHtml maths', function() {
 
 describe('ReadabilityService persistence', function() {
     it('stores a result and reads it back with proper numeric types', function() {
-        $service = AccessibilityAudit::getInstance()->readability;
+        $service = AccessibilityAudit::getInstance()->getReadability();
         $result = $service->analyseHtml(readabilitySimplePage());
 
         $service->storeResult($result, null, null, 'https://example.com/test-page', 'Test page');
@@ -111,7 +129,7 @@ describe('ReadabilityService persistence', function() {
     });
 
     it('upserts on the same URL instead of duplicating', function() {
-        $service = AccessibilityAudit::getInstance()->readability;
+        $service = AccessibilityAudit::getInstance()->getReadability();
         $result = $service->analyseHtml(readabilitySimplePage());
 
         $service->storeResult($result, null, null, 'https://example.com/upsert-page');
@@ -121,7 +139,7 @@ describe('ReadabilityService persistence', function() {
     });
 
     it('extracts a page title from HTML', function() {
-        $service = AccessibilityAudit::getInstance()->readability;
+        $service = AccessibilityAudit::getInstance()->getReadability();
 
         expect($service->extractPageTitle('<html><head><title>About &amp; Contact</title></head></html>'))
             ->toBe('About & Contact')

@@ -5,6 +5,7 @@ namespace johnhenry\accessibilityaudit\migrations;
 use craft\db\Migration;
 use craft\db\Query;
 use craft\helpers\Db;
+use DateTime;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\services\AuditService;
 
@@ -30,7 +31,7 @@ use johnhenry\accessibilityaudit\services\AuditService;
  * to a single question, which is the intended trade: they are the same
  * question with the same answer.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.2.0
  */
 class m260830_100000_collapse_contrast_context_keys extends Migration
@@ -57,7 +58,7 @@ class m260830_100000_collapse_contrast_context_keys extends Migration
      */
     public function safeUp(): bool
     {
-        $verdicts = AccessibilityAudit::getInstance()->verdicts;
+        $verdicts = AccessibilityAudit::getInstance()->getVerdicts();
 
         // Every ruling already stored, by the key it is filed under, so a
         // candidate can be checked without a query each time round.
@@ -152,7 +153,7 @@ class m260830_100000_collapse_contrast_context_keys extends Migration
                 '{{%accessibilityaudit_verdicts}}',
                 [
                     'contextHash' => $verdicts->stableContextHash($short),
-                    'dateUpdated' => Db::prepareDateForDb(new \DateTime()),
+                    'dateUpdated' => Db::prepareDateForDb(new DateTime()),
                 ],
                 ['id' => $stored[$oldKey]['id']],
             );

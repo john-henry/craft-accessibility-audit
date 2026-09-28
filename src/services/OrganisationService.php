@@ -6,7 +6,6 @@
 
 namespace johnhenry\accessibilityaudit\services;
 
-use Craft;
 use craft\db\Query;
 use craft\helpers\Db;
 use craft\helpers\Json;
@@ -25,7 +24,7 @@ use yii\db\Exception;
  * evaluation details rather than asking an editor to type them twice and then
  * quietly disagreeing with the first one.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class OrganisationService extends Component
@@ -41,6 +40,9 @@ class OrganisationService extends Component
      *
      * @param int $siteId The site to read.
      * @return array<string, string|string[]> The stored values, or an empty array.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function getMeta(int $siteId): array
     {
@@ -65,37 +67,29 @@ class OrganisationService extends Component
      * @return void
      * @throws Exception When the insert or update fails.
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function saveMeta(int $siteId, OrganisationMetaModel $meta): void
     {
         $now = Db::prepareDateForDb(new DateTime());
         $encoded = Json::encode($meta->toStorageArray());
 
-        $exists = (new Query())
-            ->from('{{%accessibilityaudit_organisation}}')
-            ->where(['siteId' => $siteId])
-            ->exists();
-
-        if ($exists) {
-            Craft::$app->getDb()->createCommand()
-                ->update(
-                    '{{%accessibilityaudit_organisation}}',
-                    ['meta' => $encoded, 'dateUpdated' => $now],
-                    ['siteId' => $siteId],
-                )
-                ->execute();
-
-            return;
-        }
-
-        Craft::$app->getDb()->createCommand()
-            ->insert('{{%accessibilityaudit_organisation}}', [
+        // One statement rather than a check and then a write. Two people
+        // saving the organisation details at once both found the row missing
+        // under the old shape, and the unique index on siteId failed the
+        // second one in front of whoever saved last.
+        Db::upsert(
+            '{{%accessibilityaudit_organisation}}',
+            [
                 'siteId' => $siteId,
                 'meta' => $encoded,
                 'dateCreated' => $now,
                 'dateUpdated' => $now,
                 'uid' => StringHelper::UUID(),
-            ])
-            ->execute();
+            ],
+            ['meta' => $encoded, 'dateUpdated' => $now],
+        );
     }
 }

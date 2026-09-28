@@ -444,3 +444,15 @@
   white-space: nowrap;
   margin-left: -4px;
 }
+
+/* The three moving parts on this screen: the disclosure arrow's rotation, the
+   progress bar filling, and the row tint. The state change still happens, it
+   just happens at once. Every other stylesheet here honours the preference and
+   this one is no place to make an exception. */
+@media (prefers-reduced-motion: reduce) {
+  .accessibility-audit-vpat-card__toggle,
+  .accessibility-audit-vpat-card__toggle .accessibility-audit-expand-icon,
+  .accessibility-audit-vpat-progress__fill {
+    transition: none;
+  }
+}

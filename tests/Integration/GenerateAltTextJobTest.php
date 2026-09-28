@@ -1,5 +1,6 @@
 <?php
 
+use johnhenry\accessibilityaudit\helpers\ImageSource;
 use johnhenry\accessibilityaudit\jobs\GenerateAltTextJob;
 
 // ---------------------------------------------------------------------------
@@ -7,22 +8,20 @@ use johnhenry\accessibilityaudit\jobs\GenerateAltTextJob;
 //
 // The job's network call can't be exercised without a live Anthropic key, but
 // its gatekeeping can: which images it will hand to a third-party API by URL
-// (a data-exposure decision) and its no-op guards. isLocalUrl() decides
-// whether an image URL is public enough to send to Anthropic as a link, or
-// must be base64'd instead; a wrong answer either leaks an internal URL to a
-// third party or needlessly fails. It's private, so reach it by reflection.
+// (a data-exposure decision) and its no-op guards. ImageSource::isLocalUrl()
+// decides whether an image URL is public enough to send to Anthropic as a
+// link, or must be base64'd instead; a wrong answer either leaks an internal
+// URL to a third party or needlessly fails. The queued draft and the
+// on-demand one both come through it, so this covers the pair.
 // ---------------------------------------------------------------------------
 
-/** Calls the job's private isLocalUrl() for the given URL. */
+/** Whether an address is one the plugin keeps in rather than hand over. */
 function jobUrlIsLocal(string $url): bool
 {
-    $method = new ReflectionMethod(GenerateAltTextJob::class, 'isLocalUrl');
-    $method->setAccessible(true);
-
-    return (bool) $method->invoke(new GenerateAltTextJob(), $url);
+    return ImageSource::isLocalUrl($url);
 }
 
-describe('GenerateAltTextJob::isLocalUrl', function() {
+describe('ImageSource::isLocalUrl', function() {
     it('treats a public https URL as sendable', function(string $url) {
         expect(jobUrlIsLocal($url))->toBeFalse();
     })->with([

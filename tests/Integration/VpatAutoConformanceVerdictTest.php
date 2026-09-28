@@ -62,7 +62,7 @@ beforeEach(function() {
     $this->siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
     $this->elementId = (int) UserFactory::factory()->create()->id;
     $this->scanId = vpatScan($this->elementId, $this->siteId);
-    $this->vpat = AccessibilityAudit::getInstance()->vpat;
+    $this->vpat = AccessibilityAudit::getInstance()->getVpat();
 
     // The development database this runs against carries real findings, and
     // 1.3.1 is the busiest criterion in the set, so the row under test would be

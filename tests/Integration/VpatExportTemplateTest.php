@@ -67,7 +67,7 @@ describe('VpatController::actionExport custom template', function() {
 
         // The custom template gets the same criteria rows the built-in export
         // renders, so the counts it prints must match the service's own list.
-        $criteria = AccessibilityAudit::getInstance()->vpat->getCriteria();
+        $criteria = AccessibilityAudit::getInstance()->getVpat()->getCriteria();
         $levelACount = count(array_filter($criteria, fn(array $c): bool => $c['level'] === 'A'));
         $levelAACount = count($criteria) - $levelACount;
 

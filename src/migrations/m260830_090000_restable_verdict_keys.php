@@ -25,7 +25,7 @@ use johnhenry\accessibilityaudit\AccessibilityAudit;
  * found in, so the original context can be recovered from there, hashed both
  * ways, and any ruling stored under the old hash moved onto the new one.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.2.0
  */
 class m260830_090000_restable_verdict_keys extends Migration
@@ -38,7 +38,7 @@ class m260830_090000_restable_verdict_keys extends Migration
      */
     public function safeUp(): bool
     {
-        $verdicts = AccessibilityAudit::getInstance()->verdicts;
+        $verdicts = AccessibilityAudit::getInstance()->getVerdicts();
 
         // Keyed by "targetHash|ruleId|contextHash", so a candidate can be
         // looked at without a query each time round.

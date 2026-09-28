@@ -12,7 +12,7 @@ use craft\web\assets\cp\CpAsset;
 /**
  * Control panel asset bundle for the Accessibility Audit plugin.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class AccessibilityAuditAsset extends AssetBundle

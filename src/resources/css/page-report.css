@@ -964,73 +964,6 @@ mark.accessibility-audit-html-hl--active {
   margin-top: 0;
 }
 
-.accessibility-audit-pr-needs-review {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border-hairline);
-}
-
-.accessibility-audit-pr-needs-review-title {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--accessibility-audit-warn-text);
-  margin: 0 0 5px;
-}
-
-.accessibility-audit-pr-needs-review-note {
-  font-size: 11px;
-  color: var(--aa-text-secondary);
-  margin: 0 0 8px;
-  line-height: 1.4;
-}
-
-.accessibility-audit-pr-review-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 7px 9px;
-  background: var(--accessibility-audit-warn-bg-soft);
-  border-left: 3px solid var(--accessibility-audit-warn);
-  border-radius: 3px;
-  margin-bottom: 5px;
-}
-
-.accessibility-audit-pr-review-hdr {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 6px;
-}
-
-.accessibility-audit-pr-review-location-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-}
-
-.accessibility-audit-pr-review-location {
-  font-size: 10px;
-  font-weight: 600;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color: var(--accessibility-audit-mono-fg);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.accessibility-audit-pr-review-landmark {
-  font-size: 9px;
-  color: var(--aa-text-secondary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .accessibility-audit-pr-review-tpl {
   font-size: 9px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -1053,50 +986,6 @@ mark.accessibility-audit-html-hl--active {
   background: #e7f3f6;
   border-radius: 4px;
   padding: 2px 8px;
-}
-
-.accessibility-audit-pr-review-hl-btn {
-  flex-shrink: 0;
-  background: none;
-  border: 1px solid var(--accessibility-audit-warn);
-  border-radius: 3px;
-  padding: 1px 7px;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--accessibility-audit-warn-text);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.accessibility-audit-pr-review-hl-btn:hover {
-  background: var(--accessibility-audit-warn);
-  color: var(--aa-surface);
-}
-
-.accessibility-audit-pr-review-reason {
-  font-size: 10px;
-  color: var(--accessibility-audit-warn-text-deep);
-  line-height: 1.4;
-  margin: 0;
-}
-
-.accessibility-audit-pr-review-code {
-  margin: 0;
-  padding: 5px 7px;
-  background: rgb(0 0 0 / 4%);
-  border-radius: 3px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 9.5px;
-  line-height: 1.5;
-  overflow-x: auto;
-  max-height: 80px;
-  white-space: pre;
-}
-
-.accessibility-audit-pr-review-code code {
-  background: none;
-  padding: 0;
-  font-size: inherit;
 }
 
 .accessibility-audit-pr-score-num {

@@ -26,7 +26,7 @@ use Throwable;
  * That is why an install with admin changes turned off is left alone rather
  * than failing: it cannot write project config at all.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.3.0
  */
 class m260910_120000_custom_url_rows extends Migration

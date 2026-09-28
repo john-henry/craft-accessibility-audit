@@ -57,9 +57,9 @@ describe('m260910_120000_custom_url_rows', function() {
         expect((new m260910_120000_custom_url_rows())->safeUp())->toBeTrue();
 
         expect(cumStored()['customUrls'])->toBe([
-            ['enabled' => true, 'siteId' => '', 'url' => '/search/results?q=craft'],
-            ['enabled' => false, 'siteId' => '', 'url' => '/parked'],
-            ['enabled' => true, 'siteId' => '', 'url' => '/paginated/2'],
+            ['enabled' => true, 'siteUid' => '', 'url' => '/search/results?q=craft'],
+            ['enabled' => false, 'siteUid' => '', 'url' => '/parked'],
+            ['enabled' => true, 'siteUid' => '', 'url' => '/paginated/2'],
         ]);
     });
 
@@ -92,7 +92,7 @@ describe('m260910_120000_custom_url_rows', function() {
         $migration->safeUp();
 
         expect(cumStored()['customUrls'])->toBe([
-            ['enabled' => true, 'siteId' => '', 'url' => '/a'],
+            ['enabled' => true, 'siteUid' => '', 'url' => '/a'],
         ]);
     });
 

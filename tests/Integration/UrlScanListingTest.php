@@ -81,7 +81,7 @@ describe('URL scans in the page listings', function() {
         urlScanRow('https://example.test/news?page=3', 'News', $siteId);
         urlScanRow('https://example.test/search?q=craft', 'Search results', $siteId);
 
-        $result = AccessibilityAudit::getInstance()->audit->getScannedElements($siteId, 1, 50);
+        $result = AccessibilityAudit::getInstance()->getAudit()->getScannedElements($siteId, 1, 50);
 
         expect($result['total'])->toBe(3)
             ->and($result['entries'])->toHaveCount(3);
@@ -91,7 +91,7 @@ describe('URL scans in the page listings', function() {
         $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
         urlScanRow('https://example.test/search?q=craft', 'Search results', $siteId);
 
-        $result = AccessibilityAudit::getInstance()->audit
+        $result = AccessibilityAudit::getInstance()->getAudit()
             ->getScannedElements($siteId, 1, 50, '', 'title', SORT_ASC);
 
         expect($result['total'])->toBe(1);
@@ -102,7 +102,7 @@ describe('URL scans in the page listings', function() {
         urlScanRow('https://example.test/search?q=craft', 'Search results', $siteId);
         urlScanRow('https://example.test/news?page=2', 'News', $siteId);
 
-        $result = AccessibilityAudit::getInstance()->audit
+        $result = AccessibilityAudit::getInstance()->getAudit()
             ->getScannedElements($siteId, 1, 50, 'Search');
 
         expect($result['total'])->toBe(1);
@@ -113,7 +113,7 @@ describe('URL scans in the page listings', function() {
         urlScanRow('https://example.test/news?page=2', 'News', $siteId);
         urlScanRow('https://example.test/news?page=3', 'News', $siteId);
 
-        $summary = AccessibilityAudit::getInstance()->audit->getIssueRuleSummary('img-alt', $siteId);
+        $summary = AccessibilityAudit::getInstance()->getAudit()->getIssueRuleSummary('img-alt', $siteId);
 
         expect((int) $summary['pageCount'])->toBe(2)
             ->and((int) $summary['occurrences'])->toBe(2);
@@ -124,7 +124,7 @@ describe('URL scans in the page listings', function() {
         urlScanRow('https://example.test/news?page=2', 'News', $siteId);
         urlScanRow('https://example.test/news?page=3', 'News', $siteId);
 
-        $result = AccessibilityAudit::getInstance()->audit->getPagesForRule('img-alt', $siteId);
+        $result = AccessibilityAudit::getInstance()->getAudit()->getPagesForRule('img-alt', $siteId);
 
         expect($result['total'])->toBe(2)
             ->and($result['entries'])->toHaveCount(2)
@@ -176,7 +176,7 @@ describe('the page report for a URL scan', function() {
 
         $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
         $scanId = urlScanRow('https://example.test/secret', 'Secret', $otherSiteId);
-        $audit = AccessibilityAudit::getInstance()->audit;
+        $audit = AccessibilityAudit::getInstance()->getAudit();
 
         // Scoped to the requested site, so a scan id from elsewhere is a miss
         // rather than a way across the fence.
@@ -227,7 +227,7 @@ describe('rulings on a page scanned by URL', function() {
         urlScanRow('https://example.test/news?page=2', 'News', $siteId, 'potential:identical-links');
         urlScanRow('https://example.test/news?page=3', 'News', $siteId, 'potential:identical-links');
 
-        $verdicts = AccessibilityAudit::getInstance()->verdicts;
+        $verdicts = AccessibilityAudit::getInstance()->getVerdicts();
         $context = '<img src="/a.jpg">';
 
         $verdicts->setVerdict(
@@ -247,7 +247,7 @@ describe('rulings on a page scanned by URL', function() {
     it('keeps a URL answer apart from an element answer', function() {
         $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
         $elementId = (int) UserFactory::factory()->create()->id;
-        $verdicts = AccessibilityAudit::getInstance()->verdicts;
+        $verdicts = AccessibilityAudit::getInstance()->getVerdicts();
         $context = '<img src="/a.jpg">';
 
         $verdicts->setVerdict($siteId, $elementId, 'potential:long-alt', $context, VerdictService::VERDICT_CONFIRMED);
@@ -266,7 +266,7 @@ describe('rulings on a page scanned by URL', function() {
         $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
         urlScanRow('https://example.test/news?page=2', 'News', $siteId, 'potential:identical-links');
 
-        AccessibilityAudit::getInstance()->verdicts->setVerdict(
+        AccessibilityAudit::getInstance()->getVerdicts()->setVerdict(
             $siteId, null, 'potential:identical-links', '<img src="/a.jpg">',
             VerdictService::VERDICT_DISMISSED, null, 'https://example.test/news?page=2',
         );
@@ -282,7 +282,7 @@ describe('rulings on a page scanned by URL', function() {
 
     it('answers only once when the same question is answered twice', function() {
         $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
-        $verdicts = AccessibilityAudit::getInstance()->verdicts;
+        $verdicts = AccessibilityAudit::getInstance()->getVerdicts();
 
         $verdicts->setVerdict($siteId, null, 'potential:long-alt', 'x', VerdictService::VERDICT_DISMISSED, null, 'https://example.test/a');
         $verdicts->setVerdict($siteId, null, 'potential:long-alt', 'x', VerdictService::VERDICT_CONFIRMED, null, 'https://example.test/a');

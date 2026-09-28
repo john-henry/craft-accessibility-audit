@@ -22,23 +22,6 @@
 
     {% if isPro %}
 <fieldset>
-    <legend class="h6">{{ 'Reading Ease'|t('accessibility-audit') }}</legend>
-    <div class="meta accessibility-audit-ref">
-        <p class="accessibility-audit-ref__intro">{{ 'Flesch-Kincaid Reading Ease rates text from 0–100. Higher = easier.'|t('accessibility-audit') }}</p>
-        <table class="accessibility-audit-scale">
-            <tbody>
-                <tr><th scope="row" class="accessibility-audit-scale__score accessibility-audit-scale__score--pass">90–100</th><td>Very easy · 5th grade</td></tr>
-                <tr><th scope="row" class="accessibility-audit-scale__score accessibility-audit-scale__score--pass">80–90</th><td>Easy · 6th grade</td></tr>
-                <tr><th scope="row" class="accessibility-audit-scale__score accessibility-audit-scale__score--pass">70–80</th><td>Fairly easy · 7th grade</td></tr>
-                <tr><th scope="row" class="accessibility-audit-scale__score accessibility-audit-scale__score--warn">60–70</th><td>Standard · 8–9th grade</td></tr>
-                <tr><th scope="row" class="accessibility-audit-scale__score accessibility-audit-scale__score--warn">50–60</th><td>Fairly difficult · 10–12th</td></tr>
-                <tr><th scope="row" class="accessibility-audit-scale__score accessibility-audit-scale__score--error">30–50</th><td>Difficult · College</td></tr>
-                <tr><th scope="row" class="accessibility-audit-scale__score accessibility-audit-scale__score--error">0–30</th><td>Very difficult · Professional</td></tr>
-            </tbody>
-        </table>
-    </div>
-</fieldset>
-<fieldset>
     <legend class="h6">{{ 'WCAG 3.1.5'|t('accessibility-audit') }}</legend>
     <div class="meta accessibility-audit-ref">
         <p class="accessibility-audit-ref__intro">{{ 'Reading Level (Level AAA) recommends that content not require reading ability more advanced than lower secondary education, approximately Grade 9, reading age 14.'|t('accessibility-audit') }}</p>
@@ -61,31 +44,25 @@
     </div>
 </fieldset>
 <fieldset>
-    <legend class="h6">{{ 'Grade level reference'|t('accessibility-audit') }}</legend>
-    <div class="meta accessibility-audit-ref">
-     
-        <table class="accessibility-audit-scale">
-            <tbody>
-                <tr><th scope="row" class="accessibility-audit-scale__score accessibility-audit-scale__score--pass">≤ 6</th><td>{{ 'Primary school'|t('accessibility-audit') }}</td></tr>
-                <tr><th scope="row" class="accessibility-audit-scale__score accessibility-audit-scale__score--pass">7–9</th><td>{{ 'Lower secondary · WCAG AAA target'|t('accessibility-audit') }}</td></tr>
-                <tr><th scope="row" class="accessibility-audit-scale__score accessibility-audit-scale__score--warn">10–12</th><td>{{ 'Upper secondary'|t('accessibility-audit') }}</td></tr>
-                <tr><th scope="row" class="accessibility-audit-scale__score accessibility-audit-scale__score--error">13–16</th><td>{{ 'Undergraduate'|t('accessibility-audit') }}</td></tr>
-                <tr><th scope="row" class="accessibility-audit-scale__score accessibility-audit-scale__score--error">17+</th><td>{{ 'Graduate / professional'|t('accessibility-audit') }}</td></tr>
-            </tbody>
-        </table>
-    </div>
-</fieldset>
-<fieldset>
     <legend class="h6">{{ 'Resources'|t('accessibility-audit') }}</legend>
     <div class="meta accessibility-audit-ref">
         <ul class="accessibility-audit-reflist">
             <li><a href="https://www.w3.org/WAI/WCAG22/Understanding/reading-level" target="_blank" rel="noopener">WCAG 3.1.5 Reading Level</a></li>
             <li><a href="https://www.plainlanguage.gov/guidelines/" target="_blank" rel="noopener">US Plain Language Guidelines</a></li>
             <li><a href="https://www.gov.uk/guidance/content-design/writing-for-gov-uk" target="_blank" rel="noopener">GOV.UK Content Design Guide</a></li>
-            <li><a href="https://hemingwayapp.com" target="_blank" rel="noopener">Hemingway Editor</a></li>
         </ul>
     </div>
 </fieldset>
+    {% endif %}
+{% endblock %}
+
+{% block actionButton %}
+    {% if isPro and canRunScans and supportsSite %}
+        <button type="button" id="accessibility-audit-rl-analyse-all" class="btn submit"
+                data-action-url="{{ actionUrl('accessibility-audit/readability/analyse-all') }}"
+                data-site-id="{{ siteId }}">
+            {{ 'Analyse every page'|t('accessibility-audit') }}
+        </button>
     {% endif %}
 {% endblock %}
 
@@ -104,6 +81,10 @@
     } only %}
 {% else %}
 <div class="accessibility-audit-util-wrap accessibility-audit-rl-page">
+
+    {% if not supportsSite %}
+    <p class="warning has-icon">{{ unsupportedMessage }}</p>
+    {% endif %}
 
     {% if stats.total > 0 %}
         {% set easeClass = stats.avgEase >= 70 ? 'pass' : (stats.avgEase >= 50 ? 'warn' : 'error') %}
@@ -132,100 +113,70 @@
     </div>
     {% endif %}
 
-    {% if canRunScans %}
-    <div>
-        <h2>{{ 'Analyse a page'|t('accessibility-audit') }}</h2>
-        <p class="light">
-            {{ 'Calculates Flesch-Kincaid Reading Ease and Grade Level. WCAG 3.1.5 (Reading Level, AAA) recommends content not require reading ability beyond'|t('accessibility-audit') }}
-            <strong>{{ 'Grade 9 / age 14'|t('accessibility-audit') }}</strong>.
-        </p>
-        <div class="accessibility-audit-rl-url-row">
-            <label for="accessibility-audit-rl-url" class="visually-hidden">{{ 'Page URL to analyse'|t('accessibility-audit') }}</label>
-            <input type="url"
-                   id="accessibility-audit-rl-url"
-                   class="text"
-                   style="flex:1 1 260px;min-width:0"
-                   placeholder="https://example.com/about"
-                   value="{{ prefillUrl ?? '' }}"
-                   autocomplete="off"
-                   spellcheck="false">
-            {% if hasApiKey %}
-            <div class="accessibility-audit-rl-claude-label" title="{{ 'Use Claude Haiku to identify complex sentences and suggest plain-language alternatives.'|t('accessibility-audit') }}">
-                <input type="checkbox" id="accessibility-audit-rl-claude" class="checkbox">
-                <label for="accessibility-audit-rl-claude">{{ 'Plain-language AI suggestions'|t('accessibility-audit') }}</label>
-            </div>
-            {% endif %}
-            <button type="button" id="accessibility-audit-rl-analyse" class="btn submit">
-                {{ 'Analyse'|t('accessibility-audit') }}
-            </button>
-        </div>
-        <p id="accessibility-audit-rl-error" class="error" role="alert" hidden></p>
-        <div id="accessibility-audit-rl-empty" class="accessibility-audit-emptybox">{{ 'Analyse a page to see its reading ease, grade level, longest sentences, and plain-language AI suggestions here.'|t('accessibility-audit') }}</div>
-    </div>
+    {% if canRunScans and supportsSite %}
+        {% js %}
+        (() => {
+            const button = document.getElementById('accessibility-audit-rl-analyse-all');
+
+            button.addEventListener('click', async () => {
+                button.disabled = true;
+
+                try {
+                    const body = new FormData();
+                    body.append(Craft.csrfTokenName, Craft.csrfTokenValue);
+                    body.append('siteId', button.dataset.siteId);
+
+                    const response = await fetch(button.dataset.actionUrl, {
+                        method: 'POST',
+                        body,
+                        credentials: 'same-origin',
+                        headers: { 'Accept': 'application/json' },
+                    });
+                    const data = await response.json();
+
+                    if (!data.success) {
+                        Craft.cp.displayError(data.error || Craft.t('accessibility-audit', 'Analysis failed. Check Craft logs for details.'));
+                        button.disabled = false;
+                        return;
+                    }
+
+                    {% verbatim %}Craft.cp.displayNotice(Craft.t('accessibility-audit', 'Analysing {n, plural, =1{# page} other{# pages}} in the background.', { n: data.queued }));{% endverbatim %}
+                    Craft.cp.runQueue();
+
+                    // The table fills as the job stores results; reload it until
+                    // the queue has nothing left.
+                    const table = window.AccessibilityAuditReadabilityTable;
+                    if (table) {
+                        const timer = setInterval(() => {
+                            table.reload();
+                            if (!(Craft.cp.jobInfo || []).length) {
+                                clearInterval(timer);
+                            }
+                        }, 5000);
+                    }
+                } catch (e) {
+                    Craft.cp.displayError(Craft.t('accessibility-audit', 'Analysis request failed. Check your connection and try again.'));
+                    button.disabled = false;
+                }
+            });
+        })();
+        {% endjs %}
     {% endif %}
-
-    <div id="accessibility-audit-rl-results" class="accessibility-audit-col accessibility-audit-col--g14" aria-live="polite" hidden>
-
-        <div class="accessibility-audit-statcards accessibility-audit-statcards--3">
-            <div class="accessibility-audit-statcard accessibility-audit-statcard--white">
-                <span class="accessibility-audit-statcard__num accessibility-audit-statcard__num--sm" id="accessibility-audit-rl-ease-value">—</span>
-                <span class="accessibility-audit-col-label">{{ 'Reading Ease'|t('accessibility-audit') }}</span>
-                <span class="accessibility-audit-statcard__sub" id="accessibility-audit-rl-ease-label">—</span>
-                <div class="accessibility-audit-progress accessibility-audit-progress--flush"><div class="accessibility-audit-progress__fill" id="accessibility-audit-rl-ease-bar"></div></div>
-            </div>
-            <div class="accessibility-audit-statcard accessibility-audit-statcard--white">
-                <span class="accessibility-audit-statcard__num accessibility-audit-statcard__num--sm" id="accessibility-audit-rl-grade-value">—</span>
-                <span class="accessibility-audit-col-label">{{ 'Grade Level'|t('accessibility-audit') }}</span>
-                <span class="accessibility-audit-statcard__sub" id="accessibility-audit-rl-age-value">—</span>
-            </div>
-            <div class="accessibility-audit-statcard accessibility-audit-statcard--white">
-                <span id="accessibility-audit-rl-wcag-badge">—</span>
-                <span class="accessibility-audit-col-label">{{ 'WCAG 3.1.5'|t('accessibility-audit') }}</span>
-                <span class="accessibility-audit-statcard__sub">{{ 'Reading Level (AAA)'|t('accessibility-audit') }}</span>
-            </div>
-        </div>
-
-        <div class="accessibility-audit-statrow">
-            <span class="accessibility-audit-meta">{{ 'Words'|t('accessibility-audit') }} <strong class="accessibility-audit-data accessibility-audit-data--ink" id="accessibility-audit-rl-words" style="padding-left:5px">—</strong></span>
-            <span class="accessibility-audit-meta">{{ 'Sentences'|t('accessibility-audit') }} <strong class="accessibility-audit-data accessibility-audit-data--ink" id="accessibility-audit-rl-sentences" style="padding-left:5px">—</strong></span>
-            <span class="accessibility-audit-meta">{{ 'Avg. words per sentence'|t('accessibility-audit') }} <strong class="accessibility-audit-data accessibility-audit-data--ink" id="accessibility-audit-rl-avg" style="padding-left:5px">—</strong></span>
-        </div>
-
-        <div id="accessibility-audit-rl-complex-wrap" class="accessibility-audit-col accessibility-audit-col--g6">
-            <span class="accessibility-audit-label">{{ 'Longest sentences'|t('accessibility-audit') }}</span>
-            <span class="accessibility-audit-help">{{ 'These are the most likely to benefit from plain-language rewrites.'|t('accessibility-audit') }}</span>
-            <div id="accessibility-audit-rl-complex-list" class="accessibility-audit-col accessibility-audit-col--g6" style="margin-top:4px"></div>
-        </div>
-
-        <div id="accessibility-audit-rl-claude-wrap" hidden class="accessibility-audit-col accessibility-audit-col--g10">
-            <hr class="accessibility-audit-hr">
-            <span class="accessibility-audit-label">{{ 'Plain-language AI suggestions'|t('accessibility-audit') }}</span>
-            <p id="accessibility-audit-rl-claude-summary" class="accessibility-audit-help"></p>
-            <div id="accessibility-audit-rl-suggestions"></div>
-            <div id="accessibility-audit-rl-jargon-wrap" hidden class="accessibility-audit-col accessibility-audit-col--g6">
-                <span class="accessibility-audit-col-label">{{ 'Jargon detected'|t('accessibility-audit') }}</span>
-                <div id="accessibility-audit-rl-jargon-tags" class="accessibility-audit-tags"></div>
-            </div>
-        </div>
-
-    </div>
 
     {% if filteredElementId is defined and filteredElementId %}
     <div>
         <blockquote class="note">
             <p>
-                {{ 'Showing readability history for this page.'|t('accessibility-audit') }}
+                {{ 'Showing the result for this page.'|t('accessibility-audit') }}
                 <a href="{{ cpUrl('accessibility-audit/readability') }}">{{ 'View all pages'|t('accessibility-audit') }} →</a>
             </p>
         </blockquote>
     </div>
     {% endif %}
 
-    {% if results|length == 0 and filteredElementId is defined and filteredElementId %}
-    <p class="light mt-s">{{ 'This page has not been analysed yet.'|t('accessibility-audit') }}</p>
-    {% elseif results|length > 0 %}
     <div>
         <h2>{{ 'Page results'|t('accessibility-audit') }}</h2>
+        <p class="light">{{ 'Pages are scored as they are saved, or all at once with Analyse every page, which also covers the Additional URLs in Settings and sends nothing to Claude. Open a page to edit it, then pick Readability from its Preview menu to see the hard sentences marked as you write.'|t('accessibility-audit') }}</p>
 
         {% do view.registerAssetBundle('craft\\web\\assets\\admintable\\AdminTableAsset') %}
 
@@ -235,34 +186,46 @@
         (() => {
             const siteId = {{ siteId }};
 
+            // The title opens the entry for editing, since that is where the
+            // text gets fixed; the URL under it opens the live page.
+            // The title is the edit link, as in Craft's own element indexes.
+            // The address under it is set apart as the way out to the live
+            // page: muted, with its arrow kept clear of the truncation.
             const pageCell = (p) => {
                 if (!p) { return ''; }
                 const title = Craft.escapeHtml(p.title);
-                const link = p.url
-                    ? '<a href="' + Craft.escapeHtml(p.url) + '" target="_blank" rel="noopener">' + title
-                        + ' <span aria-hidden="true" style="font-size:.85em">↗</span><span class="visually-hidden"> ('
-                        + Craft.t('accessibility-audit', 'opens in new tab') + ')</span></a>'
-                    : title;
+                const external = (label, className) => '<a href="' + Craft.escapeHtml(p.url) + '" target="_blank" rel="noopener" class="' + className + '">'
+                    + '<span class="accessibility-audit-rl-ext__text">' + label + '</span>'
+                    + '<span aria-hidden="true" class="accessibility-audit-rl-ext__icon">↗</span><span class="visually-hidden"> ('
+                    + Craft.t('accessibility-audit', 'opens in new tab') + ')</span></a>';
+                const link = p.editUrl
+                    ? '<a href="' + Craft.escapeHtml(p.editUrl) + '">' + title + '</a>'
+                    : (p.url ? external(title, 'accessibility-audit-rl-ext') : title);
                 const urlLine = p.url
-                    ? '<div class="light code" style="font-size:11px;margin-top:2px">' + Craft.escapeHtml(p.url) + '</div>'
+                    ? '<div class="code accessibility-audit-rl-url" title="' + Craft.escapeHtml(p.url) + '">'
+                        + (p.editUrl ? external(Craft.escapeHtml(p.url), 'accessibility-audit-rl-ext accessibility-audit-rl-ext--muted') : Craft.escapeHtml(p.url)) + '</div>'
                     : '';
                 return link + urlLine;
             };
 
-            const scoreCell = (v) => v
-                ? '<span class="accessibility-audit-num accessibility-audit-num--' + v.class + '">' + v.value + '</span>'
-                    + '<div class="light" style="font-size:11px">' + Craft.escapeHtml(v.label) + '</div>'
-                : '';
-
+            // The WCAG 3.1.5 result sits with the grade it is read from.
             const gradeCell = (v) => v
-                ? '<span class="accessibility-audit-num accessibility-audit-num--' + v.class + '">' + v.value + '</span>'
-                    + '<div class="light" style="font-size:11px">'
-                    + Craft.t('accessibility-audit', '~age {n}', { n: v.age }) + '</div>'
+                ? '<span class="accessibility-audit-num accessibility-audit-num--' + v.class + '">' + Number(v.value).toFixed(1) + '</span>'
+                    + '<div>' + (v.pass
+                        ? '<span class="accessibility-audit-badge-pass">' + Craft.t('accessibility-audit', 'Pass') + '</span>'
+                        : '<span class="accessibility-audit-badge-fail">' + Craft.t('accessibility-audit', 'Fail') + '</span>') + '</div>'
                 : '';
 
-            const wcagCell = (v) => v
-                ? '<span class="accessibility-audit-badge-pass">' + Craft.t('accessibility-audit', 'Pass') + '</span>'
-                : '<span class="accessibility-audit-badge-fail">' + Craft.t('accessibility-audit', 'Fail') + '</span>';
+            // Blank on results stored before the counts were kept, until the
+            // page is analysed again.
+            const countCell = (level) => (v) => {
+                if (v === null || v === undefined) {
+                    return '<span class="light" title="' + Craft.escapeHtml(Craft.t('accessibility-audit', 'Counted the next time this page is analysed.')) + '">—</span>';
+                }
+                return v > 0
+                    ? '<span class="accessibility-audit-num accessibility-audit-num--' + level + '">' + v + '</span>'
+                    : '<span class="light">0</span>';
+            };
 
             const canRunScans = {{ canRunScans ? 'true' : 'false' }};
 
@@ -271,167 +234,42 @@
                 const target = v.elementId
                     ? 'data-element-id="' + v.elementId + '" data-site-id="' + (v.siteId || siteId) + '"'
                     : 'data-url="' + Craft.escapeHtml(v.url) + '"';
-                return '<button type="button" class="btn small" data-accessibility-audit-reanalyse ' + target + '>'
-                    + Craft.t('accessibility-audit', 'Re-analyse') + '</button>';
+                // Worded like the Issues pages' Re-scan, collapsing to the icon
+                // when the table is short of room (see accessibility-audit.css).
+                return '<button type="button" class="btn small accessibility-audit-rowbtn" data-icon="refresh" title="' + Craft.t('accessibility-audit', 'Re-analyse') + '" data-accessibility-audit-reanalyse ' + target + '>'
+                    + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'Re-analyse') + '</span></button>';
             };
 
             const columns = [
                 { name: 'page', title: Craft.t('accessibility-audit', 'Page'), callback: pageCell, sortField: true },
-                { name: 'ease', title: Craft.t('accessibility-audit', 'Ease'), callback: scoreCell, sortField: true },
-                { name: 'grade', title: Craft.t('accessibility-audit', 'Grade'), callback: gradeCell, sortField: true },
+                { name: 'grade', title: Craft.t('accessibility-audit', 'Grade'), callback: gradeCell, sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
                 { name: 'words', title: Craft.t('accessibility-audit', 'Words'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
-                { name: 'wcag', title: Craft.t('accessibility-audit', 'WCAG 3.1.5'), callback: wcagCell, sortField: true },
+                { name: 'hard', title: Craft.t('accessibility-audit', 'Hard'), callback: countCell('warn'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
+                { name: 'veryHard', title: Craft.t('accessibility-audit', 'Very hard'), callback: countCell('error'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
                 { name: 'analysed', title: Craft.t('accessibility-audit', 'Analysed') },
                 { name: 'reanalyse', title: '', callback: reanalyseCell },
             ];
 
-            AccessibilityAuditTable.create({
+            // Kept on window so Analyse every page can reload it while the job runs.
+            window.AccessibilityAuditReadabilityTable = AccessibilityAuditTable.create({
                 container: '#accessibility-audit-rl-table',
                 endpoint: 'accessibility-audit/dashboard/readability-table',
                 siteId: siteId,
+                {% if filteredElementId %}endpointParams: 'elementId={{ filteredElementId }}',{% endif %}
                 columns: columns,
-                checkboxes: false,
+                checkboxes: canRunScans,
+                bulkRescan: false,
+                bulkActions: canRunScans ? [{
+                    label: Craft.t('accessibility-audit', 'Re-analyse selected'),
+                    action: 'accessibility-audit/readability/analyse-selected',
+                    icon: 'refresh',
+                }] : [],
                 emptyMessage: Craft.t('accessibility-audit', 'No pages analysed yet.'),
             });
         })();
         {% endjs %}
     </div>
-    {% endif %}
 
 </div>
-
-{% js %}
-(function () {
-    'use strict';
-
-    var analyseBtn  = document.getElementById('accessibility-audit-rl-analyse');
-    var urlInput    = document.getElementById('accessibility-audit-rl-url');
-    var claudeCheck = document.getElementById('accessibility-audit-rl-claude');
-    var errorEl     = document.getElementById('accessibility-audit-rl-error');
-    var resultsEl   = document.getElementById('accessibility-audit-rl-results');
-
-    var cfg       = window.AccessibilityAudit || {};
-    var actionUrl = cfg.readabilityAnalyseUrl || '/actions/accessibility-audit/readability/analyse';
-    var csrfName  = (window.Craft && Craft.csrfTokenName)  || 'CRAFT_CSRF_TOKEN';
-    var csrfValue = (window.Craft && Craft.csrfTokenValue) || '';
-
-  
-    var escHtml = window.AccessibilityAuditShared.escHtml;
-
-    analyseBtn.addEventListener('click', async function () {
-        var url = urlInput.value.trim();
-        if (!url) { showError('Please enter a URL.'); return; }
-
-        errorEl.hidden = true;
-        resultsEl.hidden = true;
-        var emptyEl = document.getElementById('accessibility-audit-rl-empty');
-        if (emptyEl) emptyEl.hidden = true;
-        analyseBtn.disabled = true;
-        analyseBtn.textContent = '{{ 'Analysing…'|t('accessibility-audit') }}';
-
-        try {
-            var fd = new FormData();
-            fd.append(csrfName, csrfValue);
-            fd.append('url', url);
-            if (claudeCheck && claudeCheck.checked) fd.append('withClaude', '1');
-
-            var res  = await fetch(actionUrl, { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
-            var data = await res.json();
-
-            if (!data.success) { showError(data.error || 'Analysis failed.'); return; }
-            renderResults(data.result);
-        } catch (err) {
-            showError('Request failed: ' + err.message);
-        } finally {
-            analyseBtn.disabled = false;
-            analyseBtn.textContent = '{{ 'Re-analyse'|t('accessibility-audit') }}';
-        }
-    });
-
-    urlInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') analyseBtn.click(); });
-
-    function showError(msg) { errorEl.textContent = msg; errorEl.hidden = false; }
-
-    function renderResults(r) {
-        var easeVal   = document.getElementById('accessibility-audit-rl-ease-value');
-        var easeLabel = document.getElementById('accessibility-audit-rl-ease-label');
-        var easeBar   = document.getElementById('accessibility-audit-rl-ease-bar');
-        var gradeVal  = document.getElementById('accessibility-audit-rl-grade-value');
-        var ageVal    = document.getElementById('accessibility-audit-rl-age-value');
-        var wcagBadge = document.getElementById('accessibility-audit-rl-wcag-badge');
-
-        easeVal.textContent   = r.readingEase;
-        easeLabel.textContent = r.readingEaseLabel;
-        easeBar.style.width   = r.readingEase + '%';
-        easeBar.classList.remove('accessibility-audit-progress__fill--pass', 'accessibility-audit-progress__fill--warn', 'accessibility-audit-progress__fill--error');
-        easeBar.classList.add(r.readingEase >= 70 ? 'accessibility-audit-progress__fill--pass' : r.readingEase >= 50 ? 'accessibility-audit-progress__fill--warn' : 'accessibility-audit-progress__fill--error');
-
-        gradeVal.textContent = r.gradeLevel;
-        ageVal.textContent   = 'Reading age ~' + r.readingAge;
-
-       
-        wcagBadge.innerHTML = r.wcag315Pass
-            ? '<span class="accessibility-audit-badge-pass">{{ 'Pass'|t('accessibility-audit') }}</span>'
-            : '<span class="accessibility-audit-badge-fail">{{ 'Fail'|t('accessibility-audit') }}</span>';
-
-        document.getElementById('accessibility-audit-rl-words').textContent     = r.wordCount.toLocaleString();
-        document.getElementById('accessibility-audit-rl-sentences').textContent = r.sentenceCount.toLocaleString();
-        document.getElementById('accessibility-audit-rl-avg').textContent       = r.avgWordsPerSentence;
-
-        var list = document.getElementById('accessibility-audit-rl-complex-list');
-        list.innerHTML = '';
-        (r.complexSentences || []).forEach(function (s, i) {
-            var row = document.createElement('div');
-            row.className = 'accessibility-audit-rl-sentence';
-            var n = document.createElement('span');
-            n.className = 'accessibility-audit-rl-sentence__n';
-            n.textContent = i + 1;
-            var text = document.createElement('span');
-            text.className = 'accessibility-audit-rl-sentence__text';
-            text.textContent = s;
-            var count = document.createElement('span');
-            count.className = 'accessibility-audit-rl-sentence__count';
-            count.textContent = s.split(/\s+/).filter(Boolean).length + ' ' + Craft.t('accessibility-audit', 'words');
-            row.appendChild(n);
-            row.appendChild(text);
-            row.appendChild(count);
-            list.appendChild(row);
-        });
-
-        var claudeWrap = document.getElementById('accessibility-audit-rl-claude-wrap');
-        if (r.claude) {
-            claudeWrap.hidden = false;
-            document.getElementById('accessibility-audit-rl-claude-summary').textContent = r.claude.summary || '';
-
-            var sugsEl = document.getElementById('accessibility-audit-rl-suggestions');
-            sugsEl.innerHTML = '';
-            (r.claude.suggestions || []).forEach(function (sug) {
-                sugsEl.innerHTML +=
-                    '<div class="accessibility-audit-suggest">' +
-                        '<p class="accessibility-audit-suggest__from">' + escHtml(sug.original || '') + '</p>' +
-                        '<p class="accessibility-audit-suggest__why">↓ <em>' + escHtml(sug.reason || '') + '</em></p>' +
-                        '<p class="accessibility-audit-suggest__to">' + escHtml(sug.simplified || '') + '</p>' +
-                    '</div>';
-            });
-
-            var jargon     = r.claude.jargon || [];
-            var jargonWrap = document.getElementById('accessibility-audit-rl-jargon-wrap');
-            if (jargon.length) {
-                jargonWrap.hidden = false;
-                document.getElementById('accessibility-audit-rl-jargon-tags').innerHTML = jargon.map(function (t) {
-                    return '<span class="accessibility-audit-tag">' + escHtml(t) + '</span>';
-                }).join('');
-            } else {
-                jargonWrap.hidden = true;
-            }
-        } else {
-            claudeWrap.hidden = true;
-        }
-
-        resultsEl.hidden = false;
-        resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-})();
-{% endjs %}
 {% endif %}
 {% endblock %}

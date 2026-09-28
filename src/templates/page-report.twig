@@ -44,11 +44,11 @@
         </a>
     {% endif %}
     {% if element %}
-        <button class="btn submit" data-icon="refresh" data-accessibility-audit-scan-entry="{{ elementId }}" data-site-id="{{ siteId }}" aria-live="polite">
+        <button class="btn submit" data-icon="refresh" data-accessibility-audit-scan-entry="{{ elementId }}" data-site-id="{{ siteId }}">
             {{ 'Re-scan'|t('accessibility-audit') }}
         </button>
     {% elseif isUrlScan %}
-        <button class="btn submit" data-icon="refresh" data-accessibility-audit-scan-url="{{ pageUrl }}" data-site-id="{{ siteId }}" aria-live="polite">
+        <button class="btn submit" data-icon="refresh" data-accessibility-audit-scan-url="{{ pageUrl }}" data-site-id="{{ siteId }}">
             {{ 'Re-scan'|t('accessibility-audit') }}
         </button>
     {% endif %}
@@ -589,7 +589,7 @@
                 <td class="light accessibility-audit-num-center" data-sort-value="{{ issue.wcagCriterion ?? '' }}">{{ issue.wcagCriterion ?? '—' }}</td>
                 <td data-sort-value="{{ difficultyRank }}">{{ macros.difficulty(issue.difficulty ?? null) }}</td>
                 <td data-sort-value="{{ issue.responsibility ?? '' }}">{{ macros.responsibility(issue.responsibility ?? null) }}</td>
-                <td class="light" data-sort-value="{{ issue.elementType ?? '' }}">{{ issue.elementType ?? '—' }}</td>
+                <td class="light" data-sort-value="{{ issue.elementType ?? '' }}">{{ issue.elementType ? issue.elementType|t('accessibility-audit') : '—' }}</td>
                 <td class="rightalign" data-sort-value="{{ issue.occurrences }}"><strong>{{ issue.occurrences }}</strong></td>
             </tr>
             {% endfor %}

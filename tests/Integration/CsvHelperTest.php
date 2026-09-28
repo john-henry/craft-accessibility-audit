@@ -50,3 +50,37 @@ describe('Csv::guardRow', function() {
         expect(Csv::guardRow([]))->toBe([]);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Csv::download — the shared download response
+// ---------------------------------------------------------------------------
+
+describe('Csv::download', function() {
+    it('sets every header a CSV download needs', function() {
+        $response = Csv::download("a,b\n1,2\n", 'report.csv');
+        $headers = $response->headers;
+
+        expect($response->content)->toBe("a,b\n1,2\n")
+            ->and($headers->get('Content-Type'))->toBe('text/csv; charset=utf-8')
+            ->and($headers->get('Content-Disposition'))->toBe('attachment; filename="report.csv"')
+            // The first row of these files is somebody's page titles, so the
+            // browser is told not to pick a type for it.
+            ->and($headers->get('X-Content-Type-Options'))->toBe('nosniff');
+    });
+
+    it('is the only place an export builds a CSV response', function() {
+        // The header set drifted once already by being written out at each
+        // export in turn, so the rule is pinned rather than the symptom: an
+        // export that hand-rolls its own response is the thing that goes
+        // missing a header, whichever header it happens to be.
+        $offenders = [];
+
+        foreach (glob(dirname(__DIR__, 2) . '/src/controllers/*.php') ?: [] as $path) {
+            if (str_contains((string)file_get_contents($path), 'text/csv')) {
+                $offenders[] = basename($path);
+            }
+        }
+
+        expect($offenders)->toBe([]);
+    });
+});

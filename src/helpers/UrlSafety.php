@@ -10,10 +10,12 @@ use Craft;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Psr7\Uri;
 use GuzzleHttp\Psr7\UriResolver;
+use GuzzleHttp\Psr7\Utils;
 use johnhenry\accessibilityaudit\exceptions\UnsafeUrlException;
-use Psr\Http\Message\RequestInterface;
+use johnhenry\ipguard\Dns;
+use johnhenry\ipguard\IpRange;
 use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\UriInterface;
+use Throwable;
 
 /**
  * Guards server-side URL fetches against SSRF (Server-Side Request Forgery).
@@ -37,7 +39,7 @@ use Psr\Http\Message\UriInterface;
  * method blocks local URLs from being *sent to Anthropic* (an inverse,
  * TLD-based heuristic) and is not a real SSRF guard.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class UrlSafety
@@ -55,6 +57,31 @@ class UrlSafety
      */
     public const MAX_REDIRECTS = 5;
 
+    /**
+     * @var int The most body bytes a guarded fetch will read.
+     *
+     * The body is read into memory to be parsed, and how big it is is decided
+     * by whatever is at the other end. A sweep runs unattended against pages
+     * that may be broken, generated, or hostile, so the read is bounded here
+     * rather than trusted. Well past any real HTML page.
+     */
+    public const MAX_BODY_BYTES = 10485760;
+
+    /**
+     * @var int The seconds a guarded fetch of one page may take.
+     *
+     * Held here rather than at each call site so the sweeps can work out what a
+     * batch of them costs. A job that reserves less time than its own batch can
+     * take is handed to the next worker part way through and starts again from
+     * the top, fetching every page in it a second time.
+     */
+    public const FETCH_TIMEOUT = 15;
+
+    /**
+     * @var int The seconds a guarded fetch may spend reaching a host.
+     */
+    public const CONNECT_TIMEOUT = 5;
+
     // Public Methods
     // =========================================================================
 
@@ -65,6 +92,9 @@ class UrlSafety
      * @return void
      * @throws UnsafeUrlException If the URL is malformed, uses a disallowed
      *                            scheme, or resolves to a private/reserved IP.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function assertSafeUrl(string $url): void
     {
@@ -79,23 +109,34 @@ class UrlSafety
             throw new UnsafeUrlException('Only http and https URLs may be fetched.');
         }
 
-        self::assertHostIsPublic($parts['host']);
+        self::assertHostIsPublic(
+            $parts['host'],
+            $scheme,
+            isset($parts['port']) ? (int)$parts['port'] : null,
+        );
     }
 
     /**
      * Asserts that a hostname (or IP literal) resolves only to public addresses.
      *
      * @param string $host The hostname or IP literal to validate.
+     * @param string $scheme The URL's scheme, which has to match the site's for
+     *                       the own-site exemption to apply.
+     * @param int|null $port The URL's explicit port, or null for the scheme's
+     *                       default.
      * @return void
      * @throws UnsafeUrlException If the host resolves to a private/reserved IP
      *                            or cannot be resolved at all.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
-    public static function assertHostIsPublic(string $host): void
+    public static function assertHostIsPublic(string $host, string $scheme = 'https', ?int $port = null): void
     {
-        // Exempt hosts this install actually serves: the site's own hostname
-        // comes from Craft's site config, not from user input, and local/intranet
-        // installs legitimately resolve to private addresses.
-        if (self::isOwnSiteHost($host)) {
+        // A local or intranet install legitimately resolves to a private
+        // address, so its own sites are exempt, on their exact scheme, host
+        // and port only, and never when @web comes from the request.
+        if (IpRange::isOwnSiteOrigin($scheme, $host, $port)) {
             return;
         }
 
@@ -116,15 +157,18 @@ class UrlSafety
      * Validates a host and hands back the addresses it was validated against.
      *
      * @param string $host The hostname or IP literal.
+     * @param string $scheme The URL's scheme.
+     * @param int|null $port The URL's explicit port, or null for the default.
      * @return string[] Every address the host resolves to, all of them public.
      * @throws UnsafeUrlException If the host is private, reserved, or will not
      *                            resolve.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
-    public static function publicAddressesFor(string $host): array
+    public static function publicAddressesFor(string $host, string $scheme = 'https', ?int $port = null): array
     {
-        self::assertHostIsPublic($host);
+        self::assertHostIsPublic($host, $scheme, $port);
 
         // A host this install serves is exempt from the private-range check
         // (a local or intranet install legitimately resolves to one), so its
@@ -133,34 +177,40 @@ class UrlSafety
     }
 
     /**
-     * Whether the host is one this install serves.
+     * Request options that pin a single request to the addresses the guard
+     * approved, for a request that isn't a plain GET through fetch().
      *
-     * Matched against the hostname of each configured site's base URL, exactly:
-     * a suffix match would let `evil-example.com` past a site on `example.com`,
-     * and a wildcard would hand an attacker every subdomain of it.
+     * The URL is validated first. The caller must also turn redirects off, or
+     * a redirect would reach a host that was never checked.
      *
-     * @param string $host The hostname to test.
-     * @return bool
-     * @author JohnHenry <info@johnhenry.ie>
-     * @since 1.0.0
+     * @param string $url The URL about to be requested.
+     * @return array<string, mixed> Guzzle request options.
+     * @throws UnsafeUrlException If the URL is not safe to request.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
      */
-    private static function isOwnSiteHost(string $host): bool
+    public static function pinnedRequestOptions(string $url): array
     {
-        $host = strtolower(trim($host));
+        self::assertSafeUrl($url);
 
-        if ($host === '') {
-            return false;
+        $parts = parse_url($url);
+        $host = (string)($parts['host'] ?? '');
+        $scheme = strtolower((string)($parts['scheme'] ?? 'https'));
+        $explicitPort = isset($parts['port']) ? (int)$parts['port'] : null;
+        $port = $explicitPort ?? ($scheme === 'http' ? 80 : 443);
+        $addresses = self::publicAddressesFor($host, $scheme, $explicitPort);
+        $options = ['allow_redirects' => false];
+
+        if (!empty($addresses) && extension_loaded('curl')) {
+            $options['curl'] = [
+                CURLOPT_RESOLVE => [
+                    sprintf('%s:%d:%s', trim($host, '[]'), $port, implode(',', $addresses)),
+                ],
+            ];
         }
 
-        foreach (Craft::$app->getSites()->getAllSites() as $site) {
-            $siteHost = parse_url((string)$site->getBaseUrl(), PHP_URL_HOST);
-
-            if (is_string($siteHost) && strtolower($siteHost) === $host) {
-                return true;
-            }
-        }
-
-        return false;
+        return $options;
     }
 
     /**
@@ -173,31 +223,13 @@ class UrlSafety
      *
      * @param string $ip The IP address to test.
      * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function isPrivateIp(string $ip): bool
     {
-        // Unwrap IPv4-mapped IPv6 addresses (e.g. ::ffff:169.254.169.254) so
-        // the private-range check below applies to the embedded IPv4 address.
-        if (stripos($ip, '::ffff:') === 0) {
-            $mapped = substr($ip, 7);
-            if (filter_var($mapped, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-                $ip = $mapped;
-            }
-        }
-
-        if (!filter_var($ip, FILTER_VALIDATE_IP)) {
-            // Not a parseable IP, treat as unsafe.
-            return true;
-        }
-
-        // PHP's own reserved/private range filter covers the common cases for
-        // both IPv4 and IPv6 (RFC 1918, loopback, link-local, unique-local).
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
-            return true;
-        }
-
-        // Belt-and-braces explicit ranges that some PHP builds miss.
-        return self::isInReservedRange($ip);
+        return IpRange::isPrivate($ip);
     }
 
     /**
@@ -231,9 +263,11 @@ class UrlSafety
      *                               at, and the same page is then reported
      *                               twice under two names.
      * @return ResponseInterface The final response.
-     * @throws UnsafeUrlException If any hop is unsafe, or there are too many.
+     * @throws UnsafeUrlException If any hop is unsafe, if there are too many,
+     *                            or if the body runs past the byte cap.
      * @throws GuzzleException If the request itself fails.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
     public static function fetch(string $url, array $clientConfig = [], ?string &$finalUrl = null): ResponseInterface
@@ -256,7 +290,7 @@ class UrlSafety
             $port = (int)($parts['port'] ?? ($scheme === 'http' ? 80 : 443));
 
             $options = [];
-            $addresses = self::publicAddressesFor($host);
+            $addresses = self::publicAddressesFor($host, $scheme, isset($parts['port']) ? (int)$parts['port'] : null);
 
             // Without curl there is nothing to pin to: the stream handler
             // resolves the name itself and takes no address list. The hop is
@@ -270,15 +304,48 @@ class UrlSafety
                 ];
             }
 
-            $response = $client->get($url, $options);
+            // The body is written into a capped sink as it arrives, so an
+            // endless response is cut off mid-transfer instead of being taken
+            // into memory whole. Not the `stream` request option: that routes
+            // the request to Guzzle's stream handler, which ignores the cURL
+            // options the address pinning above depends on.
+            $options['sink'] = new CappedStream(
+                Utils::streamFor(fopen('php://temp', 'r+')),
+                self::MAX_BODY_BYTES,
+            );
+
+            try {
+                $response = $client->get($url, $options);
+            } catch (Throwable $e) {
+                // The sink's refusal surfaces wrapped in the client's own
+                // transfer exception.
+                for ($cause = $e; $cause !== null; $cause = $cause->getPrevious()) {
+                    if ($cause instanceof UnsafeUrlException) {
+                        throw $cause;
+                    }
+                }
+
+                throw $e;
+            }
+
             $status = $response->getStatusCode();
             $location = $response->getHeaderLine('Location');
 
             if ($status < 300 || $status > 399 || $location === '') {
                 $finalUrl = $url;
 
+                $body = $response->getBody();
+
+                if ($body->isSeekable()) {
+                    $body->rewind();
+                }
+
                 return $response;
             }
+
+            // The hop's own body is of no interest and holds the connection
+            // open until it is let go.
+            $response->getBody()->close();
 
             if (++$hops > self::MAX_REDIRECTS) {
                 throw new UnsafeUrlException('The URL redirected too many times.');
@@ -288,34 +355,6 @@ class UrlSafety
             // came from before the next pass validates it.
             $url = (string)UriResolver::resolve(new Uri($url), new Uri($location));
         }
-    }
-
-    /**
-     * Returns Guzzle client options that re-validate the host on every redirect
-     * hop, preventing a public URL from redirecting to an internal target.
-     *
-     * @return array<string, mixed>
-     */
-    public static function guzzleRedirectConfig(): array
-    {
-        return [
-            'allow_redirects' => [
-                'max' => self::MAX_REDIRECTS,
-                'strict' => true,
-                'referer' => false,
-                'protocols' => self::ALLOWED_SCHEMES,
-                'track_redirects' => false,
-                'on_redirect' => static function(
-                    RequestInterface $request,
-                    ResponseInterface $response,
-                    UriInterface $uri,
-                ): void {
-                    // Throws UnsafeUrlException if the redirect target host
-                    // resolves to a private/reserved address.
-                    self::assertHostIsPublic($uri->getHost());
-                },
-            ],
-        ];
     }
 
     // Private Methods
@@ -328,6 +367,9 @@ class UrlSafety
      *
      * @param string $host The hostname or IP literal to resolve.
      * @return string[] The resolved IP addresses.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function resolveHost(string $host): array
     {
@@ -339,87 +381,6 @@ class UrlSafety
             return [$host];
         }
 
-        $ips = [];
-
-        // IPv4 (A records).
-        $records = @dns_get_record($host, DNS_A);
-        if (is_array($records)) {
-            foreach ($records as $record) {
-                if (!empty($record['ip'])) {
-                    $ips[] = $record['ip'];
-                }
-            }
-        }
-
-        // IPv6 (AAAA records).
-        $records6 = @dns_get_record($host, DNS_AAAA);
-        if (is_array($records6)) {
-            foreach ($records6 as $record) {
-                if (!empty($record['ipv6'])) {
-                    $ips[] = $record['ipv6'];
-                }
-            }
-        }
-
-        // Fallback to gethostbyname when DNS records are unavailable.
-        if (empty($ips)) {
-            $resolved = gethostbyname($host);
-            if ($resolved !== $host && filter_var($resolved, FILTER_VALIDATE_IP)) {
-                $ips[] = $resolved;
-            }
-        }
-
-        return array_values(array_unique($ips));
-    }
-
-    /**
-     * Explicit range checks for addresses some PHP filter builds do not flag.
-     *
-     * @param string $ip The IP address to test.
-     * @return bool
-     */
-    private static function isInReservedRange(string $ip): bool
-    {
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-            $long = ip2long($ip);
-            if ($long === false) {
-                return true;
-            }
-
-            $reserved = [
-                ['10.0.0.0', 8],
-                ['172.16.0.0', 12],
-                ['192.168.0.0', 16],
-                ['127.0.0.0', 8],
-                ['169.254.0.0', 16],
-                ['0.0.0.0', 8],
-                ['100.64.0.0', 10],
-                ['192.0.0.0', 24],
-                ['198.18.0.0', 15],
-                ['192.0.2.0', 24],
-                ['240.0.0.0', 4],
-            ];
-
-            foreach ($reserved as [$subnet, $mask]) {
-                $subnetLong = ip2long($subnet);
-                $maskLong = -1 << (32 - $mask);
-                if (($long & $maskLong) === ($subnetLong & $maskLong)) {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        // IPv6 loopback / unspecified / unique-local / link-local.
-        $normalised = strtolower($ip);
-        return $normalised === '::1'
-            || $normalised === '::'
-            || str_starts_with($normalised, 'fc')
-            || str_starts_with($normalised, 'fd')
-            || str_starts_with($normalised, 'fe8')
-            || str_starts_with($normalised, 'fe9')
-            || str_starts_with($normalised, 'fea')
-            || str_starts_with($normalised, 'feb');
+        return Dns::addressesFor($host);
     }
 }

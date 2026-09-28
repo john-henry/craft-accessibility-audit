@@ -12,7 +12,7 @@ use markhuot\craftpest\factories\User as UserFactory;
 
 /**
  * Builds an in-memory image Asset with the given alt text. Nothing is saved:
- * checkImageAlt() only reads properties off the element, so a constructed
+ * _checkImageAlt() only reads properties off the element, so a constructed
  * instance exercises the real logic without needing a volume or filesystem.
  */
 function makeMemoryImageAsset(?string $alt, string $filename = 'photo.jpg', ?int $id = null): Asset
@@ -45,23 +45,30 @@ function makeStoredAuditAsset(?string $alt): Asset
 {
     $elementId = UserFactory::factory()->create()->id;
 
-    $folderId = (new Query())
-        ->select('id')
+    // The volume is carried on the row and on the element, the way Craft stores
+    // a real asset. A volumeId of NULL is not a shortcut here, it is what a
+    // temporary upload looks like, and the audit skips those on purpose.
+    $folder = (new Query())
+        ->select(['id', 'volumeId'])
         ->from('{{%volumefolders}}')
         ->where(['not', ['volumeId' => null]])
-        ->scalar();
+        ->one();
 
     $now = Db::prepareDateForDb(new \DateTime());
     Craft::$app->getDb()->createCommand()->insert('{{%assets}}', [
         'id' => $elementId,
-        'folderId' => $folderId,
+        'volumeId' => $folder['volumeId'],
+        'folderId' => $folder['id'],
         'filename' => 'photo.jpg',
         'kind' => Asset::KIND_IMAGE,
         'dateCreated' => $now,
         'dateUpdated' => $now,
     ])->execute();
 
-    return makeMemoryImageAsset($alt, 'photo.jpg', $elementId);
+    $asset = makeMemoryImageAsset($alt, 'photo.jpg', $elementId);
+    $asset->volumeId = (int)$folder['volumeId'];
+
+    return $asset;
 }
 
 /**
@@ -91,7 +98,7 @@ beforeEach(function() {
 
 describe('AssetScanner::scanAsset alt-text checks', function() {
     it('flags a missing alt as a warning and stops there', function() {
-        $issues = AccessibilityAudit::getInstance()->assets->scanAsset(makeMemoryImageAsset(null));
+        $issues = AccessibilityAudit::getInstance()->getAssets()->scanAsset(makeMemoryImageAsset(null));
 
         expect($issues)->toHaveCount(1)
             ->and($issues[0]->ruleId)->toBe('asset-alt-missing')
@@ -99,14 +106,14 @@ describe('AssetScanner::scanAsset alt-text checks', function() {
     });
 
     it('treats whitespace-only alt as missing', function() {
-        $issues = AccessibilityAudit::getInstance()->assets->scanAsset(makeMemoryImageAsset('   '));
+        $issues = AccessibilityAudit::getInstance()->getAssets()->scanAsset(makeMemoryImageAsset('   '));
 
         expect($issues)->toHaveCount(1)
             ->and($issues[0]->ruleId)->toBe('asset-alt-missing');
     });
 
     it('flags filename-as-alt as a warning', function() {
-        $issues = AccessibilityAudit::getInstance()->assets->scanAsset(makeMemoryImageAsset('IMG_4032.jpg'));
+        $issues = AccessibilityAudit::getInstance()->getAssets()->scanAsset(makeMemoryImageAsset('IMG_4032.jpg'));
 
         expect($issues)->toHaveCount(1)
             ->and($issues[0]->ruleId)->toBe('asset-alt-filename')
@@ -114,15 +121,39 @@ describe('AssetScanner::scanAsset alt-text checks', function() {
     });
 
     it('flags very short alt text as a notice', function() {
-        $issues = AccessibilityAudit::getInstance()->assets->scanAsset(makeMemoryImageAsset('ab'));
+        $issues = AccessibilityAudit::getInstance()->getAssets()->scanAsset(makeMemoryImageAsset('ab'));
 
         expect($issues)->toHaveCount(1)
             ->and($issues[0]->ruleId)->toBe('asset-alt-short')
             ->and($issues[0]->severity)->toBe('notice');
     });
 
+    it('counts characters rather than bytes, so a short alt in any script is flagged', function(string $alt) {
+        // Two characters either way. Measured in bytes these run to four and
+        // six, over the threshold, and the check never fired for them: the
+        // rule stopped applying to whole writing systems.
+        $issues = AccessibilityAudit::getInstance()->getAssets()->scanAsset(makeMemoryImageAsset($alt));
+
+        expect($issues)->toHaveCount(1)
+            ->and($issues[0]->ruleId)->toBe('asset-alt-short');
+    })->with([
+        'accented Latin' => ['éé'],
+        'CJK' => ['画像'],
+        'Cyrillic' => ['да'],
+    ]);
+
+    it('leaves a real alt in a non-Latin script alone', function() {
+        // The counterpart: the fix must not start flagging ordinary non-Latin
+        // alt text just because it is many bytes.
+        $issues = AccessibilityAudit::getInstance()->getAssets()->scanAsset(
+            makeMemoryImageAsset('猫がノートパソコンの上で眠っている'),
+        );
+
+        expect($issues)->toBe([]);
+    });
+
     it('passes a proper alt text clean', function() {
-        $issues = AccessibilityAudit::getInstance()->assets->scanAsset(
+        $issues = AccessibilityAudit::getInstance()->getAssets()->scanAsset(
             makeMemoryImageAsset('A red setter running on the strand')
         );
 
@@ -135,7 +166,7 @@ describe('AssetScanner::scanAsset alt-text checks', function() {
         $asset->filename = 'report.pdf';
         $asset->title = 'Report';
 
-        $issues = AccessibilityAudit::getInstance()->assets->scanAsset($asset);
+        $issues = AccessibilityAudit::getInstance()->getAssets()->scanAsset($asset);
 
         expect($issues)->toHaveCount(1)
             ->and($issues[0]->ruleId)->toBe('pdf-accessibility');
@@ -146,7 +177,7 @@ describe('AssetScanner::scanAsset alt-text checks', function() {
         $asset->kind = Asset::KIND_VIDEO;
         $asset->filename = 'clip.mp4';
 
-        expect(AccessibilityAudit::getInstance()->assets->scanAsset($asset))->toBeEmpty();
+        expect(AccessibilityAudit::getInstance()->getAssets()->scanAsset($asset))->toBeEmpty();
     });
 });
 
@@ -156,7 +187,7 @@ describe('AssetScanner::scanAsset alt-text checks', function() {
 
 describe('AssetScanner::scanImagesPaged volume filter', function() {
     it('returns a well-formed page with no volume filter', function() {
-        $paged = AccessibilityAudit::getInstance()->assets->scanImagesPaged(1, 10);
+        $paged = AccessibilityAudit::getInstance()->getAssets()->scanImagesPaged(1, 10);
 
         expect($paged)->toHaveKeys(['results', 'total', 'page', 'perPage', 'totalPages'])
             ->and($paged['results'])->toBeArray()
@@ -167,21 +198,20 @@ describe('AssetScanner::scanImagesPaged volume filter', function() {
     it('restricts the count to a single volume', function() {
         // Whatever the dev library holds, a per-volume count can never exceed
         // the whole-library count, and the shape must hold.
-        $all = AccessibilityAudit::getInstance()->assets->scanImagesPaged(1, 10);
+        $all = AccessibilityAudit::getInstance()->getAssets()->scanImagesPaged(1, 10);
 
         $volume = Craft::$app->getVolumes()->getAllVolumes()[0] ?? null;
         if ($volume === null) {
-            expect(true)->toBeTrue();
-            return;
+            $this->markTestSkipped('Needs an asset volume.');
         }
 
-        $scoped = AccessibilityAudit::getInstance()->assets->scanImagesPaged(1, 10, $volume->handle);
+        $scoped = AccessibilityAudit::getInstance()->getAssets()->scanImagesPaged(1, 10, $volume->handle);
 
         expect($scoped['total'])->toBeLessThanOrEqual($all['total']);
     });
 
     it('yields an empty, non-crashing page for an unknown volume handle', function() {
-        $paged = AccessibilityAudit::getInstance()->assets->scanImagesPaged(1, 10, 'no-such-volume-xyz');
+        $paged = AccessibilityAudit::getInstance()->getAssets()->scanImagesPaged(1, 10, 'no-such-volume-xyz');
 
         expect($paged['total'])->toBe(0)
             ->and($paged['results'])->toBe([]);
@@ -196,13 +226,13 @@ describe('AssetScanner::syncAssetAudit', function() {
     it('inserts a row per finding', function() {
         $asset = makeStoredAuditAsset(null);
 
-        AccessibilityAudit::getInstance()->assets->syncAssetAudit($asset);
+        AccessibilityAudit::getInstance()->getAssets()->syncAssetAudit($asset);
 
         expect(storedAssetRuleIds($asset->id))->toBe(['asset-alt-missing']);
     });
 
     it('replaces a stale rule when the finding changes', function() {
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
         $asset = makeStoredAuditAsset(null);
         $assets->syncAssetAudit($asset);
 
@@ -215,7 +245,7 @@ describe('AssetScanner::syncAssetAudit', function() {
     });
 
     it('clears the asset entirely once the alt text is fixed', function() {
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
         $asset = makeStoredAuditAsset(null);
         $assets->syncAssetAudit($asset);
 
@@ -226,7 +256,7 @@ describe('AssetScanner::syncAssetAudit', function() {
     });
 
     it('is idempotent when the finding has not changed', function() {
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
         $asset = makeStoredAuditAsset(null);
 
         $assets->syncAssetAudit($asset);
@@ -250,11 +280,11 @@ describe('AssetScanner stored stats', function() {
     });
 
     it('returns null before any sweep has run', function() {
-        expect(AccessibilityAudit::getInstance()->assets->getStoredAssetStats())->toBeNull();
+        expect(AccessibilityAudit::getInstance()->getAssets()->getStoredAssetStats())->toBeNull();
     });
 
     it('inserts on the first update and updates in place afterwards', function() {
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
 
         $assets->updateStoredStats(5);
         $assets->updateStoredStats(9);
@@ -266,7 +296,7 @@ describe('AssetScanner stored stats', function() {
     });
 
     it('round-trips issue counts, per-rule breakdown, and a live total', function() {
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
 
         $assets->syncAssetAudit(makeStoredAuditAsset(null));
         $assets->syncAssetAudit(makeStoredAuditAsset('IMG_4032.jpg'));
@@ -300,7 +330,7 @@ describe('AssetScanner deletion handling', function() {
     });
 
     it('drops a trashed (soft-deleted) asset from the stored stats', function() {
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
 
         $live = makeStoredAuditAsset(null);
         $trashed = makeStoredAuditAsset('IMG_4032.jpg');
@@ -323,7 +353,7 @@ describe('AssetScanner deletion handling', function() {
     });
 
     it('keeps a trashed asset\'s rows so a restore brings its history back', function() {
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
 
         $trashed = makeStoredAuditAsset(null);
         $assets->syncAssetAudit($trashed);
@@ -340,7 +370,7 @@ describe('AssetScanner deletion handling', function() {
     });
 
     it('leaves live assets untouched when pruning', function() {
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
 
         $a = makeStoredAuditAsset(null);
         $b = makeStoredAuditAsset('IMG_4032.jpg');
@@ -353,7 +383,7 @@ describe('AssetScanner deletion handling', function() {
     });
 
     it('ignores and prunes a row that does not point at an image asset', function() {
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
 
         $live = makeStoredAuditAsset(null);
         $assets->syncAssetAudit($live);
@@ -382,7 +412,7 @@ describe('AssetScanner deletion handling', function() {
     });
 
     it('clears a single asset\'s stored rows', function() {
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
 
         $a = makeStoredAuditAsset(null);
         $b = makeStoredAuditAsset('IMG_4032.jpg');
@@ -402,7 +432,7 @@ describe('AssetScanner deletion handling', function() {
 
 describe('AssetScanner decorative flags', function() {
     it('persists a decorative flag and reads it back, then clears it on unmark', function() {
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
         $asset = makeStoredAuditAsset(null);
 
         expect($assets->isDecorative($asset->id))->toBeFalse();
@@ -415,7 +445,7 @@ describe('AssetScanner decorative flags', function() {
     });
 
     it('raises no missing-alt issue for a decorative image with empty alt', function() {
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
         $asset = makeStoredAuditAsset(null);
 
         // Before marking: an empty alt is a warning.
@@ -430,7 +460,7 @@ describe('AssetScanner decorative flags', function() {
     });
 
     it('batch-loads only the decorative subset of a set of ids', function() {
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
         $decorative = makeStoredAuditAsset(null);
         $plain = makeStoredAuditAsset(null);
 
@@ -442,7 +472,7 @@ describe('AssetScanner decorative flags', function() {
     });
 
     it('drops a decorative image from the stored missing-alt counts', function() {
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
         Craft::$app->getDb()->createCommand()->delete('{{%accessibilityaudit_asset_stats}}')->execute();
         Craft::$app->getDb()->createCommand()->delete('{{%accessibilityaudit_asset_issues}}')->execute();
 
@@ -469,7 +499,7 @@ describe('AssetScanner::clearAssetAudit', function() {
     it('empties every stored asset issue and the cached stats', function() {
         // Changing the Alt Text Field setting must invalidate the whole stored
         // audit, not one asset's rows, so seed both a stored issue and stats.
-        $assets = AccessibilityAudit::getInstance()->assets;
+        $assets = AccessibilityAudit::getInstance()->getAssets();
 
         $a = makeStoredAuditAsset(null);
         $assets->syncAssetAudit($a);

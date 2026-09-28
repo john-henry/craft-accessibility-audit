@@ -7,11 +7,13 @@
 namespace johnhenry\accessibilityaudit\variables;
 
 use Craft;
+use craft\base\ElementInterface;
 use craft\elements\Asset;
-use craft\elements\Entry;
 use craft\errors\SiteNotFoundException;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\helpers\Icons;
+use johnhenry\accessibilityaudit\services\RuleRegistry;
+use johnhenry\accessibilityaudit\services\VpatService;
 use Twig\Error\LoaderError;
 use Twig\Error\RuntimeError;
 use Twig\Error\SyntaxError;
@@ -22,7 +24,9 @@ use yii\db\Exception;
 /**
  * Exposes accessibility scan data to Twig templates via `craft.a11y`.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @phpstan-import-type VpatReport from VpatService
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class AccessibilityVariable
@@ -45,8 +49,10 @@ class AccessibilityVariable
      *
      * @param Asset|int|null $asset The asset, or its id.
      * @return bool True when the image is marked decorative.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
      * @since 1.2.0
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      */
     public function isDecorative(Asset|int|null $asset): bool
     {
@@ -64,8 +70,10 @@ class AccessibilityVariable
      * hold the set itself than ask per image.
      *
      * @return array<int, true> Decorative asset ids as keys.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
      * @since 1.2.0
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      */
     public function decorativeAssetIds(): array
     {
@@ -73,27 +81,71 @@ class AccessibilityVariable
     }
 
     /**
-     * Get the latest scan for an entry.
-     * Usage: {{ craft.a11y.scan(entry) }}
+     * Get the latest scan for an element.
+     * Usage: {{ craft.a11y.scan(entry) }}, {{ craft.a11y.scan(product) }}
      *
-     * @param Entry $entry The entry to look up.
-     * @return array|null
+     * Takes any element the scanner covers, not entries alone: the scan set is
+     * every element type that has URIs, so a Commerce product or a category is
+     * scanned and stored the same way an entry is.
+     *
+     * @param ElementInterface $element The element to look up.
+     * @return array<string, mixed>|null The scan, or null when the element has
+     *         never been scanned or has no id yet.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
-    public function scan(Entry $entry): ?array
+    public function scan(ElementInterface $element): ?array
     {
-        return AccessibilityAudit::getInstance()->audit->getLatestScan($entry->id, $entry->siteId);
+        if ($element->id === null) {
+            return null;
+        }
+
+        return AccessibilityAudit::getInstance()->getAudit()->getLatestScan(
+            (int)$element->id,
+            (int)$element->siteId,
+        );
     }
 
     /**
-     * Get all issues for an entry.
+     * Get all issues for an element.
      * Usage: {% for issue in craft.a11y.issues(entry) %}
      *
-     * @param Entry $entry The entry to look up.
-     * @return array
+     * Takes any element the scanner covers, as {@see self::scan()} does.
+     *
+     * @param ElementInterface $element The element to look up.
+     * @return array<int, array<string, mixed>> The element's outstanding issues.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
-    public function issues(Entry $entry): array
+    public function issues(ElementInterface $element): array
     {
-        return AccessibilityAudit::getInstance()->audit->getElementIssues($entry->id, $entry->siteId);
+        if ($element->id === null) {
+            return [];
+        }
+
+        return AccessibilityAudit::getInstance()->getAudit()->getElementIssues(
+            (int)$element->id,
+            (int)$element->siteId,
+        );
+    }
+
+    /**
+     * The responsibility badges: the label to print and the class modifier to
+     * style it with, keyed by responsibility value.
+     *
+     * Usage: {% set badges = craft.a11y.responsibilities() %}
+     *
+     * @return array<string, array{modifier: string, label: string}> Keyed by
+     *         responsibility value.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public function responsibilities(): array
+    {
+        return RuleRegistry::responsibilities();
     }
 
     /**
@@ -101,6 +153,9 @@ class AccessibilityVariable
      * Usage: {% if craft.a11y.isPro %}
      *
      * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function isPro(): bool
     {
@@ -112,15 +167,17 @@ class AccessibilityVariable
      * Usage: {{ craft.a11y.summary().avgScore }}
      *
      * @param int|null $siteId The site to summarise, or null for the current site.
-     * @return array
+     * @return array<string, mixed> The site's counts and average scores.
      * @throws SiteNotFoundException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function summary(?int $siteId = null): array
     {
-        if ($siteId === null) {
-            $siteId = Craft::$app->getSites()->getCurrentSite()->id;
-        }
-        return AccessibilityAudit::getInstance()->audit->getSiteSummary($siteId);
+        $plugin = AccessibilityAudit::getInstance();
+
+        return $plugin->getAudit()->getSiteSummary($plugin->publicSiteId($siteId));
     }
 
     /**
@@ -132,7 +189,8 @@ class AccessibilityVariable
      *
      * @param string $name The icon handle (pass, fail, check).
      * @return Markup
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function icon(string $name): Markup
@@ -153,7 +211,8 @@ class AccessibilityVariable
      *
      * @return Markup
      * @throws InvalidConfigException
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function overlayScriptTag(): Markup
@@ -180,7 +239,8 @@ class AccessibilityVariable
      * @return string[]
      * @throws InvalidConfigException
      * @since 1.0.0
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      */
     public function axeTags(): array
     {
@@ -209,10 +269,13 @@ class AccessibilityVariable
      *   {% endif %}
      *
      * @param int|null $siteId The site to report on, or null for the current site.
-     * @return array|null
+     * @return VpatReport|null
      * @throws SiteNotFoundException
      * @throws Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function vpatReport(?int $siteId = null): ?array
     {
@@ -222,11 +285,7 @@ class AccessibilityVariable
             return null;
         }
 
-        if ($siteId === null) {
-            $siteId = Craft::$app->getSites()->getCurrentSite()->id;
-        }
-
-        return $plugin->vpat->getFullReport($plugin->resolveSiteId($siteId));
+        return $plugin->getVpat()->getFullReport($plugin->publicSiteId($siteId));
     }
 
     /**
@@ -240,16 +299,15 @@ class AccessibilityVariable
      * @throws SiteNotFoundException
      * @throws Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function accessibilityStatement(?int $siteId = null): ?array
     {
         $plugin = AccessibilityAudit::getInstance();
 
-        if ($siteId === null) {
-            $siteId = Craft::$app->getSites()->getCurrentSite()->id;
-        }
-
-        return $plugin->statement->getFullStatement($plugin->resolveSiteId($siteId));
+        return $plugin->getStatement()->getFullStatement($plugin->publicSiteId($siteId));
     }
 
     /**
@@ -283,6 +341,9 @@ class AccessibilityVariable
      * @throws SyntaxError
      * @throws \yii\base\Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function accessibilityStatementHtml(?int $siteId = null, array $options = []): ?Markup
     {
@@ -293,8 +354,8 @@ class AccessibilityVariable
         }
 
         $plugin = AccessibilityAudit::getInstance();
-        $resolved = $plugin->resolveSiteId($siteId ?? Craft::$app->getSites()->getCurrentSite()->id);
+        $resolved = $plugin->publicSiteId($siteId);
 
-        return new Markup($plugin->statement->render($resolved, $options), Craft::$app->charset);
+        return new Markup($plugin->getStatement()->render($resolved, $options), Craft::$app->charset);
     }
 }

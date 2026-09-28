@@ -25,7 +25,7 @@ use Craft;
  * Each names a place or a kind of content rather than the failure, because
  * that is what the field is for. The "Why" field takes the failure.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.2.0
  */
 class AffectedExample
@@ -38,6 +38,9 @@ class AffectedExample
      *
      * @param string $criterion The WCAG criterion number, e.g. "2.4.4".
      * @return string A placeholder, never a value.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function for(string $criterion): string
     {
@@ -57,6 +60,9 @@ class AffectedExample
      * a reader of the published statement would recognise the content.
      *
      * @return array<string, string>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private static function _examples(): array
     {

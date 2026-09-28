@@ -8,14 +8,18 @@ namespace johnhenry\accessibilityaudit\controllers;
 
 use Craft;
 use craft\errors\SiteNotFoundException;
-use craft\helpers\DateTimeHelper;
 use craft\web\Controller;
 use craft\web\View;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\helpers\InLanguage;
 use johnhenry\accessibilityaudit\helpers\OpenAcr;
-use johnhenry\accessibilityaudit\models\OrganisationMetaModel;
 use johnhenry\accessibilityaudit\models\VpatMetaModel;
+use johnhenry\accessibilityaudit\services\VpatService;
+use Twig\Error\LoaderError;
+use Twig\Error\RuntimeError;
+use Twig\Error\SyntaxError;
 use yii\base\Exception;
+use yii\base\InvalidConfigException;
 use yii\web\BadRequestHttpException;
 use yii\web\ForbiddenHttpException;
 use yii\web\MethodNotAllowedHttpException;
@@ -24,7 +28,9 @@ use yii\web\Response;
 /**
  * Manages VPAT product metadata, per-criterion overrides, and report exports.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @phpstan-import-type VpatReport from VpatService
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class VpatController extends Controller
@@ -32,7 +38,36 @@ class VpatController extends Controller
     // Traits
     // =========================================================================
 
+    use AiRateLimitTrait;
+    use OrganisationMetaTrait;
     use ProGateTrait;
+
+    // Const Properties
+    // =========================================================================
+
+    /**
+     * @var int The most remark drafts one user may ask for in a window.
+     *
+     * Each one is a request to the AI service against the site's own credit.
+     * An author working down the report drafts one criterion after another, so
+     * the cap is set well above that and only catches a loop.
+     */
+    public const DRAFT_RATE_LIMIT = 30;
+
+    /**
+     * @var int The drafting window, in seconds.
+     */
+    public const DRAFT_RATE_WINDOW = 60;
+
+    /**
+     * @var int The most characters of your own notes a draft request will send.
+     *
+     * The notes go into the prompt, and the prompt is paid for by the
+     * character. The rate limit above bounds how often somebody can spend;
+     * this bounds how much each one costs. Well past a couple of paragraphs,
+     * which is what the field is for.
+     */
+    public const DRAFT_NOTES_MAX = 5000;
 
     // Protected Properties
     // =========================================================================
@@ -55,11 +90,14 @@ class VpatController extends Controller
      * @throws SiteNotFoundException
      * @throws \yii\db\Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionSaveMeta(): Response
     {
         $this->requirePostRequest();
-        $this->requirePermission('accessibility-audit:manageVpat');
+        $this->requirePermission('accessibility-audit:manage-vpat');
 
         if (($refusal = $this->requireProJson('VPAT conformance reporting')) !== null) {
             return $refusal;
@@ -73,21 +111,13 @@ class VpatController extends Controller
 
         // The form posts one flat set of fields; storage splits it in two, so
         // the shared half is populated alongside the VPAT's own.
-        $shared = new OrganisationMetaModel();
-        $shared->productName = trim((string) $this->request->getBodyParam('productName', ''));
-        $shared->productDescription = trim((string) $this->request->getBodyParam('productDescription', ''));
-        $shared->contactName = trim((string) $this->request->getBodyParam('contactName', ''));
-        $shared->contactEmail = trim((string) $this->request->getBodyParam('contactEmail', ''));
-        $shared->contactPhone = trim((string) $this->request->getBodyParam('contactPhone', ''));
-        $shared->evalMethodology = trim((string) $this->request->getBodyParam('evalMethodology', ''));
-        $shared->evalMethods = $this->_splitLines((string) $this->request->getBodyParam('evalMethods', ''));
-        $shared->scopePages = $this->_splitLines((string) $this->request->getBodyParam('scopePages', ''));
+        $shared = $this->organisationMetaFromRequest();
 
         $model = new VpatMetaModel();
         $model->productVersion = trim((string) $this->request->getBodyParam('productVersion', ''));
-        $model->reportDate = $this->_dateParamToYmd('reportDate');
-        $model->reportPeriodFrom = $this->_dateParamToYmd('reportPeriodFrom');
-        $model->reportPeriodTo = $this->_dateParamToYmd('reportPeriodTo');
+        $model->reportDate = $this->dateParamToYmd('reportDate');
+        $model->reportPeriodFrom = $this->dateParamToYmd('reportPeriodFrom');
+        $model->reportPeriodTo = $this->dateParamToYmd('reportPeriodTo');
         $model->notes = trim((string) $this->request->getBodyParam('notes', ''));
         $model->legalDisclaimer = trim((string) $this->request->getBodyParam('legalDisclaimer', ''));
 
@@ -104,8 +134,8 @@ class VpatController extends Controller
         }
 
         $plugin = AccessibilityAudit::getInstance();
-        $plugin->organisation->saveMeta($siteId, $shared);
-        $plugin->vpat->saveMeta($siteId, $model);
+        $plugin->getOrganisation()->saveMeta($siteId, $shared);
+        $plugin->getVpat()->saveMeta($siteId, $model);
 
         return $this->asJson(['success' => true]);
     }
@@ -120,11 +150,14 @@ class VpatController extends Controller
      * @throws SiteNotFoundException
      * @throws \yii\db\Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionSaveCriterion(): Response
     {
         $this->requirePostRequest();
-        $this->requirePermission('accessibility-audit:manageVpat');
+        $this->requirePermission('accessibility-audit:manage-vpat');
 
         if (($refusal = $this->requireProJson('VPAT conformance reporting')) !== null) {
             return $refusal;
@@ -140,7 +173,7 @@ class VpatController extends Controller
         $remarks = trim((string) $this->request->getBodyParam('remarks', ''));
 
         // Validate the criterion exists in our list
-        $criteria = AccessibilityAudit::getInstance()->vpat->getCriteria();
+        $criteria = AccessibilityAudit::getInstance()->getVpat()->getCriteria();
         if (!isset($criteria[$criterion])) {
             return $this->asJson(['success' => false, 'error' => Craft::t('accessibility-audit', 'Unknown criterion.')]);
         }
@@ -150,7 +183,7 @@ class VpatController extends Controller
             return $this->asJson(['success' => false, 'error' => Craft::t('accessibility-audit', 'Invalid conformance level.')]);
         }
 
-        AccessibilityAudit::getInstance()->vpat->saveOverride($siteId, $criterion, $level, $remarks);
+        AccessibilityAudit::getInstance()->getVpat()->saveOverride($siteId, $criterion, $level, $remarks);
 
         return $this->asJson(['success' => true]);
     }
@@ -165,24 +198,39 @@ class VpatController extends Controller
      * @throws BadRequestHttpException
      * @throws MethodNotAllowedHttpException
      * @throws SiteNotFoundException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionDraftRemark(): Response
     {
         $this->requirePostRequest();
         $this->requireAcceptsJson();
-        $this->requirePermission('accessibility-audit:manageVpat');
+        $this->requirePermission('accessibility-audit:manage-vpat');
 
         if (($refusal = $this->requireProJson('VPAT conformance reporting')) !== null) {
             return $refusal;
+        }
+
+        // Drafting spends the site's AI credit on every call, and the
+        // permission to draft is not permission to spend without limit.
+        if ($this->aiRateLimitExceeded('vpat-draft', self::DRAFT_RATE_LIMIT, self::DRAFT_RATE_WINDOW)) {
+            return $this->asJson([
+                'success' => false,
+                'error' => Craft::t('accessibility-audit', 'Too many drafts at once. Wait a moment and try again.'),
+            ]);
         }
 
         $plugin = AccessibilityAudit::getInstance();
         $siteId = $plugin->resolveSiteId($this->request->getRequiredBodyParam('siteId'));
         $criterion = trim((string) $this->request->getRequiredBodyParam('criterion'));
         $level = trim((string) $this->request->getBodyParam('level', ''));
-        $notes = trim((string) $this->request->getBodyParam('notes', ''));
+        // Cut rather than refused: the notes are a prompt for a first draft,
+        // not content being saved, so the long way round is to send what fits
+        // and let the author edit what comes back.
+        $notes = mb_substr(trim((string) $this->request->getBodyParam('notes', '')), 0, self::DRAFT_NOTES_MAX);
 
-        return $this->asJson($plugin->vpat->draftRemark($siteId, $criterion, $level, $notes));
+        return $this->asJson($plugin->getVpat()->draftRemark($siteId, $criterion, $level, $notes));
     }
 
     /**
@@ -199,14 +247,15 @@ class VpatController extends Controller
      * @throws MethodNotAllowedHttpException
      * @throws SiteNotFoundException
      * @throws \yii\db\Exception
-     * @throws \yii\base\InvalidConfigException
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
     public function actionRecordRevision(): Response
     {
         $this->requirePostRequest();
-        $this->requirePermission('accessibility-audit:manageVpat');
+        $this->requirePermission('accessibility-audit:manage-vpat');
 
         if (($refusal = $this->requireProJson('VPAT conformance reporting')) !== null) {
             return $refusal;
@@ -218,7 +267,7 @@ class VpatController extends Controller
             return $refusal;
         }
 
-        $recorded = AccessibilityAudit::getInstance()->vpat->recordRevision($siteId);
+        $recorded = AccessibilityAudit::getInstance()->getVpat()->recordRevision($siteId);
 
         return $this->asJson([
             'success' => true,
@@ -241,14 +290,15 @@ class VpatController extends Controller
      * @throws MethodNotAllowedHttpException
      * @throws SiteNotFoundException
      * @throws \yii\db\Exception
-     * @throws \yii\base\InvalidConfigException
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
     public function actionDeleteLatestRevision(): Response
     {
         $this->requirePostRequest();
-        $this->requirePermission('accessibility-audit:manageVpat');
+        $this->requirePermission('accessibility-audit:manage-vpat');
 
         if (($refusal = $this->requireProJson('VPAT conformance reporting')) !== null) {
             return $refusal;
@@ -260,7 +310,7 @@ class VpatController extends Controller
             return $refusal;
         }
 
-        $removed = AccessibilityAudit::getInstance()->vpat->deleteLatestRevision($siteId);
+        $removed = AccessibilityAudit::getInstance()->getVpat()->deleteLatestRevision($siteId);
 
         return $this->asJson([
             'success' => true,
@@ -278,21 +328,24 @@ class VpatController extends Controller
      * @throws SiteNotFoundException
      * @throws Exception
      * @throws ForbiddenHttpException
-     * @throws \Twig\Error\LoaderError
-     * @throws \Twig\Error\RuntimeError
-     * @throws \Twig\Error\SyntaxError
+     * @throws LoaderError
+     * @throws RuntimeError
+     * @throws SyntaxError
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionExport(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         if (($refusal = $this->requireProJson('VPAT conformance reporting')) !== null) {
             return $refusal;
         }
 
         $siteId = AccessibilityAudit::getInstance()->requestedSiteId();
-        $report = AccessibilityAudit::getInstance()->vpat->getFullReport($siteId);
+        $report = AccessibilityAudit::getInstance()->getVpat()->getFullReport($siteId);
 
         $response = Craft::$app->getResponse();
         $response->format = Response::FORMAT_RAW;
@@ -311,19 +364,20 @@ class VpatController extends Controller
      * @throws ForbiddenHttpException
      * @throws \yii\db\Exception
      * @throws \Exception
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.4.0
      */
     public function actionExportOpenAcr(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         if (($refusal = $this->requireProJson('VPAT conformance reporting')) !== null) {
             return $refusal;
         }
 
         $siteId = AccessibilityAudit::getInstance()->requestedSiteId();
-        $report = AccessibilityAudit::getInstance()->vpat->getFullReport($siteId);
+        $report = AccessibilityAudit::getInstance()->getVpat()->getFullReport($siteId);
 
         // The schema requires the author's email, and a file a buyer's tooling
         // rejects is worse than being told what to fill in.
@@ -366,35 +420,28 @@ class VpatController extends Controller
      * @param int $siteId The site whose language to use.
      * @param callable(): T $callback
      * @return T
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.4.0
      */
     private function _inSiteLanguage(int $siteId, callable $callback): mixed
     {
         $site = Craft::$app->getSites()->getSiteById($siteId);
-        $originalLanguage = Craft::$app->language;
 
-        if ($site !== null) {
-            Craft::$app->language = $site->language;
-        }
-
-        try {
-            return $callback();
-        } finally {
-            Craft::$app->language = $originalLanguage;
-        }
+        return InLanguage::run($site->language ?? Craft::$app->language, $callback);
     }
 
     /**
      * Refuses a save that targets a site the current user may not edit. The
-     * `manageVpat` permission is install-wide, so the per-site fence has to be
+     * `manage-vpat` permission is install-wide, so the per-site fence has to be
      * enforced here: a Pro multi-site user must only write sites they can edit.
      * Returns a JSON refusal, or null when the site is allowed.
      *
      * @param int $siteId The posted site ID.
      * @return Response|null
      * @throws SiteNotFoundException
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.1
      */
     private function _requireAllowedSite(int $siteId): ?Response
@@ -410,51 +457,6 @@ class VpatController extends Controller
     }
 
     /**
-     * Splits a newline-separated body param into a trimmed, de-duplicated
-     * list with empties dropped. The editor posts its list fields
-     * (evaluation methods, scope pages) one entry per line.
-     *
-     * @param string $value The raw newline-separated value.
-     * @return string[]
-     * @author JohnHenry <info@johnhenry.ie>
-     * @since 1.0.0
-     */
-    private function _splitLines(string $value): array
-    {
-        $lines = array_map('trim', explode("\n", $value));
-
-        return array_values(array_unique(array_filter($lines, static fn(string $line): bool => $line !== '')));
-    }
-
-    /**
-     * Normalises a Craft date-field body param to a flat `Y-m-d` string.
-     *
-     * The editor posts these as Craft's native date-field payload
-     * (`name[date]` plus hidden locale/timezone), so the value arrives as an
-     * array in the request's locale format. It is parsed back to the flat
-     * `Y-m-d` string the model validates and the export consumes; an empty or
-     * unparseable value yields an empty string.
-     *
-     * @param string $param The body param name (e.g. `reportDate`).
-     * @return string The `Y-m-d` date, or an empty string.
-     * @throws \Exception
-     * @author JohnHenry <info@johnhenry.ie>
-     * @since 1.0.0
-     */
-    private function _dateParamToYmd(string $param): string
-    {
-        $value = $this->request->getBodyParam($param);
-
-        if (empty($value) || (is_array($value) && empty($value['date']))) {
-            return '';
-        }
-
-        $date = DateTimeHelper::toDateTime($value);
-
-        return $date !== false ? $date->format('Y-m-d') : '';
-    }
-
-    /**
      * Renders the export document HTML. When the vpatExportTemplate setting
      * points at an existing site template, that template takes over the whole
      * document (agency branding) and receives the same variables the built-in
@@ -462,13 +464,14 @@ class VpatController extends Controller
      * back to the plugin's built-in print-ready document so a typo never
      * breaks the export.
      *
-     * @param array $report The full report structure from VpatService::getFullReport().
-     * @return string
+     * @param VpatReport $report The full report, from VpatService::getFullReport().
+     * @return string The export document HTML.
      * @throws Exception
-     * @throws \Twig\Error\LoaderError
-     * @throws \Twig\Error\RuntimeError
-     * @throws \Twig\Error\SyntaxError
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws LoaderError
+     * @throws RuntimeError
+     * @throws SyntaxError
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _renderExportHtml(array $report): string
@@ -489,7 +492,7 @@ class VpatController extends Controller
         //    because a table of fifty rows kept whole is pushed to a fresh page
         //    and leaves the one before it empty.
         return $this->_inSiteLanguage(
-            (int)($report['siteId'] ?? 0),
+            $report['siteId'],
             fn(): string => $this->_renderExportTemplate($report),
         );
     }
@@ -498,13 +501,14 @@ class VpatController extends Controller
      * Renders the export markup, from the site's own template where one is
      * configured and from the built-in report otherwise.
      *
-     * @param array $report The full report data.
+     * @param VpatReport $report The full report, from VpatService::getFullReport().
      * @return string The rendered HTML.
      * @throws Exception
-     * @throws \Twig\Error\LoaderError
-     * @throws \Twig\Error\RuntimeError
-     * @throws \Twig\Error\SyntaxError
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws LoaderError
+     * @throws RuntimeError
+     * @throws SyntaxError
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
     private function _renderExportTemplate(array $report): string
@@ -512,8 +516,20 @@ class VpatController extends Controller
         $view = Craft::$app->getView();
         $template = trim(AccessibilityAudit::getInstance()->getSettings()->vpatExportTemplate);
 
+        // Handed to the template rather than read from craft.app.language
+        // inside it. Twig resolves its globals once per environment, so that
+        // one still reads the language the request started in and does not
+        // follow the switch _inSiteLanguage() makes around this render. The
+        // document would then declare English over German text, which is the
+        // 3.1.1 failure the report itself reports on.
+        $vars = [
+            'report' => $report,
+            'language' => Craft::$app->getSites()->getSiteById($report['siteId'])->language
+                ?? Craft::$app->language,
+        ];
+
         if ($template !== '' && $view->doesTemplateExist($template, View::TEMPLATE_MODE_SITE)) {
-            return $view->renderTemplate($template, ['report' => $report], View::TEMPLATE_MODE_SITE);
+            return $view->renderTemplate($template, $vars, View::TEMPLATE_MODE_SITE);
         }
 
         if ($template !== '') {
@@ -526,7 +542,7 @@ class VpatController extends Controller
         // Render as a standalone page (no CP chrome); user prints to PDF
         return $view->renderTemplate(
             'accessibility-audit/vpat-export',
-            ['report' => $report],
+            $vars,
             View::TEMPLATE_MODE_CP,
         );
     }

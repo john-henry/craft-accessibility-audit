@@ -14,7 +14,7 @@ use johnhenry\accessibilityaudit\AccessibilityAudit;
 
 describe('AuditService::getUrlElementsQuery batch ordering', function() {
     it('carries a deterministic total order', function() {
-        $query = AccessibilityAudit::getInstance()->audit->getUrlElementsQuery(1);
+        $query = AccessibilityAudit::getInstance()->getAudit()->getUrlElementsQuery(1);
 
         expect($query->orderBy)->not->toBeEmpty();
     });
@@ -25,7 +25,7 @@ describe('AuditService::getUrlElementsQuery batch ordering', function() {
             scannableEntry("Batch order fixture {$i}");
         }
 
-        $audit = AccessibilityAudit::getInstance()->audit;
+        $audit = AccessibilityAudit::getInstance()->getAudit();
         $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
 
         $allIds = array_map(
@@ -50,5 +50,31 @@ describe('AuditService::getUrlElementsQuery batch ordering', function() {
         expect(count($slicedIds))->toBe(count($allIds))
             ->and(count(array_unique($slicedIds)))->toBe(count($slicedIds))
             ->and($slicedIds)->toBe($allIds);
+    });
+
+    it('yields every element exactly once when paged with each()', function() {
+        // The console sweep reads the query with each() rather than loading it
+        // whole, which pages the same way and carries the same hazard.
+        foreach (range(1, 12) as $i) {
+            scannableEntry("Batch each fixture {$i}");
+        }
+
+        $audit = AccessibilityAudit::getInstance()->getAudit();
+        $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
+
+        $allIds = array_map(
+            static fn(array $row): int => (int) $row['elementId'],
+            $audit->getUrlElementsQuery($siteId)->all(),
+        );
+
+        $eachIds = [];
+
+        // A page size well below the row count, so several pages are fetched.
+        foreach ($audit->getUrlElementsQuery($siteId)->each(5) as $row) {
+            $eachIds[] = (int) $row['elementId'];
+        }
+
+        expect($eachIds)->toBe($allIds)
+            ->and(count(array_unique($eachIds)))->toBe(count($eachIds));
     });
 });

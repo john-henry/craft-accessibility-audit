@@ -20,8 +20,43 @@
     fd.append(name, value);
   }
 
+  /*
+     The page's status region, created once so it is in the DOM well before
+     anything writes to it: a live region inserted and filled in the same tick
+     is not reliably announced.
+
+     Progress used to be announced by putting aria-live on the scan buttons
+     themselves and letting their label change. That works, but a live region on
+     the control the reader is sitting on is announced twice by some screen
+     readers, and it is not what the rest of this plugin does. Every other status
+     on these screens is a separate role="status" element.
+  */
+  const LIVE_REGION_ID = 'accessibility-audit-live';
+
+  function liveRegion() {
+    let region = document.getElementById(LIVE_REGION_ID);
+
+    if (!region) {
+      region = document.createElement('p');
+      region.id = LIVE_REGION_ID;
+      region.setAttribute('role', 'status');
+      region.setAttribute('aria-live', 'polite');
+      region.className = 'visually-hidden';
+      document.body.appendChild(region);
+    }
+
+    return region;
+  }
+
+  function announce(message) {
+    liveRegion().textContent = message;
+  }
+
   const A11Y = {
     init() {
+      // Built first, so it is already in the document when a scan reports back.
+      liveRegion();
+
       this.bindScanButtons();
       this.bindScanAll();
       this.bindVueTableExpand();
@@ -171,6 +206,10 @@
       const label = triggerEl.querySelector('.accessibility-audit-rowbtn__label');
       const setText = (msg) => {
         if (label) { label.textContent = msg; } else { triggerEl.textContent = msg; }
+        // The label is the visible affordance; the status region is what is read
+        // out. The button is disabled while the scan runs, so its own text is no
+        // longer a reliable thing to announce from.
+        announce(msg);
       };
 
       triggerEl.disabled = true;
@@ -243,8 +282,13 @@
 
     async scanAll(btn) {
       const originalText = btn.textContent;
-      btn.disabled          = true;
-      btn.textContent       = Craft.t('accessibility-audit', 'Queuing…');
+      const setText = (msg) => {
+        btn.textContent = msg;
+        announce(msg);
+      };
+
+      btn.disabled = true;
+      setText(Craft.t('accessibility-audit', 'Queuing…'));
 
       const siteId = btn.dataset.siteId || '';
       const fd     = new FormData();
@@ -258,7 +302,7 @@
         const res  = await fetch(getActionUrl('accessibility-audit/audit/scan-all'), { method: 'POST', body: fd, headers: { 'Accept': 'application/json' } });
         const data = await res.json();
         if (data.success) {
-          btn.textContent = Craft.t('accessibility-audit', 'Queued {n} scans, check back soon', { n: data.queued });
+          setText(Craft.t('accessibility-audit', 'Queued {n} scans, check back soon', { n: data.queued }));
           return;
         }
         Craft.cp.displayError(data.error || Craft.t('accessibility-audit', 'Could not queue the scan.'));
@@ -266,7 +310,7 @@
         Craft.cp.displayError(Craft.t('accessibility-audit', 'Could not queue the scan.'));
       }
 
-      btn.disabled    = false;
+      btn.disabled = false;
       btn.textContent = originalText;
     },
 
@@ -361,12 +405,11 @@
         { key: 'warning', label: 'Warning' },
         { key: 'notice',  label: 'Notice' },
       ];
-      const owners = {
-        content:     ['content', 'Content'],
-        design:      ['design', 'Design'],
-        development: ['dev', 'Development'],
-        technical:   ['technical', 'Technical'],
-      };
+      // Injected by the plugin so this reads the same labels, in the same
+      // language, as the server-rendered badge. The local copy this replaced
+      // said "Content" where the server said "Content writing", and was never
+      // translated at all.
+      const owners = (window.AccessibilityAudit && window.AccessibilityAudit.responsibilities) || {};
 
       let body = '';
       groups.forEach((g) => {
@@ -382,7 +425,7 @@
           const detailUrl = detBase + sep + 'ruleId=' + encodeURIComponent(issue.ruleId);
           const owner = owners[issue.responsibility];
           const ownerHtml = owner
-            ? `<span class="token accessibility-audit-owner--${owner[0]}">${owner[1]}</span>`
+            ? `<span class="token accessibility-audit-owner--${owner.modifier}">${escHtml(owner.label)}</span>`
             : '<span class="light">—</span>';
           rowsHtml += `<tr>
               <th scope="row"><span class="accessibility-audit-rowline" style="gap:8px">
@@ -398,12 +441,17 @@
         body += `<tbody data-severity="${g.key}">${rowsHtml}</tbody>`;
       });
 
+      // Translated, as the server-rendered table beside this one is. Written
+      // out one call at a time on purpose: JsTranslationsTest finds these by
+      // reading the source for a literal message, so a helper taking the string
+      // as a variable would hide them from the very check that keeps them
+      // registered.
       return `<table class="data fullwidth accessibility-audit-page-issues-table">
           <thead><tr>
-            <th scope="col">Rule</th>
-            <th scope="col">SC</th>
-            <th scope="col">Owner</th>
-            <th scope="col" style="text-align:right">Count</th>
+            <th scope="col">${escHtml(Craft.t('accessibility-audit', 'Rule'))}</th>
+            <th scope="col">${escHtml(Craft.t('accessibility-audit', 'SC'))}</th>
+            <th scope="col">${escHtml(Craft.t('accessibility-audit', 'Owner'))}</th>
+            <th scope="col" style="text-align:right">${escHtml(Craft.t('accessibility-audit', 'Count'))}</th>
           </tr></thead>${body}</table>`;
     },
 
@@ -501,7 +549,7 @@
         const data = await res.json();
 
         if (resultEl) {
-          resultEl.textContent = data.success ? data.message : (data.error || 'Verification failed.');
+          resultEl.textContent = data.success ? data.message : (data.error || Craft.t('accessibility-audit', 'Verification failed.'));
           resultEl.className   = 'accessibility-audit-inline-result ' + (data.success ? 'accessibility-audit-inline-result--success' : 'accessibility-audit-inline-result--error');
         }
         // Toast as well as the inline line: the native notice is the feedback
@@ -620,6 +668,8 @@
         ? (cfg.readabilityAnalyseEntryUrl || '/actions/accessibility-audit/readability/analyse-entry')
         : (cfg.readabilityAnalyseUrl || '/actions/accessibility-audit/readability/analyse');
 
+      // Kept so the button comes back as it was, icon and hidden label included.
+      const original = btn.innerHTML;
       btn.disabled    = true;
       btn.textContent = Craft.t('accessibility-audit', 'Analysing…');
 
@@ -652,7 +702,7 @@
           const tick = () => {
             if (remaining <= 0) {
               btn.disabled = false;
-              btn.textContent = Craft.t('accessibility-audit', 'Re-analyse');
+              btn.innerHTML = original;
               return;
             }
             btn.disabled = true;
@@ -668,7 +718,7 @@
         // usable, and avoid the word "Failed" (the WCAG column owns "Fail").
         console.error('[a11y] reanalyse:', data.error);
         if (window.Craft && Craft.cp && Craft.cp.displayError) {
-          Craft.cp.displayError(data.error || 'Analysis failed.');
+          Craft.cp.displayError(data.error || Craft.t('accessibility-audit', 'Analysis failed. Check Craft logs for details.'));
         }
         btn.textContent = Craft.t('accessibility-audit', 'Retry');
       } catch (err) {
@@ -681,8 +731,6 @@
         btn.disabled = false;
       }
     },
-
-
   };
 
   /* Shared with the inline template JS and the frontend overlay via accessibility-audit-shared.js */

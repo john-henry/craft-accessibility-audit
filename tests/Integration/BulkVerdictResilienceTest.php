@@ -9,7 +9,8 @@ use craft\elements\User;
 use craft\helpers\Db;
 use craft\helpers\StringHelper;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
-use johnhenry\accessibilityaudit\controllers\AuditController;
+use johnhenry\accessibilityaudit\services\AuditService;
+use johnhenry\accessibilityaudit\services\VerdictService;
 use markhuot\craftpest\factories\User as UserFactory;
 
 // ---------------------------------------------------------------------------
@@ -54,10 +55,57 @@ function bulkScanWith(int $siteId, int $elementId, array $contexts): int
     return $scanId;
 }
 
+/** Counts score recalculations so a per-ruling loop cannot creep back in. */
+class CountingAuditService extends AuditService
+{
+    public static int $calls = 0;
+
+    public function recalculateScoreForScan(int $scanId): void
+    {
+        self::$calls++;
+        parent::recalculateScoreForScan($scanId);
+    }
+}
+
+/** Fails part way through a group, to stand in for a write that goes wrong. */
+class FailingVerdictService extends VerdictService
+{
+    public static int $calls = 0;
+
+    public static int $failAfter = 0;
+
+    public function setVerdict(
+        int $siteId,
+        ?int $elementId,
+        string $ruleId,
+        ?string $context,
+        ?string $verdict,
+        ?string $note = null,
+        ?string $url = null,
+        bool $deferScoring = false,
+    ): array {
+        if (self::$calls >= self::$failAfter) {
+            throw new RuntimeException('bulk verdict blew up');
+        }
+
+        self::$calls++;
+
+        return parent::setVerdict($siteId, $elementId, $ruleId, $context, $verdict, $note, $url, $deferScoring);
+    }
+}
+
 describe('dismissing a group', function() {
     beforeEach(function() {
         $this->actingAs(UserFactory::factory()->admin(true)->create());
         AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
+    });
+
+    afterEach(function() {
+        // The stubs below are set on the live plugin instance, which outlives
+        // the test, so the real services go back whether one was swapped or not.
+        $plugin = AccessibilityAudit::getInstance();
+        $plugin->set('audit', AuditService::class);
+        $plugin->set('verdicts', VerdictService::class);
     });
 
     it('applies every ruling and can be repeated without complaint', function() {
@@ -106,34 +154,95 @@ describe('dismissing a group', function() {
     it('works the score out once for the whole group, not once per ruling', function() {
         // Every occurrence in a group shares one scan, so the recalculation is
         // the same number computed over and over. On a page with fifty of them
-        // that is the difference between a click and a wait.
-        $source = (string) file_get_contents((new ReflectionClass(AuditController::class))->getFileName());
+        // that is the difference between a click and a wait. The end state is
+        // identical either way, so the count is what has to be pinned.
+        $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
+        $elementId = (int) UserFactory::factory()->create()->id;
 
-        $start = strpos($source, 'public function actionSetVerdictsBulk(');
-        $body = substr($source, (int) $start, 3000);
+        $contexts = [];
+        for ($i = 0; $i < 40; $i++) {
+            $contexts[] = '<td>Cell ' . $i . '</td>';
+        }
 
-        expect($body)->toContain('deferScoring: true')
-            ->and($body)->toContain('foreach (array_unique($needScoring) as $scanId)');
+        bulkScanWith($siteId, $elementId, $contexts);
+
+        CountingAuditService::$calls = 0;
+        AccessibilityAudit::getInstance()->set('audit', CountingAuditService::class);
+
+        $this->postJson('actions/accessibility-audit/audit/set-verdicts-bulk', [
+            'elementId' => $elementId,
+            'siteId' => $siteId,
+            'verdict' => 'dismissed',
+            'items' => json_encode(array_map(
+                static fn(string $c): array => ['ruleId' => 'potential:contrast-unmeasurable', 'context' => $c],
+                $contexts,
+            )),
+        ]);
+
+        expect(CountingAuditService::$calls)->toBe(1);
     });
 
     it('answers with a sentence rather than a blank error page when it breaks', function() {
         // These are separate writes, not one transaction, so whatever landed
         // before a failure is real and the count says so.
-        $source = (string) file_get_contents((new ReflectionClass(AuditController::class))->getFileName());
+        $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
+        $elementId = (int) UserFactory::factory()->create()->id;
 
-        $start = strpos($source, 'public function actionSetVerdictsBulk(');
-        $body = substr($source, (int) $start, 3000);
+        $contexts = ['<td>a</td>', '<td>b</td>', '<td>c</td>', '<td>d</td>'];
+        bulkScanWith($siteId, $elementId, $contexts);
 
-        expect($body)->toContain('catch (Throwable $e)')
-            ->and($body)->toContain("'success' => false")
-            ->and($body)->toContain('Craft::error');
+        FailingVerdictService::$calls = 0;
+        FailingVerdictService::$failAfter = 2;
+        AccessibilityAudit::getInstance()->set('verdicts', FailingVerdictService::class);
+
+        $json = $this->postJson('actions/accessibility-audit/audit/set-verdicts-bulk', [
+            'elementId' => $elementId,
+            'siteId' => $siteId,
+            'verdict' => 'dismissed',
+            'items' => json_encode(array_map(
+                static fn(string $c): array => ['ruleId' => 'potential:contrast-unmeasurable', 'context' => $c],
+                $contexts,
+            )),
+        ])->json();
+
+        $decoded = is_string($json) ? json_decode($json, true) : $json;
+
+        expect($decoded['success'] ?? true)->toBeFalse()
+            ->and($decoded['applied'] ?? null)->toBe(2)
+            ->and($decoded['error'] ?? '')->not->toBeEmpty();
     });
 
     it('leaves the rulings it did make in place after a failure', function() {
-        // Reported as "saved N of M", so a retry is a decision rather than a
-        // guess about what happened.
-        $source = (string) file_get_contents((new ReflectionClass(AuditController::class))->getFileName());
+        // Not one transaction, so the rulings written before the failure are
+        // real and stay written. A retry is then a decision rather than a guess
+        // about what landed.
+        $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
+        $elementId = (int) UserFactory::factory()->create()->id;
 
-        expect($source)->toContain('Saved {applied} of {total} before something went wrong.');
+        $contexts = ['<td>a</td>', '<td>b</td>', '<td>c</td>', '<td>d</td>'];
+        bulkScanWith($siteId, $elementId, $contexts);
+
+        FailingVerdictService::$calls = 0;
+        FailingVerdictService::$failAfter = 2;
+        AccessibilityAudit::getInstance()->set('verdicts', FailingVerdictService::class);
+
+        $this->postJson('actions/accessibility-audit/audit/set-verdicts-bulk', [
+            'elementId' => $elementId,
+            'siteId' => $siteId,
+            'verdict' => 'dismissed',
+            'items' => json_encode(array_map(
+                static fn(string $c): array => ['ruleId' => 'potential:contrast-unmeasurable', 'context' => $c],
+                $contexts,
+            )),
+        ]);
+
+        $rows = (new Query())->from('{{%accessibilityaudit_verdicts}}')
+            ->where([
+                'siteId' => $siteId,
+                'elementId' => $elementId,
+                'ruleId' => 'potential:contrast-unmeasurable',
+            ])->count();
+
+        expect((int) $rows)->toBe(2);
     });
 });

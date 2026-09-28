@@ -27,7 +27,7 @@
 {% import 'accessibility-audit/_macros' as macros %}
 
 {% block actionButton %}
-    {% if detail is not empty and detail.helpUrl %}
+    {% if detail is not empty and detail.helpUrl and detail.helpUrl matches '/^https?:\\/\\//i' %}
         <a href="{{ detail.helpUrl }}" target="_blank" rel="noopener" class="btn">{{ 'View WCAG guidance'|t('accessibility-audit') }}</a>
     {% endif %}
 {% endblock %}
@@ -42,7 +42,7 @@
     {% endif %}
     <code class="accessibility-audit-code">{{ ruleId }}</code>
     {% if meta.elementType is defined and meta.elementType %}
-        <span class="token">{{ meta.elementType }}</span>
+        <span class="token">{{ meta.elementType|t('accessibility-audit') }}</span>
     {% endif %}
 </div>
 
@@ -152,7 +152,7 @@
         // cp.js delegates the re-scan click handler on document, so a button
         // rendered by VueAdminTable with these data hooks still fires it.
         const rescanCell = (value) => value
-            ? '<button class="btn small accessibility-audit-rowbtn" data-icon="refresh" title="' + Craft.t('accessibility-audit', 'Re-scan') + '" data-accessibility-audit-scan-entry="' + value + '" data-site-id="' + siteId + '" aria-live="polite">'
+            ? '<button class="btn small accessibility-audit-rowbtn" data-icon="refresh" title="' + Craft.t('accessibility-audit', 'Re-scan') + '" data-accessibility-audit-scan-entry="' + value + '" data-site-id="' + siteId + '">'
                 + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'Re-scan') + '</span></button>'
             : '';
 
@@ -270,9 +270,9 @@
 
           
             let tbl = '<table class="visually-hidden"><caption>'
-                + Craft.t('accessibility-audit', 'Occurrences and affected pages by date') + '</caption><thead><tr><th>'
-                + Craft.t('accessibility-audit', 'Date') + '</th><th>'
-                + Craft.t('accessibility-audit', 'Occurrences') + '</th><th>'
+                + Craft.t('accessibility-audit', 'Occurrences and affected pages by date') + '</caption><thead><tr><th scope="col">'
+                + Craft.t('accessibility-audit', 'Date') + '</th><th scope="col">'
+                + Craft.t('accessibility-audit', 'Occurrences') + '</th><th scope="col">'
                 + Craft.t('accessibility-audit', 'Affected pages') + '</th></tr></thead><tbody>';
             trend.forEach((d) => {
                 tbl += '<tr><td>' + Craft.escapeHtml(String(d.day)) + '</td><td>' + (Number(d.occurrences) || 0) + '</td><td>' + (Number(d.pages) || 0) + '</td></tr>';

@@ -7,6 +7,7 @@
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\helpers\ScanTargets;
 use johnhenry\accessibilityaudit\jobs\ScanElements;
+use johnhenry\accessibilityaudit\services\AuditService;
 use markhuot\craftpest\factories\User as UserFactory;
 
 // ---------------------------------------------------------------------------
@@ -38,7 +39,7 @@ function stWalk(ScanTargets $targets, int $batchSize): array
 /** The sweep query for the primary site. */
 function stElementQuery(): craft\db\Query
 {
-    return AccessibilityAudit::getInstance()->audit->getUrlElementsQuery(
+    return AccessibilityAudit::getInstance()->getAudit()->getUrlElementsQuery(
         (int)Craft::$app->getSites()->getPrimarySite()->id,
     );
 }
@@ -110,7 +111,26 @@ describe('ScanTargets', function() {
     });
 });
 
+/** Clears the "a sweep is running" flag, which the cache keeps across tests. */
+function stClearSweepFlag(): void
+{
+    Craft::$app->getCache()->delete(
+        AuditService::sweepKey((int)Craft::$app->getSites()->getPrimarySite()->id),
+    );
+}
+
 describe('The site-wide sweep', function() {
+    // Queueing a sweep marks the site as being swept, and that flag lives in
+    // the cache, which no test transaction rolls back. Left behind, it makes
+    // the next test's sweep refuse and the failure reads as unrelated.
+    beforeEach(function() {
+        stClearSweepFlag();
+    });
+
+    afterEach(function() {
+        stClearSweepFlag();
+    });
+
     it('loads the configured URLs alongside the elements', function() {
         scannableEntry('Sweep fixture');
         stSetCustomUrls([stRow('/search/results?q=craft'), stRow('/paginated/2')]);
@@ -136,5 +156,25 @@ describe('The site-wide sweep', function() {
         $this->post('actions/accessibility-audit/audit/scan-all', [
             'siteId' => (int)Craft::$app->getSites()->getPrimarySite()->id,
         ])->assertOk()->assertJson(['success' => true, 'queued' => $elements + 2]);
+    });
+
+    it('refuses a second sweep of a site already being swept', function() {
+        // Two sweeps of one site do the same work twice, competing for the same
+        // pages and the same browser, and the reader gets nothing the first was
+        // not already going to give them. The flag is set when the job is
+        // queued, not when it starts, so a second press before the queue picks
+        // it up is caught too.
+        $this->actingAs(UserFactory::factory()->admin(true)->create());
+
+        $siteId = (int)Craft::$app->getSites()->getPrimarySite()->id;
+        scannableEntry('Concurrent sweep fixture');
+
+        $this->post('actions/accessibility-audit/audit/scan-all', ['siteId' => $siteId])
+            ->assertOk()
+            ->assertJson(['success' => true]);
+
+        $this->post('actions/accessibility-audit/audit/scan-all', ['siteId' => $siteId])
+            ->assertOk()
+            ->assertJson(['success' => false]);
     });
 });

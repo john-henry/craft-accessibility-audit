@@ -71,6 +71,27 @@ describe('CiController::actionCheck token auth', function() {
         expect($response->getJsonContent()['success'])->toBeTrue();
     });
 
+    it('answers a wrong site id as a bad request, not as a failing audit', function() {
+        // The distinction that matters to a pipeline: a site id that does not
+        // exist summarises as nothing scanned, scores zero and would fail the
+        // target. Read as a failing audit that is a wrong answer about the
+        // site's accessibility rather than a wrong id in the CI config.
+        setCiSettings(['ciApiToken' => hash('sha256', 'secret-token'), 'targetScore' => 50]);
+
+        $response = $this->http('get', 'accessibility-audit/ci/check?ciToken=secret-token&siteId=999999')
+            ->addHeader('Accept', 'application/json')
+            ->send();
+
+        $response->assertStatus(400);
+
+        $json = $response->getJsonContent();
+
+        expect($json['success'])->toBeFalse()
+            ->and($json['error'])->toContain('Unknown site')
+            // Emphatically not a verdict on the site's accessibility.
+            ->and(isset($json['passing']))->toBeFalse();
+    });
+
     it('accepts a valid token via the Authorization bearer header', function() {
         setCiSettings(['ciApiToken' => hash('sha256', 'secret-token'), 'targetScore' => 0]);
 

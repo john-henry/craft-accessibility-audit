@@ -19,7 +19,7 @@ function noscriptScanIds(string $html): array
 {
     return array_map(
         static fn($issue) => $issue->ruleId,
-        AccessibilityAudit::getInstance()->content->scan($html),
+        AccessibilityAudit::getInstance()->getContent()->scan($html),
     );
 }
 
@@ -101,7 +101,7 @@ it('keeps noscript contents out of the potential-issue questions too', function(
 
     $questions = array_map(
         static fn($issue) => $issue->ruleId,
-        AccessibilityAudit::getInstance()->potential->scan($html),
+        AccessibilityAudit::getInstance()->getPotential()->scan($html),
     );
 
     expect($questions)->not->toContain('potential:short-alt');

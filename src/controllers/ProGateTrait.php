@@ -18,7 +18,7 @@ use yii\web\Response;
  * across the five gated feature areas, and the client JS can key off
  * `proRequired` to tell "locked" apart from "failed".
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 trait ProGateTrait
@@ -33,7 +33,8 @@ trait ProGateTrait
      * @param string $feature The human-readable feature name, used to build the
      *                        refusal message (e.g. "CI/CD integration").
      * @return Response|null A refusal response, or null when on the Pro edition.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     protected function requireProJson(string $feature): ?Response

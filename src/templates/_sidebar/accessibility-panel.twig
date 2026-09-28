@@ -26,12 +26,10 @@
             {% set issueTotal = scan ? (scan.errorCount + scan.warningCount + scan.noticeCount) : 0 %}
             {% if issueTotal %}<span class="accessibility-audit-panel__badge">{{ issueTotal }}</span>{% endif %}
         </button>
-        {% if showReadabilityTab %}
-            <button type="button" id="{{ sbReadTabId }}" class="accessibility-audit-panel__tab accessibility-audit-panel-tab"
-                    role="tab" aria-selected="false" aria-controls="{{ sbReadPanelId }}" tabindex="-1" data-accessibility-audit-panel-tab="readability">
-                {{ 'Readability'|t('accessibility-audit') }}
-            </button>
-        {% endif %}
+        <button type="button" id="{{ sbReadTabId }}" class="accessibility-audit-panel__tab accessibility-audit-panel-tab"
+                role="tab" aria-selected="false" aria-controls="{{ sbReadPanelId }}" tabindex="-1" data-accessibility-audit-panel-tab="readability">
+            {{ 'Readability'|t('accessibility-audit') }}
+        </button>
     </div>
 
     <div class="accessibility-audit-panel__pane" id="{{ sbA11yPanelId }}" role="tabpanel"
@@ -76,7 +74,7 @@
                                 <div class="accessibility-audit-panel__issue-meta">
                                     {{ macros.conformanceBadge(issue.wcagLevel ?? null) }}
                                     {% if issue.wcagCriterion %}<span class="light">{{ issue.wcagCriterion }}</span>{% endif %}
-                                    {% if issue.helpUrl %}<a class="accessibility-audit-panel__fix" href="{{ issue.helpUrl }}" target="_blank" rel="noopener">{{ 'How to fix'|t('accessibility-audit') }} ↗</a>{% endif %}
+                                    {% if issue.helpUrl and issue.helpUrl matches '/^https?:\\/\\//i' %}<a class="accessibility-audit-panel__fix" href="{{ issue.helpUrl }}" target="_blank" rel="noopener">{{ 'How to fix'|t('accessibility-audit') }} ↗</a>{% endif %}
                                 </div>
                             </div>
                         </details>
@@ -97,14 +95,13 @@
                         {{ 'View report'|t('accessibility-audit') }}<span class="visually-hidden"> ({{ 'opens in new tab'|t('accessibility-audit') }})</span>
                     </a>
                 {% endif %}
-                <button type="button" class="btn small" data-icon="refresh" data-accessibility-audit-scan-entry="{{ element.id }}" data-site-id="{{ element.siteId }}" aria-live="polite">
+                <button type="button" class="btn small" data-icon="refresh" data-accessibility-audit-scan-entry="{{ element.id }}" data-site-id="{{ element.siteId }}">
                     {{ scan ? 'Re-scan'|t('accessibility-audit') : 'Scan now'|t('accessibility-audit') }}
                 </button>
             </div>
         </div>
     </div>
 
-    {% if showReadabilityTab %}
     <div class="accessibility-audit-panel__pane" id="{{ sbReadPanelId }}" role="tabpanel"
          aria-labelledby="{{ sbReadTabId }}" data-accessibility-audit-panel-pane="readability" hidden>
         {% if not readabilityPro %}
@@ -113,62 +110,37 @@
                 text: 'Check this entry\'s reading ease and grade level against WCAG 3.1.5 on the Pro edition.'|t('accessibility-audit'),
                 inline: true,
             } only %}
-        {% elseif readabilityResult and readabilityResult.gradeLevel is defined %}
-            {% set r = readabilityResult %}
-            {% set gradeOver = r.gradeLevel > 9 %}
-            <div class="accessibility-audit-panel__tiles">
-                <div class="accessibility-audit-panel__tile">
-                    <span class="accessibility-audit-panel__tile-label">{{ 'Reading ease'|t('accessibility-audit') }}</span>
-                    <span class="accessibility-audit-panel__tile-row">
-                        <span class="accessibility-audit-panel__tile-num">{{ r.readingEase }}</span>
-                   
-                        {% if r.readingEaseLabel %}
-                            {% set easeBand = r.readingEase >= 70 ? 'pass' : (r.readingEase >= 50 ? 'warn' : 'fail') %}
-                            <span class="accessibility-audit-badge-{{ easeBand }}">{{ r.readingEaseLabel }}</span>
-                        {% endif %}
-                    </span>
-                </div>
-                <div class="accessibility-audit-panel__tile">
-                    <span class="accessibility-audit-panel__tile-label">{{ 'Grade level'|t('accessibility-audit') }}</span>
-                    <span class="accessibility-audit-panel__tile-row">
-                        <span class="accessibility-audit-panel__tile-num">{{ r.gradeLevel }}</span>
-                        <span class="light">{{ '~age {n}'|t('accessibility-audit', { n: r.readingAge }) }}</span>
-                    </span>
-                </div>
-            </div>
-
-            <div class="accessibility-audit-panel__target">
-                <div class="accessibility-audit-panel__target-head">
-                    <span>{{ 'WCAG 3.1.5 target: Grade 9'|t('accessibility-audit') }}</span>
-                    {% if gradeOver %}
-                        <span class="accessibility-audit-badge-fail">{{ '{n} over'|t('accessibility-audit', { n: (r.gradeLevel - 9)|number_format(1) }) }}</span>
-                    {% else %}
-                        <span class="accessibility-audit-badge-pass">{{ 'Meets target'|t('accessibility-audit') }}</span>
-                    {% endif %}
-                </div>
-                <div class="accessibility-audit-progress accessibility-audit-progress--flush" style="margin-top:8px">
-                    <div class="accessibility-audit-progress__fill accessibility-audit-progress__fill--{{ gradeOver ? 'error' : 'pass' }}" style="width:{{ min((r.gradeLevel / 18 * 100)|round, 100) }}%"></div>
-                </div>
-            </div>
-
-            {% if r.complexSentences is defined and r.complexSentences|length %}
-                <div class="accessibility-audit-panel__longest">
-                    <span class="accessibility-audit-panel__tile-label">{{ 'Longest sentence'|t('accessibility-audit') }}</span>
-                    <p class="accessibility-audit-panel__longest-text">“{{ r.complexSentences|first }}”</p>
-                </div>
-            {% endif %}
+        {% elseif not (readabilitySupported ?? true) %}
+            <p class="light">{{ readabilityUnsupportedMessage ?? '' }}</p>
         {% else %}
-            <p class="accessibility-audit-panel__empty light">{{ 'This entry has not been analysed yet.'|t('accessibility-audit') }}</p>
-        {% endif %}
+            {% if readabilityResult %}
+                {% set gradeOver = readabilityResult.gradeLevel > 9 %}
+                <p class="accessibility-audit-panel__rline">
+                    <strong>{{ 'Grade {n}'|t('accessibility-audit', { n: readabilityResult.gradeLevel }) }}</strong>
+                    <span class="{{ gradeOver ? 'accessibility-audit-badge-fail' : 'accessibility-audit-badge-pass' }}">
+                        {{ gradeOver ? '{n} over'|t('accessibility-audit', { n: (readabilityResult.gradeLevel - 9)|number_format(1) }) : 'Meets target'|t('accessibility-audit') }}
+                    </span>
+                </p>
+                <p class="accessibility-audit-panel__basis light">
+                    {{ 'Reading ease {n}, {label}. For the saved version, analysed {date}.'|t('accessibility-audit', {
+                        n: readabilityResult.readingEase,
+                        label: readabilityResult.readingEaseLabel|t('accessibility-audit'),
+                        date: (readabilityDate ?? null) ? readabilityDate|date('short') : '',
+                    }) }}
+                </p>
+            {% else %}
+                <p class="accessibility-audit-panel__basis light">{{ 'This entry has not been analysed yet.'|t('accessibility-audit') }}</p>
+            {% endif %}
 
-       
-        {% if readabilityPro and currentUser.can('accessibility-audit:runScans') %}
+            {% if readabilityPreview ?? false %}
+                <p class="accessibility-audit-panel__basis light">{{ 'To see this draft marked up as you write, pick Readability in the Preview menu.'|t('accessibility-audit') }}</p>
+            {% endif %}
+
             <div class="accessibility-audit-panel__foot">
-                <a href="{{ readUrl }}" class="btn small">{{ readabilityResult ? 'Re-analyse'|t('accessibility-audit') : 'Analyse'|t('accessibility-audit') }}</a>
+                <a href="{{ readUrl }}">{{ 'Readability report'|t('accessibility-audit') }}</a>
             </div>
         {% endif %}
     </div>
-    {% endif %}
 </div>
 </div>
 </fieldset>

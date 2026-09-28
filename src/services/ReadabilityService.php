@@ -7,12 +7,23 @@
 namespace johnhenry\accessibilityaudit\services;
 
 use Craft;
+use craft\base\ElementContainerFieldInterface;
 use craft\base\ElementInterface;
+use craft\commerce\elements\Product;
 use craft\db\Query;
+use craft\elements\db\ElementQuery;
 use craft\helpers\App;
+use craft\helpers\Db;
 use craft\helpers\StringHelper;
+use craft\models\Site;
+use DateTime;
+use DOMDocument;
+use DOMXPath;
+use Exception;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\exceptions\UnsafeUrlException;
+use johnhenry\accessibilityaudit\helpers\Anthropic;
+use johnhenry\accessibilityaudit\helpers\PlainLanguage;
 use johnhenry\accessibilityaudit\helpers\UrlSafety;
 use Throwable;
 use yii\base\Component;
@@ -27,26 +38,151 @@ use yii\base\Component;
  * WCAG relevance: Success Criterion 3.1.5 (Reading Level, AAA) recommends that
  * content not require reading ability beyond lower secondary education level
  * (~Grade 9 / reading age ~14).
+ *
+ * @phpstan-import-type PlainSentence from PlainLanguage
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
+ * @since 1.0.0
  */
 class ReadabilityService extends Component
 {
-    // ─── Public API ───────────────────────────────────────────────────────────
+    // Constants
+    // =========================================================================
 
     /**
-     * Analyse a Craft element by extracting text directly from its fields.
+     * @var int The least text, in characters, an analysis is run on.
+     */
+    public const MIN_CHARACTERS = 100;
+
+    /**
+     * @var int How long, in seconds, a user's latest plain-language suggestions
+     *      for an element are kept for the editor to show again.
+     */
+    public const SUGGESTIONS_TTL = 3600;
+
+    /**
+     * @var int How many levels of nested entries (a Matrix entry inside a
+     *      Matrix entry) text is gathered from.
+     */
+    private const MAX_NESTING = 4;
+
+    /**
+     * @var string The elements of a fetched page whose end is the end of a
+     *      block of text, relative to the content element.
+     */
+    private const BLOCK_XPATH = './/p|.//h1|.//h2|.//h3|.//h4|.//h5|.//h6|.//li|.//dt|.//dd|.//blockquote'
+        . '|.//figcaption|.//pre|.//td|.//th|.//caption|.//div|.//section|.//article|.//summary|.//button';
+
+    /**
+     * @var string[] The field types whose values are read as an entry's text.
+     *      Anything else in a layout (lightswitches, dropdowns, numbers, links,
+     *      dates) is a setting or a label rather than prose. Listed by name so
+     *      the plugin does not need CKEditor or Redactor installed.
+     */
+    private const TEXT_FIELD_TYPES = [
+        'craft\\fields\\PlainText',
+        'craft\\ckeditor\\Field',
+        'craft\\redactor\\Field',
+    ];
+
+    /**
+     * @var int The fewest words a sentence needs before the readability preview
+     *      marks it. A shorter sentence is left alone however long its words.
+     */
+    public const HARD_SENTENCE_MIN_WORDS = 14;
+
+
+    /**
+     * @var int The reading level, from the Automated Readability Index worked
+     *      out for the sentence on its own, at which a sentence is marked hard
+     *      to read.
+     */
+    public const HARD_SENTENCE_LEVEL = 10;
+
+    /**
+     * @var int The reading level at which a sentence is marked very hard to read.
+     */
+    public const VERY_HARD_SENTENCE_LEVEL = 14;
+
+    /**
+     * @var string The reading target the preview marks sentences against unless
+     *      another is chosen.
+     */
+    public const DEFAULT_TARGET = 'default';
+
+    /**
+     * @var array<string, array{hard: int, veryHard: int}> The reading levels at
+     *      which the preview marks a sentence hard and very hard to read, for
+     *      each target. Accessible marks anything past grade 9, the lower
+     *      secondary level WCAG 3.1.5 asks for; technical allows for academic
+     *      and specialist writing.
+     */
+    public const TARGETS = [
+        'accessible' => ['hard' => 8, 'veryHard' => 10],
+        self::DEFAULT_TARGET => ['hard' => self::HARD_SENTENCE_LEVEL, 'veryHard' => self::VERY_HARD_SENTENCE_LEVEL],
+        'technical' => ['hard' => 13, 'veryHard' => 17],
+    ];
+
+    // Public API
+    // =========================================================================
+
+    /**
+     * Whether readability can be scored for a site.
      *
-     * Walks PlainText, Textarea, and rich-text fields (CKEditor / Redactor).
-     * Matrix / nested entry queries are recursed into automatically.
-     * Falls back to a URL fetch for published elements when fields yield < 100 chars.
+     * The scores are Flesch-Kincaid, whose formula is built for English, and
+     * the text handling reads English letters and sentence starts, so on any
+     * other language the numbers would mean nothing.
      *
+     * @param int|null $siteId The site, or null for a URL with no site.
+     * @return bool Whether the site's language is English.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public function supportsSite(?int $siteId): bool
+    {
+        if ($siteId === null) {
+            return true;
+        }
+
+        $site = Craft::$app->getSites()->getSiteById($siteId, true);
+
+        return $site === null || str_starts_with(strtolower($site->language), 'en');
+    }
+
+    /**
+     * What readers are told when a site's language can't be scored.
+     *
+     * @return string The message.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public function unsupportedMessage(): string
+    {
+        return Craft::t('accessibility-audit', 'Readability scores are for English text only, so they are not worked out for this site.');
+    }
+
+    /**
+     * Analyse an element as readers get it: from its own text fields, or from
+     * its rendered page when those hold too little text.
+     *
+     * @param ElementInterface $element The element.
+     * @param bool $withClaude Whether to add plain-language suggestions from Claude.
      * @return array{readingEase: float, gradeLevel: float, ...}|array{error: string}
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function analyseElement(ElementInterface $element, bool $withClaude = false): array
     {
+        if (!$this->supportsSite((int)$element->siteId)) {
+            return ['error' => $this->unsupportedMessage()];
+        }
+
         $text = $this->_extractElementText($element);
 
-        /* Published element with too little field text, fetch the rendered page */
-        if (strlen($text) < 100) {
+        if (mb_strlen($text) < self::MIN_CHARACTERS) {
             $url = $element->getUrl();
             if ($url !== null) {
                 return $this->analyseUrl($url, $withClaude);
@@ -54,14 +190,216 @@ class ReadabilityService extends Component
             return ['error' => Craft::t('accessibility-audit', 'Not enough text content found in this entry\'s fields.')];
         }
 
-        /* Wrap in minimal HTML so _extractText can handle the content node */
-        return $this->analyseHtml('<html><body>' . htmlspecialchars($text, ENT_QUOTES | ENT_HTML5) . '</body></html>', '', $withClaude);
+        return $this->analyseText($text, $withClaude);
+    }
+
+    /**
+     * Analyse plain text for readability: the scores and the longest sentences,
+     * worked out here without fetching anything.
+     *
+     * @param string $text The text, with any markup already removed.
+     * @param bool $withClaude Whether to add plain-language suggestions from Claude.
+     * @return array{readingEase: float, gradeLevel: float, ...}|array{error: string}
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public function analyseText(string $text, bool $withClaude = false): array
+    {
+        return $this->_analyse(trim($text), '', $withClaude, true);
+    }
+
+    /**
+     * Analyse the text an element's own fields hold, as the element holds it.
+     *
+     * Made for text still being written: a draft, or an entry with unsaved
+     * edits. It never falls back to fetching the published page, which is not
+     * the text being written, and with too little text it says how much more is
+     * needed rather than failing.
+     *
+     * @param ElementInterface $element The element, draft or otherwise.
+     * @param bool $withClaude Whether to add plain-language suggestions from Claude.
+     * @return array{readingEase: float, gradeLevel: float, ...}|array{error: string, charactersNeeded?: int}
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public function analyseElementText(ElementInterface $element, bool $withClaude = false): array
+    {
+        if (!$this->supportsSite((int)$element->siteId)) {
+            return ['error' => $this->unsupportedMessage()];
+        }
+
+        return $this->_analyseOwnText($this->_extractElementText($element), $withClaude);
+    }
+
+    /**
+     * The readability of an element's own text as it stands, together with that
+     * text broken into paragraphs and sentences for the Readability preview.
+     *
+     * @param ElementInterface $element The element, draft or otherwise.
+     * @param string $target The key of the reading target in TARGETS to mark
+     *        sentences against.
+     * @return array{result: array<string, mixed>, blocks: array<int, mixed>, counts: array<string, int>}
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public function previewElementText(ElementInterface $element, string $target = self::DEFAULT_TARGET): array
+    {
+        if (!$this->supportsSite((int)$element->siteId)) {
+            return [
+                'result' => ['error' => $this->unsupportedMessage()],
+                'blocks' => [],
+                'counts' => ['sentences' => 0, 'hard' => 0, 'veryHard' => 0],
+            ];
+        }
+
+        $text = $this->_extractElementText($element);
+        $blocks = $this->previewBlocks($text, $target);
+
+        // Every line counts as a sentence here, headings and labels included,
+        // since the preview shows them all.
+        $counts = PlainLanguage::counts($blocks) + ['sentences' => 0, 'hard' => 0, 'veryHard' => 0];
+
+        foreach ($blocks as $sentences) {
+            foreach ($sentences as $sentence) {
+                $counts['sentences']++;
+
+                if ($sentence['difficulty'] !== null) {
+                    $counts[$sentence['difficulty']]++;
+                }
+            }
+        }
+
+        return [
+            'result' => $this->_analyseOwnText($text, false),
+            'blocks' => $blocks,
+            'counts' => $counts,
+        ];
+    }
+
+    /**
+     * Breaks text into paragraphs of sentences, marking each one `hard` or
+     * `veryHard` to read.
+     *
+     * A sentence gets a reading level of its own from the Automated Readability
+     * Index, `4.71 × letters per word + 0.5 × words − 21.43`, so a long sentence
+     * of short words is not marked and a dense one is. Below
+     * HARD_SENTENCE_MIN_WORDS words it is not marked at all.
+     *
+     * Every sentence is kept, headings and short lines included, since this is
+     * the text as it will be read rather than what the scores count.
+     *
+     * @param string $text Text with paragraphs separated by blank lines.
+     * @param string $target The key of the reading target in TARGETS to mark
+     *        sentences against. An unknown key falls back to the default.
+     * @return array<int, array<int, PlainSentence>> Sentences, grouped by paragraph.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public function previewBlocks(string $text, string $target = self::DEFAULT_TARGET): array
+    {
+        $levels = self::TARGETS[$target] ?? self::TARGETS[self::DEFAULT_TARGET];
+        $blocks = [];
+
+        foreach (preg_split('/\n\s*\n/', $text) ?: [] as $block) {
+            $block = trim((string)preg_replace('/\s+/', ' ', $block));
+
+            if ($block === '') {
+                continue;
+            }
+
+            $sentences = [];
+
+            foreach (preg_split('/(?<=[.!?])\s+(?=[A-Z"\'])/', $block) ?: [] as $sentence) {
+                $words = str_word_count($sentence);
+                $letters = (int)preg_match_all('/[A-Za-z]/', $sentence);
+                $level = $words > 0 ? (int)round(4.71 * ($letters / $words) + 0.5 * $words - 21.43) : 0;
+
+                $sentences[] = [
+                    'text' => $sentence,
+                    'words' => $words,
+                    'level' => $level,
+                    'segments' => PlainLanguage::segments($sentence),
+                    'difficulty' => match (true) {
+                        $words < self::HARD_SENTENCE_MIN_WORDS => null,
+                        $level >= $levels['veryHard'] => 'veryHard',
+                        $level >= $levels['hard'] => 'hard',
+                        default => null,
+                    },
+                ];
+            }
+
+            $blocks[] = $sentences;
+        }
+
+        return $blocks;
+    }
+
+    /**
+     * Keeps the current user's latest plain-language suggestions for an
+     * element, so the editor can show them again after its content refreshes.
+     *
+     * Held in the cache, never in the readability table: suggestions made for
+     * a draft say nothing about the published page.
+     *
+     * @param int $elementId The canonical element the suggestions were made for,
+     *        so they outlast the draft ids an entry goes through while edited.
+     * @param int $siteId The element's site.
+     * @param array<string, mixed> $suggestions The `claude` part of an analysis result.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public function cacheSuggestions(int $elementId, int $siteId, array $suggestions): void
+    {
+        $userId = Craft::$app->getUser()->getId();
+
+        if ($userId === null) {
+            return;
+        }
+
+        Craft::$app->getCache()->set(
+            $this->_suggestionsKey((int)$userId, $elementId, $siteId),
+            ['claude' => $this->_normaliseSuggestions($suggestions), 'time' => time()],
+            self::SUGGESTIONS_TTL,
+        );
+    }
+
+    /**
+     * The current user's latest cached suggestions for an element, if any.
+     *
+     * @param int $elementId The element.
+     * @param int $siteId The element's site.
+     * @return array{claude: array<string, mixed>, time: int}|null
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public function getCachedSuggestions(int $elementId, int $siteId): ?array
+    {
+        $userId = Craft::$app->getUser()->getId();
+
+        if ($userId === null) {
+            return null;
+        }
+
+        $cached = Craft::$app->getCache()->get($this->_suggestionsKey((int)$userId, $elementId, $siteId));
+
+        return is_array($cached) && isset($cached['claude'], $cached['time']) ? $cached : null;
     }
 
     /**
      * Fetch a URL and return a full readability analysis.
      *
      * @return array{readingEase: float, gradeLevel: float, ...}|array{error: string}
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     * @param string $url The page to read.
+     * @param bool $withClaude Whether to ask Claude for suggestions as well.
      */
     public function analyseUrl(string $url, bool $withClaude = false): array
     {
@@ -69,19 +407,21 @@ class ReadabilityService extends Component
         try {
             UrlSafety::assertSafeUrl($url);
         } catch (UnsafeUrlException $e) {
-            return ['error' => $e->getMessage()];
+            // The guard throws plain strings: it is a helper and has no view of
+            // the request's language. Translated here, where the message turns
+            // into something a person reads, as every other error this returns
+            // already is.
+            return ['error' => Craft::t('accessibility-audit', $e->getMessage())];
         }
 
         try {
-            $clientConfig = array_merge(
-                ['timeout' => 15],
-                UrlSafety::guzzleRedirectConfig(),
-            );
-
-            // Same scanner UA as the audit fetch, so one WAF allow-list rule
-            // covers every scanner request this plugin makes.
-            $clientConfig['headers'] = [
-                'User-Agent' => AccessibilityAudit::getInstance()->getSettings()->getFetchUserAgent(),
+            $clientConfig = [
+                'timeout' => UrlSafety::FETCH_TIMEOUT,
+                // Same scanner UA as the audit fetch, so one WAF allow-list
+                // rule covers every scanner request this plugin makes.
+                'headers' => [
+                    'User-Agent' => AccessibilityAudit::getInstance()->getSettings()->getFetchUserAgent(),
+                ],
             ];
 
             $response = UrlSafety::fetch($url, $clientConfig);
@@ -101,45 +441,103 @@ class ReadabilityService extends Component
      * Analyse raw HTML for readability.
      *
      * @return array{readingEase: float, gradeLevel: float, ...}|array{error: string}
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     * @param string $html The rendered page.
+     * @param string $sourceUrl The address it came from, for the stored record.
+     * @param bool $withClaude Whether to ask Claude for suggestions as well.
      */
     public function analyseHtml(string $html, string $sourceUrl = '', bool $withClaude = false): array
     {
-        $text = $this->_extractText($html);
-
-        if (strlen($text) < 100) {
-            return ['error' => Craft::t('accessibility-audit', 'Not enough text content to analyse (less than 100 characters found).')];
+        // A page that says what language it is in is taken at its word.
+        if (
+            preg_match('/<html\b[^>]*\blang\s*=\s*["\']?([a-z]{2,3})/i', $html, $lang) === 1
+            && strtolower($lang[1]) !== 'en'
+        ) {
+            return ['error' => $this->unsupportedMessage()];
         }
 
-        $scores = $this->_calculateScores($text);
-        $sentences = $this->_extractSentences($text);
+        return $this->_analyse($this->_extractText($html), $sourceUrl, $withClaude, true);
+    }
 
-        $result = array_merge($scores, [
-            'complexSentences' => $this->_findComplexSentences($sentences),
-            'sourceUrl' => $sourceUrl,
-        ]);
+    /**
+     * Analyses an element as readers get it and stores the result against it.
+     *
+     * Scored from the element's own text fields, or from its rendered page when
+     * those hold too little text. Nothing is stored when it cannot be scored.
+     *
+     * @param ElementInterface $element A saved element with a URL.
+     * @return array{readingEase: float, gradeLevel: float, ...}|array{error: string}
+     * @throws \yii\db\Exception
+     * @throws Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public function analyseAndStoreElement(ElementInterface $element): array
+    {
+        $result = $this->analyseElement($element);
 
-        if ($withClaude) {
-            $settings = AccessibilityAudit::getInstance()->getSettings();
-            $apiKey = trim(App::parseEnv($settings->anthropicApiKey));
-            if ($apiKey !== '') {
-                $claudeResult = $this->_analyseWithClaude($text, $apiKey);
-                if ($claudeResult !== null) {
-                    $result['claude'] = $claudeResult;
-                }
-            }
+        if (!isset($result['error'])) {
+            $this->storeResult($result, (int)$element->id, (int)$element->siteId, (string)$element->getUrl(), (string)($element->title ?? ''));
         }
 
         return $result;
     }
 
-    // ─── Persistence ─────────────────────────────────────────────────────────
+    /**
+     * Scores an element from its own text fields and stores the result against
+     * it, for keeping the Readability report current as entries are saved.
+     *
+     * Nothing is fetched, so it is quick enough to run during a save. An
+     * element with too little text of its own, a page built in templates, is
+     * left for a full analysis and its stored result, if any, is kept.
+     *
+     * @param ElementInterface $element A saved element with a URL.
+     * @return bool Whether a result was stored.
+     * @throws \yii\db\Exception
+     * @throws Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public function recordElementText(ElementInterface $element): bool
+    {
+        if (!AccessibilityAudit::getInstance()->isPro()) {
+            return false;
+        }
+
+        $result = $this->analyseElementText($element);
+
+        if (isset($result['error'])) {
+            return false;
+        }
+
+        $this->storeResult($result, (int)$element->id, (int)$element->siteId, (string)$element->getUrl(), (string)($element->title ?? ''));
+
+        return true;
+    }
+
+    // Persistence
+    // =========================================================================
 
     /**
      * Persist a readability result to {{%accessibilityaudit_readability}}.
-     * Upserts on elementId+siteId (or url when no element).
      *
+     * One row per element and site, written as a single upsert so two writers
+     * at once cannot both insert; a result with no element is kept per URL.
+     *
+     * @param array<string, mixed> $result An analysis result.
+     * @param int|null $elementId The element the result belongs to, if any.
+     * @param int|null $siteId The element's site.
+     * @param string $url The page's URL.
+     * @param string $title The page's title.
      * @throws \yii\db\Exception
-     * @throws \Exception
+     * @throws Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function storeResult(
         array $result,
@@ -148,7 +546,7 @@ class ReadabilityService extends Component
         string $url = '',
         string $title = '',
     ): void {
-        $now = (new \DateTime())->format('Y-m-d H:i:s');
+        $now = Db::prepareDateForDb(new DateTime());
 
         $data = [
             'elementId' => $elementId,
@@ -162,16 +560,24 @@ class ReadabilityService extends Component
             'wordCount' => $result['wordCount'] ?? null,
             'sentenceCount' => $result['sentenceCount'] ?? null,
             'avgWordsPerSentence' => $result['avgWordsPerSentence'] ?? null,
+            'hardSentences' => $result['hardSentences'] ?? null,
+            'veryHardSentences' => $result['veryHardSentences'] ?? null,
             'wcag315Pass' => (int) ($result['wcag315Pass'] ?? false),
             'dateAnalysed' => $now,
             'dateUpdated' => $now,
         ];
 
-        $condition = $elementId !== null
-            ? ['elementId' => $elementId, 'siteId' => $siteId]
-            : ['url' => $url];
+        if ($elementId !== null && $siteId !== null) {
+            Db::upsert(
+                '{{%accessibilityaudit_readability}}',
+                $data + ['uid' => StringHelper::UUID(), 'dateCreated' => $now],
+                $data,
+            );
 
-        $existing = (new Query())->from(['{{%accessibilityaudit_readability}}'])->where($condition)->one();
+            return;
+        }
+
+        $existing = (new Query())->from(['{{%accessibilityaudit_readability}}'])->where(['elementId' => null, 'url' => $url])->one();
 
         if ($existing) {
             Craft::$app->getDb()->createCommand()
@@ -198,39 +604,51 @@ class ReadabilityService extends Component
      * @param int $page 1-indexed page number.
      * @param int $perPage Rows per page.
      * @param string $search Matches the page title or URL.
-     * @param string $orderBy A whitelisted column to sort on.
+     * @param string $orderBy A whitelisted column to sort on, or `worst` for failing pages first, hardest to read at the top.
      * @param int $orderDir SORT_ASC or SORT_DESC.
+     * @param int|null $elementId Only this element's result, when set.
      * @return array{results: array<int, array<string, mixed>>, total: int}
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function getResultsPaged(
         int $siteId,
         int $page = 1,
         int $perPage = 100,
         string $search = '',
-        string $orderBy = 'dateAnalysed',
+        string $orderBy = 'worst',
         int $orderDir = SORT_DESC,
+        ?int $elementId = null,
     ): array {
         // Whitelisted: the sort column arrives from a query parameter and would
-        // otherwise be interpolated straight into ORDER BY.
-        $sortable = ['title', 'readingEase', 'gradeLevel', 'wordCount', 'wcag315Pass', 'dateAnalysed'];
-        $column = in_array($orderBy, $sortable, true) ? $orderBy : 'dateAnalysed';
+        // otherwise be interpolated straight into ORDER BY. `worst` puts the
+        // pages failing WCAG 3.1.5 first, hardest to read at the top.
+        $sortable = ['title', 'readingEase', 'gradeLevel', 'wordCount', 'hardSentences', 'veryHardSentences', 'wcag315Pass', 'dateAnalysed'];
+        $order = in_array($orderBy, $sortable, true)
+            ? ['r.' . $orderBy => $orderDir, 'r.id' => SORT_ASC]
+            : ['r.wcag315Pass' => SORT_ASC, 'r.gradeLevel' => SORT_DESC, 'r.id' => SORT_ASC];
 
-        $query = (new Query())
-            ->from(['{{%accessibilityaudit_readability}}'])
-            ->where(['siteId' => $siteId]);
+        $query = $this->_liveResultsQuery()
+            ->select(['r.*'])
+            ->andWhere(['r.siteId' => $siteId]);
+
+        if ($elementId !== null) {
+            $query->andWhere(['r.elementId' => $elementId]);
+        }
 
         if ($search !== '') {
             $query->andWhere([
                 'or',
-                ['like', 'title', $search],
-                ['like', 'url', $search],
+                ['like', 'r.title', $search],
+                ['like', 'r.url', $search],
             ]);
         }
 
         $total = (int) (clone $query)->count();
 
         $rows = $query
-            ->orderBy([$column => $orderDir])
+            ->orderBy($order)
             ->offset(($page - 1) * $perPage)
             ->limit($perPage)
             ->all();
@@ -248,33 +666,44 @@ class ReadabilityService extends Component
      *
      * @param string $url
      * @return array{elementId: int, siteId: int}|null
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function resolveElementForUrl(string $url): ?array
     {
-        $bestSite = null;
-        $bestBaseUrlLength = 0;
+        $match = $this->_siteMatchForUrl($url);
 
-        foreach (Craft::$app->getSites()->getAllSites() as $site) {
-            $baseUrl = rtrim((string) $site->getBaseUrl(), '/');
-
-            if ($baseUrl !== '' && str_starts_with($url, $baseUrl) && strlen($baseUrl) > $bestBaseUrlLength) {
-                $bestSite = $site;
-                $bestBaseUrlLength = strlen($baseUrl);
-            }
-        }
-
-        if ($bestSite === null) {
+        if ($match === null) {
             return null;
         }
 
-        $uri = trim(explode('?', substr($url, $bestBaseUrlLength), 2)[0], '/');
-        $element = Craft::$app->getElements()->getElementByUri($uri, $bestSite->id);
+        $uri = trim($match['uri'], '/');
+        $element = Craft::$app->getElements()->getElementByUri($uri, $match['site']->id);
 
         if (!$element || !$element->id) {
             return null;
         }
 
-        return ['elementId' => $element->id, 'siteId' => $bestSite->id];
+        return ['elementId' => $element->id, 'siteId' => $match['site']->id];
+    }
+
+    /**
+     * The site of this install a URL belongs to, if any.
+     *
+     * The URL has to share the site's scheme, host and port exactly, and sit
+     * at or under its base path on a segment boundary, so a lookalike host
+     * such as `example.com.evil.test` or a sibling path never counts.
+     *
+     * @param string $url An absolute URL.
+     * @return Site|null The best matching site: the one with the longest base path.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public function siteForUrl(string $url): ?Site
+    {
+        return $this->_siteMatchForUrl($url)['site'] ?? null;
     }
 
     /**
@@ -289,7 +718,10 @@ class ReadabilityService extends Component
      * @param string|null $url Restrict to a URL-keyed result instead, used as a fallback when a page was
      *        analysed via the general "Analyse a page" tool (stored with no `elementId`) rather than the
      *        element's own field, so that result still surfaces on the matching entry. Ignored if `$elementId` is set.
-     * @return array[]
+     * @return array<int, array<string, mixed>>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function getResults(int $limit = 100, ?int $elementId = null, ?int $siteId = null, ?string $url = null): array
     {
@@ -322,6 +754,9 @@ class ReadabilityService extends Component
      *
      * @param array<string, mixed> $row A raw database row.
      * @return array<string, mixed>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _castRow(array $row): array
     {
@@ -332,6 +767,8 @@ class ReadabilityService extends Component
             'wordCount' => (int) $row['wordCount'],
             'sentenceCount' => (int) $row['sentenceCount'],
             'avgWordsPerSentence' => (float) $row['avgWordsPerSentence'],
+            'hardSentences' => isset($row['hardSentences']) ? (int)$row['hardSentences'] : null,
+            'veryHardSentences' => isset($row['veryHardSentences']) ? (int)$row['veryHardSentences'] : null,
             'wcag315Pass' => (bool) $row['wcag315Pass'],
         ]);
     }
@@ -343,39 +780,48 @@ class ReadabilityService extends Component
      *        resolve to one of this install's own elements) are excluded when set, same as `getResults()`.
      *        Null aggregates across every site, kept as the default for any other/future caller.
      * @return array{total: int, avgEase: float|null, avgGrade: float|null, passingPct: int|null}
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function getStats(?int $siteId = null): array
     {
-        $query = (new Query())
-            ->select(['readingEase', 'gradeLevel', 'wcag315Pass'])
-            ->from(['{{%accessibilityaudit_readability}}']);
+        // Worked out in the database, so a large site's results are never
+        // loaded into memory just to be averaged.
+        $query = $this->_liveResultsQuery()
+            ->select([
+                'total' => 'COUNT(*)',
+                'sumEase' => 'SUM([[r.readingEase]])',
+                'sumGrade' => 'SUM([[r.gradeLevel]])',
+                'passing' => 'SUM(CASE WHEN [[r.wcag315Pass]] THEN 1 ELSE 0 END)',
+            ]);
 
         if ($siteId !== null) {
-            $query->andWhere(['siteId' => $siteId]);
+            $query->andWhere(['r.siteId' => $siteId]);
         }
 
-        $rows = $query->all();
+        $row = $query->one() ?: [];
+        $total = (int)($row['total'] ?? 0);
 
-        $total = count($rows);
         if ($total === 0) {
             return ['total' => 0, 'avgEase' => null, 'avgGrade' => null, 'passingPct' => null];
         }
 
-        $avgEase = round(array_sum(array_column($rows, 'readingEase')) / $total, 1);
-        $avgGrade = round(array_sum(array_column($rows, 'gradeLevel')) / $total, 1);
-        $passing = count(array_filter($rows, fn($r) => (bool) $r['wcag315Pass']));
-        $passingPct = (int) round(($passing / $total) * 100);
-
         return [
             'total' => $total,
-            'avgEase' => $avgEase,
-            'avgGrade' => $avgGrade,
-            'passingPct' => $passingPct,
+            'avgEase' => round((float)$row['sumEase'] / $total, 1),
+            'avgGrade' => round((float)$row['sumGrade'] / $total, 1),
+            'passingPct' => (int)round(((int)$row['passing'] / $total) * 100),
         ];
     }
 
     /**
      * Extract the <title> from an HTML string.
+     *
+     * @return string
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     * @param string $html The rendered page.
      */
     public function extractPageTitle(string $html): string
     {
@@ -385,26 +831,398 @@ class ReadabilityService extends Component
         return '';
     }
 
-    // ─── Private helpers ──────────────────────────────────────────────────────
+    // Private Methods
+    // =========================================================================
 
     /**
-     * Walk an element's field layout and concatenate all readable text.
+     * Stored results, aliased `r`, leaving out those whose element is in the
+     * trash. A deleted element's rows go with it; a trashed one's stay until
+     * the trash is emptied, and should not count until it is restored.
+     *
+     * @return Query<int, array<string, mixed>>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
      */
-    private function _extractElementText(ElementInterface $element): string
+    private function _liveResultsQuery(): Query
     {
-        $layout = $element->getFieldLayout();
-        if ($layout === null) {
+        return (new Query())
+            ->from(['r' => '{{%accessibilityaudit_readability}}'])
+            ->leftJoin(['e' => '{{%elements}}'], '[[e.id]] = [[r.elementId]]')
+            ->where(['or', ['r.elementId' => null], ['e.dateDeleted' => null]]);
+    }
+
+    /**
+     * Keeps only the parts of Claude's reply the editor shows, as strings, so
+     * an unexpected shape cannot break the page that prints them.
+     *
+     * @param array<string, mixed> $suggestions The `claude` part of an analysis result.
+     * @return array{summary: string, suggestions: array<int, array{original: string, simplified: string, reason: string}>, jargon: string[]}
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private function _normaliseSuggestions(array $suggestions): array
+    {
+        $string = static fn(mixed $value): string => is_scalar($value) ? (string)$value : '';
+
+        $items = [];
+        foreach (is_array($suggestions['suggestions'] ?? null) ? $suggestions['suggestions'] : [] as $item) {
+            if (is_array($item)) {
+                $items[] = [
+                    'original' => $string($item['original'] ?? ''),
+                    'simplified' => $string($item['simplified'] ?? ''),
+                    'reason' => $string($item['reason'] ?? ''),
+                ];
+            }
+        }
+
+        $jargon = array_values(array_filter(
+            array_map($string, is_array($suggestions['jargon'] ?? null) ? $suggestions['jargon'] : []),
+            static fn(string $term): bool => $term !== '',
+        ));
+
+        return [
+            'summary' => $string($suggestions['summary'] ?? ''),
+            'suggestions' => $items,
+            'jargon' => $jargon,
+        ];
+    }
+
+    /**
+     * The cache key for one user's suggestions for one element on one site.
+     *
+     * @param int $userId The user who asked for the suggestions.
+     * @param int $elementId The element.
+     * @param int $siteId The element's site.
+     * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private function _suggestionsKey(int $userId, int $elementId, int $siteId): string
+    {
+        return "accessibility-audit:readability-suggestions:{$userId}:{$elementId}:{$siteId}";
+    }
+
+    /**
+     * Scores text and finds its longest sentences, adding Claude's suggestions
+     * when they are asked for.
+     *
+     * @param string $text The text, with markup already removed.
+     * @param string $sourceUrl The page the text came from, if any.
+     * @param bool $withClaude Whether to add plain-language suggestions from Claude.
+     * @param bool $paragraphsEndSentences Whether a paragraph break ends a
+     *        sentence, so a heading or a label with no full stop is not joined
+     *        to the sentence after it.
+     * @return array{readingEase: float, gradeLevel: float, ...}|array{error: string}
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private function _analyse(string $text, string $sourceUrl, bool $withClaude, bool $paragraphsEndSentences): array
+    {
+        // Characters, not bytes. Accented or non-Latin text runs to more
+        // bytes than characters, so a byte count let text well short of the
+        // minimum through and scored it anyway, while the message and the
+        // constant both said characters.
+        if (mb_strlen($text) < self::MIN_CHARACTERS) {
+            return ['error' => Craft::t('accessibility-audit', 'Not enough text content to analyse (less than 100 characters found).')];
+        }
+
+        $scores = $this->_calculateScores($text, $paragraphsEndSentences);
+        $sentences = $this->_extractSentences($text, $paragraphsEndSentences);
+
+        $result = array_merge($scores, $this->_sentenceDifficulty($text), [
+            'complexSentences' => $this->_findComplexSentences($sentences),
+            'sourceUrl' => $sourceUrl,
+        ]);
+
+        if ($withClaude) {
+            $settings = AccessibilityAudit::getInstance()->getSettings();
+            $apiKey = trim(App::parseEnv($settings->anthropicApiKey));
+            if ($apiKey !== '') {
+                $claudeResult = $this->_analyseWithClaude($text, $apiKey);
+                if ($claudeResult !== null) {
+                    $result['claude'] = $claudeResult;
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * How many sentences are hard and very hard to read, counted the way the
+     * Readability preview marks them, at the site's Readability Target.
+     *
+     * @param string $text The text, with paragraphs separated by blank lines.
+     * @return array{hardSentences: int, veryHardSentences: int}
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private function _sentenceDifficulty(string $text): array
+    {
+        $target = AccessibilityAudit::getInstance()->getSettings()->readabilityTarget;
+        $counts = ['hard' => 0, 'veryHard' => 0];
+
+        foreach ($this->previewBlocks($text, $target) as $sentences) {
+            foreach ($sentences as $sentence) {
+                if ($sentence['difficulty'] !== null) {
+                    $counts[$sentence['difficulty']]++;
+                }
+            }
+        }
+
+        return [
+            'hardSentences' => $counts['hard'],
+            'veryHardSentences' => $counts['veryHard'],
+        ];
+    }
+
+    /**
+     * Matches a URL to the site it belongs to and the path left after that
+     * site's base path.
+     *
+     * @param string $url An absolute URL.
+     * @return array{site: Site, uri: string}|null
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private function _siteMatchForUrl(string $url): ?array
+    {
+        $target = $this->_urlOrigin($url);
+
+        if ($target === null) {
+            return null;
+        }
+
+        $best = null;
+        $bestLength = -1;
+
+        foreach (Craft::$app->getSites()->getAllSites() as $site) {
+            $base = $this->_urlOrigin((string)$site->getBaseUrl());
+
+            if ($base === null || $base['origin'] !== $target['origin']) {
+                continue;
+            }
+
+            $basePath = rtrim($base['path'], '/');
+            $matches = $basePath === ''
+                || $target['path'] === $basePath
+                || str_starts_with($target['path'], $basePath . '/');
+
+            if ($matches && strlen($basePath) > $bestLength) {
+                $best = ['site' => $site, 'uri' => substr($target['path'], strlen($basePath))];
+                $bestLength = strlen($basePath);
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * A URL's scheme, host and port as one comparable string, and its path.
+     *
+     * @param string $url An absolute URL.
+     * @return array{origin: string, path: string}|null Null when it isn't an absolute http(s) URL.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private function _urlOrigin(string $url): ?array
+    {
+        $parts = parse_url($url);
+        $scheme = strtolower((string)($parts['scheme'] ?? ''));
+        $host = strtolower((string)($parts['host'] ?? ''));
+
+        if ($host === '' || !in_array($scheme, ['http', 'https'], true)) {
+            return null;
+        }
+
+        $port = $parts['port'] ?? ($scheme === 'https' ? 443 : 80);
+
+        return [
+            'origin' => $scheme . '://' . $host . ':' . $port,
+            'path' => (string)($parts['path'] ?? ''),
+        ];
+    }
+
+    /**
+     * Analyses text gathered from an element's own fields, reporting how much
+     * more is needed rather than failing when there is too little.
+     *
+     * @param string $text The element's text.
+     * @param bool $withClaude Whether to add plain-language suggestions from Claude.
+     * @return array{readingEase: float, gradeLevel: float, ...}|array{error: string, charactersNeeded?: int}
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private function _analyseOwnText(string $text, bool $withClaude): array
+    {
+        $length = mb_strlen($text);
+
+        if ($length < self::MIN_CHARACTERS) {
+            return [
+                'error' => Craft::t('accessibility-audit', 'Not enough text content found in this entry\'s fields.'),
+                'charactersNeeded' => self::MIN_CHARACTERS - $length,
+            ];
+        }
+
+        return $this->analyseText($text, $withClaude);
+    }
+
+    /**
+     * Whether a field holds prose: text somebody reads as a passage, rather
+     * than a setting or a label printed as a value.
+     *
+     * @param object $field The field.
+     * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private function _isTextField(object $field): bool
+    {
+        foreach (self::TEXT_FIELD_TYPES as $type) {
+            if (is_a($field, $type)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The enabled variants of a Commerce product, whose text fields are part
+     * of the product's text.
+     *
+     * Commerce attaches variants through a layout element of its own rather
+     * than a custom field, so walking the product's custom fields never reaches
+     * them.
+     *
+     * @param ElementInterface $element Any element.
+     * @return ElementInterface[] The product's enabled variants, or none.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private function _variantsOf(ElementInterface $element): array
+    {
+        // instanceof against a class that isn't loaded is simply false, so
+        // this is safe on installs without Commerce.
+        if (!$element instanceof Product) {
+            return [];
+        }
+
+        try {
+            // false leaves out disabled variants, which are not on the page.
+            $variants = $element->getVariants(false);
+        } catch (Throwable) {
+            return [];
+        }
+
+        $found = [];
+
+        foreach ($variants as $variant) {
+            $found[] = $variant;
+        }
+
+        return $found;
+    }
+
+    /**
+     * The prose an element holds: its text fields, the text fields of the
+     * entries nested in it, and a Commerce product's variants, one block per
+     * field and paragraph.
+     *
+     * @param ElementInterface $element The element.
+     * @param int $depth How deeply nested this element is in the one being read.
+     * @param array<string, bool> $seen Elements already read, so none is read twice.
+     * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _extractElementText(ElementInterface $element, int $depth = 0, array &$seen = []): string
+    {
+        $key = $element->id ? $element->id . ':' . $element->siteId : 'new:' . spl_object_id($element);
+
+        if (isset($seen[$key]) || $depth > self::MAX_NESTING) {
             return '';
         }
 
+        $seen[$key] = true;
+
         $parts = [];
-        foreach ($layout->getCustomFields() as $field) {
+        $layout = $element->getFieldLayout();
+
+        foreach ($layout?->getCustomFields() ?? [] as $field) {
             try {
                 $value = $element->getFieldValue($field->handle);
-            } catch (Throwable) {
+            } catch (Throwable $e) {
+                // The field is on the element's own layout, so this is a field
+                // type misbehaving rather than a bad handle. Skipping it is
+                // right, but silently skipping it is not: its words stop
+                // counting and the score moves with nothing to say why.
+                Craft::warning(
+                    "A11y: readability skipped field {$field->handle} on element {$element->id}: " . $e->getMessage(),
+                    'accessibility-audit',
+                );
+
                 continue;
             }
+
+            // A CKEditor value is markup with nested entries between its
+            // chunks. Printed as a string it renders those entries through
+            // front-end templates, so each chunk is read on its own instead.
+            if (is_object($value) && method_exists($value, 'getChunks')) {
+                $text = $this->_chunksToText($value->getChunks(), $depth, $seen);
+                if ($text !== '') {
+                    $parts[] = $text;
+                }
+
+                continue;
+            }
+
+            // Only content the element owns is its text: the nested entries of
+            // a Matrix or Content Block field. A relation field points at other
+            // elements, whose text belongs to their own pages, and following
+            // relations from one to the next can go round in a circle.
+            if ($value instanceof ElementQuery || $value instanceof ElementInterface) {
+                if (!$field instanceof ElementContainerFieldInterface) {
+                    continue;
+                }
+
+                $nested = $value instanceof ElementInterface ? [$value] : $value->all();
+
+                foreach ($nested as $child) {
+                    $text = $this->_extractElementText($child, $depth + 1, $seen);
+                    if ($text !== '') {
+                        $parts[] = $text;
+                    }
+                }
+
+                continue;
+            }
+
+            // Lightswitches, dropdowns, numbers and links print as 1, a stored
+            // handle, a figure or a label: settings, not prose to be scored.
+            if (!$this->_isTextField($field)) {
+                continue;
+            }
+
             $text = $this->_fieldToText($value);
+            if ($text !== '') {
+                $parts[] = $text;
+            }
+        }
+
+        foreach ($this->_variantsOf($element) as $variant) {
+            $text = $this->_extractElementText($variant, $depth + 1, $seen);
             if ($text !== '') {
                 $parts[] = $text;
             }
@@ -414,11 +1232,49 @@ class ReadabilityService extends Component
     }
 
     /**
-     * Convert a field value to plain text.
+     * The text of a CKEditor field's chunks: its markup, and the text fields of
+     * the entries nested between them.
      *
-     * - Scalar / stringable values: strip HTML tags (no-op for plain text)
-     * - Element queries (Matrix / nested entries): recurse into each element
-     * - Anything else: skip
+     * @param iterable<object> $chunks The field's chunks.
+     * @param int $depth How deeply nested the field's element is.
+     * @param array<string, bool> $seen Elements already read.
+     * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private function _chunksToText(iterable $chunks, int $depth, array &$seen): string
+    {
+        $parts = [];
+
+        foreach ($chunks as $chunk) {
+            if (property_exists($chunk, 'rawHtml')) {
+                $text = $this->_fieldToText($chunk->rawHtml);
+            } elseif (method_exists($chunk, 'getEntry') && ($entry = $chunk->getEntry()) instanceof ElementInterface) {
+                $text = $this->_extractElementText($entry, $depth + 1, $seen);
+            } else {
+                continue;
+            }
+
+            if ($text !== '') {
+                $parts[] = $text;
+            }
+        }
+
+        return implode("\n\n", $parts);
+    }
+
+    /**
+     * Convert a text field's value to plain text, keeping its paragraphs apart.
+     *
+     * Block ends become blank lines before the tags come off, or the last word
+     * of one paragraph runs straight into the first word of the next.
+     *
+     * @param mixed $value The field's value.
+     * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
      */
     private function _fieldToText(mixed $value): string
     {
@@ -426,36 +1282,40 @@ class ReadabilityService extends Component
             return '';
         }
 
-        /* Element queries: Matrix blocks, nested entries, etc. */
-        if ($value instanceof \craft\elements\db\ElementQuery) {
-            $texts = [];
-            foreach ($value->all() as $el) {
-                $texts[] = $this->_extractElementText($el);
-            }
-            return implode("\n\n", array_filter($texts));
+        if (!is_scalar($value) && !(is_object($value) && method_exists($value, '__toString'))) {
+            return '';
         }
 
-        /* Scalar / stringable: covers PlainText, Textarea, CKEditor, Redactor */
-        if (is_scalar($value) || (is_object($value) && method_exists($value, '__toString'))) {
-            $text = strip_tags(html_entity_decode((string) $value, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
-            $text = (string) preg_replace('/\s+/', ' ', $text);
-            return trim($text);
-        }
+        $html = (string)preg_replace('~</(?:p|h[1-6]|li|blockquote|div|figcaption|pre|td|th|dd|dt)>~i', "\n\n", (string)$value);
+        $html = (string)preg_replace('~<br\s*/?>~i', "\n", $html);
 
-        return '';
+        $text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = (string)preg_replace('/[ \t\x{00A0}]+/u', ' ', $text);
+        $text = (string)preg_replace('/ *\n */', "\n", $text);
+        $text = (string)preg_replace('/\n{3,}/', "\n\n", $text);
+
+        return trim($text);
     }
 
     /**
      * Extract body text from HTML, removing navigation/boilerplate chrome.
      * Prefers <main> or <article>; falls back to <body>.
+     *
+     * @return string
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     * @param string $html The rendered page.
      */
     private function _extractText(string $html): string
     {
-        $dom = new \DOMDocument('1.0', 'utf-8');
-        libxml_use_internal_errors(true);
+        // Restored rather than left on: the setting is process-wide, and a
+        // queue worker runs many jobs in one process. See ContentScanner.
+        $dom = new DOMDocument('1.0', 'utf-8');
+        $libxmlErrors = libxml_use_internal_errors(true);
         $dom->loadHTML('<?xml encoding="utf-8" ?>' . $html, LIBXML_NOWARNING | LIBXML_NOERROR);
         libxml_clear_errors();
-        $xpath = new \DOMXPath($dom);
+        libxml_use_internal_errors($libxmlErrors);
+        $xpath = new DOMXPath($dom);
 
         /* Remove non-content nodes */
         // `//template` for the same reason as the scanners: its contents are
@@ -475,6 +1335,23 @@ class ReadabilityService extends Component
             return '';
         }
 
+        // Source line breaks inside a block are layout, not paragraph breaks,
+        // so they are flattened before the block ends are marked.
+        foreach (iterator_to_array($xpath->query('.//text()', $content) ?: []) as $node) {
+            $node->nodeValue = (string)preg_replace('/\s+/u', ' ', (string)$node->nodeValue);
+        }
+
+        // Block ends become blank lines, as they do for field text, so a
+        // heading, card title or label with no full stop ends where it ends
+        // instead of running into the next block as one long sentence.
+        foreach ($xpath->query(self::BLOCK_XPATH, $content) ?: [] as $block) {
+            $block->appendChild($dom->createTextNode("\n\n"));
+        }
+
+        foreach (iterator_to_array($xpath->query('.//br', $content) ?: []) as $break) {
+            $break->parentNode?->replaceChild($dom->createTextNode("\n"), $break);
+        }
+
         $text = $content->textContent;
         $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $text = (string) preg_replace('/[ \t]+/', ' ', $text);
@@ -490,16 +1367,24 @@ class ReadabilityService extends Component
      * Grade Level   = 0.39 × (words/sentences) + 11.8 × (syllables/words) − 15.59
      *
      * @return array{readingEase: float, gradeLevel: float, ...}|array{error: string}
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     * @param string $text The prose to score.
+     * @param bool $paragraphsEndSentences Whether a block's end closes a sentence,
+     *         for text whose blocks carry no full stops of their own.
      */
-    private function _calculateScores(string $text): array
+    private function _calculateScores(string $text, bool $paragraphsEndSentences = false): array
     {
-        $sentences = $this->_extractSentences($text);
+        $sentences = $this->_extractSentences($text, $paragraphsEndSentences);
         $sentenceCount = count($sentences);
         if ($sentenceCount === 0) {
             return ['error' => Craft::t('accessibility-audit', 'No sentences detected.')];
         }
 
-        $wordTokens = preg_split('/\s+/', trim((string) preg_replace('/[^a-zA-Z\s\'-]/', ' ', $text)));
+        // Words are counted over the sentences kept, so the fragments left out
+        // (labels and buttons of a word or two) do not lengthen every sentence.
+        $wordTokens = preg_split('/\s+/', trim((string) preg_replace('/[^a-zA-Z\s\'-]/', ' ', implode(' ', $sentences))));
         $words = array_values(array_filter($wordTokens ?: [], fn($w) => strlen($w) > 0));
         $wordCount = count($words);
         if ($wordCount === 0) {
@@ -537,11 +1422,32 @@ class ReadabilityService extends Component
     /**
      * Split text into sentences on terminal punctuation followed by a capital.
      *
+     * With `$paragraphsEndSentences`, a blank line ends a sentence as well, so
+     * a heading or a label with no full stop is not joined to the sentence
+     * after it.
+     *
      * @return string[]
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     * @param string $text The prose to split.
+     * @param bool $paragraphsEndSentences Whether a block's end closes a sentence.
      */
-    private function _extractSentences(string $text): array
+    private function _extractSentences(string $text, bool $paragraphsEndSentences = false): array
     {
-        $parts = preg_split('/(?<=[.!?])\s+(?=[A-Z"\'])/', $text) ?: [];
+        $blocks = $paragraphsEndSentences ? (preg_split('/\n\s*\n/', $text) ?: []) : [$text];
+        $parts = [];
+
+        foreach ($blocks as $block) {
+            if ($paragraphsEndSentences) {
+                $block = (string)preg_replace('/\s+/', ' ', $block);
+            }
+
+            foreach (preg_split('/(?<=[.!?])\s+(?=[A-Z"\'])/', $block) ?: [] as $part) {
+                $parts[] = $part;
+            }
+        }
+
         return array_values(array_filter(
             array_map('trim', $parts),
             fn($s) => str_word_count($s) >= 4
@@ -554,6 +1460,9 @@ class ReadabilityService extends Component
      *
      * @param string[] $sentences
      * @return string[]
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _findComplexSentences(array $sentences): array
     {
@@ -564,6 +1473,11 @@ class ReadabilityService extends Component
     /**
      * Count syllables in an English word using a vowel-group heuristic.
      * Accurate enough for FK scoring purposes; does not handle every exception.
+     *
+     * @return int
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     * @param string $word The word to count.
      */
     private function _countSyllables(string $word): int
     {
@@ -581,6 +1495,11 @@ class ReadabilityService extends Component
 
     /**
      * Human-readable label for a Flesch-Kincaid Reading Ease score.
+     *
+     * @return string
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     * @param float $score The reading-ease score.
      */
     private function _readingEaseLabel(float $score): string
     {
@@ -600,7 +1519,12 @@ class ReadabilityService extends Component
      * Returns an array with keys: summary, suggestions, jargon.
      * Returns null on failure (logged internally).
      *
-     * @return array{summary: string, suggestions: array, jargon: array}|null
+     * @return array{summary: string, suggestions: array<int, mixed>, jargon: array<int, mixed>}|null
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     * @param string $text The prose to send.
+     * @param string $apiKey The resolved Anthropic key.
      */
     private function _analyseWithClaude(string $text, string $apiKey): ?array
     {
@@ -626,15 +1550,11 @@ class ReadabilityService extends Component
             "TEXT:\n" . $text;
 
         try {
-            $client = Craft::createGuzzleClient(['timeout' => 30]);
-            $response = $client->post('https://api.anthropic.com/v1/messages', [
-                'headers' => [
-                    'x-api-key' => $apiKey,
-                    'anthropic-version' => '2023-06-01',
-                    'content-type' => 'application/json',
-                ],
+            $client = Craft::createGuzzleClient(Anthropic::clientConfig());
+            $response = $client->post(Anthropic::ENDPOINT, [
+                'headers' => Anthropic::headers($apiKey),
                 'json' => [
-                    'model' => 'claude-haiku-4-5-20251001',
+                    'model' => Anthropic::MODEL,
                     'max_tokens' => 1000,
                     'messages' => [
                         ['role' => 'user', 'content' => $prompt],

@@ -60,7 +60,7 @@ beforeEach(function() {
     $this->siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
     $this->elementId = (int) UserFactory::factory()->create()->id;
     $this->scanId = evidenceScan($this->elementId, $this->siteId);
-    $this->vpat = AccessibilityAudit::getInstance()->vpat;
+    $this->vpat = AccessibilityAudit::getInstance()->getVpat();
 
     // The development database carries real findings, and 1.3.1 is the busiest
     // criterion in the set. Rolled back with everything else.
@@ -421,7 +421,7 @@ it('says a site with no scans has none', function() {
 });
 
 it('hands the evidence to the report so the screen can show it', function() {
-    $report = AccessibilityAudit::getInstance()->vpat->getFullReport($this->siteId);
+    $report = AccessibilityAudit::getInstance()->getVpat()->getFullReport($this->siteId);
 
     expect($report['levelA']['1.1.1']['evidence']['checks'])->not->toBeNull();
 });

@@ -7,13 +7,15 @@
 namespace johnhenry\accessibilityaudit\jobs;
 
 use Craft;
+use craft\base\ElementInterface;
 use craft\queue\BaseJob;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use Throwable;
 
 /**
  * Scans a single element for accessibility issues in the background.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class ScanElementJob extends BaseJob
@@ -41,16 +43,20 @@ class ScanElementJob extends BaseJob
 
     /**
      * @inheritdoc
+     * @throws Throwable
      */
     public function execute($queue): void
     {
-        $element = Craft::$app->getElements()->getElementById($this->elementId, $this->elementType ?: null, $this->siteId);
+        /** @var class-string<ElementInterface>|null $elementType */
+        $elementType = $this->elementType ?: null;
+
+        $element = Craft::$app->getElements()->getElementById($this->elementId, $elementType, $this->siteId);
 
         if (!$element || !$element->getUrl()) {
             return;
         }
 
-        $result = AccessibilityAudit::getInstance()->audit->scanElement($element);
+        $result = AccessibilityAudit::getInstance()->getAudit()->scanElement($element);
 
         // On the Standard edition the distinct-page cap can refuse a brand-new
         // page. Treat that as a quiet skip: no exception, no failed job.

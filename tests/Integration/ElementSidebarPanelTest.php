@@ -27,9 +27,9 @@ function renderSidebarPanel(array $overrides = []): string
             'scan' => null,
             'issues' => [],
             'hasApiKey' => false,
-            'showReadabilityTab' => true,
             'readabilityPro' => false,
             'readabilityResult' => null,
+            'readabilityPreview' => false,
         ], $overrides),
         View::TEMPLATE_MODE_CP,
     );
@@ -55,6 +55,29 @@ it('renders on both editions', function() {
 
     AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
     expect(renderSidebarPanel(['readabilityPro' => true]))->toBeString();
+});
+
+it('shows the stored readability grade and links to the report, with no check of its own', function() {
+    // Checking a draft is the Readability preview's job; the tab only reports
+    // the stored result for the saved version.
+    $html = renderSidebarPanel([
+        'readabilityPro' => true,
+        'readabilityPreview' => true,
+        'readabilityResult' => [
+            'gradeLevel' => 12.5,
+            'readingEase' => 32.1,
+            'readingEaseLabel' => 'Difficult',
+            'dateAnalysed' => '2026-09-17 10:00:00',
+        ],
+    ]);
+
+    expect($html)
+        ->toContain('Grade 12.5')
+        ->toContain('3.5 over')
+        ->toContain('For the saved version')
+        ->toContain('Readability report')
+        ->toContain('in the Preview menu')
+        ->not->toContain('readability/analyse');
 });
 
 it('lists a repeated rule once, with its occurrence count', function() {
@@ -86,21 +109,15 @@ it('counts occurrences in the tab badge, not grouped rows', function() {
     expect($html)->toContain('accessibility-audit-panel__badge">7<');
 });
 
-// The body of registerElementSidebarPanel(), for the source assertions below.
+// The body of _registerElementSidebarPanel(), for the source assertions below.
 // Read from source rather than exercised, because the registration happens once
 // at plugin init and cannot be re-run inside a test.
 function sidebarPanelRegistration(): string
 {
-    $source = file_get_contents(dirname(__DIR__, 2) . '/src/AccessibilityAudit.php');
-    $start = strpos($source, 'registerElementSidebarPanel(): void');
-
-    if ($start === false) {
-        return '';
-    }
-
-    $end = strpos($source, "\n    private function ", $start);
-
-    return substr($source, $start, $end === false ? null : $end - $start);
+    // Resolved through the method rather than a file path: the registration
+    // lives on a trait the plugin class pulls in, and a source assertion that
+    // hardcodes a path goes quietly green the moment the method moves.
+    return pluginMethodSource('_registerElementSidebarPanel');
 }
 
 it('registers for every element type the scanner covers, not just entries', function() {

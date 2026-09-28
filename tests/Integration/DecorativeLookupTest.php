@@ -113,3 +113,50 @@ it('hands the whole set over for a template that wants it', function() {
 
     expect((new AccessibilityVariable())->decorativeAssetIds())->toHaveKey($id);
 });
+
+it('keeps the memoised set through a write instead of dropping it', function() {
+    // Marking images in bulk sets them one at a time, and the audit sync after
+    // each one asks whether it is decorative. Dropping the set on every write
+    // turned that into a full read of the flags table per image selected, which
+    // is the cost the memo is there to avoid.
+    //
+    // Asserted on the memo rather than on a query count: Yii loads table schemas
+    // lazily, so a counted block is worth a different number of queries warm
+    // than cold, and the figure is not stable enough to pin anything to.
+    $ids = decorativeTestAssetIds(2);
+    $assets = AccessibilityAudit::getInstance()->getAssets();
+    $memo = new ReflectionProperty($assets, '_decorativeIds');
+
+    // Warm the set, then write.
+    $assets->isDecorative($ids[0]);
+    expect($memo->getValue($assets))->not->toBeNull();
+
+    $assets->setDecorative($ids[1], true);
+
+    expect($memo->getValue($assets))->not->toBeNull()
+        ->and($memo->getValue($assets))->toHaveKey($ids[1]);
+
+    $assets->setDecorative($ids[1], false);
+
+    expect($memo->getValue($assets))->not->toBeNull()
+        ->and($memo->getValue($assets))->not->toHaveKey($ids[1]);
+});
+
+it('still answers correctly for every image marked in bulk', function() {
+    $ids = decorativeTestAssetIds(6);
+    $assets = AccessibilityAudit::getInstance()->getAssets();
+
+    foreach ($ids as $id) {
+        $assets->setDecorative($id, true);
+    }
+
+    foreach ($ids as $id) {
+        expect($assets->isDecorative($id))->toBeTrue();
+    }
+
+    // And unmarking takes them back out of the set it is holding.
+    $assets->setDecorative($ids[0], false);
+
+    expect($assets->isDecorative($ids[0]))->toBeFalse()
+        ->and($assets->isDecorative($ids[1]))->toBeTrue();
+});

@@ -5,6 +5,7 @@
  */
 
 use johnhenry\accessibilityaudit\helpers\AccessibleName;
+use johnhenry\accessibilityaudit\helpers\LinkContext;
 
 // ---------------------------------------------------------------------------
 // The name a screen reader announces.
@@ -29,6 +30,22 @@ function nameOf(string $html, string $tag = 'a'): string
     expect($el)->toBeInstanceOf(DOMElement::class);
 
     return AccessibleName::for($el, $xpath);
+}
+
+/** Names the first landmark in a fragment, the way LinkContext does. */
+function landmarkName(string $html, string $tag = 'nav'): string
+{
+    $dom = new DOMDocument('1.0', 'utf-8');
+    libxml_use_internal_errors(true);
+    $dom->loadHTML('<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_NOWARNING | LIBXML_NOERROR);
+    libxml_clear_errors();
+
+    $xpath = new DOMXPath($dom);
+    $el = $xpath->query('//' . $tag)->item(0);
+
+    expect($el)->toBeInstanceOf(DOMElement::class);
+
+    return LinkContext::nameOf($el, $xpath);
 }
 
 describe('AccessibleName precedence', function() {
@@ -105,5 +122,40 @@ describe('AccessibleName safety', function() {
         // break out of it. Such an id is skipped rather than built into a query.
         expect(nameOf('<a href="/" aria-labelledby=\'x" or "1\' aria-label="Safe">x</a>'))
             ->toBe('Safe');
+    });
+});
+
+describe('AccessibleName referenced elements', function() {
+    it('counts an aria-hidden element that aria-labelledby points straight at', function() {
+        // Pointing at something by id is a deliberate act and screen readers
+        // announce it, so treating it as hidden reports a named link as unnamed.
+        expect(nameOf(
+            '<span id="lbl" aria-hidden="true">Download the annual report</span>'
+            . '<a href="/r.pdf" aria-labelledby="lbl"></a>'
+        ))->toBe('Download the annual report');
+    });
+
+    it('still ignores an aria-hidden branch inside a referenced element', function() {
+        expect(nameOf(
+            '<span id="lbl">Download<span aria-hidden="true"> →</span></span>'
+            . '<a href="/r.pdf" aria-labelledby="lbl"></a>'
+        ))->toBe('Download');
+    });
+});
+
+describe('LinkContext landmark naming', function() {
+    it('names a landmark by aria-labelledby ahead of its own aria-label', function() {
+        expect(landmarkName(
+            '<h2 id="h">Site navigation</h2>'
+            . '<nav aria-labelledby="h" aria-label="ignored"></nav>'
+        ))->toBe('Site navigation');
+    });
+
+    it('falls back to aria-label when nothing is referenced', function() {
+        expect(landmarkName('<nav aria-label="Footer links"></nav>'))->toBe('Footer links');
+    });
+
+    it('leaves a landmark with neither unnamed', function() {
+        expect(landmarkName('<nav></nav>'))->toBe('');
     });
 });

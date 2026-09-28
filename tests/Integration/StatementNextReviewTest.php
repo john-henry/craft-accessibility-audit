@@ -110,7 +110,7 @@ describe('the published statement', function() {
         $meta->profile = StatementProfiles::PROFILE_GENERIC;
         $meta->reviewDate = '2026-09-04';
         $meta->nextReviewDate = '2027-09-04';
-        AccessibilityAudit::getInstance()->statement->saveMeta($siteId, $meta);
+        AccessibilityAudit::getInstance()->getStatement()->saveMeta($siteId, $meta);
 
         $html = (string)(new AccessibilityVariable())->accessibilityStatementHtml($siteId);
 
@@ -124,7 +124,7 @@ describe('the published statement', function() {
         $meta = new StatementMetaModel();
         $meta->profile = StatementProfiles::PROFILE_GENERIC;
         $meta->reviewDate = '2026-09-04';
-        AccessibilityAudit::getInstance()->statement->saveMeta($siteId, $meta);
+        AccessibilityAudit::getInstance()->getStatement()->saveMeta($siteId, $meta);
 
         $html = (string)(new AccessibilityVariable())->accessibilityStatementHtml($siteId);
 
@@ -138,7 +138,7 @@ describe('the published statement', function() {
         $meta = new StatementMetaModel();
         $meta->profile = StatementProfiles::PROFILE_GENERIC;
         $meta->nextReviewDate = '2027-09-04';
-        AccessibilityAudit::getInstance()->statement->saveMeta($siteId, $meta);
+        AccessibilityAudit::getInstance()->getStatement()->saveMeta($siteId, $meta);
 
         $html = (string)(new AccessibilityVariable())->accessibilityStatementHtml($siteId);
 

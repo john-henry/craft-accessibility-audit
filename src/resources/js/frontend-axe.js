@@ -42,6 +42,56 @@
   /* False inside Craft's preview pane: findings are shown but never posted. */
   const storeResults = cfg.storeResults !== false;
 
+  // ─── Localised strings ────────────────────────────────────────────────────
+  /* Translated server-side (OverlayService::_overlayStrings) into the same
+     language cfg.lang reports, so a screen reader announces the panel
+     correctly. The English fallback below only covers a config carrying no
+     strings key, which stored snapshots from before this payload existed
+     could still do for one session. */
+  const strings = Object.assign({
+    title: 'Accessibility Audit',
+    rescan: 'Re-scan',
+    scanning: 'Scanning…',
+    closePanel: 'Close panel',
+    resultsLabel: 'Results',
+    tabIssues: 'Issues',
+    tabPassed: 'Passed',
+    clickRescanHint: 'Click "Re-scan" to analyse this page for WCAG issues.',
+    previewNotSaved: 'Preview: results are not saved',
+    scannedPrefix: 'Scanned {label}',
+    openFullReport: 'Open full report',
+    axeNotFound: 'axe-core could not be located.',
+    runningAxe: 'Running axe-core…',
+    axeErrorPrefix: 'axe-core error: {message}',
+    noIssues: 'No issues found on this page.',
+    noPasses: 'No passing checks recorded for this page.',
+    highlight: 'Highlight',
+    loadingStored: 'Loading stored results…',
+    loadFailed: 'Couldn\'t load the stored scan. Click "Re-scan" to run a live check.',
+    hiddenTargetNotice: 'The highlighted element is inside a collapsed menu or panel. Open it to see the flash.',
+    openPanel: 'Open Accessibility Audit panel',
+    openPanelIssueSingular: 'Open Accessibility Audit panel, {count} issue',
+    openPanelIssuePlural: 'Open Accessibility Audit panel, {count} issues',
+    sevError: 'Error',
+    sevWarning: 'Warning',
+    sevNotice: 'Notice',
+    sevReview: 'Review',
+    bestPractice: 'best practice',
+    elementSingular: '{count} element',
+    elementPlural: '{count} elements',
+    contrastBelowMin: 'Colour contrast below the minimum ratio',
+    contrastNeedsReview: 'Colour contrast needs manual review',
+    scoreEstimated: '/100 est.',
+    scoreFinal: '/100',
+  }, cfg.strings || {});
+  const lang = cfg.lang || '';
+
+  /* Fills a translated string's {token} placeholders with runtime values: the
+     count or label they carry is only known client-side. */
+  function fmt(str, params) {
+    return str.replace(/\{(\w+)\}/g, (match, key) => (key in params ? params[key] : match));
+  }
+
   // Auto-scan only when the page has a known element to attach results to,
   // or when there is nothing to attach to but the scan is still worth running.
   const canAutoScan = (scanId > 0 || elementId > 0 || !storeResults);
@@ -131,7 +181,7 @@
     const src = cfg.axeSrc;
     if (!src) {
       const body = document.getElementById('accessibility-audit-overlay-body');
-      if (body) body.innerHTML = '<p class="accessibility-audit-error">axe-core could not be located.</p>';
+      if (body) body.innerHTML = `<p class="accessibility-audit-error">${esc(strings.axeNotFound)}</p>`;
       return;
     }
     const s = document.createElement('script');
@@ -150,35 +200,37 @@
     panelEl.setAttribute('role', 'dialog');
     panelEl.setAttribute('aria-labelledby', 'accessibility-audit-overlay-title');
     panelEl.setAttribute('aria-modal', 'false');
+    if (lang) panelEl.lang = lang;
     panelEl.classList.add('accessibility-audit-hidden');
     panelEl.innerHTML = `
       <div id="accessibility-audit-overlay-header">
         <span class="accessibility-audit-hdr-badge">A11Y</span>
-        <h2 id="accessibility-audit-overlay-title">Accessibility Audit</h2>
-        <button id="accessibility-audit-overlay-scan" class="accessibility-audit-btn">Re-scan</button>
-        <button id="accessibility-audit-overlay-close" aria-label="Close panel">✕</button>
+        <h2 id="accessibility-audit-overlay-title">${esc(strings.title)}</h2>
+        <button id="accessibility-audit-overlay-scan" class="accessibility-audit-btn">${esc(strings.rescan)}</button>
+        <button id="accessibility-audit-overlay-close" aria-label="${esc(strings.closePanel)}">✕</button>
       </div>
       <div id="accessibility-audit-overlay-summary">
         <div class="accessibility-audit-score-wrap">
-          <span class="accessibility-audit-score__number">–</span><span class="accessibility-audit-score__label">/100 est.</span>
+          <span class="accessibility-audit-score__number">–</span><span class="accessibility-audit-score__label">${esc(strings.scoreEstimated)}</span>
         </div>
-        <div class="accessibility-audit-tabs" role="tablist" aria-label="Results">
-          <button class="accessibility-audit-tab accessibility-audit-tab--active" role="tab" data-tab="issues" aria-selected="true">Issues · <span data-count-issues>0</span></button>
-          <button class="accessibility-audit-tab" role="tab" data-tab="passed" aria-selected="false">Passed · <span data-count-passed>0</span></button>
+        <div class="accessibility-audit-tabs" role="tablist" aria-label="${esc(strings.resultsLabel)}">
+          <button id="accessibility-audit-tab-issues" class="accessibility-audit-tab accessibility-audit-tab--active" role="tab" data-tab="issues" aria-selected="true" aria-controls="accessibility-audit-overlay-body" tabindex="0">${esc(strings.tabIssues)} · <span data-count-issues>0</span></button>
+          <button id="accessibility-audit-tab-passed" class="accessibility-audit-tab" role="tab" data-tab="passed" aria-selected="false" aria-controls="accessibility-audit-overlay-body" tabindex="-1">${esc(strings.tabPassed)} · <span data-count-passed>0</span></button>
         </div>
       </div>
-      <div id="accessibility-audit-overlay-body" aria-live="polite" aria-atomic="false">
-        <p class="accessibility-audit-hint">Click "Re-scan" to analyse this page for WCAG issues.</p>
+      <div id="accessibility-audit-overlay-body" role="tabpanel" tabindex="0" aria-labelledby="accessibility-audit-tab-issues" aria-live="polite" aria-atomic="false">
+        <p class="accessibility-audit-hint">${esc(strings.clickRescanHint)}</p>
       </div>
       <div id="accessibility-audit-overlay-footer">
-        <span class="accessibility-audit-scanned" data-scanned>${storeResults ? '' : 'Preview: results are not saved'}</span>
-        ${reportUrl ? `<a class="accessibility-audit-report-link" href="${esc(reportUrl)}" target="_blank" rel="noopener">Open full report ↗</a>` : ''}
+        <span class="accessibility-audit-scanned" data-scanned>${storeResults ? '' : esc(strings.previewNotSaved)}</span>
+        ${reportUrl ? `<a class="accessibility-audit-report-link" href="${esc(reportUrl)}" target="_blank" rel="noopener">${esc(strings.openFullReport)} ↗</a>` : ''}
       </div>`;
     document.body.appendChild(panelEl);
 
     triggerEl = document.createElement('button');
     triggerEl.id = 'accessibility-audit-overlay-trigger';
     triggerEl.className = posClass;
+    if (lang) triggerEl.lang = lang;
     triggerEl.setAttribute('aria-expanded', 'false');
     triggerEl.setAttribute('aria-controls', 'accessibility-audit-overlay');
     document.body.appendChild(triggerEl);
@@ -192,8 +244,26 @@
     });
 
     /* Tab switching */
-    panelEl.querySelectorAll('.accessibility-audit-tab').forEach((tab) => {
+    const tabEls = Array.from(panelEl.querySelectorAll('.accessibility-audit-tab'));
+    tabEls.forEach((tab) => {
       tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+    });
+
+    /* Declaring role="tablist" promises arrow-key navigation, so it has to be
+       here: without it the roles announce a control the keyboard cannot work. */
+    panelEl.querySelector('.accessibility-audit-tabs').addEventListener('keydown', (e) => {
+      const current = tabEls.indexOf(e.target);
+      if (current === -1) return;
+
+      let next = null;
+      if (e.key === 'ArrowRight') next = (current + 1) % tabEls.length;
+      else if (e.key === 'ArrowLeft') next = (current - 1 + tabEls.length) % tabEls.length;
+      else if (e.key === 'Home') next = 0;
+      else if (e.key === 'End') next = tabEls.length - 1;
+      if (next === null) return;
+
+      e.preventDefault();
+      switchTab(tabEls[next].dataset.tab, true);
     });
 
     /* Highlight an issue's element on the page (event-delegated) */
@@ -223,22 +293,22 @@
     const btn  = document.getElementById('accessibility-audit-overlay-scan');
     const body = document.getElementById('accessibility-audit-overlay-body');
 
-    if (btn) { btn.textContent = 'Scanning…'; btn.disabled = true; }
-    if (!opts.silent && body) body.innerHTML = '<p class="accessibility-audit-hint">Running axe-core…</p>';
+    if (btn) { btn.textContent = strings.scanning; btn.disabled = true; }
+    if (!opts.silent && body) body.innerHTML = `<p class="accessibility-audit-hint">${esc(strings.runningAxe)}</p>`;
 
     loadAxe(() => {
       window.axe.run(
-        { include: [[document.documentElement]], exclude: [['#accessibility-audit-overlay'], ['#accessibility-audit-overlay-trigger']].concat(axeExclude) },
+        { include: [[document.documentElement]], exclude: [['#accessibility-audit-overlay'], ['#accessibility-audit-overlay-trigger'], ['#accessibility-audit-overlay-hl']].concat(axeExclude) },
         {
           runOnly: { type: 'tag', values: axeTags },
           /* violations + incomplete drive the Issues tab; passes drive the Passed tab */
           resultTypes: ['violations', 'incomplete', 'passes'],
         },
         (err, results) => {
-          if (btn) { btn.disabled = false; btn.textContent = 'Re-scan'; }
+          if (btn) { btn.disabled = false; btn.textContent = strings.rescan; }
 
           if (err) {
-            if (body) body.innerHTML = `<p class="accessibility-audit-error">axe-core error: ${esc(err.message)}</p>`;
+            if (body) body.innerHTML = `<p class="accessibility-audit-error">${esc(fmt(strings.axeErrorPrefix, { message: err.message }))}</p>`;
             return;
           }
 
@@ -323,12 +393,12 @@
     if (wrap) wrap.className = 'accessibility-audit-score-wrap' + (scoreClass ? ' accessibility-audit-score--' + scoreClass : '');
     /* Stored scans carry an authoritative score; live scans are an estimate. */
     const label = panelEl.querySelector('.accessibility-audit-score__label');
-    if (label) label.textContent = estimated ? '/100 est.' : '/100';
+    if (label) label.textContent = estimated ? strings.scoreEstimated : strings.scoreFinal;
     const scanned = panelEl.querySelector('[data-scanned]');
     if (scanned) {
       scanned.textContent = storeResults
-        ? (scannedLabel ? 'Scanned ' + scannedLabel : '')
-        : 'Preview: results are not saved';
+        ? (scannedLabel ? fmt(strings.scannedPrefix, { label: scannedLabel }) : '')
+        : strings.previewNotSaved;
     }
   }
 
@@ -357,7 +427,7 @@
     const sev = row.severity || 'notice';
     const wcag = row.wcagCriterion
       ? ('WCAG ' + row.wcagCriterion + (row.wcagLevel ? ' ' + String(row.wcagLevel).toUpperCase() : ''))
-      : 'best practice';
+      : strings.bestPractice;
     return {
       sev: sev,
       sevLabel: sevLabel(sev),
@@ -378,7 +448,7 @@
     setScoreHeader(summary.score, scoreClass, summary.scannedLabel, false);
 
     const body = document.getElementById('accessibility-audit-overlay-body');
-    if (body && !opts.keepPasses) body.innerHTML = '<p class="accessibility-audit-hint">Loading stored results…</p>';
+    if (body && !opts.keepPasses) body.innerHTML = `<p class="accessibility-audit-hint">${esc(strings.loadingStored)}</p>`;
 
     const sep = pageIssuesUrl.includes('?') ? '&' : '?';
     const url = pageIssuesUrl + sep + 'scanId=' + encodeURIComponent(scanId) + '&siteId=' + encodeURIComponent(siteId);
@@ -406,7 +476,7 @@
         saveSnapshot(snap);
       })
       .catch(() => {
-        if (body && !opts.keepPasses) body.innerHTML = '<p class="accessibility-audit-hint">Couldn\'t load the stored scan. Click "Re-scan" to run a live check.</p>';
+        if (body && !opts.keepPasses) body.innerHTML = `<p class="accessibility-audit-hint">${esc(strings.loadFailed)}</p>`;
       });
   }
 
@@ -428,8 +498,8 @@
     if (extraContrast.length > 0) {
       list.push({
         sev: 'error',
-        sevLabel: 'Error',
-        title: 'Colour contrast below the minimum ratio',
+        sevLabel: strings.sevError,
+        title: strings.contrastBelowMin,
         wcag: 'WCAG 1.4.3 AA',
         count: extraContrast.length,
         targets: [],
@@ -444,8 +514,8 @@
       }));
       list.push({
         sev: 'notice',
-        sevLabel: 'Review',
-        title: 'Colour contrast needs manual review',
+        sevLabel: strings.sevReview,
+        title: strings.contrastNeedsReview,
         wcag: 'WCAG 1.4.3 AA',
         count: count,
         targets: targets,
@@ -455,12 +525,21 @@
     return list;
   }
 
-  function switchTab(tab) {
+  function switchTab(tab, focusTab) {
     state.tab = tab;
     panelEl.querySelectorAll('.accessibility-audit-tab').forEach((t) => {
       const active = t.dataset.tab === tab;
       t.classList.toggle('accessibility-audit-tab--active', active);
       t.setAttribute('aria-selected', String(active));
+      /* Only the selected tab sits in the tab sequence; the arrow keys below
+         reach the others. One Tab press then leaves the tablist, which is what
+         someone navigating by keyboard expects of tabs. */
+      t.setAttribute('tabindex', active ? '0' : '-1');
+      if (active) {
+        const body = document.getElementById('accessibility-audit-overlay-body');
+        if (body) body.setAttribute('aria-labelledby', t.id);
+        if (focusTab) t.focus();
+      }
     });
     renderTab(tab);
   }
@@ -473,45 +552,100 @@
       : renderIssuesHtml(state.issues);
   }
 
+  function elementCount(count) {
+    return esc(fmt(count === 1 ? strings.elementSingular : strings.elementPlural, { count: count }));
+  }
+
   function renderIssuesHtml(issues) {
     if (!issues.length) {
-      return '<p class="accessibility-audit-clean">✓ No issues found on this page.</p>';
+      return `<p class="accessibility-audit-clean"><span aria-hidden="true">✓</span> ${esc(strings.noIssues)}</p>`;
     }
     return '<ul class="accessibility-audit-issues">' + issues.map((it, i) => `
       <li class="accessibility-audit-issue">
-        <span class="accessibility-audit-issue__dot accessibility-audit-dot--${it.sev}"></span>
+        <span class="accessibility-audit-issue__dot accessibility-audit-dot--${esc(it.sev)}" aria-hidden="true"></span>
         <span class="accessibility-audit-issue__main">
           <span class="accessibility-audit-issue__title">${esc(it.title)}</span>
-          <span class="accessibility-audit-issue__meta">${esc(it.sevLabel)} · ${esc(it.wcag)} · ${it.count} element${it.count !== 1 ? 's' : ''}</span>
+          <span class="accessibility-audit-issue__meta">${esc(it.sevLabel)} · ${esc(it.wcag)} · ${elementCount(it.count)}</span>
         </span>
-        ${it.targets.length ? `<button type="button" class="accessibility-audit-highlight" data-hl="${i}">Highlight</button>` : ''}
+        ${it.targets.length ? `<button type="button" class="accessibility-audit-highlight" data-hl="${i}">${esc(strings.highlight)}</button>` : ''}
       </li>`).join('') + '</ul>';
   }
 
   function renderPassesHtml(passes) {
     if (!passes.length) {
-      return '<p class="accessibility-audit-hint">No passing checks recorded for this page.</p>';
+      return `<p class="accessibility-audit-hint">${esc(strings.noPasses)}</p>`;
     }
     return '<ul class="accessibility-audit-issues accessibility-audit-passes">' + passes.map((p) => `
       <li class="accessibility-audit-issue accessibility-audit-pass">
-        <span class="accessibility-audit-issue__dot accessibility-audit-dot--good">✓</span>
+        <span class="accessibility-audit-issue__dot accessibility-audit-dot--good" aria-hidden="true">✓</span>
         <span class="accessibility-audit-issue__main">
           <span class="accessibility-audit-issue__title">${esc(p.title)}</span>
-          <span class="accessibility-audit-issue__meta">${p.count} element${p.count !== 1 ? 's' : ''}</span>
+          <span class="accessibility-audit-issue__meta">${elementCount(p.count)}</span>
         </span>
       </li>`).join('') + '</ul>';
   }
 
   // ─── Highlight an offending element on the page ──────────────────────────
+  /* Boxes are drawn in a layer of their own over the page, not on the
+     element: an outline on the element is clipped by any ancestor with
+     `overflow: hidden`, and restyling it can change what the next scan reads.
+     The layer follows scrolling and resizing until the next highlight. */
+  const HL_GAP = 5; // 2px clear of the element, then the 3px border
+  let hlBoxes = [];
+  let hlFrame = 0;
+  let hlWatching = false;
+
+  function placeHighlights() {
+    hlFrame = 0;
+    const layer = document.getElementById('accessibility-audit-overlay-hl');
+    if (!layer || !hlBoxes.length) return;
+    const origin = layer.getBoundingClientRect();
+    hlBoxes.forEach(({ el, box }) => {
+      const r = el.getBoundingClientRect();
+      if (!el.isConnected || (r.width === 0 && r.height === 0)) {
+        box.style.display = 'none';
+        return;
+      }
+      box.style.display = '';
+      box.style.left = (r.left - origin.left - HL_GAP) + 'px';
+      box.style.top = (r.top - origin.top - HL_GAP) + 'px';
+      box.style.width = (r.width + HL_GAP * 2) + 'px';
+      box.style.height = (r.height + HL_GAP * 2) + 'px';
+    });
+  }
+
+  function schedulePlaceHighlights() {
+    if (!hlFrame) hlFrame = requestAnimationFrame(placeHighlights);
+  }
+
   function highlightElement(targets) {
-    document.querySelectorAll('.accessibility-audit-hl-flash').forEach((el) => el.classList.remove('accessibility-audit-hl-flash'));
+    let layer = document.getElementById('accessibility-audit-overlay-hl');
+    if (!layer) {
+      layer = document.createElement('div');
+      layer.id = 'accessibility-audit-overlay-hl';
+      layer.setAttribute('aria-hidden', 'true');
+    }
+    layer.textContent = '';
+    document.documentElement.appendChild(layer);
+    hlBoxes = [];
+
+    if (!hlWatching) {
+      hlWatching = true;
+      document.addEventListener('scroll', schedulePlaceHighlights, { capture: true, passive: true });
+      window.addEventListener('resize', schedulePlaceHighlights);
+      if (window.ResizeObserver) new ResizeObserver(schedulePlaceHighlights).observe(document.documentElement);
+    }
+
     let first = null;
     let firstVisible = null;
     (targets || []).forEach((sel) => {
       try {
         const el = document.querySelector(sel);
         if (el && !el.closest('#accessibility-audit-overlay')) {
-          el.classList.add('accessibility-audit-hl-flash');
+          const box = document.createElement('div');
+          box.className = 'accessibility-audit-overlay-hl-box';
+          layer.appendChild(box);
+          hlBoxes.push({ el, box });
           if (!first) first = el;
           /* Prefer scrolling to an element still on screen: one may have
              gone hidden since the scan (a menu that has closed). */
@@ -519,6 +653,7 @@
         }
       } catch (_) { /* invalid selector, skip */ }
     });
+    placeHighlights();
     const scrollTarget = firstVisible || first;
     if (scrollTarget) scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
     // Everything matched is off screen: say so, or the click looks inert.
@@ -534,13 +669,14 @@
     if (existing) existing.remove();
     const el = document.createElement('div');
     el.id = 'accessibility-audit-hl-note';
+    if (lang) el.lang = lang;
     el.setAttribute('role', 'status');
     el.style.cssText =
       'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:2147483647;' +
       'max-width:340px;padding:10px 14px;border-radius:8px;' +
       'font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;background:#1f2937;' +
       'box-shadow:0 4px 12px rgb(0 0 0 / 25%);';
-    el.textContent = 'The highlighted element is inside a collapsed menu or panel. Open it to see the flash.';
+    el.textContent = strings.hiddenTargetNotice;
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 6000);
   }
@@ -553,8 +689,8 @@
         ? `<span class="accessibility-audit-trigger-dot accessibility-audit-dot--${worstSev}"></span><span class="accessibility-audit-trigger-count">${count}</span>`
         : '');
     triggerEl.setAttribute('aria-label', count > 0
-      ? `Open Accessibility Audit panel, ${count} issue${count !== 1 ? 's' : ''}`
-      : 'Open Accessibility Audit panel');
+      ? fmt(count === 1 ? strings.openPanelIssueSingular : strings.openPanelIssuePlural, { count: count })
+      : strings.openPanel);
   }
 
   // ─── Store violations via AJAX ────────────────────────────────────────────
@@ -628,10 +764,10 @@
     const opts = {
       limit: 50,
       htmlLength: 150,
-      /* Skip the overlay itself, and the excluded page furniture (consent
-         banners etc.) that axe is skipping too. */
+      /* Skip the overlay and its highlight layer, and the excluded page
+         furniture (consent banners etc.) that axe is skipping too. */
       skipEl: function (el) {
-        if (el.closest('#accessibility-audit-overlay, #accessibility-audit-overlay-trigger')) return true;
+        if (el.closest('#accessibility-audit-overlay, #accessibility-audit-overlay-trigger, #accessibility-audit-overlay-hl')) return true;
         if (!excludeJoined) return false;
         try { return !!el.closest(excludeJoined); } catch (_) { return false; }
       },
@@ -649,17 +785,18 @@
   }
 
   function sevLabel(sev) {
-    return { error: 'Error', warning: 'Warning', notice: 'Notice', review: 'Review' }[sev] || 'Notice';
+    return { error: strings.sevError, warning: strings.sevWarning, notice: strings.sevNotice, review: strings.sevReview }[sev] || strings.sevNotice;
   }
 
-  /* Turn axe tags into "WCAG 2.5.8 AA", or "best practice" when no SC applies. */
+  /* Turn axe tags into "WCAG 2.5.8 AA", or the localised "best practice" when
+     no SC applies. */
   function wcagString(tags) {
     var sc = '';
     for (var i = 0; i < tags.length; i++) {
       var m = /^wcag(\d)(\d)(\d+)$/.exec(tags[i]);
       if (m) { sc = m[1] + '.' + m[2] + '.' + m[3]; break; }
     }
-    if (!sc) return 'best practice';
+    if (!sc) return strings.bestPractice;
     var level = 'A';
     if (tags.some((t) => /aaa$/.test(t))) level = 'AAA';
     else if (tags.some((t) => /aa$/.test(t))) level = 'AA';
@@ -676,15 +813,15 @@
   function formatNow() {
     try {
       var d = new Date();
-      return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
-        + ', ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      return d.toLocaleDateString(lang || undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+        + ', ' + d.toLocaleTimeString(lang || undefined, { hour: '2-digit', minute: '2-digit' });
     } catch (_) { return ''; }
   }
 
   function esc(s) {
     return window.AccessibilityAuditShared
       ? AccessibilityAuditShared.escHtml(s)
-      : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   // ─── Boot ─────────────────────────────────────────────────────────────────

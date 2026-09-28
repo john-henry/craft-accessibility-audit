@@ -7,7 +7,6 @@
 namespace johnhenry\accessibilityaudit\controllers;
 
 use Craft;
-use craft\db\Query;
 use craft\elements\Asset;
 use craft\errors\MissingComponentException;
 use craft\errors\SiteNotFoundException;
@@ -15,6 +14,7 @@ use craft\helpers\Json;
 use craft\web\Controller;
 use DateTime;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\helpers\Csv;
 use johnhenry\accessibilityaudit\jobs\AuditAssets;
 use johnhenry\accessibilityaudit\jobs\ScanElements;
 use johnhenry\accessibilityaudit\services\AuditService;
@@ -32,11 +32,19 @@ use yii\web\Response;
  * Handles on-demand and queued accessibility scans, and stores client-side
  * axe-core and contrast results.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class AuditController extends Controller
 {
+    // Traits
+    // =========================================================================
+
+    use AxeResultsTrait;
+
+    // Protected Properties
+    // =========================================================================
+
     /**
      * @inheritdoc
      */
@@ -46,14 +54,18 @@ class AuditController extends Controller
      * POST /accessibility-audit/scan-entry
      * Triggers an immediate scan of an entry and returns JSON results.
      *
+     * @return Response
      * @throws SiteNotFoundException
      * @throws MethodNotAllowedHttpException
-     * @throws ForbiddenHttpException
+     * @throws ForbiddenHttpException|Throwable
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionScanEntry(): Response
     {
         $this->requirePostRequest();
-        $this->requirePermission('accessibility-audit:runScans');
+        $this->requirePermission('accessibility-audit:run-scans');
 
         $elementId = (int) ($this->request->getBodyParam('entryId') ?: $this->request->getBodyParam('elementId'));
         $siteId = (int) ($this->request->getBodyParam('siteId') ?: Craft::$app->getSites()->getPrimarySite()->id);
@@ -63,16 +75,20 @@ class AuditController extends Controller
         }
 
         $entry = Craft::$app->getElements()->getElementById($elementId, null, $siteId);
-        if (!$entry) {
+
+        // Scanning fetches the page and stores what is on it for anyone with
+        // the reports to read, so it is limited to elements this user can view.
+        // One answer for both, so the refusal doesn't say the element exists.
+        if (!$entry || !Craft::$app->getElements()->canView($entry)) {
             return $this->asJson(['success' => false, 'error' => Craft::t('accessibility-audit', 'Element not found.')]);
         }
 
         // The Inspect page sends skipHeadless: its preview runs the browser
         // pass itself, so queueing the headless job too would set up a race
         // where two engines overwrite each other's findings on one scan.
-        $withHeadless = !(bool) $this->request->getBodyParam('skipHeadless', false);
+        $withHeadless = !$this->request->getBodyParam('skipHeadless', false);
 
-        $result = AccessibilityAudit::getInstance()->audit->scanElement($entry, $withHeadless);
+        $result = AccessibilityAudit::getInstance()->getAudit()->scanElement($entry, $withHeadless);
 
         // Standard edition hit the distinct-page cap for a brand-new page.
         // Surface it distinctly so the sidebar JS can show an upgrade message
@@ -129,13 +145,15 @@ class AuditController extends Controller
      * @throws SiteNotFoundException
      * @throws MethodNotAllowedHttpException
      * @throws ForbiddenHttpException
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
     public function actionScanUrl(): Response
     {
         $this->requirePostRequest();
-        $this->requirePermission('accessibility-audit:runScans');
+        $this->requirePermission('accessibility-audit:run-scans');
 
         $url = trim((string) $this->request->getBodyParam('url', ''));
         $siteId = (int) ($this->request->getBodyParam('siteId') ?: Craft::$app->getSites()->getPrimarySite()->id);
@@ -144,7 +162,7 @@ class AuditController extends Controller
             return $refusal;
         }
 
-        $audit = AccessibilityAudit::getInstance()->audit;
+        $audit = AccessibilityAudit::getInstance()->getAudit();
 
         if ($url === '' || !$audit->isKnownScanUrl($url, $siteId)) {
             return $this->asJson([
@@ -156,7 +174,7 @@ class AuditController extends Controller
         // Same reason as scan-entry: the Inspect page runs the browser pass
         // itself, so queueing the headless job too would have two engines
         // overwriting each other on the one scan.
-        $withHeadless = !(bool) $this->request->getBodyParam('skipHeadless', false);
+        $withHeadless = !$this->request->getBodyParam('skipHeadless', false);
 
         $result = $audit->scanUrl($url, $siteId, $withHeadless);
 
@@ -183,26 +201,46 @@ class AuditController extends Controller
      * POST /accessibility-audit/scan-all
      * Queues a single batched background scan for all published elements with URLs.
      *
+     * @return Response
      * @throws SiteNotFoundException
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws MethodNotAllowedHttpException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionScanAll(): Response
     {
         $this->requirePostRequest();
-        $this->requirePermission('accessibility-audit:runScans');
+        $this->requirePermission('accessibility-audit:run-scans');
 
         // Multi-site is Pro: on Standard, a batch scan only ever covers the
         // primary site, whatever siteId is posted.
         $plugin = AccessibilityAudit::getInstance();
         $siteId = $plugin->resolveSiteId($this->request->getBodyParam('siteId'));
-        $audit = $plugin->audit;
+        $audit = $plugin->getAudit();
+
+        // A second sweep of the same site does the same work twice, competing
+        // for the same pages and the same Chrome, and the reader gets no more
+        // out of it than the first was already going to give them. Refused the
+        // way a second readability run is.
+        if ($audit->isSweepRunning($siteId)) {
+            return $this->asJson([
+                'success' => false,
+                'error' => Craft::t('accessibility-audit', 'Every page on this site is already being scanned. The report fills as it goes.'),
+            ]);
+        }
 
         // The configured URLs are swept alongside the elements, so they count
         // towards what was queued.
         $count = (int) $audit->getUrlElementsQuery($siteId)->count()
             + count($plugin->getSettings()->resolvedCustomUrls($siteId));
+
+        // Flagged here rather than waiting for the job to start: the queue may
+        // not pick it up for a while, and a second press in that gap would
+        // otherwise queue a second sweep.
+        Craft::$app->getCache()->set(AuditService::sweepKey($siteId), true, ScanElements::SWEEP_TTL);
 
         // Single batched job: the batch runner walks the result set in
         // memory-safe chunks instead of spawning one job per element.
@@ -220,19 +258,23 @@ class AuditController extends Controller
      * POST /accessibility-audit/scan-assets
      * Queues a batched sweep of every image asset's alt text.
      *
+     * @return Response
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws MethodNotAllowedHttpException
      * @throws Exception
      * @throws InvalidConfigException
      * @throws MissingComponentException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionScanAssets(): Response
     {
         $this->requirePostRequest();
-        $this->requirePermission('accessibility-audit:runScans');
+        $this->requirePermission('accessibility-audit:run-scans');
 
-        $total = (int) Asset::find()->kind(Asset::KIND_IMAGE)->count();
+        $total = (int) AccessibilityAudit::getInstance()->getAssets()->imageQuery()->count();
 
         // Clear rows left behind by hard-deleted or bulk-removed images before
         // the fresh sweep repopulates, so the stored table stays tidy.
@@ -253,43 +295,31 @@ class AuditController extends Controller
      * POST /accessibility-audit/store-axe-results
      * Accepts axe-core violations from the frontend overlay.
      *
+     * @return Response
      * @throws SiteNotFoundException
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws MethodNotAllowedHttpException
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionStoreAxeResults(): Response
     {
         $this->requirePostRequest();
-        $this->requirePermission('accessibility-audit:runScans');
+        $this->requirePermission('accessibility-audit:run-scans');
 
-        $audit = AccessibilityAudit::getInstance()->audit;
-        $scanId = (int) $this->request->getBodyParam('scanId', 0);
-        // The overlay posts violations as a JSON string (FormData can't carry an
-        // array of objects). decodeIfJson() returns the original string when it
-        // isn't valid JSON, so guard with is_array(), not a truthiness check.
-        $rawViolations = $this->request->getBodyParam('violations', []);
-        $decodedViolations = is_array($rawViolations) ? $rawViolations : Json::decodeIfJson($rawViolations);
-        $violations = is_array($decodedViolations) ? $decodedViolations : [];
-        // Contrast nodes axe couldn't measure, posted the same way. Optional:
-        // an older cached overlay script posts violations alone and still works.
-        $rawIncomplete = $this->request->getBodyParam('incomplete', []);
-        $decodedIncomplete = is_array($rawIncomplete) ? $rawIncomplete : Json::decodeIfJson($rawIncomplete);
-        $incomplete = is_array($decodedIncomplete) ? $decodedIncomplete : [];
-        $elementId = (int) $this->request->getBodyParam('elementId', 0);
-        $elementType = (string) $this->request->getBodyParam('elementType', '');
-        $siteId = (int) ($this->request->getBodyParam('siteId') ?: Craft::$app->getSites()->getPrimarySite()->id);
+        $audit = AccessibilityAudit::getInstance()->getAudit();
+        $violations = $this->_arrayBodyParam('violations');
+        // Contrast nodes axe couldn't measure. Optional: an older cached overlay
+        // script posts violations alone and still works.
+        $incomplete = $this->_arrayBodyParam('incomplete');
 
-        if (($refusal = $this->_requireAllowedSite($siteId)) !== null) {
-            return $refusal;
-        }
+        ['scanId' => $scanId, 'elementId' => $elementId, 'elementType' => $elementType, 'siteId' => $siteId]
+            = $this->_scanTarget();
 
-        // A raw scanId writes against the scan's own site, not the posted one, so
-        // fence that site too: otherwise a user could post their own allowed
-        // siteId alongside another site's scanId and slip findings onto a site
-        // they can't edit.
-        if ($scanId > 0 && ($refusal = $this->_requireAllowedScanSite($scanId)) !== null) {
+        if (($refusal = $this->_refuseUnlessTargetAllowed($siteId, $scanId)) !== null) {
             return $refusal;
         }
 
@@ -297,22 +327,7 @@ class AuditController extends Controller
             $scanId = $audit->ensureScan($elementId, $elementType, $siteId);
         }
 
-        // Return the recalculated summary so the overlay can repaint with the
-        // authoritative combined score rather than its own axe-only estimate.
-        $summary = null;
-        if ($scanId > 0) {
-            $audit->storeAxeIssues($scanId, $violations, $this->_resolveViewport(), $incomplete);
-            $scan = $audit->getScanSummary($scanId);
-            if ($scan !== null) {
-                $summary = [
-                    'score' => (int)$scan['score'],
-                    'errorCount' => (int)$scan['errorCount'],
-                    'warningCount' => (int)$scan['warningCount'],
-                    'noticeCount' => (int)$scan['noticeCount'],
-                    'scannedLabel' => Craft::$app->getFormatter()->asDatetime($scan['dateScanned'], 'short'),
-                ];
-            }
-        }
+        $summary = $this->storeAxeResults($audit, $scanId, $violations, $incomplete);
 
         return $this->asJson(['success' => true, 'scanId' => $scanId, 'scan' => $summary]);
     }
@@ -321,37 +336,30 @@ class AuditController extends Controller
      * POST /accessibility-audit/store-contrast-results
      * Accepts client-side colour-contrast occurrences from the page-report iframe.
      *
+     * @return Response
      * @throws SiteNotFoundException
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws MethodNotAllowedHttpException
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionStoreContrastResults(): Response
     {
         $this->requirePostRequest();
-        $this->requirePermission('accessibility-audit:runScans');
+        $this->requirePermission('accessibility-audit:run-scans');
 
-        $audit = AccessibilityAudit::getInstance()->audit;
-        $scanId = (int) $this->request->getBodyParam('scanId', 0);
-        $elementId = (int) $this->request->getBodyParam('elementId', 0);
-        $elementType = (string) $this->request->getBodyParam('elementType', '');
-        $siteId = (int) ($this->request->getBodyParam('siteId') ?: Craft::$app->getSites()->getPrimarySite()->id);
+        $audit = AccessibilityAudit::getInstance()->getAudit();
+        $occurrences = $this->_arrayBodyParam('occurrences');
 
-        if (($refusal = $this->_requireAllowedSite($siteId)) !== null) {
+        ['scanId' => $scanId, 'elementId' => $elementId, 'elementType' => $elementType, 'siteId' => $siteId]
+            = $this->_scanTarget();
+
+        if (($refusal = $this->_refuseUnlessTargetAllowed($siteId, $scanId)) !== null) {
             return $refusal;
         }
-
-        // A raw scanId writes against the scan's own site, not the posted one,
-        // so fence that site too (see actionStoreAxeResults).
-        if ($scanId > 0 && ($refusal = $this->_requireAllowedScanSite($scanId)) !== null) {
-            return $refusal;
-        }
-        // Same decode-and-guard as store-axe-results: decodeIfJson() hands back
-        // the original string for invalid JSON, so is_array() is the real check.
-        $raw = $this->request->getBodyParam('occurrences', '[]');
-        $decodedOccurrences = is_array($raw) ? $raw : Json::decodeIfJson($raw);
-        $occurrences = is_array($decodedOccurrences) ? $decodedOccurrences : [];
 
         if ($scanId === 0 && $elementId > 0) {
             $scanId = $audit->ensureScan($elementId, $elementType, $siteId);
@@ -361,7 +369,7 @@ class AuditController extends Controller
             return $this->asJson(['success' => false, 'error' => Craft::t('accessibility-audit', 'No scan found.')]);
         }
 
-        $count = $audit->storeContrastIssues($scanId, $occurrences, $this->_resolveViewport());
+        $count = $audit->storeContrastIssues($scanId, $occurrences, $this->resolveViewport());
 
         return $this->asJson(['success' => true, 'scanId' => $scanId, 'stored' => $count]);
     }
@@ -382,52 +390,28 @@ class AuditController extends Controller
      * @throws SiteNotFoundException
      * @throws Exception
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionRestoreVerdicts(): Response
     {
         $this->requirePostRequest();
-        $this->requirePermission('accessibility-audit:runScans');
+        $this->requirePermission('accessibility-audit:run-scans');
 
         $ids = $this->request->getBodyParam('ids');
-        $ids = is_array($ids) ? array_map('intval', $ids) : [];
+        $plugin = AccessibilityAudit::getInstance();
+        $siteId = $plugin->resolveSiteId($this->request->getBodyParam('siteId'));
 
-        if (empty($ids)) {
-            return $this->asJson(['success' => true, 'restored' => 0]);
-        }
+        // Which ids this may touch is decided by the service, not here: the
+        // scoping is the authorisation, and it belongs with the operation so
+        // every surface that restores a ruling is held to the same one.
+        $restored = $plugin->getVerdicts()->restoreDismissedPotentials(
+            $siteId,
+            is_array($ids) ? $ids : [],
+        );
 
-        $siteId = AccessibilityAudit::getInstance()->resolveSiteId($this->request->getBodyParam('siteId'));
-
-        // Scoped to the resolved site and to dismissed potentials: an id from
-        // another site, or one that is not a dismissal, has no business being
-        // cleared by this action whatever the request asks for.
-        $rows = (new Query())
-            ->select(['i.elementId', 'i.ruleId', 'i.context', 's.url'])
-            ->from(['i' => '{{%accessibilityaudit_issues}}'])
-            ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], '[[s.id]] = [[i.scanId]]')
-            ->where([
-                'i.id' => $ids,
-                'i.siteId' => $siteId,
-                'i.verdict' => VerdictService::VERDICT_DISMISSED,
-            ])
-            ->andWhere(['like', 'i.ruleId', 'potential:%', false])
-            ->all();
-
-        $verdicts = AccessibilityAudit::getInstance()->verdicts;
-
-        foreach ($rows as $row) {
-            $verdicts->setVerdict(
-                $siteId,
-                $row['elementId'] !== null ? (int) $row['elementId'] : null,
-                (string) $row['ruleId'],
-                $row['context'] !== null ? (string) $row['context'] : null,
-                // Null clears the ruling and puts the question back.
-                null,
-                null,
-                $row['url'] !== null ? (string) $row['url'] : null,
-            );
-        }
-
-        return $this->asJson(['success' => true, 'restored' => count($rows)]);
+        return $this->asJson(['success' => true, 'restored' => $restored]);
     }
 
     /**
@@ -437,20 +421,24 @@ class AuditController extends Controller
      * real failure that counts against the score. Passing an empty verdict
      * clears the ruling and puts the question back.
      *
-     * Gated on runScans rather than viewReports: this changes the score, so it
+     * Gated on run-scans rather than view-reports: this changes the score, so it
      * is an editorial act, not a read.
      *
+     * @return Response
      * @throws ForbiddenHttpException
      * @throws BadRequestHttpException
      * @throws Exception
      * @throws MethodNotAllowedHttpException
      * @throws SiteNotFoundException
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionSetVerdict(): Response
     {
         $this->requirePostRequest();
-        $this->requirePermission('accessibility-audit:runScans');
+        $this->requirePermission('accessibility-audit:run-scans');
 
         $elementId = (int) $this->request->getBodyParam('elementId', 0);
         $ruleId = trim((string) $this->request->getBodyParam('ruleId', ''));
@@ -485,7 +473,7 @@ class AuditController extends Controller
             ]);
         }
 
-        AccessibilityAudit::getInstance()->verdicts->setVerdict(
+        AccessibilityAudit::getInstance()->getVerdicts()->setVerdict(
             $siteId,
             $elementId ?: null,
             $ruleId,
@@ -507,7 +495,7 @@ class AuditController extends Controller
      * context pairs rather than issue ids because that is what the review
      * cards carry, and it is the pair a ruling is keyed to.
      *
-     * Same gates as the single action: runScans (an editorial act, not a
+     * Same gates as the single action: run-scans (an editorial act, not a
      * read), potential rules only, and a verdict from the known set. Clearing
      * in bulk is what actionRestoreVerdicts() is for, so an empty verdict is
      * refused here.
@@ -519,11 +507,14 @@ class AuditController extends Controller
      * @throws MethodNotAllowedHttpException
      * @throws SiteNotFoundException
      * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionSetVerdictsBulk(): Response
     {
         $this->requirePostRequest();
-        $this->requirePermission('accessibility-audit:runScans');
+        $this->requirePermission('accessibility-audit:run-scans');
 
         $elementId = (int) $this->request->getBodyParam('elementId', 0);
         $siteId = (int) ($this->request->getBodyParam('siteId') ?: Craft::$app->getSites()->getPrimarySite()->id);
@@ -542,15 +533,14 @@ class AuditController extends Controller
             ]);
         }
 
-        // Same decode-and-guard as the store endpoints: decodeIfJson() hands
-        // back the original string for invalid JSON, so is_array() is the check.
-        $raw = $this->request->getBodyParam('items', '[]');
-        $decoded = is_array($raw) ? $raw : Json::decodeIfJson($raw);
-        $items = is_array($decoded) ? $decoded : [];
+        $items = $this->_arrayBodyParam('items');
 
         $plugin = AccessibilityAudit::getInstance();
-        $verdicts = $plugin->verdicts;
+        $verdicts = $plugin->getVerdicts();
         $applied = 0;
+
+        // Keyed by scan ID so repeats collapse as they arrive, rather than
+        // growing a list that has to be merged and deduplicated after.
         $needScoring = [];
 
         // A ruling is a small write; the expensive part is working the scan's
@@ -566,7 +556,7 @@ class AuditController extends Controller
                 }
 
                 $context = $item['context'] ?? null;
-                $needScoring = array_merge($needScoring, $verdicts->setVerdict(
+                $scanIds = $verdicts->setVerdict(
                     $siteId,
                     $elementId ?: null,
                     $ruleId,
@@ -575,12 +565,17 @@ class AuditController extends Controller
                     null,
                     $url,
                     deferScoring: true,
-                ));
+                );
+
+                foreach ($scanIds as $scanId) {
+                    $needScoring[$scanId] = true;
+                }
+
                 $applied++;
             }
 
-            foreach (array_unique($needScoring) as $scanId) {
-                $plugin->audit->recalculateScoreForScan($scanId);
+            foreach (array_keys($needScoring) as $scanId) {
+                $plugin->getAudit()->recalculateScoreForScan($scanId);
             }
         } catch (Throwable $e) {
             // Whatever went wrong, the reader gets a sentence rather than a
@@ -612,21 +607,24 @@ class AuditController extends Controller
      * GET /accessibility-audit/export
      * Downloads CSV report.
      *
+     * @return Response
      * @throws SiteNotFoundException
      * @throws ForbiddenHttpException
      * @throws HttpException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function actionExport(): Response
     {
-        $this->requirePermission('accessibility-audit:viewReports');
+        $this->requirePermission('accessibility-audit:view-reports');
 
         $siteId = AccessibilityAudit::getInstance()->resolveSiteId($this->request->getQueryParam('siteId'));
-        $csv = AccessibilityAudit::getInstance()->report->exportCsv($siteId);
+        $csv = AccessibilityAudit::getInstance()->getReport()->exportCsv($siteId);
 
-        return $this->response->sendContentAsFile(
+        return Csv::download(
             $csv,
             'accessibility-audit-' . (new DateTime())->format('Y-m-d') . '.csv',
-            ['mimeType' => 'text/csv']
         );
     }
 
@@ -651,13 +649,14 @@ class AuditController extends Controller
      * @throws ForbiddenHttpException
      * @throws SiteNotFoundException
      * @throws Throwable
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function actionScanEntries(): Response
     {
         $this->requirePostRequest();
-        $this->requirePermission('accessibility-audit:runScans');
+        $this->requirePermission('accessibility-audit:run-scans');
 
         $siteId = (int) ($this->request->getParam('siteId') ?: Craft::$app->getSites()->getPrimarySite()->id);
 
@@ -673,10 +672,10 @@ class AuditController extends Controller
 
         foreach ($ids as $id) {
             $element = $elements->getElementById((int) $id, null, $siteId);
-            if ($element === null) {
+            if ($element === null || !$elements->canView($element)) {
                 continue;
             }
-            AccessibilityAudit::getInstance()->audit->scanElement($element);
+            AccessibilityAudit::getInstance()->getAudit()->scanElement($element);
             $scanned++;
         }
 
@@ -690,41 +689,80 @@ class AuditController extends Controller
     // =========================================================================
 
     /**
-     * Resolves the viewport bucket a browser-sourced store request belongs to.
+     * A body param that arrives either as an array or as a JSON string.
      *
-     * Fixed-width engines (the Inspect preview) post an explicit `viewport`
-     * bucket; the overlay posts its actual window width as `viewportWidth`
-     * and the bucket is derived from it. Anything else defaults to desktop,
-     * matching the pre-multi-viewport behaviour.
+     * FormData cannot carry an array of objects, so the browser posts these
+     * encoded. Json::decodeIfJson() hands back the original string when it is
+     * not valid JSON, so is_array() is the real check rather than a truthiness
+     * one, and anything unreadable comes back as an empty array.
      *
-     * @return string One of the AuditService::VIEWPORT_* constants.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @param string $name The body param to read.
+     * @return array<int|string, mixed> The decoded array, empty when unusable.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    private function _resolveViewport(): string
+    private function _arrayBodyParam(string $name): array
     {
-        $viewport = (string) $this->request->getBodyParam('viewport', '');
+        $raw = $this->request->getBodyParam($name, []);
+        $decoded = is_array($raw) ? $raw : Json::decodeIfJson($raw);
 
-        if (in_array($viewport, [AuditService::VIEWPORT_DESKTOP, AuditService::VIEWPORT_MOBILE], true)) {
-            return $viewport;
-        }
-
-        return AuditService::viewportForWidth((int) $this->request->getBodyParam('viewportWidth', 0));
+        return is_array($decoded) ? $decoded : [];
     }
 
     /**
-     * Refuses a scan/store request that targets a non-primary site on the
-     * Standard edition, where multi-site is a Pro feature. Returns a JSON
-     * refusal to send back, or null when the site is allowed. Refusing (rather
-     * than silently re-targeting the primary site) avoids attaching one site's
-     * results to another site's scan record.
+     * The scan a store request is writing to, as posted.
      *
-     * @param int $siteId The requested site ID.
-     * @return Response|null
+     * The scan may be named outright or reached through the element it belongs
+     * to, and the site falls back to the primary one. Nothing here is trusted
+     * yet: run it through _refuseUnlessTargetAllowed() before writing.
+     *
+     * @return array{scanId: int, elementId: int, elementType: string, siteId: int}
      * @throws SiteNotFoundException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
-     * @author JohnHenry <info@johnhenry.ie>
      */
+    private function _scanTarget(): array
+    {
+        return [
+            'scanId' => (int) $this->request->getBodyParam('scanId', 0),
+            'elementId' => (int) $this->request->getBodyParam('elementId', 0),
+            'elementType' => (string) $this->request->getBodyParam('elementType', ''),
+            'siteId' => (int) ($this->request->getBodyParam('siteId')
+                ?: Craft::$app->getSites()->getPrimarySite()->id),
+        ];
+    }
+
+    /**
+     * Refuses a store request aimed at a site the edition or user cannot write.
+     *
+     * Both the posted site and, when a scan is named outright, the scan's own
+     * site are fenced. A raw scanId writes against the scan's site rather than
+     * the posted one, so checking only the posted site would let a user pair
+     * their own allowed siteId with another site's scanId and slip findings
+     * onto a site they cannot edit.
+     *
+     * @param int $siteId The posted site.
+     * @param int $scanId The posted scan, 0 when none was named.
+     * @return Response|null A JSON refusal, or null when the write may proceed.
+     * @throws SiteNotFoundException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.1
+     */
+    private function _refuseUnlessTargetAllowed(int $siteId, int $scanId): ?Response
+    {
+        if (($refusal = $this->_requireAllowedSite($siteId)) !== null) {
+            return $refusal;
+        }
+
+        if ($scanId > 0) {
+            return $this->_requireAllowedScanSite($scanId);
+        }
+
+        return null;
+    }
     /**
      * Refuses a store request whose `scanId` targets a site the edition or user
      * is not allowed to write. Loads the scan's own site and runs it through the
@@ -735,12 +773,13 @@ class AuditController extends Controller
      * @param int $scanId The requested scan ID.
      * @return Response|null
      * @throws SiteNotFoundException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.1
-     * @author JohnHenry <info@johnhenry.ie>
      */
     private function _requireAllowedScanSite(int $scanId): ?Response
     {
-        $scanSiteId = AccessibilityAudit::getInstance()->audit->getScanSiteId($scanId);
+        $scanSiteId = AccessibilityAudit::getInstance()->getAudit()->getScanSiteId($scanId);
 
         if ($scanSiteId === null) {
             return null;
@@ -760,7 +799,8 @@ class AuditController extends Controller
      *
      * @param int $siteId The site the ruling belongs to.
      * @return string|null The scanned URL, or null.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
     private function _reviewableUrl(int $siteId): ?string
@@ -771,9 +811,24 @@ class AuditController extends Controller
             return null;
         }
 
-        return AccessibilityAudit::getInstance()->audit->isKnownScanUrl($url, $siteId) ? $url : null;
+        return AccessibilityAudit::getInstance()->getAudit()->isKnownScanUrl($url, $siteId) ? $url : null;
     }
 
+    /**
+     * Refuses a request aimed at a site the edition or the user cannot touch.
+     *
+     * Standard is primary-site only whatever is posted. On Pro the site must be
+     * one the user may edit: the `run-scans` permission is install-wide, so a
+     * crafted siteId would otherwise reach sites outside their permissions, and
+     * the per-site fence has to happen here.
+     *
+     * @param int $siteId The posted site.
+     * @return Response|null A JSON refusal, or null when the request may go on.
+     * @throws SiteNotFoundException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.1
+     */
     private function _requireAllowedSite(int $siteId): ?Response
     {
         $plugin = AccessibilityAudit::getInstance();
@@ -789,7 +844,7 @@ class AuditController extends Controller
 
         // On Pro, the posted site must be one the user may actually edit, so a
         // crafted siteId can't trigger a scan of, or write findings to, a site
-        // outside their permissions. `runScans` is install-wide, so the
+        // outside their permissions. `run-scans` is install-wide, so the
         // per-site fence has to be enforced here.
         if ($plugin->isPro() && !in_array($siteId, $sites->getEditableSiteIds(), true)) {
             return $this->asJson([

@@ -60,7 +60,7 @@
             <span class="visually-hidden">{{ 'Upgrade to Pro'|t('accessibility-audit') }}</span>
         </a>
     {% endif %}
-    <button class="btn submit" data-accessibility-audit-scan-all data-site-id="{{ siteId }}" aria-live="polite">
+    <button class="btn submit" data-accessibility-audit-scan-all data-site-id="{{ siteId }}">
         {{ 'Scan All Pages'|t('accessibility-audit') }}
     </button>
     <a href="{{ actionUrl('accessibility-audit/audit/export', {siteId: siteId}) }}" class="btn">
@@ -106,8 +106,7 @@
     
         <button class="btn submit accessibility-audit-zilch__btn"
                 data-accessibility-audit-scan-all
-                data-site-id="{{ siteId }}"
-                aria-live="polite">
+                data-site-id="{{ siteId }}">
             {{ 'Scan All Pages'|t('accessibility-audit') }}
         </button>
 
@@ -408,10 +407,10 @@
 
               
                 let tbl = '<table class="visually-hidden"><caption>'
-                    + Craft.t('accessibility-audit', 'Accessibility score by date') + '</caption><thead><tr><th>'
-                    + Craft.t('accessibility-audit', 'Date') + '</th><th>'
-                    + Craft.t('accessibility-audit', 'Score') + '</th><th>'
-                    + Craft.t('accessibility-audit', 'Level AA') + '</th><th>'
+                    + Craft.t('accessibility-audit', 'Accessibility score by date') + '</caption><thead><tr><th scope="col">'
+                    + Craft.t('accessibility-audit', 'Date') + '</th><th scope="col">'
+                    + Craft.t('accessibility-audit', 'Score') + '</th><th scope="col">'
+                    + Craft.t('accessibility-audit', 'Level AA') + '</th><th scope="col">'
                     + Craft.t('accessibility-audit', 'Level A') + '</th></tr></thead><tbody>';
                 history.forEach((d) => {
                     tbl += '<tr><td>' + Craft.escapeHtml(String(d.day)) + '</td><td>'

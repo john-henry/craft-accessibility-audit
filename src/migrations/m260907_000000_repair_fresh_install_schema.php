@@ -21,7 +21,7 @@ use craft\db\Migration;
  * Everything here is checked before it is applied, so a site that upgraded its
  * way to the same schema passes straight through.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.2.1
  */
 class m260907_000000_repair_fresh_install_schema extends Migration
@@ -81,6 +81,9 @@ class m260907_000000_repair_fresh_install_schema extends Migration
      * @param string $table The table to look at.
      * @param string[] $columns The columns the index should cover, in order.
      * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _indexExists(string $table, array $columns): bool
     {

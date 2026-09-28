@@ -65,7 +65,7 @@ it('holds the all-clear back until the questions are answered too', function() {
 
 it('only reads summary keys the summary actually has', function() {
     $twig = (string) file_get_contents(dirname(__DIR__, 2) . '/src/templates/index.twig');
-    $summary = \johnhenry\accessibilityaudit\AccessibilityAudit::getInstance()->audit->getSiteSummary(
+    $summary = \johnhenry\accessibilityaudit\AccessibilityAudit::getInstance()->getAudit()->getSiteSummary(
         (int) Craft::$app->getSites()->getPrimarySite()->id,
     );
 
@@ -156,7 +156,7 @@ it('counts only questions nobody has answered', function() {
     // notice up permanently and teach people to ignore it.
     $source = (string) file_get_contents((new ReflectionClass(DashboardController::class))->getFileName());
 
-    expect($source)->toContain('$plugin->audit->getPotentialIssues($siteId)');
+    expect($source)->toContain('$plugin->getAudit()->getPotentialIssues($siteId)');
 });
 
 it('does not animate for anyone who asked for less motion', function() {

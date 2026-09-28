@@ -6,19 +6,22 @@
 
 namespace johnhenry\accessibilityaudit\models;
 
+use Craft;
 use craft\base\Model;
 use craft\helpers\App;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\helpers\ScannableElementTypes;
 use johnhenry\accessibilityaudit\services\HeadlessScanner;
+use johnhenry\accessibilityaudit\services\ReadabilityService;
 
 /**
  * Stores the plugin's settings.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  *
- * @property-write mixed $pruneResolvedIssues
+ * @property-read string $browserUserAgent
+ * @property-read string $fetchUserAgent
  */
 class SettingsModel extends Model
 {
@@ -41,6 +44,15 @@ class SettingsModel extends Model
      * Resolved-issue retention: never pruned, kept as a permanent record.
      */
     public const RESOLVED_RETENTION_FOREVER = 'forever';
+
+    /**
+     * The target score a fresh install starts on, so the dashboard has a bar to
+     * measure against and the CI endpoint has something to fail on before
+     * anyone visits Settings. A page carrying no errors and a couple of
+     * warnings still clears it, so it reads as a working site rather than a
+     * perfect one. Set targetScore to 0 to turn the target off deliberately.
+     */
+    public const RECOMMENDED_TARGET_SCORE = 90;
 
     /**
      * The identifying token carried by the default scanner User-Agent on every
@@ -176,6 +188,20 @@ class SettingsModel extends Model
     public bool $en301549 = false;
 
     /**
+     * @var bool Whether elements the scanner covers get a Readability view in
+     * their Preview menu, showing the text being written with its long
+     * sentences marked. Pro only.
+     */
+    public bool $readabilityPreviewTarget = true;
+
+    /**
+     * @var string The reading target the Readability preview marks sentences
+     * against for everyone who hasn't picked their own: 'accessible', 'default'
+     * or 'technical'. Pro only.
+     */
+    public string $readabilityTarget = ReadabilityService::DEFAULT_TARGET;
+
+    /**
      * @var string Path to a site Twig template that renders the VPAT export
      * in place of the plugin's built-in document, e.g. '_vpat/export'. The
      * template receives the same variables as the built-in export. Empty, or
@@ -198,16 +224,17 @@ class SettingsModel extends Model
     public array $ignoreRules = [];
 
     /**
-     * @var array<int, array{enabled?: bool, siteId?: int|string, uriPattern?: string}>
+     * @var array<int, array{enabled?: bool, siteUid?: string, siteId?: int|string, uriPattern?: string}>
      * URI patterns whose matching pages are excluded from every scan. Each row
      * is a regular expression tested against a page's URI, optionally scoped to
-     * one site; an empty pattern matches the homepage. Shaped for the CP's
-     * editable-table field and settable from the config file.
+     * one site by UID. The homepage is `^$`; a blank pattern matches nothing.
+     * Shaped for the CP's editable-table field and settable from the config
+     * file.
      */
     public array $excludedUriPatterns = [];
 
     /**
-     * @var array<int, array{enabled?: bool, siteId?: int|string, url?: string}|string>
+     * @var array<int, array{enabled?: bool, siteUid?: string, siteId?: int|string, url?: string}|string>
      * Extra pages to scan, for the ones Craft routes without backing them with
      * an element: search results, filtered listings, paginated archives. Each
      * row is one URL, absolute or site-relative, optionally scoped to a single
@@ -261,9 +288,11 @@ class SettingsModel extends Model
     public string $resolvedRetention = self::RESOLVED_RETENTION_WITH_SCANS;
 
     /**
-     * @var int The target accessibility score (0-100).
+     * @var int The target accessibility score (0-100). 0 turns the target off:
+     *      the dashboard stops showing progress against it and the CI endpoint
+     *      reports every scan as passing.
      */
-    public int $targetScore = 0;
+    public int $targetScore = self::RECOMMENDED_TARGET_SCORE;
 
     /**
      * @var string The handle of the field used to store alt text.
@@ -355,17 +384,6 @@ class SettingsModel extends Model
     // =========================================================================
 
     /**
-     * The effective list of element-type class names the content scanner
-     * covers: the configured allow-list, or every native type when
-     * [[scannedElementTypes]] is null (unconfigured). The result is always
-     * intersected with the currently-registered scannable types, so a class
-     * left behind by an uninstalled plugin can never leak into a scan query.
-     *
-     * @return class-string[]
-     * @author JohnHenry <info@johnhenry.ie>
-     * @since 1.0.0
-     */
-    /**
      * @inheritdoc
      *
      * Additional URLs were one newline-separated string up to 1.3.0. A site
@@ -374,10 +392,10 @@ class SettingsModel extends Model
      * which would be fatal. Converting here covers every route in, since
      * settings only ever reach the model through this method.
      *
-     * @param array $values The attribute values, keyed by name.
+     * @param array<string, mixed> $values The attribute values, keyed by name.
      * @param bool $safeOnly Whether to only assign safe attributes.
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
     public function setAttributes($values, $safeOnly = true): void
@@ -397,8 +415,9 @@ class SettingsModel extends Model
      * is what unticking a row says.
      *
      * @param string $lines The URLs, one per line.
-     * @return array<int, array{enabled: bool, siteId: string, url: string}>
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return array<int, array{enabled: bool, siteUid: string, url: string}>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.3.0
      */
     public static function customUrlRows(string $lines): array
@@ -419,10 +438,42 @@ class SettingsModel extends Model
                 continue;
             }
 
-            $rows[] = ['enabled' => $enabled, 'siteId' => '', 'url' => $url];
+            $rows[] = ['enabled' => $enabled, 'siteUid' => '', 'url' => $url];
         }
 
         return $rows;
+    }
+
+    /**
+     * The site a scoped settings row belongs to, or null for every site.
+     *
+     * Rows store the site by UID, which is the same in every environment. Rows
+     * saved before 1.5.0 carry a numeric `siteId`, which is still read. A UID
+     * that names no site on this install counts as every site.
+     *
+     * @param array<string, mixed> $row An excluded URI pattern or custom URL row.
+     * @return int|null The site id, or null when the row covers every site.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public static function rowSiteId(array $row): ?int
+    {
+        $uid = trim((string)($row['siteUid'] ?? ''));
+
+        if ($uid !== '') {
+            foreach (Craft::$app->getSites()->getAllSites(true) as $site) {
+                if ($site->uid === $uid) {
+                    return (int)$site->id;
+                }
+            }
+
+            return null;
+        }
+
+        $id = trim((string)($row['siteId'] ?? ''));
+
+        return $id !== '' ? (int)$id : null;
     }
 
     /**
@@ -431,7 +482,8 @@ class SettingsModel extends Model
      * @param int|null $siteId The site being scanned. Rows scoped to another
      * site are left out. Null takes every row whatever its scope.
      * @return string[] The URLs as they were entered, absolute or site-relative.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
     public function resolvedCustomUrls(?int $siteId = null): array
@@ -443,9 +495,9 @@ class SettingsModel extends Model
                 continue;
             }
 
-            $rowSite = $row['siteId'] ?? '';
+            $rowSite = self::rowSiteId($row);
 
-            if ($siteId !== null && $rowSite !== '' && (int)$rowSite !== $siteId) {
+            if ($siteId !== null && $rowSite !== null && $rowSite !== $siteId) {
                 continue;
             }
 
@@ -459,6 +511,18 @@ class SettingsModel extends Model
         return array_values(array_unique($urls));
     }
 
+    /**
+     * The element types a scan actually covers.
+     *
+     * The stored choice is intersected with what is installed, so a type left
+     * over from an uninstalled plugin cannot send the sweep looking for
+     * elements that no longer exist.
+     *
+     * @return string[] The element classes to scan.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     public function resolvedScannedElementTypes(): array
     {
         $chosen = $this->scannedElementTypes ?? ScannableElementTypes::native();
@@ -473,7 +537,8 @@ class SettingsModel extends Model
      * PHP scanner) read from here so an exclusion holds everywhere at once.
      *
      * @return string[]
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function resolvedExcludedSelectors(): array
@@ -496,7 +561,8 @@ class SettingsModel extends Model
      * so the value is resolved in exactly one place.
      *
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getScannerUserAgent(): string
@@ -511,7 +577,8 @@ class SettingsModel extends Model
      * [[USER_AGENT_TOKEN]], the plugin version, and an information URL.
      *
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getFetchUserAgent(): string
@@ -533,7 +600,8 @@ class SettingsModel extends Model
      * WAF rule that matches the fetch surfaces still matches this one.
      *
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getBrowserUserAgent(): string
@@ -552,7 +620,8 @@ class SettingsModel extends Model
      * unavailable (it always is at scan time).
      *
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _pluginVersion(): string
@@ -561,32 +630,16 @@ class SettingsModel extends Model
     }
 
     /**
-     * Back-compat: earlier versions stored a boolean `pruneResolvedIssues`.
-     * Maps a stored legacy value onto the three-way [[resolvedRetention]] when
-     * settings load, so upgrading installs keep their behaviour: true pruned
-     * resolved issues with old scans, false kept them on their resolution-date
-     * clock (self::RESOLVED_RETENTION_KEEP_DAYS).
-     *
-     * @param mixed $prune The legacy boolean value from stored settings.
-     * @return void
-     * @author JohnHenry <info@johnhenry.ie>
-     * @since 1.0.0
-     */
-    public function setPruneResolvedIssues(mixed $prune): void
-    {
-        $this->resolvedRetention = (bool)$prune
-            ? self::RESOLVED_RETENTION_WITH_SCANS
-            : self::RESOLVED_RETENTION_KEEP_DAYS;
-    }
-
-    /**
      * @inheritdoc
+     *
+     * @return array<int, mixed>
      */
-    public function rules(): array
+    protected function defineRules(): array
     {
-        return [
+        return array_merge(parent::defineRules(), [
             [['wcagLevel'], 'in', 'range' => ['A', 'AA', 'AAA']],
-            [['scanOnSave', 'frontendAxe', 'overlayCollapseWhenIdle', 'autoGenerateAlt', 'en301549', 'chromeNoSandbox', 'decoupledOverlay'], 'boolean'],
+            [['readabilityTarget'], 'in', 'range' => array_keys(ReadabilityService::TARGETS)],
+            [['scanOnSave', 'frontendAxe', 'overlayCollapseWhenIdle', 'autoGenerateAlt', 'en301549', 'chromeNoSandbox', 'decoupledOverlay', 'readabilityPreviewTarget'], 'boolean'],
             [['resolvedRetention'], 'in', 'range' => [self::RESOLVED_RETENTION_WITH_SCANS, self::RESOLVED_RETENTION_KEEP_DAYS, self::RESOLVED_RETENTION_FOREVER]],
             [['overlayPosition'], 'in', 'range' => ['bottom-right', 'bottom-left', 'top-right', 'top-left']],
             [['overlayIdleSeconds'], 'integer', 'min' => 3, 'max' => 600],
@@ -597,13 +650,128 @@ class SettingsModel extends Model
             [['notifyScoreDropThreshold'], 'integer', 'min' => 1, 'max' => 100],
             [['ignoreRules'], 'safe'],
             [['excludedUriPatterns', 'customUrls'], 'safe'],
+            [['excludedUriPatterns'], 'validateUriPatterns'],
             [['excludedVolumes'], 'each', 'rule' => ['string']],
             [['scannedElementTypes'], 'each', 'rule' => ['string'], 'skipOnEmpty' => true],
             [['altTextField', 'anthropicApiKey', 'altTextContext', 'altTextLanguage', 'chromePath', 'chromeWsEndpoint', 'vpatExportTemplate'], 'string'],
             [['statementTemplate'], 'string'],
             [['notifyEmailRecipients', 'notifySlackWebhookUrl', 'ciApiToken', 'scannerUserAgent'], 'string'],
             [['overlayApiToken', 'overlayAllowedOrigins', 'excludedSelectors'], 'string'],
-        ];
+            [['overlayAllowedOrigins'], 'validateAllowedOrigins'],
+        ]);
+    }
+
+    /**
+     * Checks that every excluded-URI pattern is a regular expression that
+     * compiles.
+     *
+     * A pattern that does not compile never matches, and the matcher swallows
+     * the warning so a scan is not derailed by one bad row. That is right at
+     * scan time and wrong here: without this the save goes through, the
+     * pattern quietly matches nothing, and the pages it was written to keep
+     * out carry on being scanned and counted with nothing to say why.
+     *
+     * @param string $attribute The attribute being validated.
+     * @return void
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public function validateUriPatterns(string $attribute): void
+    {
+        foreach ((array)$this->$attribute as $row) {
+            $pattern = trim((string)($row['uriPattern'] ?? ''));
+
+            // A blank pattern matches nothing, so there is nothing to compile.
+            if ($pattern === '') {
+                continue;
+            }
+
+            set_error_handler(static fn(): bool => true);
+
+            try {
+                $compiles = preg_match('~' . str_replace('~', '\~', $pattern) . '~', '') !== false;
+            } finally {
+                restore_error_handler();
+            }
+
+            if (!$compiles) {
+                $this->addError($attribute, Craft::t(
+                    'accessibility-audit',
+                    '“{pattern}” is not a valid pattern, so it would never match anything.',
+                    ['pattern' => $pattern],
+                ));
+            }
+        }
+    }
+
+    /**
+     * Checks that every extra allowed origin is an origin and nothing more.
+     *
+     * The allow-list is compared to the Origin header exactly, so a line
+     * carrying a path, a trailing wildcard or a bare hostname matches nothing a
+     * browser will ever send. Same failure as an uncompilable URI pattern: the
+     * save goes through, the entry quietly matches nothing, and the overlay is
+     * refused on the very origin it was added for with nothing to say why.
+     *
+     * @param string $attribute The attribute being validated.
+     * @return void
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public function validateAllowedOrigins(string $attribute): void
+    {
+        foreach (preg_split('/[\r\n,]+/', (string)$this->$attribute) ?: [] as $line) {
+            $origin = rtrim(trim($line), '/');
+
+            if ($origin === '') {
+                continue;
+            }
+
+            $parts = parse_url($origin);
+
+            $valid = is_array($parts)
+                && in_array($parts['scheme'] ?? '', ['http', 'https'], true)
+                && self::_isHost($parts['host'] ?? '')
+                && !isset($parts['path'])
+                && !isset($parts['query'])
+                && !isset($parts['fragment'])
+                && !isset($parts['user'])
+                && !isset($parts['pass']);
+
+            if (!$valid) {
+                $this->addError($attribute, Craft::t(
+                    'accessibility-audit',
+                    '“{origin}” is not an origin, so it would never match. Write it as scheme://host, e.g. https://example.com:3000.',
+                    ['origin' => $origin],
+                ));
+            }
+        }
+    }
+
+    /**
+     * Whether a string is a hostname or IP literal and nothing else.
+     *
+     * parse_url() takes any character it is given as a host, so `*.example.com`
+     * comes back looking like a perfectly good one. A wildcard is the mistake
+     * worth catching here: allow-lists elsewhere expand them and this one does
+     * not, it compares the whole string.
+     *
+     * @param string $host The host portion of a parsed origin.
+     * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private static function _isHost(string $host): bool
+    {
+        // A bracketed IPv6 literal, as it is written in a URL.
+        if (str_starts_with($host, '[')) {
+            return preg_match('/^\[[0-9a-fA-F:.]+\]$/', $host) === 1;
+        }
+
+        return preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$/', $host) === 1;
     }
 
     /**
@@ -612,29 +780,29 @@ class SettingsModel extends Model
     public function attributeLabels(): array
     {
         return [
-            'wcagLevel' => 'Target WCAG Level',
-            'scanOnSave' => 'Scan on Entry Save',
-            'frontendAxe' => 'Frontend axe-core Overlay',
-            'overlayCollapseWhenIdle' => 'Collapse to Badge When Idle',
-            'overlayPosition' => 'Overlay Position',
-            'overlayIdleSeconds' => 'Idle Collapse Delay (seconds)',
-            'decoupledOverlay' => 'Decoupled Frontend Overlay',
-            'overlayAllowedOrigins' => 'Additional Allowed Origins',
-            'chromePath' => 'Chrome Binary Path',
-            'chromeWsEndpoint' => 'Remote Chrome Endpoint',
-            'chromeNoSandbox' => 'Launch Chrome Without Sandbox',
-            'browserSettleMs' => 'Browser Settle Time (ms)',
-            'scannerUserAgent' => 'Scanner User-Agent',
-            'customUrls' => 'Additional URLs',
-            'ignoreRules' => 'Ignored Rules',
-            'excludedUriPatterns' => 'Excluded URI Patterns',
-            'excludedSelectors' => 'Excluded Elements (CSS selectors)',
-            'excludedVolumes' => 'Excluded Volumes',
-            'scannedElementTypes' => 'Scanned Element Types',
-            'retainDays' => 'Retain Scan Results (days)',
-            'resolvedRetention' => 'Resolved Issues',
-            'altTextField' => 'Alt Text Field',
-            'vpatExportTemplate' => 'VPAT Export Template',
+            'wcagLevel' => Craft::t('accessibility-audit', 'Target WCAG Level'),
+            'scanOnSave' => Craft::t('accessibility-audit', 'Scan on Entry Save'),
+            'frontendAxe' => Craft::t('accessibility-audit', 'Frontend axe-core Overlay'),
+            'overlayCollapseWhenIdle' => Craft::t('accessibility-audit', 'Collapse to Badge When Idle'),
+            'overlayPosition' => Craft::t('accessibility-audit', 'Overlay Position'),
+            'overlayIdleSeconds' => Craft::t('accessibility-audit', 'Idle Collapse Delay (seconds)'),
+            'decoupledOverlay' => Craft::t('accessibility-audit', 'Decoupled Frontend Overlay'),
+            'overlayAllowedOrigins' => Craft::t('accessibility-audit', 'Additional Allowed Origins'),
+            'chromePath' => Craft::t('accessibility-audit', 'Chrome Binary Path'),
+            'chromeWsEndpoint' => Craft::t('accessibility-audit', 'Remote Chrome Endpoint'),
+            'chromeNoSandbox' => Craft::t('accessibility-audit', 'Launch Chrome Without Sandbox'),
+            'browserSettleMs' => Craft::t('accessibility-audit', 'Browser Settle Time (ms)'),
+            'scannerUserAgent' => Craft::t('accessibility-audit', 'Scanner User-Agent'),
+            'customUrls' => Craft::t('accessibility-audit', 'Additional URLs'),
+            'ignoreRules' => Craft::t('accessibility-audit', 'Ignored Rules'),
+            'excludedUriPatterns' => Craft::t('accessibility-audit', 'Excluded URI Patterns'),
+            'excludedSelectors' => Craft::t('accessibility-audit', 'Excluded Elements (CSS selectors)'),
+            'excludedVolumes' => Craft::t('accessibility-audit', 'Excluded Volumes'),
+            'scannedElementTypes' => Craft::t('accessibility-audit', 'Scanned Element Types'),
+            'retainDays' => Craft::t('accessibility-audit', 'Retain Scan Results (days)'),
+            'resolvedRetention' => Craft::t('accessibility-audit', 'Resolved Issues'),
+            'altTextField' => Craft::t('accessibility-audit', 'Alt Text Field'),
+            'vpatExportTemplate' => Craft::t('accessibility-audit', 'VPAT Export Template'),
         ];
     }
 }

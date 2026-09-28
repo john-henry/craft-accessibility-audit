@@ -8,6 +8,7 @@ namespace johnhenry\accessibilityaudit\helpers;
 
 use Craft;
 use craft\helpers\StringHelper;
+use johnhenry\accessibilityaudit\services\VpatService;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -25,8 +26,11 @@ use Symfony\Component\Yaml\Yaml;
  * report that omits a catalog criterion; it fails one that adds a criterion the
  * catalog does not have.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.4.0
+ *
+ * @phpstan-import-type VpatReport from VpatService
+ * @phpstan-import-type VpatCriterionRow from VpatService
  */
 class OpenAcr
 {
@@ -101,9 +105,10 @@ class OpenAcr
      * product name is required too, but always has the site's name to fall
      * back on.
      *
-     * @param array $report The report from VpatService::getFullReport().
+     * @param VpatReport $report The report from VpatService::getFullReport().
      * @return bool
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.4.0
      */
     public static function canExport(array $report): bool
@@ -117,16 +122,17 @@ class OpenAcr
      *
      * Empty fields are left out rather than written as blank strings.
      *
-     * @param array $report The report from VpatService::getFullReport().
+     * @param VpatReport $report The report from VpatService::getFullReport().
      * @param string $siteName The site's name, used when no product name is set.
-     * @return array
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return array<string, mixed> The document, ready for YAML.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.4.0
      */
     public static function document(array $report, string $siteName): array
     {
-        $meta = $report['meta'] ?? [];
-        $international = (bool)($report['en301549'] ?? false);
+        $meta = $report['meta'];
+        $international = $report['en301549'];
         $productName = self::productName($report, $siteName);
 
         $document = [
@@ -158,10 +164,11 @@ class OpenAcr
      * The product name a report is written under: the one entered, or the
      * site's name when none was.
      *
-     * @param array $report The report from VpatService::getFullReport().
+     * @param VpatReport $report The report from VpatService::getFullReport().
      * @param string $siteName The site's name.
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.4.0
      */
     public static function productName(array $report, string $siteName): string
@@ -181,9 +188,10 @@ class OpenAcr
      * Remarks spanning several lines are written as literal blocks, so they
      * read as they were typed.
      *
-     * @param array $document The document from [[document()]].
+     * @param array<string, mixed> $document The document from [[document()]].
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.4.0
      */
     public static function toYaml(array $document): string
@@ -196,7 +204,8 @@ class OpenAcr
      *
      * @param string $productName The product name the report is written under.
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.4.0
      */
     public static function filename(string $productName): string
@@ -214,20 +223,21 @@ class OpenAcr
      * out of scope, and on the International Edition every chapter but Web
      * marked out of scope too.
      *
-     * @param array $report The report from VpatService::getFullReport().
+     * @param VpatReport $report The report from VpatService::getFullReport().
      * @param bool $international Whether the International Edition catalog is used.
-     * @return array<string, array>
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return array<string, array<string, mixed>>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.4.0
      */
     private static function _chapters(array $report, bool $international): array
     {
         $chapters = [
             'success_criteria_level_a' => [
-                'criteria' => self::_criteria($report['levelA'] ?? []),
+                'criteria' => self::_criteria($report['levelA']),
             ],
             'success_criteria_level_aa' => [
-                'criteria' => self::_criteria($report['levelAA'] ?? []),
+                'criteria' => self::_criteria($report['levelAA']),
             ],
             'success_criteria_level_aaa' => [
                 'disabled' => true,
@@ -257,9 +267,10 @@ class OpenAcr
     /**
      * The criteria entries for one WCAG table.
      *
-     * @param array<string, array> $rows The table's rows, keyed by criterion number.
-     * @return array<int, array>
-     * @author JohnHenry <info@johnhenry.ie>
+     * @param array<string, VpatCriterionRow> $rows The table's rows, keyed by criterion number.
+     * @return array<int, array<string, mixed>>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.4.0
      */
     private static function _criteria(array $rows): array
@@ -268,10 +279,10 @@ class OpenAcr
 
         foreach ($rows as $number => $row) {
             $adherence = [
-                'level' => self::LEVELS[$row['effectiveLevel'] ?? ''] ?? self::LEVEL_UNANSWERED,
+                'level' => self::LEVELS[$row['effectiveLevel']] ?? self::LEVEL_UNANSWERED,
             ];
 
-            $remarks = self::_text($row['effectiveRemarks'] ?? '');
+            $remarks = self::_text($row['effectiveRemarks']);
             if ($remarks !== '') {
                 $adherence['notes'] = $remarks;
             }
@@ -292,22 +303,23 @@ class OpenAcr
      * criteria of its own: clause 9 adopts the WCAG criteria, so the WCAG
      * tables are the answer to it.
      *
-     * @param array $report The report from VpatService::getFullReport().
+     * @param VpatReport $report The report from VpatService::getFullReport().
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.4.0
      */
     private static function _enWebNotes(array $report): string
     {
         $uncovered = [];
 
-        foreach (array_merge($report['levelA'] ?? [], $report['levelAA'] ?? []) as $number => $row) {
+        foreach (array_merge($report['levelA'], $report['levelAA']) as $number => $row) {
             if (($row['enClause'] ?? null) === null) {
                 $uncovered[] = (string)$number;
             }
         }
 
-        $version = (string)($report['en301549Version'] ?? '');
+        $version = $report['en301549Version'];
         $note = Craft::t('accessibility-audit', 'Clause 9 of EN 301 549 {version} adopts the WCAG Level A and AA success criteria for web content, so the Level A and AA tables are the results for this chapter.', [
             'version' => $version,
         ]);
@@ -326,9 +338,10 @@ class OpenAcr
      * The report's notes, with the evaluation period and the pages covered
      * added, since OpenACR has no field of its own for either.
      *
-     * @param array $meta The report's metadata.
+     * @param array<string, mixed> $meta The report's metadata.
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.4.0
      */
     private static function _notes(array $meta): string
@@ -368,9 +381,10 @@ class OpenAcr
      * out. With neither, the same automated-only statement the HTML export
      * makes, so the file never claims testing nobody recorded.
      *
-     * @param array $meta The report's metadata.
+     * @param array<string, mixed> $meta The report's metadata.
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.4.0
      */
     private static function _methods(array $meta): string
@@ -399,9 +413,10 @@ class OpenAcr
     /**
      * Drops the empty strings and empty arrays from a map.
      *
-     * @param array $values
-     * @return array
-     * @author JohnHenry <info@johnhenry.ie>
+     * @param array<string, mixed> $values The map to filter.
+     * @return array<string, mixed> The map, without its empty entries.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.4.0
      */
     private static function _filled(array $values): array
@@ -414,7 +429,8 @@ class OpenAcr
      *
      * @param mixed $value
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.4.0
      */
     private static function _text(mixed $value): string

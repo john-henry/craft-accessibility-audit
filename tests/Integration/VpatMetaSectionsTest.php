@@ -63,7 +63,7 @@ describe('VpatController::actionSaveMeta list fields', function() {
 
         expect($json['success'])->toBeTrue();
 
-        $meta = AccessibilityAudit::getInstance()->vpat->getRecord($siteId)['meta'];
+        $meta = AccessibilityAudit::getInstance()->getVpat()->getRecord($siteId)['meta'];
 
         expect($meta['evalMethods'])->toBe(['Keyboard-only testing', 'Visual inspection'])
             ->and($meta['scopePages'])->toBe(['Home (https://example.com/)', 'Contact us'])
@@ -82,7 +82,7 @@ describe('VpatController::actionSaveMeta list fields', function() {
 
         expect($json['success'])->toBeTrue();
 
-        $meta = AccessibilityAudit::getInstance()->vpat->getRecord($siteId)['meta'];
+        $meta = AccessibilityAudit::getInstance()->getVpat()->getRecord($siteId)['meta'];
 
         expect($meta['evalMethods'])->toBe([])
             ->and($meta['scopePages'])->toBe([]);

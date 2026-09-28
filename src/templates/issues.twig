@@ -114,7 +114,7 @@
                 + dot('notice', v.notices, Craft.t('accessibility-audit', 'notices')) + '</span>';
         };
         const rescanCell = (value) => value
-            ? '<button class="btn small accessibility-audit-rowbtn" data-icon="refresh" title="' + Craft.t('accessibility-audit', 'Re-scan') + '" data-accessibility-audit-scan-entry="' + value + '" data-site-id="' + siteId + '" aria-live="polite">'
+            ? '<button class="btn small accessibility-audit-rowbtn" data-icon="refresh" title="' + Craft.t('accessibility-audit', 'Re-scan') + '" data-accessibility-audit-scan-entry="' + value + '" data-site-id="' + siteId + '">'
                 + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'Re-scan') + '</span></button>'
             : '';
 
@@ -161,13 +161,9 @@
     (() => {
         const siteId = {{ siteId }};
 
-        // Responsibility key -> [owner modifier, label], matching the responsibility macro.
-        const RESP = {
-            content:     ['content',   Craft.t('accessibility-audit', 'Content writing')],
-            design:      ['design',    Craft.t('accessibility-audit', 'Visual design')],
-            development: ['dev',       Craft.t('accessibility-audit', 'Development')],
-            technical:   ['technical', Craft.t('accessibility-audit', 'Technical')],
-        };
+        // The same map the responsibility macro renders from, so a row drawn
+        // here cannot say something different to one drawn server-side.
+        const RESP = {{ craft.a11y.responsibilities()|json_encode|raw }};
 
         const ruleCell = (r) => {
             if (!r) { return ''; }
@@ -175,7 +171,7 @@
             const dot = '<span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--' + r.severity + '" aria-hidden="true" title="' + label + '"></span>'
                 + '<span class="visually-hidden">' + label + ':</span>';
             const link = '<a href="' + r.detailUrl + '">' + Craft.escapeHtml(r.ruleId) + '</a>';
-            const type = r.elementType ? ' <span class="token">' + Craft.escapeHtml(r.elementType) + '</span>' : '';
+            const type = r.elementType ? ' <span class="token">' + Craft.escapeHtml(Craft.t('accessibility-audit', r.elementType)) + '</span>' : '';
             return '<span class="accessibility-audit-rowline" style="gap:8px">' + dot + link + type + '</span>';
         };
 
@@ -187,7 +183,7 @@
             { name: 'sc', title: Craft.t('accessibility-audit', 'SC'), callback: (v) => '<span class="code">' + Craft.escapeHtml(v || '—') + '</span>' },
             { name: 'owner', title: Craft.t('accessibility-audit', 'Owner'), callback: (v) => {
                 const r = RESP[v];
-                return r ? '<span class="token accessibility-audit-owner--' + r[0] + '">' + Craft.escapeHtml(r[1]) + '</span>' : '<span class="light">—</span>';
+                return r ? '<span class="token accessibility-audit-owner--' + r.modifier + '">' + Craft.escapeHtml(r.label) + '</span>' : '<span class="light">—</span>';
             } },
             { name: 'occurrences', title: Craft.t('accessibility-audit', 'Occurrences'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
             { name: 'points', title: Craft.t('accessibility-audit', 'Points gained'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign', callback: (v) => '<span class="accessibility-audit-delta">+' + Craft.escapeHtml(v) + '</span>' },
@@ -279,8 +275,8 @@
 
                 // Screen-reader equivalent of the chart: the running total by date.
                 let tbl = '<table class="visually-hidden"><caption>'
-                    + Craft.t('accessibility-audit', 'Cumulative resolved issues by date') + '</caption><thead><tr><th>'
-                    + Craft.t('accessibility-audit', 'Date') + '</th><th>'
+                    + Craft.t('accessibility-audit', 'Cumulative resolved issues by date') + '</caption><thead><tr><th scope="col">'
+                    + Craft.t('accessibility-audit', 'Date') + '</th><th scope="col">'
                     + Craft.t('accessibility-audit', 'Resolved (running total)') + '</th></tr></thead><tbody>';
                 cum.forEach((d) => {
                     tbl += '<tr><td>' + Craft.escapeHtml(String(d.day)) + '</td><td>' + d.total + '</td></tr>';

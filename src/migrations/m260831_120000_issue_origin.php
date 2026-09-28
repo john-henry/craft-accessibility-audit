@@ -17,7 +17,7 @@ use craft\db\Migration;
  * "authored" would be inventing a fact. They stay unknown until the page is
  * scanned again.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.3.0
  */
 class m260831_120000_issue_origin extends Migration

@@ -14,12 +14,24 @@ use markhuot\craftpest\factories\User as UserFactory;
 // Helper is uniquely named: Pest loads every test file into one process.
 // ---------------------------------------------------------------------------
 
-/** The rolling-counter cache key for a user in the current window. */
-function altRateKey(int $userId): string
+/**
+ * Seeds a user's counter for the current window and the next one.
+ *
+ * The counter is keyed by a fixed window, so seeding only the window the test
+ * starts in leaves it failing whenever the run crosses the boundary between
+ * seeding and asking. Filling both costs nothing and cannot race.
+ */
+function seedAltRate(int $userId, int $count): void
 {
     $bucket = (int) floor(time() / AltController::GENERATE_RATE_WINDOW);
 
-    return "accessibility-audit:alt-generate-rate:$userId:$bucket";
+    foreach ([$bucket, $bucket + 1] as $window) {
+        Craft::$app->getCache()->set(
+            "accessibility-audit:alt-generate-rate:$userId:$window",
+            $count,
+            AltController::GENERATE_RATE_WINDOW * 2,
+        );
+    }
 }
 
 describe('AltController::actionGenerate rate limit', function() {
@@ -28,11 +40,7 @@ describe('AltController::actionGenerate rate limit', function() {
         $this->actingAs($user);
 
         // Spend the whole window's budget, so the next call is over the cap.
-        Craft::$app->getCache()->set(
-            altRateKey((int) $user->id),
-            AltController::GENERATE_RATE_LIMIT,
-            AltController::GENERATE_RATE_WINDOW,
-        );
+        seedAltRate((int) $user->id, AltController::GENERATE_RATE_LIMIT);
 
         $json = $this->postJson('actions/accessibility-audit/alt/generate', [
             'assetId' => 999999,
@@ -49,11 +57,7 @@ describe('AltController::actionGenerate rate limit', function() {
         // Seed a single prior request this window (well under the cap): the call
         // clears the rate gate and fails later on a missing asset, never on the
         // throttle. Proves a normal call is not wrongly rate-limited.
-        Craft::$app->getCache()->set(
-            altRateKey((int) $user->id),
-            1,
-            AltController::GENERATE_RATE_WINDOW,
-        );
+        seedAltRate((int) $user->id, 1);
 
         $json = $this->postJson('actions/accessibility-audit/alt/generate', [
             'assetId' => 999999,

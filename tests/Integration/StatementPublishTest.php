@@ -34,9 +34,9 @@ function publishFixture(int $siteId): void
     $meta->statementDate = '2026-07-01';
     $meta->reviewDate = '2026-07-15';
     $meta->feedbackResponseTime = 'within 5 working days';
-    AccessibilityAudit::getInstance()->statement->saveMeta($siteId, $meta);
+    AccessibilityAudit::getInstance()->getStatement()->saveMeta($siteId, $meta);
 
-    AccessibilityAudit::getInstance()->statement->saveExclusions($siteId, [
+    AccessibilityAudit::getInstance()->getStatement()->saveExclusions($siteId, [
         StatementExclusionModel::fromArray([
             'category' => StatementExclusionModel::CATEGORY_NON_COMPLIANCE,
             'content' => 'Some older PDF menus',
@@ -167,8 +167,8 @@ describe('the published statement', function() {
 
         $meta = new StatementMetaModel();
         $meta->profile = StatementProfiles::PROFILE_GENERIC;
-        AccessibilityAudit::getInstance()->statement->saveMeta($siteId, $meta);
-        AccessibilityAudit::getInstance()->statement->saveExclusions($siteId, []);
+        AccessibilityAudit::getInstance()->getStatement()->saveMeta($siteId, $meta);
+        AccessibilityAudit::getInstance()->getStatement()->saveExclusions($siteId, []);
 
         $html = renderPublishedStatement($siteId);
 
@@ -202,7 +202,7 @@ describe('a statementTemplate that renders the statement', function() {
         publishFixture($siteId);
         AccessibilityAudit::getInstance()->getSettings()->statementTemplate = '_a11y-recursion-test/render';
 
-        $html = AccessibilityAudit::getInstance()->statement->render($siteId);
+        $html = AccessibilityAudit::getInstance()->getStatement()->render($siteId);
 
         // The outer call still honours the template; the inner one falls back to
         // the built-in markup rather than going round again.
@@ -227,7 +227,7 @@ describe('the CP preview', function() {
         publishFixture($siteId);
 
         $published = renderPublishedStatement($siteId);
-        $rendered = AccessibilityAudit::getInstance()->statement->render($siteId);
+        $rendered = AccessibilityAudit::getInstance()->getStatement()->render($siteId);
 
         expect($rendered)->toBe($published);
     });
@@ -243,7 +243,7 @@ describe('the CP preview', function() {
 
         // A site overriding the markup must see its own in the preview, not the
         // built-in one.
-        expect(AccessibilityAudit::getInstance()->statement->render($siteId))->toContain('CUSTOM-PREVIEW');
+        expect(AccessibilityAudit::getInstance()->getStatement()->render($siteId))->toContain('CUSTOM-PREVIEW');
 
         array_map('unlink', glob($dir . '/*') ?: []);
         rmdir($dir);

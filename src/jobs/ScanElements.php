@@ -8,6 +8,7 @@ namespace johnhenry\accessibilityaudit\jobs;
 
 use Craft;
 use craft\base\Batchable;
+use craft\base\ElementInterface;
 use craft\queue\BaseBatchedJob;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\helpers\ScanTargets;
@@ -28,21 +29,21 @@ use yii\queue\Queue;
  *
  * @property-read Queue $queue
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class ScanElements extends BaseBatchedJob
 {
-    // Constants
+    // Const Properties
     // =========================================================================
 
     /**
-     * How long the "a sweep is running" flag survives without the job clearing
+     * @var int How long the "a sweep is running" flag survives without the job clearing
      * it. A sweep that dies mid-run, a failed job or a worker restarted under
      * it, never reaches after(), and a flag with no expiry would leave the
      * Overview saying a scan is running for good.
      */
-    private const SWEEP_TTL = 21600;
+    public const SWEEP_TTL = 21600;
 
     // Public Properties
     // =========================================================================
@@ -63,7 +64,7 @@ class ScanElements extends BaseBatchedJob
         $plugin = AccessibilityAudit::getInstance();
 
         return new ScanTargets(
-            $plugin->audit->getUrlElementsQuery($this->siteId),
+            $plugin->getAudit()->getUrlElementsQuery($this->siteId),
             $plugin->getSettings()->resolvedCustomUrls($this->siteId),
         );
     }
@@ -77,15 +78,42 @@ class ScanElements extends BaseBatchedJob
      */
     protected function processItem(mixed $item): void
     {
+        // One page that will not scan, a fetch that times out or a field that
+        // throws, is logged and passed over rather than ending the sweep. A
+        // site-wide run covers everything the site has, so a single awkward
+        // page must not cost the other thousand.
+        try {
+            $this->_scanItem($item);
+        } catch (Throwable $e) {
+            $label = is_string($item) ? $item : 'element ' . (int) $item['elementId'];
+            Craft::warning("A11y: sweep skipped {$label}: " . $e->getMessage(), 'accessibility-audit');
+        }
+    }
+
+    /**
+     * Scans one item of the sweep, by address or by element.
+     *
+     * @param mixed $item A URL string, or a row carrying elementId and elementType.
+     * @return void
+     * @throws Throwable
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    private function _scanItem(mixed $item): void
+    {
         if (is_string($item)) {
-            AccessibilityAudit::getInstance()->audit->scanUrl($item, $this->siteId);
+            AccessibilityAudit::getInstance()->getAudit()->scanUrl($item, $this->siteId);
 
             return;
         }
 
+        /** @var class-string<ElementInterface>|null $elementType */
+        $elementType = $item['elementType'] ?: null;
+
         $element = Craft::$app->getElements()->getElementById(
             (int) $item['elementId'],
-            $item['elementType'] ?: null,
+            $elementType,
             $this->siteId,
         );
 
@@ -93,7 +121,7 @@ class ScanElements extends BaseBatchedJob
             return;
         }
 
-        AccessibilityAudit::getInstance()->audit->scanElement($element);
+        AccessibilityAudit::getInstance()->getAudit()->scanElement($element);
     }
 
     /**

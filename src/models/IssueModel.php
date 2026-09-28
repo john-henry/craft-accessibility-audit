@@ -11,7 +11,7 @@ use craft\base\Model;
 /**
  * Represents a single accessibility issue found during a scan.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class IssueModel extends Model
@@ -85,6 +85,8 @@ class IssueModel extends Model
 
     /**
      * @inheritdoc
+     *
+     * @return array<int, mixed>
      */
     protected function defineRules(): array
     {
@@ -112,6 +114,9 @@ class IssueModel extends Model
      * @param string $source The scanner that produced the issue.
      * @param string|null $viewport The viewport bucket (desktop, mobile), or null when viewport-independent.
      * @return self
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public static function make(
         string $ruleId,
@@ -131,9 +136,33 @@ class IssueModel extends Model
         $model->wcagCriterion = $wcagCriterion;
         $model->wcagLevel = $wcagLevel;
         $model->context = $context;
-        $model->helpUrl = $helpUrl;
+        $model->helpUrl = self::safeHelpUrl($helpUrl);
         $model->source = $source;
         $model->viewport = $viewport;
         return $model;
+    }
+
+    /**
+     * A help URL fit to render as a link, or null.
+     *
+     * Help URLs arrive in the axe results a browser posts, so they are
+     * client-controlled. Only http and https survive: a `javascript:` URL would
+     * pass HTML escaping untouched and run when somebody clicked it.
+     *
+     * @param string|null $url The URL as posted.
+     * @return string|null The URL, or null when it isn't http or https.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public static function safeHelpUrl(?string $url): ?string
+    {
+        $url = trim((string)$url);
+
+        if ($url === '' || preg_match('#^https?://[^\s]+$#i', $url) !== 1) {
+            return null;
+        }
+
+        return mb_substr($url, 0, 500);
     }
 }

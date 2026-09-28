@@ -21,7 +21,7 @@ it('reports who recorded a ruling, and when', function() {
 
     $entry = scannableEntry();
     $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-    $verdicts = AccessibilityAudit::getInstance()->verdicts;
+    $verdicts = AccessibilityAudit::getInstance()->getVerdicts();
     $context = '<a href="/a">Read more</a>';
 
     $verdicts->setVerdict(
@@ -48,7 +48,7 @@ it('does not confuse one occurrence with another on the same page', function() {
 
     $entry = scannableEntry();
     $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-    $verdicts = AccessibilityAudit::getInstance()->verdicts;
+    $verdicts = AccessibilityAudit::getInstance()->getVerdicts();
 
     $verdicts->setVerdict(
         $siteId,
@@ -66,5 +66,5 @@ it('does not confuse one occurrence with another on the same page', function() {
 });
 
 it('returns nothing rather than querying when given no pages', function() {
-    expect(AccessibilityAudit::getInstance()->verdicts->metaForTargets([], 1))->toBe([]);
+    expect(AccessibilityAudit::getInstance()->getVerdicts()->metaForTargets([], 1))->toBe([]);
 });

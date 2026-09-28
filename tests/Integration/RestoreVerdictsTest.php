@@ -17,9 +17,9 @@ use markhuot\craftpest\factories\User as UserFactory;
 function dismissedFixture(int $siteId, string $ruleId = 'potential:identical-links'): array
 {
     $entry = scannableEntry();
-    $verdicts = AccessibilityAudit::getInstance()->verdicts;
+    $verdicts = AccessibilityAudit::getInstance()->getVerdicts();
 
-    $scanId = AccessibilityAudit::getInstance()->audit->ensureScan(
+    $scanId = AccessibilityAudit::getInstance()->getAudit()->ensureScan(
         $entry->id,
         get_class($entry),
         $siteId,
@@ -111,5 +111,48 @@ it('needs the run-scans permission, like dismissing does', function() {
         $m,
     );
 
-    expect($m[1] ?? null)->toBe('accessibility-audit:runScans');
+    expect($m[1] ?? null)->toBe('accessibility-audit:run-scans');
+});
+
+it('will not clear a ruling belonging to another site', function() {
+    // The scoping is the authorisation, and the site half of it was the part
+    // nothing covered. An id is posted by a browser, so the only thing keeping
+    // one site's decisions out of another's reach is the where clause.
+    $sites = Craft::$app->getSites()->getAllSites();
+
+    if (count($sites) < 2) {
+        $this->markTestSkipped('Needs a second site.');
+    }
+
+    $primary = Craft::$app->getSites()->getPrimarySite()->id;
+    $other = null;
+
+    foreach ($sites as $site) {
+        if ((int) $site->id !== (int) $primary) {
+            $other = (int) $site->id;
+            break;
+        }
+    }
+
+    $elsewhere = dismissedFixture($other);
+
+    $json = $this->postJson('actions/accessibility-audit/audit/restore-verdicts', [
+        'siteId' => $primary,
+        'ids' => [$elsewhere['id']],
+    ])->getJsonContent();
+
+    expect($json['restored'])->toBe(0)
+        ->and(verdictCount($elsewhere['id']))->toBe(1);
+});
+
+it('keeps the scoping with the operation, not with the surface that asked', function() {
+    // Restoring used to build its own scoped query in the controller. Anything
+    // else needing to restore a ruling would have had to write that where
+    // clause again, and a copy that drifts is a cross-site write.
+    $controller = (string) file_get_contents(
+        dirname(__DIR__, 2) . '/src/controllers/AuditController.php',
+    );
+
+    expect($controller)->not->toContain('new Query()');
+    expect(method_exists(VerdictService::class, 'restoreDismissedPotentials'))->toBeTrue();
 });

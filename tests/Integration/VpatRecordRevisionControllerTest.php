@@ -34,7 +34,7 @@ beforeEach(function() {
 describe('exporting the report', function() {
     it('records nothing', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $vpat = AccessibilityAudit::getInstance()->vpat;
+        $vpat = AccessibilityAudit::getInstance()->getVpat();
 
         $vpat->saveOverride($siteId, '1.1.1', 'Supports', '');
         $vpat->getFullReport($siteId);
@@ -44,7 +44,7 @@ describe('exporting the report', function() {
 
     it('still reports the history it already has', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $vpat = AccessibilityAudit::getInstance()->vpat;
+        $vpat = AccessibilityAudit::getInstance()->getVpat();
 
         $vpat->saveOverride($siteId, '1.1.1', 'Supports', '');
         $vpat->recordRevision($siteId);
@@ -57,7 +57,7 @@ describe('exporting the report', function() {
 describe('recording an issue', function() {
     it('adds one', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $vpat = AccessibilityAudit::getInstance()->vpat;
+        $vpat = AccessibilityAudit::getInstance()->getVpat();
 
         $vpat->saveOverride($siteId, '1.1.1', 'Supports', '');
 
@@ -67,7 +67,7 @@ describe('recording an issue', function() {
 
     it('does not add a second for the same answers', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $vpat = AccessibilityAudit::getInstance()->vpat;
+        $vpat = AccessibilityAudit::getInstance()->getVpat();
 
         $vpat->saveOverride($siteId, '1.1.1', 'Supports', '');
         $vpat->recordRevision($siteId);
@@ -78,7 +78,7 @@ describe('recording an issue', function() {
 
     it('carries the site the report describes', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $report = AccessibilityAudit::getInstance()->vpat->getFullReport($siteId);
+        $report = AccessibilityAudit::getInstance()->getVpat()->getFullReport($siteId);
 
         // The exported document posts this back, so a multi-site install
         // records against the site it is showing rather than the request's

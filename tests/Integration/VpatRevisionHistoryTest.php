@@ -45,14 +45,14 @@ beforeEach(function() {
 describe('VpatService::recordRevision', function() {
     it('writes a snapshot the first time', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        AccessibilityAudit::getInstance()->vpat->saveOverride($siteId, '1.1.1', 'Supports', '');
+        AccessibilityAudit::getInstance()->getVpat()->saveOverride($siteId, '1.1.1', 'Supports', '');
 
-        expect(AccessibilityAudit::getInstance()->vpat->recordRevision($siteId))->toBeTrue();
+        expect(AccessibilityAudit::getInstance()->getVpat()->recordRevision($siteId))->toBeTrue();
     });
 
     it('does not write one when nothing was answered in between', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $vpat = AccessibilityAudit::getInstance()->vpat;
+        $vpat = AccessibilityAudit::getInstance()->getVpat();
 
         $vpat->saveOverride($siteId, '1.1.1', 'Supports', '');
         $vpat->recordRevision($siteId);
@@ -62,7 +62,7 @@ describe('VpatService::recordRevision', function() {
 
     it('writes one when an answer changes', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $vpat = AccessibilityAudit::getInstance()->vpat;
+        $vpat = AccessibilityAudit::getInstance()->getVpat();
 
         $vpat->saveOverride($siteId, '1.1.1', 'Supports', '');
         $vpat->recordRevision($siteId);
@@ -73,7 +73,7 @@ describe('VpatService::recordRevision', function() {
 
     it('ignores the bookkeeping saved beside a remark', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $vpat = AccessibilityAudit::getInstance()->vpat;
+        $vpat = AccessibilityAudit::getInstance()->getVpat();
 
         // Saving the same answer again rewrites remarkSavedAt. That is not a
         // decision and must not open a new version of the report.
@@ -88,7 +88,7 @@ describe('VpatService::recordRevision', function() {
 describe('VpatService::getRevisionHistory', function() {
     it('says nothing about a first issue', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $vpat = AccessibilityAudit::getInstance()->vpat;
+        $vpat = AccessibilityAudit::getInstance()->getVpat();
 
         $vpat->saveOverride($siteId, '1.1.1', 'Supports', '');
         $vpat->recordRevision($siteId);
@@ -98,7 +98,7 @@ describe('VpatService::getRevisionHistory', function() {
 
     it('names the criterion that moved, and where it moved from', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $vpat = AccessibilityAudit::getInstance()->vpat;
+        $vpat = AccessibilityAudit::getInstance()->getVpat();
 
         $vpat->saveOverride($siteId, '1.1.1', 'Does Not Support', 'Images carry no alt text.');
         $vpat->recordRevision($siteId);
@@ -119,7 +119,7 @@ describe('VpatService::getRevisionHistory', function() {
 
     it('counts a reworded remark rather than listing it', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $vpat = AccessibilityAudit::getInstance()->vpat;
+        $vpat = AccessibilityAudit::getInstance()->getVpat();
 
         $vpat->saveOverride($siteId, '1.4.3', 'Partially Supports', 'Two colours fail.');
         $vpat->recordRevision($siteId);
@@ -136,7 +136,7 @@ describe('VpatService::getRevisionHistory', function() {
 
     it('reports a newly answered criterion as coming from not evaluated', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $vpat = AccessibilityAudit::getInstance()->vpat;
+        $vpat = AccessibilityAudit::getInstance()->getVpat();
 
         $vpat->saveOverride($siteId, '1.1.1', 'Supports', '');
         $vpat->recordRevision($siteId);

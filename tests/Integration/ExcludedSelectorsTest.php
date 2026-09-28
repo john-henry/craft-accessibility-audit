@@ -123,7 +123,7 @@ describe('excluded selectors: resolution', function() {
     });
 
     it('exposes the axe context shape: one selector per wrapped entry', function() {
-        $exclude = AccessibilityAudit::getInstance()->audit->getAxeExclude();
+        $exclude = AccessibilityAudit::getInstance()->getAudit()->getAxeExclude();
 
         expect($exclude)->not->toBeEmpty();
         foreach ($exclude as $entry) {

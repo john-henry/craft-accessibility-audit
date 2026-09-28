@@ -60,7 +60,7 @@ describe('NotificationService::evaluateScan Pro gating', function() {
 
         // A previous scan is present and a brand-new error rule appears: on Pro
         // this would dispatch. On Standard it must return immediately.
-        AccessibilityAudit::getInstance()->notifications->evaluateScan(
+        AccessibilityAudit::getInstance()->getNotifications()->evaluateScan(
             ['score' => 10, 'errorRuleIds' => ['img-alt'], 'label' => 'a page'],
             ['score' => 90, 'errorRuleIds' => []]
         );

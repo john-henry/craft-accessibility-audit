@@ -6,6 +6,9 @@
 
 namespace johnhenry\accessibilityaudit\helpers;
 
+use Craft;
+use yii\web\Response;
+
 /**
  * Helper for safely emitting CSV that may contain editor-controlled values.
  *
@@ -16,7 +19,7 @@ namespace johnhenry\accessibilityaudit\helpers;
  * a well-known spreadsheet-injection vector. Route every such cell through
  * {@see self::guard()} before writing.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class Csv
@@ -43,7 +46,8 @@ class Csv
      *
      * @param string $value The raw cell value.
      * @return string The value, quoted only if it would otherwise be a formula.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public static function guard(string $value): string
@@ -64,11 +68,45 @@ class Csv
      *
      * @param array<int, string|int|float|null> $row The row cells.
      * @return string[] The row with every cell guarded.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public static function guardRow(array $row): array
     {
         return array_map(static fn(mixed $value): string => self::guard((string)$value), $row);
+    }
+
+    /**
+     * Builds the download response for a finished CSV.
+     *
+     * Every export shares one path so the headers cannot drift apart, and so a
+     * new export gets them by construction rather than by the author
+     * remembering. `nosniff` is among them: the first row of these files comes
+     * out of somebody's content, and a download carrying that is not one to
+     * let a browser pick a type for on its own.
+     *
+     * The body is assigned rather than sent through
+     * `Response::sendContentAsFile()`, which discards an output buffer it did
+     * not open.
+     *
+     * @param string $csv The rendered CSV body.
+     * @param string $filename The filename to offer, already safe to sit
+     *                         inside a quoted header value.
+     * @return Response The response, ready to return from an action.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public static function download(string $csv, string $filename): Response
+    {
+        $response = Craft::$app->getResponse();
+        $response->format = Response::FORMAT_RAW;
+        $response->headers->set('Content-Type', 'text/csv; charset=utf-8');
+        $response->headers->set('Content-Disposition', 'attachment; filename="' . $filename . '"');
+        $response->headers->set('X-Content-Type-Options', 'nosniff');
+        $response->content = $csv;
+
+        return $response;
     }
 }

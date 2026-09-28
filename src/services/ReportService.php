@@ -6,7 +6,6 @@
 
 namespace johnhenry\accessibilityaudit\services;
 
-use Craft;
 use craft\db\Query;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\helpers\Csv;
@@ -14,10 +13,9 @@ use johnhenry\accessibilityaudit\helpers\ElementLabel;
 use yii\base\Component;
 
 /**
- * Builds accessibility reports from stored scan data: CSV exports and
- * summary breakdowns for the CP dashboard.
+ * Builds accessibility reports from stored scan data.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class ReportService extends Component
@@ -26,10 +24,15 @@ class ReportService extends Component
     // =========================================================================
 
     /**
-     * Generate a CSV export of all issues for a site.
+     * Every outstanding issue on a site, as a CSV a person can open.
+     *
+     * One row per issue, taken from the most recent scan of each page.
      *
      * @param int $siteId The site to export issues for.
-     * @return string The CSV content.
+     * @return string The CSV content, empty where nothing has been scanned.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     public function exportCsv(int $siteId): string
     {
@@ -37,7 +40,10 @@ class ReportService extends Component
             ->select(['MAX(id)'])
             ->from('{{%accessibilityaudit_scans}}')
             ->where(['siteId' => $siteId])
-            ->groupBy(['elementId'])
+            // Grouped by url as well as elementId: every URL scan shares a null
+            // elementId, so grouping on that alone folds the lot into one row
+            // and only the most recently scanned URL reaches the export.
+            ->groupBy(['elementId', 'url'])
             ->column();
 
         if (empty($latestScanIds)) {
@@ -55,6 +61,7 @@ class ReportService extends Component
                 'i.helpUrl',
                 'i.source',
                 's.elementId',
+                's.url',
                 's.score',
                 's.dateScanned',
             ])
@@ -64,17 +71,10 @@ class ReportService extends Component
             ->orderBy(['i.severity' => SORT_ASC, 's.elementId' => SORT_ASC])
             ->all();
 
-        $elementIds = array_unique(array_column($issues, 'elementId'));
-
-        // Load each element individually so categories, assets, Commerce
-        // products, and other element types are included, not just entries.
-        $entries = [];
-        foreach ($elementIds as $elementId) {
-            $element = Craft::$app->getElements()->getElementById((int) $elementId, null, $siteId);
-            if ($element !== null) {
-                $entries[(int) $elementId] = $element;
-            }
-        }
+        // One query per element type rather than one per element: an export of
+        // a few hundred pages was a few hundred round trips.
+        $elementIds = array_map('intval', array_unique(array_filter(array_column($issues, 'elementId'))));
+        $entries = AccessibilityAudit::getInstance()->getAudit()->elementsByIds($elementIds, $siteId);
 
         ob_start();
         $fp = fopen('php://output', 'w');
@@ -85,8 +85,8 @@ class ReportService extends Component
             // Guarded: title, message, and context are editor-controlled, so a
             // cell like `=cmd()` would run as a formula when the CSV is opened.
             fputcsv($fp, Csv::guardRow([
-                ElementLabel::for($entry, (int) $issue['elementId']),
-                $entry ? ($entry->getUrl() ?? '') : '',
+                ElementLabel::for($entry, (int) $issue['elementId'], (string) ($issue['url'] ?? '')),
+                $entry ? ($entry->getUrl() ?? '') : (string) ($issue['url'] ?? ''),
                 $issue['score'],
                 $issue['severity'],
                 $issue['ruleId'],
@@ -102,30 +102,5 @@ class ReportService extends Component
 
         fclose($fp);
         return ob_get_clean();
-    }
-
-    /**
-     * Generate a summary array suitable for a report page.
-     *
-     * @param int $siteId The site to summarise.
-     * @return array
-     */
-    public function getSummaryReport(int $siteId): array
-    {
-        $audit = AccessibilityAudit::getInstance()->audit;
-        $summary = $audit->getSiteSummary($siteId);
-        $byRule = $audit->getIssuesByRule($siteId);
-
-        $wcagBreakdown = [];
-        foreach ($byRule as $row) {
-            $criterion = $row['wcagCriterion'] ?? 'Other';
-            $wcagBreakdown[$criterion] = ($wcagBreakdown[$criterion] ?? 0) + (int) $row['count'];
-        }
-        arsort($wcagBreakdown);
-
-        return array_merge($summary, [
-            'byRule' => $byRule,
-            'wcagBreakdown' => $wcagBreakdown,
-        ]);
     }
 }

@@ -196,6 +196,17 @@ describe('SettingsController browser scanning gating', function() {
 // renders has to survive a save from any other tab.
 // ---------------------------------------------------------------------------
 
+describe('Project config files on disk', function() {
+    it('are never written by a test', function() {
+        // Settings saves go through project config, which Craft also writes to
+        // config/project when it flushes. The rollback only reaches the
+        // database, so a flushed save would rewrite the dev install's settings
+        // on disk. Checked on the flag rather than by saving and reading the
+        // file back, which would clobber the file if it failed.
+        expect(Craft::$app->getProjectConfig()->writeYamlAutomatically)->toBeFalse();
+    });
+});
+
 describe('SettingsController fields only the Scanning tab posts', function() {
     beforeEach(function() {
         $settings = AccessibilityAudit::getInstance()->getSettings();

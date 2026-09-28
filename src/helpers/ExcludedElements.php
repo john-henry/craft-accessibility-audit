@@ -23,11 +23,24 @@ use johnhenry\accessibilityaudit\AccessibilityAudit;
  * consent-platform default. Anything fancier is skipped on the PHP surfaces
  * but still applies in the browser engines, which take full CSS.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 final class ExcludedElements
 {
+    // Constants
+    // =========================================================================
+
+    /**
+     * @var string[] Elements that hold the page rather than sit in it. Removing
+     * one takes the whole document with it and leaves the scan reporting a
+     * blank page as a clean one, so a selector is never allowed to match them.
+     * A tag on its own is refused when the selector is translated, but a class
+     * or id selector reaches them too: `.no-js` and `.dark` live on `<html>` on
+     * a great many sites.
+     */
+    private const _STRUCTURAL_TAGS = ['html', 'body', 'head'];
+
     // Public Methods
     // =========================================================================
 
@@ -36,7 +49,8 @@ final class ExcludedElements
      * document behind the given XPath handle.
      *
      * @param DOMXPath $xpath The scan document's XPath handle.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public static function removeFrom(DOMXPath $xpath): void
@@ -50,6 +64,10 @@ final class ExcludedElements
             }
 
             foreach ($xpath->query($expr) ?: [] as $node) {
+                if (in_array(strtolower($node->nodeName), self::_STRUCTURAL_TAGS, true)) {
+                    continue;
+                }
+
                 $node->parentNode?->removeChild($node);
             }
         }
@@ -68,7 +86,8 @@ final class ExcludedElements
      *
      * @param string $selector A `#id`, `.class`, `tag`, `tag.class`, or `tag#id` selector.
      * @return string|null
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private static function _selectorToXpath(string $selector): ?string
@@ -80,7 +99,7 @@ final class ExcludedElements
         // Bare tag selector
         if (!empty($m[4])) {
             $tag = strtolower($m[4]);
-            if (in_array($tag, ['html', 'body', 'head'], true)) {
+            if (in_array($tag, self::_STRUCTURAL_TAGS, true)) {
                 return null;
             }
             return '//' . $tag;

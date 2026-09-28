@@ -104,9 +104,24 @@ describe('a page nobody could read', function() {
     });
 
     it('says so on the console instead of printing a score', function() {
+        // The shape of the line, not its characters. What matters is that the
+        // sweep prints the reason it passed the page over, in the warning
+        // colour, rather than a score. Pinned verbatim, this broke on a rename
+        // of the colour helper and said nothing about the sweep either way.
         $console = (string) file_get_contents(dirname(__DIR__, 2) . '/src/console/controllers/AuditController.php');
 
-        expect($console)->toContain("\$this->stdout('skipped: ' . \$result['error'] . PHP_EOL, BaseConsole::FG_YELLOW);");
+        $printed = null;
+
+        foreach (explode("\n", $console) as $line) {
+            if (str_contains($line, "'skipped: '")) {
+                $printed = $line;
+                break;
+            }
+        }
+
+        expect($printed)->not->toBeNull()
+            ->and($printed)->toContain("\$result['error']")
+            ->and($printed)->toContain('FG_YELLOW');
     });
 });
 

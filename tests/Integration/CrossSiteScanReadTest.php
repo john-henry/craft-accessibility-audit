@@ -9,7 +9,7 @@ use markhuot\craftpest\factories\User as UserFactory;
 // Finding 5 (cross-site read of issue detail via scanId)
 //
 // page-issues / page-rule-occurrences take a raw scanId gated only on the
-// install-wide viewReports permission, which does not scope by site. A crafted
+// install-wide view-reports permission, which does not scope by site. A crafted
 // scanId for another site's scan must not expose that site's findings. On the
 // Standard edition only the primary site is allowed, so a non-primary scan is
 // the disallowed case.

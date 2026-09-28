@@ -11,7 +11,7 @@ use craft\web\AssetBundle;
 /**
  * Control panel asset bundle for the utilities screen.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class UtilitiesAsset extends AssetBundle

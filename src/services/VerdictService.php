@@ -32,7 +32,7 @@ use yii\db\Exception;
  * matching issue rows carry a copy so the scoring and listing queries stay
  * join-free; this service keeps that copy in step.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class VerdictService extends Component
@@ -73,7 +73,8 @@ class VerdictService extends Component
      * @param int|null $elementId The element, when there is one.
      * @param string|null $url The scanned URL, when there is not.
      * @return string A 40-character hash.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
     public function targetHash(?int $elementId, ?string $url = null): string
@@ -83,21 +84,6 @@ class VerdictService extends Component
             : sha1('url:' . (string)$url);
     }
 
-    /**
-     * Hashes the markup an occurrence was found in, so two occurrences of the
-     * same rule on the same page can be ruled on separately.
-     *
-     * The context is the scanner's snippet of the offending element. It is
-     * stable for as long as that markup is, which is exactly the lifetime a
-     * ruling should have: edit the markup and the question is worth asking
-     * again. A null or empty context collapses to one ruling for the rule on
-     * that element, which is the best that can be done without a snippet.
-     *
-     * @param string|null $context The stored context snippet, if any.
-     * @return string A 40-character hash.
-     * @author JohnHenry <info@johnhenry.ie>
-     * @since 1.0.0
-     */
     /**
      * @var string[] Attributes holding an element id, or a reference to one.
      *
@@ -127,7 +113,8 @@ class VerdictService extends Component
      *
      * @param string|null $context The occurrence's context snippet.
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
     public function stableContextHash(?string $context): string
@@ -135,6 +122,25 @@ class VerdictService extends Component
         return sha1($this->_normalisedContext($context));
     }
 
+    /**
+     * The older key a ruling may still be stored under.
+     *
+     * Superseded by {@see self::stableContextHash()}, which strips the ids that
+     * move between renders. Kept because rulings filed before that change are
+     * still keyed this way, and they are read on the way past so a reader is
+     * never asked a question they have already answered.
+     *
+     * Line endings are normalised first: the browser's form encoding turns a
+     * multi-line context's \n into \r\n on the way up, and without this a
+     * ruling on any multi-line snippet hashed to a value no stored row could
+     * match. It saved, matched nothing, and the question came straight back.
+     *
+     * @param string|null $context The occurrence's context snippet.
+     * @return string The sha1 key.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     public function contextHash(?string $context): string
     {
         // Line endings are normalised before hashing: the browser's form
@@ -164,7 +170,8 @@ class VerdictService extends Component
      * @return int[] The scans whose scores are now out of date.
      * @throws Exception
      * @throws \Exception
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function setVerdict(
@@ -191,37 +198,125 @@ class VerdictService extends Component
             'contextHash' => $hash,
         ];
 
-        if ($verdict === null) {
-            $db->createCommand()->delete('{{%accessibilityaudit_verdicts}}', $match)->execute();
-        } else {
-            $existing = (new Query())
-                ->select(['id'])
-                ->from('{{%accessibilityaudit_verdicts}}')
-                ->where($match)
-                ->scalar();
-
-            if ($existing) {
-                $db->createCommand()->update('{{%accessibilityaudit_verdicts}}', [
-                    'verdict' => $verdict,
-                    'note' => $note,
-                    'userId' => Craft::$app->getUser()->getId(),
-                    'dateUpdated' => $now,
-                ], ['id' => $existing])->execute();
+        // The ruling and the issue rows it settles go in together. Apart, a
+        // failure between them leaves a question answered in one table and
+        // unanswered in the other, and the reader is asked it again next time
+        // they open the page.
+        return $db->transaction(function() use (
+            $db,
+            $match,
+            $verdict,
+            $note,
+            $now,
+            $elementId,
+            $url,
+            $siteId,
+            $ruleId,
+            $hash,
+            $deferScoring
+        ): array {
+            if ($verdict === null) {
+                $db->createCommand()->delete('{{%accessibilityaudit_verdicts}}', $match)->execute();
             } else {
-                $db->createCommand()->insert('{{%accessibilityaudit_verdicts}}', $match + [
-                    'elementId' => $elementId,
-                    'url' => $elementId === null ? $url : null,
-                    'verdict' => $verdict,
-                    'note' => $note,
-                    'userId' => Craft::$app->getUser()->getId(),
-                    'dateCreated' => $now,
-                    'dateUpdated' => $now,
-                    'uid' => StringHelper::UUID(),
-                ])->execute();
+                $existing = (new Query())
+                    ->select(['id'])
+                    ->from('{{%accessibilityaudit_verdicts}}')
+                    ->where($match)
+                    ->scalar();
+
+                if ($existing) {
+                    $db->createCommand()->update('{{%accessibilityaudit_verdicts}}', [
+                        'verdict' => $verdict,
+                        'note' => $note,
+                        'userId' => Craft::$app->getUser()->getId(),
+                        'dateUpdated' => $now,
+                    ], ['id' => $existing])->execute();
+                } else {
+                    $db->createCommand()->insert('{{%accessibilityaudit_verdicts}}', $match + [
+                        'elementId' => $elementId,
+                        'url' => $elementId === null ? $url : null,
+                        'verdict' => $verdict,
+                        'note' => $note,
+                        'userId' => Craft::$app->getUser()->getId(),
+                        'dateCreated' => $now,
+                        'dateUpdated' => $now,
+                        'uid' => StringHelper::UUID(),
+                    ])->execute();
+                }
+            }
+
+            return $this->applyToIssues($siteId, $elementId, $ruleId, $hash, $verdict, $url, $deferScoring);
+        });
+    }
+
+    /**
+     * Puts dismissed potential issues back into the review queue.
+     *
+     * The scoping is the authorisation, so it lives with the operation rather
+     * than at whichever surface asked for it. An id belonging to another site,
+     * one carrying a verdict that is not a dismissal, and one on an ordinary
+     * rule rather than a potential, are each no business of this call whatever
+     * it is handed, and a caller cannot widen that by passing different ids.
+     *
+     * Scoring is deferred and done once per affected scan at the end. Taking
+     * back forty rulings is the case this exists for, and every occurrence in a
+     * group shares one scan, so scoring per ruling recomputes the same scan
+     * over and over.
+     *
+     * @param int $siteId The site the rulings belong to.
+     * @param int[] $ids Stored issue ids to clear the ruling on.
+     * @return int How many were put back.
+     * @throws Exception
+     * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public function restoreDismissedPotentials(int $siteId, array $ids): int
+    {
+        $ids = array_values(array_filter(array_map('intval', $ids), static fn(int $id): bool => $id > 0));
+
+        if ($ids === []) {
+            return 0;
+        }
+
+        $rows = (new Query())
+            ->select(['i.elementId', 'i.ruleId', 'i.context', 's.url'])
+            ->from(['i' => '{{%accessibilityaudit_issues}}'])
+            ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], '[[s.id]] = [[i.scanId]]')
+            ->where([
+                'i.id' => $ids,
+                'i.siteId' => $siteId,
+                'i.verdict' => self::VERDICT_DISMISSED,
+            ])
+            ->andWhere(['like', 'i.ruleId', 'potential:%', false])
+            ->all();
+
+        $needScoring = [];
+
+        foreach ($rows as $row) {
+            $scanIds = $this->setVerdict(
+                $siteId,
+                $row['elementId'] !== null ? (int)$row['elementId'] : null,
+                (string)$row['ruleId'],
+                $row['context'] !== null ? (string)$row['context'] : null,
+                // Null clears the ruling and puts the question back.
+                null,
+                null,
+                $row['url'] !== null ? (string)$row['url'] : null,
+                deferScoring: true,
+            );
+
+            foreach ($scanIds as $scanId) {
+                $needScoring[$scanId] = true;
             }
         }
 
-        return $this->applyToIssues($siteId, $elementId, $ruleId, $hash, $verdict, $url, $deferScoring);
+        foreach (array_keys($needScoring) as $scanId) {
+            AccessibilityAudit::getInstance()->getAudit()->recalculateScoreForScan($scanId);
+        }
+
+        return count($rows);
     }
 
     /**
@@ -240,7 +335,8 @@ class VerdictService extends Component
      * @param bool $deferScoring Whether to leave the recalculation to the caller.
      * @return int[] The scans whose scores are now out of date.
      * @throws Exception
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function applyToIssues(
@@ -302,7 +398,7 @@ class VerdictService extends Component
         }
 
         foreach ($affected as $scanId) {
-            AccessibilityAudit::getInstance()->audit->recalculateScoreForScan($scanId);
+            AccessibilityAudit::getInstance()->getAudit()->recalculateScoreForScan($scanId);
         }
 
         return $affected;
@@ -316,7 +412,8 @@ class VerdictService extends Component
      * @param int $siteId The site.
      * @param string|null $url The scanned URL, when there is no element.
      * @return array<string, string> "ruleId|contextHash" => verdict.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function mapForElement(?int $elementId, int $siteId, ?string $url = null): array
@@ -349,7 +446,8 @@ class VerdictService extends Component
      * @param int $siteId The site.
      * @return array<string, array{userId: int|null, date: string|null}> Keyed
      *         "targetHash|ruleId|contextHash".
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function metaForTargets(array $targetHashes, int $siteId): array
@@ -385,7 +483,8 @@ class VerdictService extends Component
      * @param string $ruleId The rule.
      * @param string|null $context The occurrence's context snippet.
      * @return array{userId: int|null, date: string|null}|null Null when nothing was recorded.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function lookupMeta(array $map, string $targetHash, string $ruleId, ?string $context): ?array
@@ -409,7 +508,8 @@ class VerdictService extends Component
      * @param string $ruleId The rule.
      * @param string|null $context The occurrence's context snippet.
      * @return string|null The ruling, or null if unreviewed.
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function lookup(array $map, string $ruleId, ?string $context): ?string
@@ -429,30 +529,6 @@ class VerdictService extends Component
     // =========================================================================
 
     /**
-     * The hash a pre-1.0.11 scan would have stored for this context, or null
-     * when the two could not differ.
-     *
-     * Image contexts were capped at 150 characters before 1.0.11 and keep 300
-     * now, so the src URL survives (see PotentialScanner). Rulings stored
-     * against the shorter snippet are still keyed on it, so a longer context
-     * also tries the reconstruction: the first 150 characters plus the
-     * truncation ellipsis. Without it every dismissed image question returns.
-     *
-     * @param string|null $context The current (longer) context snippet.
-     * @return string|null The legacy hash, or null when the context is short
-     *                     enough that both builders stored it identically.
-     * @author JohnHenry <info@johnhenry.ie>
-     * @since 1.0.0
-     */
-    /**
-     * The context with every id, and every reference to one, taken out.
-     *
-     * @param string|null $context The occurrence's context snippet.
-     * @return string
-     * @author JohnHenry <info@johnhenry.ie>
-     * @since 1.2.0
-     */
-    /**
      * Every hash a ruling on this occurrence could have been stored under,
      * newest form first.
      *
@@ -464,7 +540,8 @@ class VerdictService extends Component
      *
      * @param string|null $context The occurrence's context snippet.
      * @return string[]
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
     private function _candidateHashes(?string $context): array
@@ -479,6 +556,20 @@ class VerdictService extends Component
         return array_values(array_unique($hashes));
     }
 
+    /**
+     * A context snippet reduced to what identifies it, ready to hash.
+     *
+     * Line endings are settled first, then a contrast finding's JSON is taken
+     * apart: its CSS path is for highlighting rather than identity, so it comes
+     * out whole, the markup has its id references stripped, and the keys are
+     * sorted so two encodings of the same data cannot hash differently.
+     *
+     * @param string|null $context The occurrence's context snippet.
+     * @return string The normalised form, empty where nothing was given.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.2.0
+     */
     private function _normalisedContext(?string $context): string
     {
         $context = trim(str_replace(["\r\n", "\r"], "\n", (string)$context));
@@ -513,7 +604,8 @@ class VerdictService extends Component
      *
      * @param string $html The snippet.
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
     private function _stripIdReferences(string $html): string
@@ -530,6 +622,20 @@ class VerdictService extends Component
         );
     }
 
+    /**
+     * The key a ruling was stored under when snippets were cut at 150
+     * characters, or null where the two forms cannot differ.
+     *
+     * At 150 characters or under both forms are identical, so there is no
+     * second hash to try. From 151 up they part: the older form cut at 150 and
+     * added an ellipsis where the current one keeps the snippet whole.
+     *
+     * @param string|null $context The occurrence's context snippet.
+     * @return string|null The legacy key, or null where none can exist.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.2.0
+     */
     private function _legacyContextHash(?string $context): ?string
     {
         // Same line-ending normalisation as contextHash(), before measuring:

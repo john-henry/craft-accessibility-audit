@@ -101,7 +101,7 @@ it('stores the reason against the issue', function() {
 
     $scanId = (int) $db->getLastInsertID('{{%accessibilityaudit_scans}}');
 
-    AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [[
+    AccessibilityAudit::getInstance()->getAudit()->storeAxeIssues($scanId, [[
         'id' => 'target-size',
         'impact' => 'serious',
         'help' => 'All touch targets must be 24px large, or leave sufficient space',

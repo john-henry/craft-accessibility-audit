@@ -34,19 +34,10 @@ function epDraftOf(Entry $entry): Entry
         ->one();
 }
 
-/** The source of a private method on the plugin class, for wiring assertions. */
-function epPluginMethod(string $signature): string
+/** The source of a method on the plugin class, for wiring assertions. */
+function epPluginMethod(string $method): string
 {
-    $source = (string)file_get_contents(dirname(__DIR__, 2) . '/src/AccessibilityAudit.php');
-    $start = strpos($source, $signature);
-
-    if ($start === false) {
-        return '';
-    }
-
-    $end = strpos($source, "\n    private function ", $start + strlen($signature));
-
-    return substr($source, $start, $end === false ? null : $end - $start);
+    return pluginMethodSource($method);
 }
 
 beforeEach(function() {
@@ -138,7 +129,7 @@ describe('Overlay on pages Craft renders', function() {
     it('checks exclusion before injecting the overlay', function() {
         // The injection runs on EVENT_END_BODY of a front-end render, which a
         // test cannot drive, so the ordering is asserted from source.
-        $body = epPluginMethod('maybeInjectFrontendAxe(): void');
+        $body = epPluginMethod('_maybeInjectFrontendAxe');
         $gate = strpos($body, 'isPageExcluded(');
         $inject = strpos($body, 'registerAssetBundle(FrontendAxeAsset::class)');
 

@@ -283,7 +283,7 @@ describe('OverlayController store and read', function() {
         $elementId = (int) \markhuot\craftpest\factories\User::factory()->create()->id;
         $scanId = ovScanId($elementId, (int) Craft::$app->getSites()->getPrimarySite()->id);
 
-        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [ovViolation()], 'desktop');
+        AccessibilityAudit::getInstance()->getAudit()->storeAxeIssues($scanId, [ovViolation()], 'desktop');
 
         $json = $this->http('get', 'accessibility-audit/overlay/page-issues?scanId=' . $scanId)
             ->addHeader('Accept', 'application/json')
@@ -302,11 +302,15 @@ describe('OverlayController store and read', function() {
 
 describe('Tools settings template', function() {
     it('renders the decoupled frontends section with both tag options', function() {
-        $this->actingAs(\markhuot\craftpest\factories\User::factory()->admin(true)->create());
+        $admin = \markhuot\craftpest\factories\User::factory()->admin(true)->create();
+        $this->actingAs($admin);
 
         $plugin = AccessibilityAudit::getInstance();
         $view = Craft::$app->getView();
+        // Passed in rather than left to the global: Twig works its globals out
+        // once per process, so in a test run it can still hold no user.
         $html = $view->renderTemplate('accessibility-audit/_settings/tools', [
+            'currentUser' => $admin,
             'plugin' => $plugin,
             'settings' => $plugin->getSettings(),
             'config' => [],

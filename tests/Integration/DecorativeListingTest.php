@@ -47,8 +47,7 @@ describe('AssetScanner::listDecorativePaged', function() {
     it('lists only decorative images and leaves a plain one out', function() {
         $volume = Craft::$app->getVolumes()->getAllVolumes()[0] ?? null;
         if ($volume === null) {
-            expect(true)->toBeTrue();
-            return;
+            $this->markTestSkipped('Needs an asset volume.');
         }
         $assets = AccessibilityAudit::getInstance()->getAssets();
 
@@ -74,8 +73,7 @@ describe('AssetScanner::listDecorativePaged', function() {
     it('drops a decorative image in an excluded volume from the listing', function() {
         $volume = Craft::$app->getVolumes()->getAllVolumes()[0] ?? null;
         if ($volume === null) {
-            expect(true)->toBeTrue();
-            return;
+            $this->markTestSkipped('Needs an asset volume.');
         }
         $assets = AccessibilityAudit::getInstance()->getAssets();
 
@@ -100,8 +98,7 @@ describe('AssetScanner::getDecorativeCount', function() {
     it('counts only decorative images', function() {
         $volume = Craft::$app->getVolumes()->getAllVolumes()[0] ?? null;
         if ($volume === null) {
-            expect(true)->toBeTrue();
-            return;
+            $this->markTestSkipped('Needs an asset volume.');
         }
         $assets = AccessibilityAudit::getInstance()->getAssets();
 
@@ -120,8 +117,7 @@ describe('AssetScanner::getDecorativeCount', function() {
     it('excludes an excluded volume from the count', function() {
         $volume = Craft::$app->getVolumes()->getAllVolumes()[0] ?? null;
         if ($volume === null) {
-            expect(true)->toBeTrue();
-            return;
+            $this->markTestSkipped('Needs an asset volume.');
         }
         $assets = AccessibilityAudit::getInstance()->getAssets();
 

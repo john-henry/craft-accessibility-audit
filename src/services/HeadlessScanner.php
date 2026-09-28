@@ -35,8 +35,11 @@ use yii\base\InvalidConfigException;
  * the scanner reports unavailable and the pipeline falls back to overlay-only
  * axe coverage.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
+ *
+ * @phpstan-type AxeNode array<string, mixed>
+ * @phpstan-type AxeFindings array{violations: array<int, AxeNode>, incomplete: array<int, AxeNode>}
  */
 class HeadlessScanner extends Component
 {
@@ -83,6 +86,15 @@ class HeadlessScanner extends Component
      * because the Inspect preview's client-side axe pass must slim its payload
      * to the same shape (injected via window.AccessibilityAudit).
      */
+    /**
+     * @var int The Chrome round trips one viewport pass waits on, each bounded
+     * by PAGE_TIMEOUT_MS. Counted from {@see self::_runViewportPass()}: the
+     * viewport, the user agent, the navigation, reading the landed URL, and
+     * the three evaluates that inject axe, probe the viewport and run the
+     * rules.
+     */
+    private const AWAITS_PER_VIEWPORT = 7;
+
     public const MAX_NODES_PER_VIOLATION = 50;
 
     /**
@@ -104,6 +116,34 @@ class HeadlessScanner extends Component
     // =========================================================================
 
     /**
+     * The longest a full scan of one page can take, in seconds.
+     *
+     * Every Chrome call this makes is bounded, so the total is arithmetic
+     * rather than a guess: one acquisition, then a pass per viewport, each of
+     * which waits on {@see self::AWAITS_PER_VIEWPORT} round trips and sleeps
+     * out the settle window.
+     *
+     * A queue job that drives this needs it. Craft reserves a job for 300
+     * seconds by default, which is shorter than this, and a job outliving its
+     * reservation is handed to the next worker and restarted from the top:
+     * Chrome launched again for the same page, for as long as the page stays
+     * slow.
+     *
+     * @return int Seconds.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.5.0
+     */
+    public static function worstCaseScanSeconds(): int
+    {
+        $perViewport = (self::AWAITS_PER_VIEWPORT * self::PAGE_TIMEOUT_MS) + self::MAX_SETTLE_MS;
+
+        return (int)ceil(
+            (self::PAGE_TIMEOUT_MS + ($perViewport * count(self::VIEWPORTS))) / 1000
+        );
+    }
+
+    /**
      * Whether server-side browser scanning can run: the Pro edition plus a
      * browser to drive, either a remote endpoint or a local binary that exists
      * on disk.
@@ -113,7 +153,8 @@ class HeadlessScanner extends Component
      * An unreachable endpoint surfaces as a logged scan failure instead.
      *
      * @return bool
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function isAvailable(): bool
@@ -150,8 +191,9 @@ class HeadlessScanner extends Component
      *
      * @param string $url The absolute URL to scan.
      * @param string $viewport The viewport bucket to render at (a VIEWPORTS key).
-     * @return array{violations: array, incomplete: array}|null The axe findings, or null on failure.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return AxeFindings|null The axe findings, or null on failure.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function scanUrl(string $url, string $viewport = AuditService::VIEWPORT_DESKTOP): ?array
@@ -176,8 +218,10 @@ class HeadlessScanner extends Component
      *
      * @param string $url The absolute URL to scan.
      * @param string[] $viewports The viewport buckets to render at (VIEWPORTS keys).
-     * @return array<string, array{violations: array, incomplete: array}|null> Findings keyed by viewport, null per failed pass.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return array<string, AxeFindings|null> Findings keyed by viewport, null
+     *         for each failed pass.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function scanUrlViewports(string $url, array $viewports): array
@@ -227,7 +271,8 @@ class HeadlessScanner extends Component
      * supported), or an empty string when unset.
      *
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function chromePath(): string
@@ -248,7 +293,8 @@ class HeadlessScanner extends Component
      * out. Fixing it here beats every admin having to notice a missing slash.
      *
      * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function chromeWsEndpoint(): string
@@ -283,7 +329,10 @@ class HeadlessScanner extends Component
      * can be sized at all.
      *
      * @param string $url The URL being scanned, for log context only.
-     * @return Browser|null
+     * @return Browser|null The browser, or null where none could be had.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _acquireBrowser(string $url): ?Browser
     {
@@ -318,9 +367,8 @@ class HeadlessScanner extends Component
             }
 
             $settings = AccessibilityAudit::getInstance()->getSettings();
-            $factory = new BrowserFactory($this->chromePath());
 
-            return $factory->createBrowser([
+            return (new BrowserFactory($this->chromePath()))->createBrowser([
                 'headless' => true,
                 // Most containers and CI runners have no usable Chrome sandbox,
                 // so this defaults on; hosts with a working sandbox can turn it
@@ -330,7 +378,7 @@ class HeadlessScanner extends Component
                 // self-signed certs pass in dev/ephemeral environments and are
                 // verified everywhere else, so Chrome doesn't stop at its own
                 // interstitial and audit that screen instead of the site.
-                'ignoreCertificateErrors' => App::isEphemeral() || Craft::$app->getConfig()->getGeneral()->devMode,
+                'ignoreCertificateErrors' => Craft::$app->getConfig()->getGeneral()->devMode,
                 'keepAlive' => false,
                 'startupTimeout' => 30,
                 'windowSize' => self::VIEWPORTS[AuditService::VIEWPORT_DESKTOP],
@@ -359,7 +407,10 @@ class HeadlessScanner extends Component
      * @param string $url The absolute URL to scan.
      * @param string $viewport The viewport bucket to render at (a VIEWPORTS key).
      * @param string $axeSource The axe-core source to inject.
-     * @return array{violations: array, incomplete: array}|null
+     * @return AxeFindings|null The axe findings, or null where the pass failed.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _runViewportPass(Browser $browser, string $url, string $viewport, string $axeSource): ?array
     {
@@ -442,7 +493,10 @@ class HeadlessScanner extends Component
     /**
      * Reads the bundled axe-core source, memoized per request.
      *
-     * @return string|null
+     * @return string|null The source, or null where the bundled file is missing.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
      */
     private function _loadAxeSource(): ?string
     {
@@ -451,7 +505,7 @@ class HeadlessScanner extends Component
         }
 
         $path = dirname(__DIR__) . '/resources/axe/axe.min.js';
-        $source = @file_get_contents($path);
+        $source = is_readable($path) ? file_get_contents($path) : false;
 
         if ($source === false || $source === '') {
             Craft::error("HeadlessScanner: bundled axe-core missing at {$path}", 'accessibility-audit');
@@ -461,14 +515,6 @@ class HeadlessScanner extends Component
         return $this->_axeSource = $source;
     }
 
-    /**
-     * Builds the in-page script that runs axe with the same tag list as the
-     * frontend overlay and returns a slimmed, JSON-encoded payload of both the
-     * violations and the undecided contrast results.
-     *
-     * @return string
-     * @throws InvalidConfigException
-     */
     /**
      * @var string A function deciding whether an element was fully laid out
      *      inside the area the page was measured in.
@@ -519,6 +565,20 @@ class HeadlessScanner extends Component
         };
         JS;
 
+    /**
+     * The in-page script that runs axe and hands back a slimmed payload.
+     *
+     * Each node is cut down to what storeAxeIssues() consumes: the markup
+     * snippet, the selector target, and the contrast data on any[0]. Incomplete
+     * results are filtered to contrast, the only rule whose "cannot tell"
+     * answer is worth a person's time.
+     *
+     * @return string The JavaScript to evaluate in the page.
+     * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
     private function _axeRunScript(): string
     {
         $tagsJson = Json::encode(AccessibilityAudit::getInstance()->getAudit()->getAxeTags());

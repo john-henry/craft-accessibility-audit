@@ -1,171 +1,183 @@
 # Release Notes for Accessibility Audit
 
+## 1.5.0 - 2026-09-25 [CRITICAL]
+
+### Added
+- German, French, Spanish, Italian and Dutch translations of the control panel and the VPAT export. Scan findings are still in English.
+- A Readability view in the Preview menu of every entry the scanner covers, on Pro. It marks hard sentences, adverbs, the passive voice and plainer alternatives as you write. English sites only.
+- Suggest plainer wording in the Readability preview, using Claude. Needs an Anthropic API key and the Run scans permission.
+- A target readability (Accessible, Default or Technical) under Settings > General, which anyone can change for themselves in the preview.
+- Analyse every page on the Readability page, which scores every page the scanner covers in the background.
+- Readability is recorded when an entry is saved, on every site the entry is on.
+- Checkboxes and a Re-analyse selected action on the Readability page's results table.
+- Hard and Very hard columns on the Readability page, counting the sentences the Readability preview would mark on each page.
+- A Commerce product's readability includes its variants' text.
+- The CI endpoint returns `targetConfigured` alongside `passing`.
+
+### Changed
+- The Readability page puts its results table first, with failing pages at the top, and Analyse every page moves to the top of the page.
+- Analyse every page also scores the Additional URLs on the site.
+- The Readability table shows Pass or Fail with the grade, in place of its Ease and WCAG 3.1.5 columns.
+- Permission handles are now kebab-case: `accessibility-audit:view-reports`, `accessibility-audit:run-scans`, `accessibility-audit:manage-vpat` and `accessibility-audit:manage-statement`. A migration carries existing grants over; update any code that checks the old handles.
+- The homepage is now excluded with the pattern `^$`, and a blank pattern matches nothing. Blank rows are rewritten on update, but change any blank pattern in `config/accessibility-audit.php` to `^$` by hand.
+- Excluded URI Patterns and Additional URLs store their site by UID. A migration converts existing rows; in `config/accessibility-audit.php`, use `siteUid` instead of `siteId`.
+- Site Target Score defaults to 90 on new installs. Existing installs keep the target they had, including none.
+- axe-core goes from 4.9.1 to 4.13.0, so expect scores to move on the next scan: two new checks (ARIA tabs and disclosure summaries), more accurate contrast where elements stack, and fewer false positives on web components.
+- The public accessibility statement is published in English on every site until its translations have been checked by a native speaker.
+- Trashed, disabled and archived pages no longer count towards the score, the listings or the CI check.
+- Scans only run on elements the person asking can view.
+- The sidebar's Readability tab shows the stored result and links to the report; checking text as you write is done in the Readability preview.
+- Analysing a URL on the Readability page scores one of your own entries from its text, the same way saving does.
+- The private-address check now comes from the shared `johnhenry/craft-ip-guard` package, version 1.3 or later.
+- `audit/prune-excluded` now defaults its confirmation to no.
+- `audit/scan-all` reads pages in batches, so it no longer runs out of memory on large sites.
+- The overview, listings and exports are faster on large sites, and so are bulk restores and bulk decorative marking.
+
+### Removed
+- Analyse a page on the Readability page. Pages that aren't entries are scored through Additional URLs.
+- The "elements need manual review" list under color contrast in the page report. Contrast that can't be measured is in Needs review, where it can be answered.
+
+### Fixed
+- Re-analysing a page that isn't an entry no longer drops it from the Readability table.
+- Browser checks no longer restart in a loop on slow pages.
+- Highlights in the page report and the front-end overlay are no longer cut off inside boxes that hide their overflow, like quantity steppers, and no longer shift positioned elements.
+- Highlights in the page report and the front-end overlay now show on any background, red and dark ones included, and blink as they were meant to.
+- In the page report, Show on page and clicking a single occurrence now highlight just that element.
+- Highlighting in the page report now scrolls the preview, not the whole control panel page.
+- Ticking a group's checkbox in Needs review now enables Dismiss selected.
+- An occurrence found in the other view now says to switch to Desktop or Mobile to see it, and names the template it actually came from.
+- The page report's HTML view now marks the whole element for each occurrence, and the right one, rather than the first matching tag in the source.
+- Occurrence cards show the element with the start of its text, not just its opening tag.
+- The page report no longer boxes every element a rule could apply to when an issue is opened or the preview reloads.
+- The CI endpoint answers an unknown site ID with a bad request instead of a failing score.
+- Listing endpoints and the rule trend cap how much a single request can ask for.
+- Invalid regular expressions are rejected when saving Excluded URI Patterns.
+- The score-drop notification threshold can no longer be set to 0.
+- Long VPAT, statement and organisation text is no longer cut short or refused. Run `craft migrate/up` after updating.
+- Very short alt text and the readability minimum are counted in characters, so they work in every writing system.
+- Contrast that can't be measured because of an unreadable colour format now says so.
+- The colour-vision simulator's hex field and the charts' data tables have proper labels.
+- The exported VPAT declares its language, and its dates follow the site's language.
+- The Accessibility Audit nav item no longer shows for people who can't open any of it.
+- The plugin's permissions now work in console commands and queue jobs.
+- `craft.a11y.scan()` and `craft.a11y.issues()` accept any element the scanner covers, not only entries.
+- The score widget says which site it's for, and shows the site the plugin actually reports on.
+- New rows in Excluded URI Patterns and Additional URLs are switched on by default.
+- The settings now fire Craft's `defineRules` event.
+- The statement preview no longer switches to a dark colour scheme.
+- Uninstalling removes the score widgets and the plugin's queued jobs.
+- A score widget that can't render no longer takes the dashboard down.
+- A failure to queue a scan or alt-text draft can no longer fail an entry save or an image upload.
+- Identical links hidden with an inline `visibility:hidden` are no longer reported as duplicates.
+- On multi-site installs, each site's statement and VPAT now show that site's own details instead of the primary site's. Check the statement on each site.
+- Scan progress is announced once, from a status message.
+- Craft's temporary uploads are no longer audited, and rows already recorded for them are removed on update.
+- The "decorative" label on the Images screen now meets contrast requirements.
+- The VPAT screen respects reduced motion.
+- Console commands refuse a `--site` handle that names no site.
+- `audit/prune --days=0` keeps all history instead of deleting it.
+- `audit/scan-element` says when an element has no page, is excluded or is over the page limit.
+- Statement entries are validated when saved, and a disproportionate burden needs a reason.
+- Empty statement entries are left out of the published statement.
+- Allowed origins for the decoupled overlay are validated when saved.
+- An excluded selector that matches `html` or `body` no longer empties the scan.
+- The front-end overlay now speaks the language its text was translated into, and every label, button and status message in it is now translatable.
+- The overlay's close button now meets the minimum touch target size.
+- Severity and pass indicators in the overlay are hidden from screen readers, matching the control panel.
+- A landmark with both `aria-labelledby` and `aria-label` is reported under the right one.
+- A control labelled by an `aria-hidden` element is no longer reported as having no name.
+- Alt text generation gives up after 30 seconds if the API stops responding.
+- A remote browser whose handshake arrives in pieces is no longer treated as unreachable.
+- Site-wide scans log a page they can't read and carry on with the rest.
+- Scan All Pages no longer starts a second sweep of a site that is already being scanned.
+- Scan All Pages and Analyse every page no longer stay locked after a failed or deleted job.
+- Drafts are no longer scanned as pages of their own.
+- The sidebar shows readability dates in the right time zone.
+- Pages the scanner can't fetch are now logged in the plugin's own log.
+- An Anthropic API error that isn't JSON no longer breaks the error handling.
+- Images uploaded during an asset sweep no longer shift the pages after them.
+- The Anthropic API key setting now points to platform.claude.com for a key, not the old console address.
+- With devMode on, JSON and other non-HTML responses no longer carry the plugin's template markers, which made them unreadable.
+
+### Security
+- Fixed a stored XSS through issue help links, which could run script in the control panel.
+- Fixed CSS injection through contrast colours in the page report.
+- The SSRF guard's own-site exemption now needs the site's exact scheme, host and port, and is off when `@web` is taken from the request.
+- Slack notifications and local image fetches connect only to the address that was checked, and don't follow redirects.
+- IPv4 addresses written inside IPv6 ones (mapped, NAT64, 6to4) are now caught by the SSRF guard, along with multicast, broadcast and documentation ranges.
+- Slack webhook URLs are now checked by the SSRF guard.
+- Outbound requests verify TLS certificates everywhere except devMode, Craft Cloud included.
+- Saving settings no longer copies values from `config/accessibility-audit.php`, secrets included, into project config.
+- Pages and images are read up to a size limit, so a huge response can't exhaust memory.
+- CSV exports send `X-Content-Type-Options: nosniff`.
+- VPAT remark drafting is rate limited per person and sends at most 5,000 characters of notes.
+- Filenames and titles sent with alt text requests are marked as information, not instructions.
+
 ## 1.4.0 - 2026-09-15
 
 ### Added
-- The VPAT can be exported as an OpenACR YAML file, the machine-readable conformance report format GSA
-  maintains, beside the existing HTML export. Each Level A and AA criterion carries its level and remark,
-  an unanswered one goes out as not evaluated, and with EN 301 549 switched on the file names the
-  International Edition. It needs a contact email, since the format requires one, and says so if it's
-  missing. See https://johnhenry.ie/plugins/accessibility-audit/docs/reporting-compliance/vpat-report
+- Export the VPAT as an OpenACR YAML file beside the HTML export. It needs a contact email set. See https://johnhenry.ie/plugins/accessibility-audit/docs/reporting-compliance/vpat-report
 
 ### Changed
-- The Support tab says plainly what does the checking: axe-core, unmodified, on the rendered page, with
-  the plugin's own checks added for what axe-core can't see. The old wording read as if the plugin had
-  an engine of its own with axe-core tacked on.
+- The Support tab now says plainly that the checks are run by axe-core, with the plugin's own checks added on top.
 
 ### Fixed
-- Saving the General, Maintenance, Tools or Notifications settings no longer empties Excluded URI
-  Patterns, Additional URLs and Ignored Rule IDs. Every tab saves through the same form, and those three,
-  which only live on the Scanning tab, were read as empty whenever another tab was saved. Anything
-  already lost that way needs putting back in once, under Settings > Scanning.
-- A page matched by Excluded Pages no longer gets the Accessibility panel in its edit screen. The panel
-  kept showing whatever score the page had before it was excluded, a score nothing was ever going to
-  update.
-- Re-scanning an excluded page now says the page is excluded. It used to spin, reload and leave
-  everything as it was, which looked like a scan failing without a word.
-- The frontend overlay no longer appears on pages matched by Excluded Pages, on sites Craft renders and
-  on decoupled front ends alike. It ran its checks there but could never store what it found.
+- Saving the General, Maintenance, Tools or Notifications settings no longer empties Excluded URI Patterns, Additional URLs and Ignored Rule IDs. Put back anything lost under Settings > Scanning.
+- Pages matched by Excluded Pages no longer show the Accessibility panel in their edit screen.
+- Re-scanning an excluded page now says the page is excluded.
+- The frontend overlay no longer appears on pages matched by Excluded Pages, decoupled front ends included.
 
 ## 1.3.0 - 2026-09-10
 
 > [!IMPORTANT]
-> This update runs database migrations, including one that shipped in 1.2.1 and never ran. The plugin's schema version was not raised at the time, and Craft only runs a plugin's migrations when that number goes up, so 1.2.1 and 1.2.2 left it sitting there unapplied. If you installed the plugin fresh on 1.2.0 or later and scanning a page by its URL has been failing, this is why, and this update puts it right. Nothing is lost either way: the migrations only add columns and a table.
-
-> [!NOTE]
-> Dates on the accessibility statement and the VPAT are checked more strictly than they were. The day a statement was prepared or last reviewed, the report date, and both ends of the evaluation period all describe work already done, so none of them will take a date in the future any more, and an evaluation period has to end on or after it starts. Nothing stored changes and nothing breaks on its own: if one of your saved dates falls foul of this, you will find out the next time somebody saves that form, and the message will say which field and why.
-
-> [!NOTE]
-> Dates printed on the published statement now follow the site's language instead of always coming out in British order. On a site set to US English, "4 September 2026" becomes "September 4, 2026". This one changes what is on the page without anybody touching anything, so have a look at your published statement after updating. It is what makes the dates read correctly on a site published in French or Irish. If you would rather they never moved, the statement template can be replaced with your own.
-
-> [!NOTE]
-> Additional URLs, under Settings > Scanning, is a table now rather than a box you type lines into. Anything you had is carried over on update, a row per URL, and a line you had commented out with a `#` comes across as a row switched off. Nothing needs doing by hand, and nothing drops out of your scans.
+> Run `craft migrate/up` after updating. It also applies a migration from 1.2.1 that never ran, which fixes scanning by URL on installs that started on 1.2.0 or later.
 
 ### Added
-- Console commands for the VPAT's revision history: `vpat/revisions` lists what is recorded with the
-  id of each, `vpat/delete-revision` removes one from anywhere in the history, and
-  `vpat/clear-revisions` removes the lot. The editor only takes back the most recent one, on purpose;
-  anything beyond that should take more deliberation than a button on a screen. Both removals ask
-  first, and neither touches the report itself.
-- The VPAT editor can undo the last recorded revision. Recording was a one-way door, so pressing the
-  button to see what it did left a revision on the report that nobody was ever given, printed in the
-  exported document with no way to take it back out. Only the most recent one can go: a history
-  somebody can lift a row out of the middle of is not a history.
-- The statement can say when it is due to be reviewed again, printed beside the date it was last
-  reviewed. The EU and UK regimes expect a statement to be kept up, and until now a reader could not
-  tell one somebody maintains from one nobody has looked at in three years. It has to fall after the
-  last review. A date already gone by is accepted, since an overdue review is a true thing to say.
-- The exported VPAT gives the EN 301 549 clause beside each WCAG criterion, on reports that claim the
-  European standard. A buyer in the EU is checking against the standard their own obligation names,
-  not against WCAG directly, and until now they had to do that mapping themselves. The criteria WCAG
-  2.2 added are marked as not being in the harmonised version rather than given a clause number that
-  does not exist in it.
-- The exported VPAT carries a revision history: what changed since the revisions before it, criterion
-  by criterion, with what each one was and what it became. Read on its own a conformance report says
-  nothing about whether a site is getting better or worse. Wording changes are counted rather than
-  listed. Recording a revision is deliberate, on a button in the VPAT editor, so exporting the report
-  to see how it reads stays a preview and does not quietly add a version you never gave anybody. It
-  sits in the editor rather than on the document so that replacing the export with a template of your
-  own does not take the control away with it.
-- The exported VPAT is translatable too, headings, terms, table columns and all the prose around
-  them. It is written in the language of the site it describes rather than whichever language the
-  person exporting it reads the control panel in, on the grounds that the report is handed to a
-  buyer and an Irish speaking admin exporting a report for an English site should not produce an
-  Irish document. The conformance levels are still stored in English, since they are a fixed
-  vocabulary the format defines, and only what a reader sees is translated.
-- The published accessibility statement is translatable. Every heading and every sentence in it now
-  goes through Craft's translations, and its dates are written the way the site's language writes
-  them, so a French or Irish language site publishes a statement in that language instead of one
-  headed "Compliance status" in English. Sentences are translated whole rather than assembled from
-  pieces, because word order is not the same in every language. If you already replace the statement
-  with your own template, nothing here changes for you.
+- `vpat/revisions`, `vpat/delete-revision` and `vpat/clear-revisions` console commands for managing the VPAT's revision history.
+- Undo the most recent recorded revision from the VPAT editor.
+- A next review date on the statement, printed beside the date it was last reviewed.
+- The exported VPAT gives the EN 301 549 clause beside each WCAG criterion on reports that claim the European standard.
+- The exported VPAT includes a revision history, recorded with a button in the VPAT editor.
+- The exported VPAT is translatable, and is written in the language of the site it describes.
+- The published accessibility statement is translatable.
 
 ### Changed
-- Additional URLs is an editable table. Each URL gets a switch, so one can be parked without deleting
-  it, and on a multi-site install it can be scoped to a single site: a path that only exists on one
-  language no longer gets fetched on all of them. A row starting with a slash still resolves against
-  whichever site is being scanned, so the common case is still one row.
+- Additional URLs is now a table. Existing lines are carried over, and commented-out ones come across switched off.
+- Each Additional URL can be switched off or limited to one site.
+- Dates on the published statement follow the site's language, so check your statement after updating.
 
 ### Fixed
-- Dev mode no longer writes its template markers into `{% css %}` and `{% js %}` output. A partial
-  included in a `{% css %}` block came out with an HTML comment at the top and the bottom of it, and
-  a stylesheet cannot carry one: the comment ran into the selector after it and the browser dropped
-  that whole rule. The first rule of the included file and the first rule of whatever followed the
-  include both went missing, on the local site only, which is exactly where you would be looking at
-  the CSS. Markers on templates that render markup are unchanged.
-- Scan All Pages now covers the Additional URLs listed under Settings. It only ever walked pages with
-  an entry behind them, so a search results page or a paginated archive you had listed was left out
-  of every scan started from the control panel, while the Overview still counted it as a page waiting
-  to be scanned. Coverage on those sites could never reach the whole site no matter how often you ran
-  it. Scanning from the command line always did cover them.
-- The published accessibility statement no longer reads "committed to making this website
-  accessible,." on any site whose profile names no legislation, which is every site on the generic
-  profile. A stray comma, sitting in a legal document with your name on it.
-- Exclusions listed on the statement no longer double the full stop when you end the sentence
-  yourself. Writing "Third party booking software on the admissions pages." gave you "pages.. The
-  supplier publishes", and most people do end a sentence with a full stop.
-- The exported VPAT prints properly. The conformance table was told to stay on one page, which no
-  table of fifty rows can do, so it was pushed whole to the next one and left most of the page before
-  it blank. It now breaks across pages and repeats its header on each, and page margins are set.
-- The VPAT's toolbar can no longer end up in the saved document. The Back and Print buttons are
-  built by the browser when the page opens, so a run through a converter that ignores print styles
-  gets a clean report instead of one with two buttons stamped in the middle of it.
-- The statement will not take a date in the future for when it was prepared or last reviewed. Both
-  describe something that has already happened, and it is easy to type next year's review date into
-  a field asking for the last one. The published statement then tells a reader it was reviewed on a
-  day that has not arrived yet, which is the sort of thing somebody deciding whether to trust the
-  document will notice.
-- The same on the VPAT: neither the report date nor either end of the evaluation period can be set
-  in the future, since all three describe testing already carried out. The evaluation period also has
-  to end on or after it starts, because a period running backwards describes nothing and both halves
-  are typed by hand into separate boxes.
+- Dev mode no longer adds template markers to `{% css %}` and `{% js %}` output, which was dropping CSS rules on local sites.
+- Scan All Pages now includes the Additional URLs listed under Settings.
+- The published statement no longer shows a stray comma when the site's profile names no legislation.
+- Exclusions on the statement no longer end with a double full stop.
+- The exported VPAT's conformance table breaks across printed pages and repeats its header.
+- The VPAT's Back and Print buttons no longer end up in saved or converted documents.
+- The statement no longer accepts a future date for when it was prepared or last reviewed.
+- The VPAT no longer accepts a future report date or evaluation period, and the period has to end on or after it starts.
 
 ## 1.2.2 - 2026-09-09
 
 ### Added
-- Score history now shows the two conformance levels as well as the overall score, so you can watch
-  Level AA move on its own instead of guessing at it from a blended average. The area between the
-  line and your target is shaded, green where you are above it and amber where you are below, and the
-  movement over the window is stated in words above the chart. An average across a whole site shifts
-  slowly, and "up 4 points since 13 August" says more at a glance than a line that looks flat.
+- Score history charts Level A and Level AA as well as the overall score.
+- Score history shades the gap to your target, green above it and amber below.
+- Score history says in words how much the score moved over the period.
 
 ### Changed
-- The note about unanswered questions now says how many kinds of question they fall into, not just
-  how many there are in total. The review screen lists one row per kind, so a note counting tens of
-  thousands of occurrences led to a screen showing eight rows and no explanation of the difference.
-- The three states of the alt text panel now read as one thing rather than three: red where images
-  are actually failing, amber where the library has not been scanned at all, and green where there is
-  nothing left to do. Every one of them carries the same layout and the same link as the note above
-  it.
-- Score history sits further down the page, beside Resolved issues. Both are a record of what has
-  happened rather than something to act on, and the chart was pushing the ranked list of what to fix
-  below the fold.
+- The note about unanswered questions counts the kinds of question as well as the total.
+- The alt text panel's three states share one layout and link, coloured red, amber or green.
+- Score history now sits further down the Overview, beside Resolved issues.
 
 ### Fixed
-- Markup inside a `<noscript>` is no longer scanned as though it were on the page. Those contents are
-  only ever read as markup when scripting is switched off; with it on, the browser treats the whole
-  thing as plain text and none of the elements in there exist at all. PHP's HTML parser has no such
-  separation and was handing them to the rules as ordinary content. What sits in a noscript on a real
-  site is nearly always analytics fallback, and Google Tag Manager's snippet is the common one: a
-  hidden, sizeless iframe with no title, reported as a missing iframe title on every single page of
-  every site running GTM, with nothing on the page to show for it. Anything genuinely on the page is
-  still reported, an untitled iframe included, and the words in a noscript already sat outside the
-  readability score, so the two now agree.
-  ([#13](https://github.com/john-henry/craft-accessibility-audit/issues/13))
-- The Score history panel was labelled with styled text rather than a real heading, so it was missing
-  from the page's heading outline and could not be jumped to the way every other section on the
-  Overview can. It is a heading now, like the rest.
+- Markup inside a `<noscript>` is no longer scanned as part of the page. ([#13](https://github.com/john-henry/craft-accessibility-audit/issues/13))
+- The Score history panel now has a proper heading.
 
 ## 1.2.1 - 2026-09-07
 
 ### Fixed
-- Markup inside a `<template>` is no longer scanned as though it were on the page. A template's children are not part of the document: the browser keeps them in a separate, inert fragment that is never rendered and carries no accessibility meaning at all. PHP's HTML parser has no such separation and was handing them to the rules as ordinary content. Anything doing client-side rendering was affected, which on a Craft site usually means Alpine, and Alpine's `x-for` has to sit on a `<template>` that is a direct child of the list, so a correctly built list was reported as having its items outside it. Headings, buttons and links waiting inside a template were being judged the same way, before a single one of them had rendered. Findings on the page itself are untouched: a list item genuinely sitting outside a list is still reported. ([#12](https://github.com/john-henry/craft-accessibility-audit/issues/12))
-- Words inside a `<template>` no longer count towards the readability score, for the same reason: nobody ever reads them.
-- Scanning a page by its URL failed on sites that installed the plugin fresh rather than updating to
-  it. The database columns a URL scan writes to were only ever added by the update, so a brand new
-  install was left without them and every URL scan errored out. Element scans were unaffected, which
-  is why it went unnoticed. Updating puts the columns in place on its own: there is no need to
-  uninstall or reinstall, and nothing already scanned is lost.
+- Markup inside a `<template>` is no longer scanned as part of the page. ([#12](https://github.com/john-henry/craft-accessibility-audit/issues/12))
+- Words inside a `<template>` no longer count towards the readability score.
+- Scanning a page by its URL no longer fails on fresh installs. Update to 1.3.0 or later for this to take effect.
 
 ## 1.2.0 - 2026-08-30
 
@@ -173,213 +185,213 @@
 > Extending this plugin, or reading its tables directly? Some public service signatures and two database columns changed. See [UPGRADE.md](https://github.com/john-henry/craft-accessibility-audit/blob/craft-5/UPGRADE.md).
 
 > [!WARNING]
-> Scan history older than your **Retain Scan Results** setting is deleted the first time Craft runs garbage collection after this update. That setting never actually deleted anything before now, so a site that has been running the plugin for a while almost certainly holds more history than the setting allows, and the default is 90 days. If you want to keep what you have, raise it (or set it to 0 to keep everything, on Pro) before you update. Scores and trends are drawn from that history.
+> Scan history older than **Retain Scan Results** (90 days by default) is deleted at the first garbage collection after this update. To keep it, raise the setting first, or set it to 0 on Pro.
 
 ### Added
-- The Overview says when questions are still waiting on you. Potential issues do not count against the score either way until somebody answers them, so a site could read 100 out of 100 with zero open issues while a hundred questions sat unanswered in another tab. The score now says how many are left and links straight to them.
-- When there is genuinely nothing left, nothing failing and every question answered, the Overview says so and marks it with a tick. It holds back until all of it is true, so it can never be mistaken for a passing score with a queue behind it. There is a button beside it for a bit of confetti, since getting a site to that point is a fair amount of work. Neither the tick nor the confetti is offered to anyone who has asked for less motion.
-- The Overview says when a scan is running, and how far through it is. Every figure there is worked out from the latest scan of each page that has one, so a site part-way through a sweep was reporting on the pages done so far with exactly the confidence of a finished sweep: clear the history, start a scan, and three pages in the site read 100 out of 100 with nothing failing. While a scan is working the Overview now says so and gives the count, and the all-clear waits until it has finished.
-- A VPAT remark now tells you when the findings have moved under it. Remarks are stored text and nothing recomputes them, so one written while four occurrences were open still says four after you have fixed them or answered the questions behind them. The row now says what the count was when you wrote it and what it is now, so you can decide whether the wording still holds. It applies to remarks you type yourself as well as drafted ones, since both go out of date the same way, and it stays quiet on anything saved before this release rather than flagging work you have already done.
-- Redrafting a VPAT remark no longer carries stale claims forward, or dresses them up. A remark is stored text, so one written while findings were open stays on the row after you answer them. Redrafting fed that old wording back in as your notes and kept its numbers, and in rewriting it could describe them as having been found by manual evaluation: a count with nothing behind it, wearing a provenance nobody gave it. Drafting now takes its numbers from the current findings, and never says how something was established unless the material says so. If a row's remark is out of date, clear the box before redrafting.
-- Drafting works on the criteria nothing was found against, which is most of the report. Where the scans cover part of a criterion, the draft now writes what testing has and has not established: what was checked, over how many pages, and plainly that the rest is unassessed. It is a statement of your testing position, not a claim that the criterion is met, and the wording holds that line: an untested thing is untested, not passing. Criteria no scanner touches at all still ask you to jot something first, because there the only material is the criterion's own name.
-- Drafted VPAT remarks are written to match how published conformance reports actually read. The drafting was told to use a "professional VPAT register" and left to guess at the rest, so it could produce the two things that make a real report useless: a count with nothing attached to it, or a vague phrase with no scale. It now names what fails and says how much of it there is, leaves out the test method (that belongs to the report, not to one row), does not restate the criterion back at you, and does not hedge without something concrete beside it. It still never picks the conformance level for you.
-- Drafting a VPAT remark with AI no longer counts questions you have already answered. The draft was built from the findings for that criterion without checking whether you had ruled on them, so it could write "the scanner identified 4 instances" into a row whose own evidence line said the scan found nothing. Both numbers came from the same table.
-- No criterion on the VPAT is signed off by the scanner any more, so a clean scan no longer sets one to Supports on your behalf. Five were: Page Titled (2.4.2), Language of Page (3.1.1), Contrast (1.4.3), and, once server-side browser scanning was switched on, Non-text Contrast (1.4.11) and Target Size (2.5.8). The scan establishes that a page has a title, that the html element carries a lang attribute, and that the text it can measure has enough contrast. The criteria ask for a title that describes the page, a lang value naming the language actually written, and adequate contrast including text drawn into images, and no scanner settles any of those: a site titling every page with the site name passed, so did lang="en" on a page of Irish, and text inside an image has no colour to measure. Target Size makes the case on its own, since a real violation could sit on your Overview while the VPAT called the same criterion Supports. All five now wait for you, with what the scan did cover shown beside them as evidence. If you have already signed any of them off, your answer stands and nothing changes.
-- Every criterion on the VPAT now shows what the scans covered and what is left for you. Automated testing reaches about a third of WCAG, so most of the report comes down to a person deciding, and each of those rows was a dropdown and an empty box: to answer one you first had to go and work out for yourself what had already been tested. On a real site that is around forty rows of it. Each row now says what was checked, over how many pages, how many findings are still open, and plainly what no scanner can tell you, so the ones that need five seconds are easy to tell from the ones that need an afternoon. Criteria nothing automated touches say so too, which saves you looking.
-- Browser findings now say why the element failed, not just which rule it failed. Every one of them carried the rule's own statement, which is the same sentence on every occurrence of that rule anywhere on the site. Touch target size is the clearest case: "All touch targets must be 24px large, or leave sufficient space" covers three unrelated jobs, since the target can be too small, or big enough but sitting too close to its neighbours, or covered by something else like a floating back-to-top button. The finding now names which of those it is, so a link that looks perfectly large is no longer reported with a sentence that reads as a contradiction.
-- Alt text that runs long now tells you by how much. The finding says the actual length and how far over the 150 guideline it is, so you can trim to a number instead of counting a truncated preview back by eye.
-- The alt text field counts as you type, and says how far past the 150 guideline you are once you go over. On the Assets page and on the asset's own edit screen, which is where most alt text actually gets written.
-- New rule for cells, links and buttons whose whole announced name is a symbol: a tick, a cross, an arrow, or a dash standing in for "not applicable". The shape carries the meaning and the character does not, so a screen reader either says "check mark" or, at the symbol verbosity most people leave set, says nothing and reads an empty cell. Comparison tables are full of this. The fix is visually hidden text saying what the symbol means, with the symbol itself marked aria-hidden, and the rule goes quiet as soon as you do that.
-- Questions that only come up at one screen width now say so on the row. A page is measured at both desktop and mobile, and the preview shows one at a time, so a decoration that clears the text on a wide screen but sits behind it on a narrow one produced a question you could not see anything wrong with. Where the same question comes up at both widths it is asked once, not twice.
-- A check for HTML that renders inside a code sample instead of being shown as text. Documentation writes about tags, and `<code>` is where they go, but `<code>` is presentational: it escapes nothing. Write ``<code><iframe src></code>`` and the reader gets an actual iframe rather than the three words you typed. The page that comes out is perfectly valid, so no validator and no other checker says a word about it. What it costs depends on the tag. A void one like `<img>` takes the sentence with it. One that is not void takes the rest of the page, because the browser hands it everything up to a closing tag that never comes, and paragraphs, tables and whole sections stop existing while the page still returns 200 and looks fine until somebody scrolls. Those are reported as errors and the finding says roughly how much never rendered; the rest are warnings. Syntax highlighting and links inside a sample are left alone.
-- Contrast is now measured in states the page is never in while it is being scanned: hover, focus and text selection. Every automated checker reads the rendered page, and a rendered page is always at rest, so a hover colour that fails, a focus colour that fails, or a selection colour nobody can read has never shown up in an audit. These are read from the stylesheet instead and measured against the background the element actually sits on. Each state is its own rule (`contrast-hover`, `contrast-focus`, `contrast-selection`) so you can ignore them separately, and the finding says which state it is about rather than leaving you hunting for a failure you cannot see. A rule whose colours cannot be worked out, a `var()` this pass cannot evaluate for instance, is skipped rather than guessed at, and a rule inside a media query that does not apply at the scanned width is left alone.
-- The accessibility statement can now be dropped into a page that already has a heading of its own. Pass a heading level and the statement titles itself at that level, with its own subheadings stepping down from there, so you are not left with two competing h1s on the one page. You can change the title text the same way: `craft.a11y.accessibilityStatementHtml(null, { headingLevel: 2, title: 'How accessible this site is' })`. Left alone, it renders exactly as it always did.
-- AI alt text works on SVGs. The API takes raster formats only, so an SVG was sent as-is, refused, and reported as a rejected request with no hint that the format was the problem. Vectors are now rendered to a PNG first, at a size worth reading rather than whatever the icon declared. Where the server cannot render one faithfully the plugin says so plainly and asks you to write that one by hand, rather than describing an icon it could not actually see.
-- `craft.a11y.isDecorative(image)` for front-end templates, so an image macro can render an empty alt and `role="presentation"` for images you have marked decorative. Asking per image costs one query for the whole page rather than one per image, so it is safe inside a loop. `craft.a11y.decorativeAssetIds()` hands over the whole set for a template that would rather hold it itself.
-- The Statement and the VPAT now say which scan their figures came from, and that fixing a page does not move them until it is scanned again. Both are worked out from scan data, so a count that stays put after you have fixed something reads as the report being stuck rather than as it waiting on a scan.
-- A **Save all drafts** button on the Assets page. Generating all the alt text left you clicking Save on every row one after another, which on a full page of images is a lot of clicking for something you have already reviewed. The button appears beside Generate all as soon as there is a draft waiting, shows how many, saves them one after another, and reports back once at the end rather than a notice per image. It picks up anything you have typed by hand as well, not just what the AI drafted, and skips any row you have left empty. ([#6](https://github.com/john-henry/craft-accessibility-audit/issues/6))
-
-- A new check for block content nested inside a paragraph. Wrapping a rich-text field in a styled paragraph, `<p class="text-lg">{{ entry.body }}</p>`, produces a paragraph inside a paragraph, and the browser quietly closes the outer one the moment it meets the inner. Your classes go with it and the text renders unstyled. Nothing is missing and nothing is mislabelled, so no other tool has a word to say about it: every scanner works from the parsed page, and the parser has already tidied the evidence away. This one reads the source instead. The report names the tag that closed the paragraph and tells you the two ways out, either unwrap the field or make the wrapper a `div`. It is reported as a warning and against no WCAG criterion, since the one it used to fall under was dropped in WCAG 2.2.
-
-- Scanning of pages that have no element behind them: search results, filtered listings, paginated archives. Craft routes plenty of pages it does not back with an entry, and the sweep works off elements, so those pages were simply never looked at. List them under Settings and they are scanned along with everything else, or scan one on its own with `craft accessibility-audit/audit/scan-url --url=/search?q=craft`. They appear in the Pages list and get their own report like any other page, named by the page title rather than the address, and you can answer their potential issues the same as anywhere else.
+- The Overview shows how many questions are still waiting on an answer, with a link to them.
+- The Overview marks an all-clear with a tick once nothing is failing and every question is answered.
+- A confetti button beside the all-clear, hidden from anyone who prefers reduced motion.
+- The Overview shows when a scan is running and how far through it is.
+- A VPAT remark shows when the findings count has changed since it was written.
+- VPAT remark drafting works on criteria with no findings, saying what testing has and hasn't covered.
+- Every VPAT criterion shows what the scans covered and what's left to check by hand.
+- Browser findings say why the element failed, not only which rule it broke.
+- Long alt text findings give the length and how far over 150 characters it is.
+- The alt text field on the Assets page and the asset edit screen counts characters as you type.
+- A new rule for table cells, links and buttons whose whole name is a symbol, like a tick or a cross.
+- Questions that only come up at desktop or mobile width say which.
+- A check for HTML that renders inside `<code>` instead of showing as text.
+- Contrast checks for hover, focus and text selection, as the rules `contrast-hover`, `contrast-focus` and `contrast-selection`.
+- `craft.a11y.accessibilityStatementHtml()` takes `headingLevel` and `title` options.
+- AI alt text works on SVGs.
+- `craft.a11y.isDecorative(image)` and `craft.a11y.decorativeAssetIds()` for front-end templates.
+- The Statement and the VPAT say which scan their figures came from.
+- A **Save all drafts** button on the Assets page. ([#6](https://github.com/john-henry/craft-accessibility-audit/issues/6))
+- A check for block content nested inside a paragraph.
+- Scan pages with no element behind them by listing them under Additional URLs, or with `craft accessibility-audit/audit/scan-url`.
 
 ### Changed
-- The identical links check now judges how strong each link's surroundings actually are, rather than counting any two different regions as enough. A named region is real context; an unnamed one that leans on the heading above it is weaker and is now reported as needing a fix rather than passing; and a heading that just repeats the link text is no context at all, which is a common case that used to pass silently. A pair is graded by its weaker side.
-- Where a link sits in a region with no name, the report now offers naming that region as the second fix, ahead of editing each link. One attribute settles every ambiguous link inside it at once and changes nothing about what any link announces. The region is named in the report by its tag, its classes and how many flagged links it holds, so it can be found in a template.
-- "Are these identical links going to different places?" now says which kind of problem it found, because they are not all the same problem. Two links reading the same only breach WCAG 2.4.4 when nothing around them says which is which, so the check reads where each one sits and splits the verdict: same place with nothing between them is a failure, different places with one of them unnamed is a failure and the missing name is the fix, and different named places pass at AA while still reading as two identical entries in a screen reader's links list. It also weighs how far apart the destinations really are: two links to different sections of the same page are a tidiness point rather than a breach, which in documentation is most of what this check used to find. The finding prints where each link lives, an unnamed landmark shows as such because that is usually the real defect, and it offers the fixes in order, starting with changing the visible text. It also warns against reaching for aria-label on the link, which replaces the announced name instead of adding to it and breaks voice control.
-- Running a readability analysis now needs the **Run scans** permission rather than **View reports**. Analysing fetches the page from your server and, with AI suggestions on, calls the Anthropic API, so it spends your outbound requests and your API budget: that is the scanning permission's job, not the reading one's. Reading the results is unchanged and still only needs View reports. If you have editors who analyse pages, give them Run scans. The Analyse and Re-analyse buttons no longer appear for anyone without it, rather than appearing and failing.
-- Opening Readability from an entry's accessibility panel now fills the page URL in for you. You were being handed an empty field for a page the plugin already knew about. ([#4](https://github.com/john-henry/craft-accessibility-audit/issues/4))
-- The accessibility panel now sits at the top of the element sidebar, above the panels other plugins add (SEOmatic's among them) and below Craft's own status and meta. It is a panel you act on rather than read, so it should not be buried.
-- **Edit element** on a page report opens in a new tab, the same as **View page** beside it, and carries the same icon. Working through a list of pages, you were losing the report every time you went to fix something. ([#2](https://github.com/john-henry/craft-accessibility-audit/issues/2))
+- No VPAT criterion is set to Supports by the scanner any more: 2.4.2, 3.1.1, 1.4.3, 1.4.11 and 2.5.8 now wait for your answer. Answers already given stand.
+- Redrafting a VPAT remark takes its numbers from the current findings. Clear an out-of-date remark before redrafting it.
+- Drafted VPAT remarks follow the way published conformance reports are written.
+- A question that comes up at both desktop and mobile width is asked once.
+- Repeated occurrences of the same question are grouped into one card in the review queue.
+- The identical links check grades each link by how well its surroundings tell it apart.
+- Where a link sits in an unnamed region, the report suggests naming the region as a fix.
+- Identical links findings say which kind of problem was found and list the fixes in order.
+- Running a readability analysis needs the **Run scans** permission instead of **View reports**. Give Run scans to editors who analyse pages.
+- Opening Readability from an entry's accessibility panel fills in the page URL. ([#4](https://github.com/john-henry/craft-accessibility-audit/issues/4))
+- The accessibility panel sits at the top of the element sidebar.
+- **Edit element** on a page report opens in a new tab. ([#2](https://github.com/john-henry/craft-accessibility-audit/issues/2))
 
 ### Fixed
-- Dismissed contrast questions stay dismissed. Two things were giving one element two identities, so an answer given to one never reached the other. The report marks an element in its preview when you click Show on page, and the browser pass then read that same preview and recorded the element with the plugin's own mark on it, as though it were a different element. And the engine reports the whole element when its markup is short but only the opening tag once it passes a certain length, which a syntax-highlighted code block crosses partway through rendering. Occurrences are now identified by the opening tag with the plugin's own marks removed, and migrations bring existing answers onto it.
-- Clicking Show on page no longer turns a question you have already answered into a new one on the next scan. A question was identified by whatever markup the browser engine handed over, and that engine only shortens an element to its opening tag once the markup passes a certain length. A code block that a syntax highlighter expands only passes that length once the highlighting has finished, so the same element arrived as two different strings depending on how far the page had rendered, and became two separate questions. Answering one never reached the other. Contrast questions are now identified by the opening tag alone, which does not move, and a migration brings existing answers and occurrences onto it.
-- The accessibility statement no longer tells a fully scanned site that nothing has been scanned. It worked out whether scan data existed by looking at what the scans had concluded, and once no criterion is signed off by the scanner there is nothing to conclude on a site with nothing failing. A clean site was told its compliance status rested on no evidence at all. It now asks whether pages have been scanned, which is the actual question.
-- The Overview heading over the rules worth fixing said "Fix these 10 issues" whatever was actually listed, including when the list was empty. It now counts what is there, and says so plainly when there is nothing.
-- The accessibility statement and the VPAT no longer count questions you have already answered, or issues you have already fixed, against a success criterion. Conformance levels were read off the findings with no filtering at all, so a question dismissed weeks ago still held a criterion at Partially Supports, and so did an issue resolved since. The statement could show three failing criteria while Issues listed one rule, with nothing on either screen to explain the other two. Since a statement is a public claim about your site, it now reads the findings the same way every other screen does: dismissed questions and fixed issues are spent, confirmed ones still count.
-- The statement and the VPAT were also throwing away the findings of every page scanned by address, keeping only one of them, so a site with pages listed under Additional URLs was drawing its conformance from an incomplete picture.
-- An entry whose address redirects somewhere else is no longer scanned as if it were a page. A section landing page that sends readers to its first child has no page of its own, so what came back belonged to the child, and the child is scanned in its own right: one page was being filed under two names, with the findings doubled and both counting against your page limit. Redirects that are the same page arriving differently, http to https, a trailing slash, a tracking parameter picked up on the way, carry on being scanned as normal.
-- A page report could show you an older scan than the one you had just run, which made answered questions look like they had come back. Scan times are stored to the second, and a re-scan writes its row while the browser pass is still working on the same page, so two scans regularly share a second. The report picked between them at the database's discretion, and the older one predates whatever you had answered since.
-- Dismissals made before this release on pages with generated ids are rescued rather than left dead. A ruling was keyed on the markup it was made against, ids and all, so a form field that comes back with a fresh id every render could never be matched again. Taking ids out of the key fixes everything from here on, but not what was already stored, so a migration recovers the original markup from the scan history and moves each ruling onto the new key. Where you have since answered the same question again, the newer answer is kept and the stale row is cleared.
-- Listings now show a page's address as well as its title. Titles are not unique: a plugin's landing page and its support page usually share one, share a layout, and so throw up the same findings off the same shared component. Dismissed rows for two different pages looked like the same row twice, which made a ruling that had held look like one that had not. The Dismissed tab and the page report both carry the address now.
-- Contrast findings answered from the page report stay answered. That pass rebuilds its results every time the report opens, and it was not carrying your answers onto the new rows, so anything you had confirmed or waved through came back the next time you looked at the page.
-- Dismissals stick on pages built with Formie, and anything else that mints a fresh id into every element each time the page renders. The same field came back with a different id on every scan, which made it a different occurrence as far as the plugin was concerned, so a question you had answered was asked again after the next scan. Ids are no longer part of what identifies an occurrence. Anything you have already dismissed stays dismissed: the old keys are still checked.
-- The Pages with Issues tab now lists pages with issues, in the count beside the tab and in the rows underneath it. It was listing every page that had been scanned, so a site with nothing wrong showed hundreds of rows with a dash where the counts belong, under a heading counting them all as pages with issues.
-- The Issues tab no longer tells you to run a scan when you have just run one and passed. A site nobody has scanned and a site with nothing failing both leave the list empty, and they now say which one you are looking at.
-- Contrast questions are no longer raised about text the scanner never had in view. Anything running off the side of the screen, or sitting further down a long page than the scan reaches, came back as "another element covers part of it", which sent you looking for a layering problem that was not there. Worse, which elements it landed on shifted from one run to the next, so answering one never cleared the queue: a different one took its place on the next scan. There is no answer a person can give to "the scanner could not see this", so it is not asked. Nothing that was measured and failing is hidden.
-- Visually hidden text is no longer reported as a contrast failure. Text put where a screen reader reads it and an eye never sees it has nothing on screen to have contrast with, but the modern way of hiding it leaves a pixel of box behind, so it was being measured like anything else. A category page with twenty cards could report forty failures nobody could see or fix. Covers the clip-path and clip rect forms, and hiding applied to a wrapper rather than to the text itself.
-- The alt text field on the Assets page no longer stops you at 125 characters. Craft's own alt field has no limit, and the plugin's own check does not complain until 150, so the field was cutting people off part way through fixing a finding it had raised, at a number nothing else used. 125 is what the AI generator is asked to aim for, which is a different job, and it still does.
-- A page that redirects off the site altogether is skipped and says so. What is at the other end belongs to somebody else, so auditing it tells you nothing about your own site, and it would have put a foreign address in your listing counting against your page limit. Redirects that stay put carry on as normal: http to https, trailing slashes, path moves, a hop down to a subdomain, dropping a leading www, and moves between sites this install serves.
-- A page that redirects is now recorded against the address it ends on. Asking for the old address filed the new page's content under the old one, so the same page sat in the listing twice under two names, with the same findings, both counting against your page limit, and answering a question on one left the other still asking.
-- Pages that are missing or broken are skipped on purpose rather than by accident, and the report says which status came back. A page returning 404 and a server that could not be reached at all used to arrive with the same sentence, so there was no telling one from the other.
-- Scanning an entry whose page could not be read no longer reports it as scoring 100. Nothing was read, so there is no score, and the console now says why it was skipped instead of printing a green 100 for a page nobody opened.
-- A rule page now describes the rule instead of quoting one page's findings as though that were the definition. Where there is no description written yet you still get an example, but it is labelled as one.
-- Contrast questions now say why they were asked. axe tells us what stopped it measuring, and that reason was being worked out and then thrown away, so every question read the same and there was nothing to tell you where to look. You now get the actual reason next to the markup: a background image, a partly transparent text colour, something sitting over it, and so on.
-- Contrast questions are no longer raised about text that was not visible on the page. There is nothing to see, so there was nothing to answer.
-- "Show on page" now finds occurrences whose markup was too long to store whole. Anything with a long list of utility classes was getting cut inside the class attribute, and the report was matching on the half-read list, so it could never locate the element and told you the page must have changed.
-- Dismissing a whole group is faster and no longer answers with a blank error page when something goes wrong. Every occurrence in a group belongs to the same scan, and each ruling was working that scan's score out again from scratch, so a group of fifty meant fifty recalculations of the same number while you waited. It is worked out once at the end now. If a ruling does fail part way, you get a sentence saying how many were saved before it stopped, with the detail in the logs, instead of a server error that leaves you guessing whether any of it landed. The ones that did save are real and stay saved.
-- Dismissing a contrast question did not stick. "Does this text have enough contrast against what is behind it?" comes from the browser pass, and that pass rebuilds its findings from scratch every time it runs, so the next scan put the question back as though nobody had answered it. Answers are kept in their own table precisely so they outlive a scan, and the browser pass now carries them forward the way the page scan always did. Answers you have already given apply again on the next scan; nothing needs re-doing.
-- Adding a non-accessible content entry from a scan suggestion filled the statement in with the wrong things. "What is affected" asks for what a member of the public would recognise, and it was given the WCAG criterion name, which names the rule rather than the thing on the page somebody cannot use. "Why" was given the criterion's own wording, and that wording states the condition for passing, so a statement saying a page does not comply carried a sentence underneath describing the site working correctly. This is a document with legal weight, so it now fills in only what the scan established, the criterion and how many issues were found, and leaves the description to you. Each entry is headed with the criterion it came from, so a list of them is still something you can tell apart. The field also shows an example of the sort of answer it wants, matched to the criterion: greyed guidance that is never saved, so nothing reaches the published document unless you wrote it.
-- Standard-edition sites were charged against their page limit for pages they had deleted. Craft soft-deletes, so a deleted entry keeps its row and the scan attached to it survives, and the count behind the limit was reading every scan ever taken. A site that had scanned and then deleted its way past the limit was refused new scans on the strength of pages that no longer exist. Deleted pages no longer count. Nothing needs clearing out by hand: the count is worked out fresh each time.
-- Show on page could not find an element that was sitting in plain view. The browser engine cuts the markup it reports at a fixed length, and on utility-class markup that cut lands inside the class attribute, leaving a half-finished class name that matches nothing and no text to fall back on. A heading with a long list of classes was the usual victim. The half-finished name is now dropped and the rest of the classes are compared as far as they go.
-- Twelve strings in the control panel had no entry in the message file, so they stayed in English on a translated install while everything around them changed. There is no warning when that happens, and an English install looks right either way, so they are now checked automatically.
-- The review queue no longer asks the same question dozens of times. A check that runs per element runs once per element, so a reference table whose cells could not be measured for contrast filled the page with near-identical cards, every one showing the same truncated markup because that is genuinely what the markup says. Repeated occurrences are now gathered into one card that says how many there are, and answering it answers the lot. They are still listed underneath for anyone who wants to take them one at a time, and each one still keeps its own answer, so nothing is decided on your behalf. Show all on page frames every one of them at once.
-- Contrast was being questioned on markup you had already marked as decoration. An arrow or icon in an `aria-hidden="true"` span is not announced and says nothing the text beside it does not, which WCAG treats as pure decoration and exempts. The plugin's own contrast pass has always skipped those, but axe measures them, so one engine asked about a node the other had deliberately passed over. Both now leave them alone. Findings already recorded against decorative markup are cleared on update and the scores they affected are worked out again. An `aria-hidden="false"` element is announced, so it is still checked.
-- "Are these identical links going to the same place?" was asked about links that are not identical at all. The check compared the text you can see, so a row of client cards each with a "Visit Website" button looked like the same link repeated, when every one of them carried an aria-label naming its destination. A screen reader reads those out as different links, which is the whole of what 2.4.4 asks for, so there was never a question to answer. It now compares what is actually announced, the same as the other link checks were taught to do. Visually hidden text counts towards the name and an aria-hidden decoration does not, so two "Read more" links that differ only in a hidden span are left alone, and two that differ only in a decorative arrow are still reported.
-- Filename alt text is now caught on the page, not just on the asset. Craft names an asset after its file, so a template reaching for the title rather than the alt field ships "Asset7623" for asset7623.jpg while the Assets page shows the image as perfectly fine. The alt on the page is now compared against the image's own filename, so the two cannot disagree quietly. A descriptive alt that happens to match a well-named file is left alone.
-- A link that warns about opening a new tab in visually hidden text was reported as though it had no warning at all. Only the aria-label and title were being read, and hidden text inside the link is announced just the same, so the plugin was flagging the very pattern its own documentation recommends. The whole announced name is read now. A link whose aria-label replaces that hidden text is still flagged, because in that case the warning genuinely is not announced.
-- The Assets page could report a missing alt text it then refused to show you. An image in the trash still counted towards the missing-alt figure, while the list below it correctly left trashed images out, so the chip said one and the page said none. Trashed images no longer count.
-- Contrast findings recorded against unstyled pages by the bug below are cleared out on update, and the scores they dragged down are worked out again. A genuine failure is untouched, and would come back on the next scan in any case.
-- AI alt text now works on very large images. Anything past 8000 pixels on a side was refused outright by the API, so print-resolution scans and untouched camera originals never got alt text at all. Large images are scaled down before they are sent, which fixes the refusal and cuts the upload, and costs you nothing in quality: anything bigger was being scaled down at the far end anyway. ([#3](https://github.com/john-henry/craft-accessibility-audit/issues/3))
-- A link carrying an aria-label was still being judged on the text you can see inside it. A button reading "View" with an aria-label of "Full recipe at ohmydish.com (opens in new tab)" got reported for vague link text, when the label spells the destination out plainly and is what a screen reader announces. Links are now judged on the name that is actually announced. The same pass taught the scanner to read a name from an SVG title or an aria-labelledby reference, so links named that way are no longer reported as having no name at all. ([#7](https://github.com/john-henry/craft-accessibility-audit/issues/7))
-- Contrast findings on repeated markup all pointed at the same element. A row of category links, a list of tags, any component that appears more than once: every occurrence was recorded against a selector built from tag and class alone, so the whole lot shared one selector and clicking any of them highlighted whichever came first. The report was right about how many there were and wrong about where. Occurrences now carry their position among matching siblings, so each one points at itself. Existing findings pick this up on the next scan.
-- Clicking an occurrence in the Inspect view could box the wrong element when two of them shared an attribute. A page with two links to the same address, a pill near the top and a photo credit further down, framed whichever came first rather than the one the finding was about. The stored snippet is capped in length, and whatever the cut landed in was being compared whole, so the class and text that would have told the two apart were thrown away. They are now read as far as they go, and where there is genuinely nothing left to tell candidates apart the report says it cannot place the occurrence rather than pointing at the wrong one.
-- A vague link whose label only added a new-tab notice stopped being reported. Judging links on the name a screen reader announces was the right call, but "here (opens in new tab)" is still the word "here": the notice describes what the link does to your browser, not where it goes, and judged whole it looked specific enough to pass. The notice now comes off before the check, so those links are reported again while a label that genuinely names the destination is still left alone.
-- The Inspect view boxed every link on the page when you clicked one of those link findings, correctly labelled ones included. It now frames only the links the finding is really about. ([#7](https://github.com/john-henry/craft-accessibility-audit/issues/7))
-- AI alt text described the wrong thing on screenshots. Asked about a picture of a control panel, it would describe whatever photo happened to be sitting inside that screenshot, so an image showing you a button came back as a museum gallery or a mountain bike. Fluent, accurate about the pixels, and no use at all to somebody who cannot see the screen. It is now told to name the screen and the controls and to ignore the sample content inside them. ([#10](https://github.com/john-henry/craft-accessibility-audit/issues/10))
-- AI alt text could run past its own length limit and then get flagged by the plugin's own review queue, which asked whether the alt text it had just written was too long. The model is asked for 125 characters but counts them poorly, and nothing was checking. An answer that overshoots now gets one more go at saying it shorter, and is trimmed back on a word boundary if it still will not fit.
-- The Generate button on an asset produced weaker alt text than the same image put through the queue. The queued job was passing the filename and title along as context and the button was not, so it had less to go on for no good reason. Both go the same road now.
-- Running the overlay inside Craft's preview pane could file the results against the draft you were previewing rather than the entry, so the scan looked like it worked and then never showed up on the page report. The overlay still runs in a preview and still shows you what it finds, but it no longer saves anything, and the panel says so. ([#9](https://github.com/john-henry/craft-accessibility-audit/issues/9))
-- Text that only appears on hover was being checked in its hidden state. A photo caption that fades in over the image sits in the page the whole time, so it was measured against the page background rather than the photo it appears over, and reported as failing on colours it never actually shows. Fully transparent text is now left alone until it is the state on screen.
-- Pages that inline their critical CSS and load the full stylesheet afterwards were reported as a wall of colour-contrast failures against text that is perfectly readable. Between the two, the page has its backgrounds but not its colours, and anything coloured through a CSS variable, which is how Tailwind ships its palette, falls back to the browser default link blue. The contrast pass now waits for the page to stop taking on styles before it reads a single colour, the same wait the other browser checks already took. Existing findings clear on the next scan.
-- Re-scanning a page report the moment it opened could file a set of findings that were not about the page at all: no title, no language, no main landmark, no heading. Those are all true of the blank frame the preview shows while it is still loading, which is what was getting checked. The checks now wait for the page itself.
-- The Retain Scan Results setting did nothing on its own. See the warning above before updating: the first prune clears whatever has built up in the meantime. Nothing read it that deletes: the only thing that pruned anything was a console command, so unless you had wired that into cron yourself, scan history grew without end no matter what the setting said, and the settings screen told you it was automatic. Pruning now rides along with Craft's own garbage collection, so the setting means what it says and there is nothing to schedule.
-- The Overview could show 100 while the card underneath it said criteria were failing. Those figures are page scores averaged over the site, so on a large one a few failing pages move the average by a fraction of a point and it rounded up to full marks. A hundred percent beside "3 criteria failing" reads as a conformance claim, and it is not one the evidence supports: the statement page refuses to make that claim on the same evidence. The average now stops at 99 unless every page really is clean.
-- Re-scan on a page report only checked the width you happened to be looking at. The report runs the browser checks in its own preview rather than queueing them, and that preview only ever measured the viewport on screen, so the other one kept showing findings from the previous scan until you switched to it and re-scanned again. One Re-scan now walks both widths and puts the preview back where you left it.
-- The accessibility panel on an entry pushed its dividing lines out past its own edge on narrow screens, leaving a sliver of sideways scroll. The panel now follows the sidebar's own spacing at every width. ([#5](https://github.com/john-henry/craft-accessibility-audit/issues/5))
+- Answered contrast questions no longer come back after the next scan.
+- Contrast answers given from the page report stay answered.
+- Clicking Show on page no longer turns an answered question into a new one.
+- Dismissals stick on pages built with Formie, or anything else that generates fresh ids. Existing dismissals are carried over.
+- The statement no longer says nothing has been scanned on a clean, fully scanned site.
+- The Overview's "Fix these issues" heading counts what's actually listed.
+- The statement and the VPAT no longer count answered questions or fixed issues against a criterion.
+- The statement and the VPAT include findings from every page scanned by URL.
+- Drafted VPAT remarks no longer count questions you've already answered.
+- An entry whose URL redirects elsewhere is no longer scanned as a page of its own.
+- A page report always shows the latest scan.
+- Listings show each page's address as well as its title.
+- The Pages with Issues tab only lists pages that have issues.
+- The Issues tab tells a site that passed apart from one that hasn't been scanned.
+- Contrast questions are no longer raised about text outside the area the scanner could see.
+- Contrast questions are no longer raised about text that isn't visible.
+- Visually hidden text is no longer reported as a contrast failure.
+- Contrast questions give the reason they were asked.
+- The alt text field on the Assets page no longer stops at 125 characters.
+- A page that redirects off the site is skipped, and the scan says so.
+- A page that redirects is recorded against the address it ends on.
+- Missing or broken pages are skipped, and the report gives the status code.
+- An entry whose page couldn't be read no longer scores 100.
+- Rule pages describe the rule instead of quoting one page's findings.
+- Show on page finds elements whose markup was too long to store whole.
+- Dismissing a whole group is faster.
+- A group dismissal that fails part way says how many were saved instead of showing a blank error page.
+- Adding a non-accessible content entry from a scan suggestion leaves the description for you to write.
+- Deleted pages no longer count towards the Standard edition's page limit.
+- Twelve control panel strings that stayed in English on translated installs are now translated.
+- Markup with `aria-hidden="true"` is no longer checked for contrast, and findings already recorded against it are cleared on update.
+- The identical links check compares what's announced, so links with distinct aria-labels are no longer reported.
+- Alt text that matches the image's filename is caught on the page as well as on the asset.
+- A link that warns about a new tab in visually hidden text is no longer reported as missing the warning.
+- Trashed images no longer count towards the missing alt text figure on the Assets page.
+- AI alt text works on images over 8000 pixels on a side. ([#3](https://github.com/john-henry/craft-accessibility-audit/issues/3))
+- Links are judged on the name a screen reader announces, aria-label included. ([#7](https://github.com/john-henry/craft-accessibility-audit/issues/7))
+- Links named by an SVG title or `aria-labelledby` are no longer reported as having no name.
+- Contrast findings on repeated markup each point at their own element.
+- The Inspect view no longer boxes the wrong element when two share an attribute.
+- Vague link text followed only by a new-tab notice is reported again.
+- The Inspect view frames only the links a link finding is about. ([#7](https://github.com/john-henry/craft-accessibility-audit/issues/7))
+- AI alt text for screenshots describes the interface, not the pictures inside it. ([#10](https://github.com/john-henry/craft-accessibility-audit/issues/10))
+- AI alt text stays within its 125 character limit.
+- The Generate button on an asset gets the same context as queued alt text jobs.
+- The overlay in Craft's preview pane no longer saves results against the draft. ([#9](https://github.com/john-henry/craft-accessibility-audit/issues/9))
+- Text that only appears on hover is no longer checked in its hidden state.
+- Pages that load their full stylesheet after inline critical CSS no longer get false contrast failures. Findings already recorded are cleared on update.
+- Re-scanning as soon as a page report opens no longer records findings from the blank preview.
+- **Retain Scan Results** now deletes old scan history on its own during Craft's garbage collection. See the warning above.
+- The Overview score stops at 99 unless every page is clean.
+- Re-scan on a page report checks both desktop and mobile widths.
+- The accessibility panel on an entry no longer scrolls sideways on narrow screens. ([#5](https://github.com/john-henry/craft-accessibility-audit/issues/5))
 
 ### Security
-- Outbound fetches now connect only to the addresses the safety check validated. Checking a hostname and then handing the URL to an HTTP client leaves a gap, because the client looks the name up again when it connects, and a name someone else controls can answer with a public address for the check and a private one for the connection. Re-checking the name does not close that. The validated addresses are now given to curl directly, and redirects are followed one checked hop at a time rather than by the client, so every hop gets the same treatment. Reaching this needed the Run scans permission and a URL the site already scans, so it was never open to the public.
+- Outbound fetches connect only to the addresses the SSRF check approved, and every redirect is checked.
 
 ## 1.1.0 - 2026-08-21
 
-Out of beta. Seven beta releases and five weeks of scanning real production sites got the plugin here. There are no breaking changes and no migrations; anyone on a beta build should simply update.
+First stable release. No breaking changes and no migrations, so update from any beta build.
 
 ### Added
-- The needs-review queue on a page report now takes bulk rulings: tick the occurrences (or Select all) and **Dismiss selected** answers the lot in one go. Built for the page where one judgment repeats fifty times, a sticky-nav's links all flagged for the same unmeasurable background being the classic case.
-
-### Fixed
-- Show on page did nothing for the alt-text questions ("Is this alt text too long?"): the stored snippet is the alt text itself, which no text search can find because images have no text. The image is now matched by its alt attribute, so the button lands on it like any other finding.
+- **Dismiss selected** on a page report's needs-review queue, for answering several occurrences at once.
 
 ### Changed
-- On the needs-review cards, Not an issue is no longer a solid red button with Confirm as failure tucked beneath it as a small link. The two rulings now sit side by side with equal weight, with Confirm as failure carrying a red label for its consequence. Dismissing should never look like the main event when it is the ruling that costs nothing.
+- Not an issue and Confirm as failure now sit side by side, with equal weight, on the needs-review cards.
+
+### Fixed
+- Show on page now works for alt text questions.
 
 ## 1.0.11-beta.1 - 2026-08-21
 
 ### Added
-- Pro: the admin overlay now works on decoupled frontends. If your site is headless (Next, Nuxt, Astro or the like), Craft never renders your pages, so the overlay could never appear there. Now you add one script tag to your frontend, generate a token under **Settings → Tools**, and open the site through an activation link: the overlay runs on your real frontend with the same axe engine and rules, and stores results against the same scans you see in the control panel. The script does nothing at all for ordinary visitors, so it is safe to ship in production builds, and it suits heavily cached sites just as well: pages served from Blitz or a CDN edge never run Craft, so this is the way to get the overlay onto them too. The new Decoupled Frontends page in the docs has the setup.
-- The common consent-management banners (OneTrust, Cookiebot, Ketch, Usercentrics, Didomi, TrustArc, Osano, Complianz, CookieYes, Iubenda, Termly) are now excluded from every scan surface. Their markup is third-party UI you can neither fix nor keep still between scans, so findings inside them only buried your own. A new **Excluded Elements** setting under **Settings → Scanning** takes extra CSS selectors, one per line, for anything else on the page you do not control: chat widgets, embedded players, testing overlays.
+- Pro: the admin overlay works on decoupled front ends, with a script tag and a token from **Settings → Tools**. See the Decoupled Frontends page in the docs.
+- Common cookie consent banners, such as OneTrust and Cookiebot, are left out of every scan.
+- An **Excluded Elements** setting under **Settings → Scanning** for CSS selectors to leave out of scans.
 
 ### Fixed
-- Clicking a finding whose element could not be located in the Inspect preview used to box every element the rule could apply to: one nameless button reported, eighty-odd buttons highlighted; two misplaced list items, every list item on the page. Matching now finds the right element far more reliably, snippets cut off mid-tag included, and when the element genuinely is not in the preview (added by a script that does not run there, say), the report says it cannot highlight instead of highlighting everything.
-- Browser-pass findings were described with axe's rule blurb ("Ensures `<dl>` elements are structured correctly"), which reads like a question about whether anything is wrong. They now carry the requirement that actually failed ("`<dl>` elements must only directly contain properly-ordered `<dt>` and `<dd>` groups…"), the same wording the overlay always used. Applies to newly scanned results.
-- The frontend overlay's Highlight now scrolls to an element that is actually on screen when a finding matches several, and says so when everything it flashed sits inside a collapsed menu or panel.
-- The site's own styles could bleed into the frontend overlay panel: a theme's heading font landing on the panel title, decorative flourishes attached to headings, that sort of thing. The panel now pins its own typography and blocks the page's decorative styles, so it looks the same on every site.
-- On the Inspect page, clicking a finding about something the page lacks (no skip link, no meta description, no landmarks) would box unrelated elements in the preview, as if they were the problem. A missing skip link, for one, highlighted whatever ordinary in-page anchor links it could find. Those findings now show their message without highlighting anything, since there is no offending element to point at.
-- The Inspect preview could highlight the wrong link when two links point at the same URL, a nav item and a "View all" button being the classic pair: the finding was about one, the box landed on the other. The box now lands on the one the finding is actually about.
-- Findings about the document itself (a missing or empty page title, a missing language attribute) no longer try to highlight anything in the Inspect preview either: their reported element is the page as a whole, so the box would land on the whole page or on nothing visible.
-- When a finding landed on an element with no attributes, every occurrence rendered as the same bare tag: a page with dozens of orphaned list items showed dozens of identical `<li>` chips, with no way to tell one from another. Each occurrence now shows a short preview of the element's text, so you can tell which is which.
-- Not an issue and Confirm as failure could silently fail on findings whose snippet spans multiple lines: the ruling looked saved, then the question came straight back after the reload. Rulings on those findings now stick. If one bounced back on you before, click it once more after updating.
-- Settings pages now render read-only on installs where administrative changes are disabled (a standard production lockdown), instead of refusing to open at all. The usual Craft read-only notice appears, every field greys out, save and token-generation controls are withheld, and both the plugin's own Settings link and the one under Settings → Plugins keep working on those installs.
-- Two elements with an empty `id=""` were reported as a duplicate id. An empty id cannot be referenced by anything (labels, `aria-labelledby`, fragment links all need a value), so it collides with nothing; the check now ignores empty and whitespace-only ids. Genuine duplicates are still reported.
-- Highlighting an element that sits inside a collapsed menu or panel looked like nothing happened: the box was applied, but out of sight until the menu was opened by hand. A notice now says where the element is hiding, and the highlight is waiting there when you open it.
-- Show on page could look like it did nothing when the finding's content renders in more than one place, a hero title repeated on a listing card being the classic case: the box landed on whichever copy came first in the page's markup, possibly nowhere near where you were looking, or on a hidden one. All identical renderings are now boxed together, visible ones are preferred, and the preview scrolls to one that is actually on screen.
-- Show on page for an image question could highlight every image sharing an upload path: the stored snippet cut the image URL short, so listing thumbnails all matched it. The right image is now identified, and rulings you have already made keep holding after the change.
+- A finding whose element can't be found in the Inspect preview no longer highlights every element the rule could apply to.
+- Browser findings describe the requirement that failed, not axe's rule summary. Applies to new scans.
+- The frontend overlay's Highlight scrolls to a match that's on screen.
+- Highlighting an element inside a collapsed menu or panel now says where it is.
+- The site's own styles no longer leak into the frontend overlay panel.
+- Findings about something missing from the page, like a skip link, no longer highlight unrelated elements.
+- The Inspect preview highlights the right link when two links share a URL.
+- Findings about the document itself, like a missing page title, no longer try to highlight anything.
+- Occurrences on elements with no attributes show a short text preview.
+- Not an issue and Confirm as failure now stick on findings whose snippet spans several lines. Redo any that bounced back.
+- Settings pages open read-only when admin changes are disabled, instead of refusing to open.
+- Empty `id=""` attributes are no longer reported as duplicate ids.
+- Show on page boxes every copy of repeated content and scrolls to a visible one.
+- Show on page for an image question no longer highlights every image sharing an upload path.
 
 ## 1.0.10-beta.1 - 2026-08-21
 
 ### Fixed
-- The Accessibility Audit link on **Settings → Plugins** gave a 404 instead of opening the plugin settings. The settings pages themselves were always fine, and reachable through the plugin's own sidebar, but the standard route in from the Settings page was broken. It now lands you on the settings like any other plugin. ([#1](https://github.com/john-henry/craft-accessibility-audit/issues/1))
+- The Accessibility Audit link on **Settings → Plugins** opens the plugin settings instead of a 404. ([#1](https://github.com/john-henry/craft-accessibility-audit/issues/1))
 
 ## 1.0.9-beta.1 - 2026-08-13
 
 ### Added
-- A new **Browser Settle Time** setting under **Settings → Scanning** controls how long the browser pass waits after a page loads before running its checks, so late-rendering JavaScript can finish. It has always waited 2 seconds, and that is still the default, but the wait is paid on every pass, so on a big site it adds up to hours. Plenty of sites are fine at 500 milliseconds, and you can set 0 to skip the wait entirely.
+- A **Browser Settle Time** setting under **Settings → Scanning** for how long the browser pass waits after a page loads. It defaults to 2 seconds.
 
 ### Changed
-- The browser pass now renders the desktop and mobile checks for a page in one Chrome session instead of starting a fresh one for each. On a site with thousands of pages that halves the browser starts, which takes a serious chunk off the total scan time. Nothing changes in the results themselves.
+- The browser pass checks desktop and mobile in one Chrome session, so site-wide scans are faster.
 
 ### Fixed
-- On large sites, a queued site-wide scan could quietly miss some pages and scan others twice, because the database was free to hand the pages back in a different order for each batch. The sweep now works through pages in a fixed order, so every page is scanned exactly once.
+- Queued site-wide scans on large sites no longer skip some pages and scan others twice.
 
 ## 1.0.8-beta.1 - 2026-08-12
 
 ### Fixed
-- Server-side browser scans could crash partway through a page on servers with limited shared memory, a common setup on containers and managed VPS hosting. Chrome is now told to keep its working memory out of the shared memory area, so those scans complete instead of dying quietly.
+- Server-side browser scans no longer crash on servers with limited shared memory.
 
 ## 1.0.7-beta.1 - 2026-08-07
 
 ### Added
-- You can now point the scanner at a Chrome running somewhere else instead of installing one on your own server. Set **Settings → Scanning → Remote Chrome Endpoint** to a browserless account, a container of your own, or anything else speaking the DevTools protocol, and the browser pass runs there. This is the only way to get server-side browser scanning on hosts where you cannot install a binary, Craft Cloud among them. Store the URI in an environment variable if it carries a token.
-- Contrast that axe-core could not measure now lands under **Needs review** instead of being thrown away. axe hands a node back undecided when it cannot work out what is actually behind the text, which happens when another element sits over it, or the text is on an image or a gradient. Those results used to vanish, so a page could look clean on contrast while the hardest parts of it had never really been checked. They now arrive as a question, with the reason axe gave and the ratio the text needs, and they stay out of your score until you confirm one.
+- A **Remote Chrome Endpoint** setting under **Settings → Scanning** to run the browser pass on a Chrome elsewhere, which is how to get browser scanning on Craft Cloud. Keep the URI in an environment variable if it carries a token.
+- Contrast that axe-core can't measure goes under **Needs review** instead of being dropped.
 
 ### Changed
-- `storeAxeIssues()` takes a fourth argument, the undecided results from axe, defaulting to an empty array. Existing calls keep working unchanged.
+- `storeAxeIssues()` takes an optional fourth argument for axe's undecided results.
 
 ### Fixed
-- On sites using modern CSS colour syntax, which means any site built with Tailwind 4, the contrast check misread colours it could not parse. A button with its own white background could be reported as failing against the section colour behind it, and text whose colour could not be read was skipped altogether, so genuine failures went unreported. Colours are now read in any syntax the browser understands, `oklch` included.
+- The contrast check reads modern CSS colour syntax, `oklch` included, so Tailwind 4 sites get correct results.
 
 ## 1.0.6-beta.1 - 2026-07-27
 
 ### Fixed
-- The accessibility statement preview and the published statement failed with a template loading error, because the built-in statement template was missing from the release package.
+- The statement preview and the published statement no longer fail with a template loading error.
 
 ## 1.0.5-beta.1 - 2026-07-27
 
 ### Fixed
-- On the accessibility statement, the Add an entry button and the scan-suggestion chips only saved the statement without adding the entry when the non-accessible content list was still empty.
+- Add an entry and the scan-suggestion chips on the statement now add the entry when the list is empty.
 
 ## 1.0.4-beta.1 - 2026-07-27
 
 ### Changed
-- Programmatic bulk resaves (the resave commands, migrations) no longer queue a scan per element. Use Scan All for a deliberate site-wide sweep.
+- Bulk resaves, like the resave commands and migrations, no longer queue a scan per element. Use Scan All for a site-wide sweep.
 
 ### Fixed
-- A scan could fail entirely on a page whose alt text or markup contained multibyte characters (curly quotes, accents, emoji) near a truncation point, stalling a site-wide scan with a database error. Truncation is now multibyte-safe, and issue text is sanitised before storage so one bad string can never fail a scan.
-- Saving an entry queued duplicate scans and browser checks for the same URL, because the entry's revision was scanned alongside it. Revisions are no longer scanned.
+- A scan no longer fails on pages with multibyte characters near a truncation point.
+- Saving an entry no longer queues duplicate scans for its revision.
 
 ## 1.0.3-beta.1 - 2026-07-27
 
 ### Fixed
-- Page report highlights no longer repaint the element's background, and the contrast check ignores the report's own highlights and badges.
-- The page report's contrast and axe passes now wait for JavaScript-injected stylesheets to apply, so styled elements are no longer reported at browser-default colours.
+- Page report highlights no longer change the element's background.
+- The contrast check ignores the page report's own highlights and badges.
+- The page report's contrast and axe checks wait for stylesheets added by JavaScript.
 
 ## 1.0.2-beta.1 - 2026-07-27
 
 ### Added
-- Colour-contrast findings in the page report now show the failing element's markup.
+- Colour contrast findings in the page report show the failing element's markup.
 
 ### Fixed
-- Page report highlighting now pinpoints the exact elements for duplicate-id and colour-contrast findings. Re-scan a page to update stored contrast findings.
+- Page report highlighting finds the exact elements for duplicate id and colour contrast findings. Re-scan a page to update stored contrast findings.
 
 ### Security
-- Pages rendered for a logged-in admin with the frontend overlay enabled are no longer cacheable, so a full-page cache such as Blitz or a CDN cannot serve the admin's overlay to visitors.
+- Pages rendered for a logged-in admin with the frontend overlay on are no longer cacheable, so Blitz or a CDN can't serve the overlay to visitors.
 
 ## 1.0.1-beta.1 - 2026-07-27
 
 ### Changed
-- License type and some supporting github issue docs
+- Updated the license type.
 
 ## 1.0.0-beta.1 - 2026-07-12
 

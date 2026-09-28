@@ -87,7 +87,7 @@ describe('state contrast storage', function() {
     it('gives each state its own rule', function() {
         $scanId = stateContrastScanId();
 
-        AccessibilityAudit::getInstance()->audit->storeContrastIssues($scanId, [
+        AccessibilityAudit::getInstance()->getAudit()->storeContrastIssues($scanId, [
             stateOccurrence('hover'),
             stateOccurrence('focus', 2.66),
             stateOccurrence('selection', 1.29),
@@ -102,7 +102,7 @@ describe('state contrast storage', function() {
         // will go looking for and never find.
         $scanId = stateContrastScanId();
 
-        AccessibilityAudit::getInstance()->audit->storeContrastIssues($scanId, [stateOccurrence('hover')]);
+        AccessibilityAudit::getInstance()->getAudit()->storeContrastIssues($scanId, [stateOccurrence('hover')]);
 
         [$message] = storedContrastRows($scanId)['contrast-hover'];
 
@@ -113,7 +113,7 @@ describe('state contrast storage', function() {
     it('keeps the state in the context so the report can read it back', function() {
         $scanId = stateContrastScanId();
 
-        AccessibilityAudit::getInstance()->audit->storeContrastIssues($scanId, [stateOccurrence('selection')]);
+        AccessibilityAudit::getInstance()->getAudit()->storeContrastIssues($scanId, [stateOccurrence('selection')]);
 
         [, $context] = storedContrastRows($scanId)['contrast-selection'];
 
@@ -125,7 +125,7 @@ describe('state contrast storage', function() {
         // store as color-contrast, with no state in its context.
         $scanId = stateContrastScanId();
 
-        AccessibilityAudit::getInstance()->audit->storeContrastIssues($scanId, [stateOccurrence(null)]);
+        AccessibilityAudit::getInstance()->getAudit()->storeContrastIssues($scanId, [stateOccurrence(null)]);
 
         $rows = storedContrastRows($scanId);
 
@@ -140,7 +140,7 @@ describe('state contrast storage', function() {
         // inventing a rule id nothing is registered for.
         $scanId = stateContrastScanId();
 
-        AccessibilityAudit::getInstance()->audit->storeContrastIssues($scanId, [stateOccurrence('active')]);
+        AccessibilityAudit::getInstance()->getAudit()->storeContrastIssues($scanId, [stateOccurrence('active')]);
 
         expect(array_keys(storedContrastRows($scanId)))->toBe(['color-contrast']);
     });

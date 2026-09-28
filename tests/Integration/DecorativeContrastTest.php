@@ -76,7 +76,7 @@ describe('contrast findings on decorative markup', function() {
         // The real case: a decorative arrow after link text.
         $scanId = decorativeContrastScan();
 
-        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [], 'desktop', [[
+        AccessibilityAudit::getInstance()->getAudit()->storeAxeIssues($scanId, [], 'desktop', [[
             'id' => 'color-contrast',
             'nodes' => [decorativeContrastNode('<span aria-hidden="true"> →</span>')],
         ]]);
@@ -87,7 +87,7 @@ describe('contrast findings on decorative markup', function() {
     it('does not report an aria-hidden node as a contrast failure either', function() {
         $scanId = decorativeContrastScan();
 
-        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [[
+        AccessibilityAudit::getInstance()->getAudit()->storeAxeIssues($scanId, [[
             'id' => 'color-contrast',
             'impact' => 'serious',
             'nodes' => [decorativeContrastNode('<span aria-hidden="true"> →</span>')],
@@ -99,7 +99,7 @@ describe('contrast findings on decorative markup', function() {
     it('still asks about text that is actually announced', function() {
         $scanId = decorativeContrastScan();
 
-        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [], 'desktop', [[
+        AccessibilityAudit::getInstance()->getAudit()->storeAxeIssues($scanId, [], 'desktop', [[
             'id' => 'color-contrast',
             'nodes' => [decorativeContrastNode('<p class="lead">Read this bit</p>')],
         ]]);
@@ -111,7 +111,7 @@ describe('contrast findings on decorative markup', function() {
         // Explicitly not hidden, so it is announced and the question stands.
         $scanId = decorativeContrastScan();
 
-        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [], 'desktop', [[
+        AccessibilityAudit::getInstance()->getAudit()->storeAxeIssues($scanId, [], 'desktop', [[
             'id' => 'color-contrast',
             'nodes' => [decorativeContrastNode('<span aria-hidden="false">Sale</span>')],
         ]]);
@@ -122,7 +122,7 @@ describe('contrast findings on decorative markup', function() {
     it('reads single-quoted markup the same as double-quoted', function() {
         $scanId = decorativeContrastScan();
 
-        AccessibilityAudit::getInstance()->audit->storeAxeIssues($scanId, [], 'desktop', [[
+        AccessibilityAudit::getInstance()->getAudit()->storeAxeIssues($scanId, [], 'desktop', [[
             'id' => 'color-contrast',
             'nodes' => [decorativeContrastNode("<span aria-hidden='true'> x</span>")],
         ]]);

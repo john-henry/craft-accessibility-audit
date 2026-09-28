@@ -583,12 +583,17 @@
 
   /* ── Small shared utilities ──────────────────────────────────────────── */
 
+  /* Both quote characters, not only the double. Nothing builds an attribute
+     with single quotes today, and the first thing that does would otherwise
+     escape review: the value would read as escaped at the call site and still
+     close the attribute. */
   function escHtml(str) {
     return String(str)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   /* The one 80/50 score-colour threshold, everywhere a score is painted. */

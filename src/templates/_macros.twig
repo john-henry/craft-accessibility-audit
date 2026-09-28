@@ -67,15 +67,9 @@
 
 {% macro responsibility(responsibility) -%}
     {%- if responsibility is not null -%}
-        {%- set ownerMod = responsibility == 'content' ? 'content'
-            : (responsibility == 'design' ? 'design'
-            : (responsibility == 'development' ? 'dev' : 'technical')) -%}
-        <span class="token accessibility-audit-owner--{{ ownerMod }}">
-            {{- responsibility == 'content' ? 'Content writing'|t('accessibility-audit')
-              : responsibility == 'design' ? 'Visual design'|t('accessibility-audit')
-              : responsibility == 'development' ? 'Development'|t('accessibility-audit')
-              : 'Technical'|t('accessibility-audit') -}}
-        </span>
+        {%- set badges = craft.a11y.responsibilities() -%}
+        {%- set badge = badges[responsibility] ?? badges.technical -%}
+        <span class="token accessibility-audit-owner--{{ badge.modifier }}">{{- badge.label -}}</span>
     {%- else -%}—{%- endif -%}
 {%- endmacro %}
 
