@@ -170,6 +170,15 @@ describe('The document', function() {
             ->and($document['title'])->toContain('Cork Library');
     });
 
+    it('titles the report with the organisation and records it as the author company', function() {
+        $document = OpenAcr::document(oaReport(['meta' => ['organisationName' => 'Acme Ltd']]), 'Acme');
+
+        expect($document['title'])->toBe('Acme Ltd Accessibility Conformance Report')
+            ->and($document['product']['name'])->toBe('Acme Website')
+            ->and($document['author']['company_name'])->toBe('Acme Ltd')
+            ->and(oaSchemaErrors($document))->toBe([]);
+    });
+
     it('carries the evaluation period and scope pages in the notes, and leaves revisions out', function() {
         $document = OpenAcr::document(oaReport([
             'meta' => [

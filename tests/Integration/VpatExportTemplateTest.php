@@ -114,6 +114,26 @@ describe('VpatController::actionExport custom template', function() {
             ->toContain('Provided for information only.');
     });
 
+    it('titles the report with the organisation, as the ITI template does', function() {
+        $siteId = Craft::$app->getSites()->getPrimarySite()->id;
+        saveVpatMetaFlat($siteId, ['organisationName' => 'Acme Ltd', 'productName' => 'Acme Website']);
+
+        expect(requestVpatExport($this)->content)
+            ->toContain('<h1>Acme Ltd Accessibility Conformance Report</h1>')
+            ->toContain('<title>Acme Ltd Accessibility Conformance Report</title>');
+    });
+
+    it('keeps the plain title when no organisation is given', function() {
+        $siteId = Craft::$app->getSites()->getPrimarySite()->id;
+        saveVpatMetaFlat($siteId, ['productName' => 'Acme Website']);
+
+        // The product has its own line under the title, so it never stands in
+        // for the organisation there.
+        expect(requestVpatExport($this)->content)
+            ->toContain('<h1>Accessibility Conformance Report</h1>')
+            ->not->toContain('Acme Website Accessibility Conformance Report');
+    });
+
     it('claims only automated scanning when no methods were recorded', function() {
         // Explicitly blank meta, overriding whatever the dev database holds.
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;

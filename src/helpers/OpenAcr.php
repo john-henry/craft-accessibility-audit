@@ -134,18 +134,22 @@ class OpenAcr
         $meta = $report['meta'];
         $international = $report['en301549'];
         $productName = self::productName($report, $siteName);
+        $organisationName = self::_text($meta['organisationName'] ?? '');
 
         $document = [
             'title' => Craft::t('accessibility-audit', '{name} Accessibility Conformance Report', [
-                'name' => $productName,
+                'name' => $organisationName !== '' ? $organisationName : $productName,
             ]),
             'product' => self::_filled([
                 'name' => $productName,
                 'version' => self::_text($meta['productVersion'] ?? ''),
                 'description' => self::_text($meta['productDescription'] ?? ''),
             ]),
+            // The organisation goes on the author rather than on vendor: the
+            // schema's contact type requires an email, and only the author has one.
             'author' => self::_filled([
                 'name' => self::_text($meta['contactName'] ?? ''),
+                'company_name' => $organisationName,
                 'email' => self::_text($meta['contactEmail'] ?? ''),
                 'phone' => self::_text($meta['contactPhone'] ?? ''),
             ]),

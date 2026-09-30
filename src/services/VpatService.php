@@ -1418,9 +1418,9 @@ class VpatService extends Component
             "Criterion description: {$meta['desc']}\n" .
             'Conformance level chosen for this row: ' . ($level !== '' ? $level : 'not yet selected') . "\n\n" .
             implode("\n\n", $sources) . "\n\n" .
-            // The rules below are drawn from a corpus of published conformance
-            // reports. See reference/vpat-remark-patterns.md, which records
-            // what the corpus does at each of these decisions and how often.
+            // The rules below are drawn from a study of published conformance
+            // reports: what they do at each of these decisions, and which
+            // habits make a remark useless to the buyer reading it.
             //
             // Grouped and made conditional on purpose. Sixteen equal-looking
             // bullets, a third of them about a situation this row is not in,
@@ -1456,6 +1456,7 @@ class VpatService extends Component
             "- Never describe testing tools or method. Those belong to the report as a whole, not to one row.\n" .
             "- Never say how something was established unless the material says so. Do not write that anything was manually evaluated, audited, reviewed or tested by a person. That is the point at which an unattributed claim quietly acquires a provenance it never had.\n" .
             "- Never hedge without something concrete beside it. \"Some pages\" alone is worthless; \"some\" with a number or a named component is fine.\n" .
+            "- Never claim \"all\", \"every\" or \"no\" across the product unless the material establishes it for the whole scope. Say what was covered instead: which pages, how many.\n" .
             "- Never describe what the product was designed or intended to do. Describe what it does.\n" .
             "- Never offer a workaround, a setting or an add-on as though it settled the criterion. A fault that is worked around is still a fault.\n" .
             '- Never commit to a fix or a date' . ($hasNotes ? " unless the author's notes give one.\n" : ".\n") .

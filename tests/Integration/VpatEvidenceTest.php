@@ -179,10 +179,9 @@ describe('VpatService::getEvidence', function() {
 // ---------------------------------------------------------------------------
 // The drafting rules come from real reports, not from taste.
 //
-// A corpus of 37 published conformance reports is recorded in
-// reference/vpat-remark-patterns.md. The findings below drive the prompt, and
-// each is here because dropping it would put the plugin's drafts back among the
-// weakest documents in that corpus.
+// The prompt is built from a study of published conformance reports. Each
+// finding below drives one of its rules, and is pinned here because dropping it
+// would put the plugin's drafts back among the weakest of those reports.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -379,7 +378,10 @@ it('bars the weak patterns the corpus is full of', function() {
         ->and($source)->toContain('Never describe what the product was designed or intended to do')
         // The trap a component vendor falls into: qualify everything by saying
         // it depends on the implementer, and the report has said nothing.
-        ->and($source)->toContain('Never push the problem onto whoever implements');
+        ->and($source)->toContain('Never push the problem onto whoever implements')
+        // An absolute over the whole product is a restatement with a
+        // quantifier added, unless the material covers the whole scope.
+        ->and($source)->toContain('unless the material establishes it for the whole scope');
 });
 
 it('drafts remarks from the findings the rest of the plugin recognises', function() {

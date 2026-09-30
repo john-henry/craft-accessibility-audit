@@ -3,7 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VPAT{% if report.meta.productName ?? false %}: {{ report.meta.productName }}{% endif %}</title>
+{% set organisationName = report.meta.organisationName ?? '' %}
+{% set reportTitle = organisationName is not empty
+    ? '{name} Accessibility Conformance Report'|t('accessibility-audit', { name: organisationName })
+    : 'Accessibility Conformance Report'|t('accessibility-audit') %}
+<title>{% if organisationName is not empty %}{{ reportTitle }}{% else %}VPAT{% if report.meta.productName ?? false %}: {{ report.meta.productName }}{% endif %}{% endif %}</title>
 <style>
 /* ── Base ─────────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
@@ -20,7 +24,7 @@ a { color: #0d78f2; }
 a:hover { text-decoration: underline; }
 
 /* ── Print ───────────────────────────────────────────────────────────────── */
-@page { margin: 16mm 14mm; }
+@page { size: landscape; margin: 16mm 14mm; }
 
 @media print {
     body { font-size: 11px; }
@@ -270,7 +274,7 @@ a:hover { text-decoration: underline; }
 <div class="vpat-doc">
 
     <div class="vpat-header">
-        <h1>{{ 'Accessibility Conformance Report'|t('accessibility-audit') }}</h1>
+        <h1>{{ reportTitle }}</h1>
         <p class="vpat-subtitle">
             {{ 'WCAG Edition'|t('accessibility-audit') }} &nbsp;·&nbsp;
             {{ 'Based on VPAT® Version {version}'|t('accessibility-audit', { version: '2.5Rev' }) }}

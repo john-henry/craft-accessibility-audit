@@ -205,11 +205,19 @@
             <p class="light">{{ 'Shared with the VPAT: editing either updates both.'|t('accessibility-audit') }}</p>
 
             {{ forms.textField({
-                label: 'Website or organisation name'|t('accessibility-audit'),
+                label: 'Website name'|t('accessibility-audit'),
                 id: 'productName',
                 name: 'productName',
                 value: statement.meta.productName ?? '',
                 required: true,
+            }) }}
+
+            {{ forms.textField({
+                label: 'Organisation name'|t('accessibility-audit'),
+                instructions: 'The company or body that owns the website. The statement names it as the one committed to accessibility. Leave it blank to use the website name.'|t('accessibility-audit'),
+                id: 'organisationName',
+                name: 'organisationName',
+                value: statement.meta.organisationName ?? '',
             }) }}
 
             {{ forms.textField({

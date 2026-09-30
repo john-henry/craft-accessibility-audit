@@ -192,6 +192,17 @@
         <div class="accessibility-audit-vpat-meta-grid">
             <div class="accessibility-audit-grid-full">
                 {{ forms.textField({
+                    label: 'Organisation Name',
+                    instructions: 'The company or body that owns the website. It heads the exported report. Leave it blank to use the heading on its own.'|t('accessibility-audit'),
+                    id: 'vpat-organisationName',
+                    name: 'organisationName',
+                    value: report.meta.organisationName ?? '',
+                    placeholder: 'e.g. Acme Ltd',
+                    errors: metaErrors.organisationName ?? [],
+                }) }}
+            </div>
+            <div class="accessibility-audit-grid-full">
+                {{ forms.textField({
                     label: 'Product Name',
                     id: 'vpat-productName',
                     name: 'productName',

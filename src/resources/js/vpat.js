@@ -28,7 +28,7 @@
 
     document.getElementById('vpat-save-meta').addEventListener('click', async () => {
         const status = document.getElementById('vpat-meta-status');
-        const fields = ['productName','productDescription','productVersion',
+        const fields = ['organisationName','productName','productDescription','productVersion',
                         'contactName','contactEmail','contactPhone',
                         'evalMethodology','notes','legalDisclaimer','scopePages'];
         const data = { siteId };

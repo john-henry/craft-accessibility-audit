@@ -11,9 +11,10 @@
     'partiallyCompliant': 'partially compliant'|t('accessibility-audit'),
     'nonCompliant': 'not compliant'|t('accessibility-audit'),
 } %}
-{% set organisation = meta.productName ?: 'This organisation'|t('accessibility-audit') %}
+{% set organisationName = (meta.organisationName ?? '') ?: meta.productName %}
+{% set organisation = organisationName ?: 'This organisation'|t('accessibility-audit') %}
 
-<div class="accessibility-statement">
+<div class="accessibility-statement" lang="{{ craft.app.language }}">
 
     <{{ titleTag }}>{{ statementTitle }}</{{ titleTag }}>
 
@@ -151,7 +152,7 @@
             {{ 'The website was evaluated by {evaluator}.'|t('accessibility-audit', { evaluator: meta.preparedBy }) }}
         {% else %}
             {{ 'The website was assessed by {organisation}, using a combination of automated testing and manual review.'|t('accessibility-audit', {
-                organisation: meta.productName ?: 'this organisation'|t('accessibility-audit'),
+                organisation: organisationName ?: 'this organisation'|t('accessibility-audit'),
             }) }}
         {% endif %}
     </p>

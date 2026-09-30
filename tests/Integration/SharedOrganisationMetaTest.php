@@ -41,7 +41,7 @@ describe('split metadata storage', function() {
         // A key in both halves would be written twice; a key in neither would be
         // dropped by the controller without anything failing.
         expect(array_intersect($shared, $vpat))->toBe([])
-            ->and(count(array_merge($shared, $vpat)))->toBe(14);
+            ->and(count(array_merge($shared, $vpat)))->toBe(15);
     });
 
     it('keeps the shared half when only the VPAT half is saved again', function() {
@@ -78,6 +78,7 @@ describe('VpatController::actionSaveMeta split write', function() {
 
         $json = $this->postJson('actions/accessibility-audit/vpat/save-meta', [
             'siteId' => $siteId,
+            'organisationName' => 'Acme Ltd',
             'productName' => 'Acme Website',
             'contactEmail' => 'access@example.com',
             'productVersion' => '3.1',
@@ -89,7 +90,8 @@ describe('VpatController::actionSaveMeta split write', function() {
         // statement would, rather than through the VPAT's merged view.
         $shared = AccessibilityAudit::getInstance()->getOrganisation()->getMeta($siteId);
 
-        expect($shared['productName'])->toBe('Acme Website')
+        expect($shared['organisationName'])->toBe('Acme Ltd')
+            ->and($shared['productName'])->toBe('Acme Website')
             ->and($shared['contactEmail'])->toBe('access@example.com')
             ->and($shared)->not->toHaveKey('productVersion');
     });

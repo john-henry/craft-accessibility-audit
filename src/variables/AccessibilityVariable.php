@@ -256,7 +256,7 @@ class AccessibilityVariable
      * reporting is not available.
      *
      * `meta` holds the editor's product details:
-     * `productName`, `productDescription`, `productVersion`, `reportDate`,
+     * `organisationName`, `productName`, `productDescription`, `productVersion`, `reportDate`,
      * `reportPeriodFrom`, `reportPeriodTo`, `contactName`, `contactEmail`,
      * `contactPhone`, `notes`, `evalMethodology`, plus `evalMethods` and
      * `scopePages` (both string lists) and `legalDisclaimer`. Any the editor

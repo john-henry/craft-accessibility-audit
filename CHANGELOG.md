@@ -1,5 +1,16 @@
 # Release Notes for Accessibility Audit
 
+## Unreleased
+
+### Added
+- An optional Organisation Name, shared by the VPAT and the accessibility statement. It goes in the title of the exported VPAT and the OpenACR file.
+- The accessibility statement names the organisation, where one is given, as the one committed to accessibility.
+
+### Changed
+- The exported VPAT prints in landscape, the way published conformance reports do.
+- Drafted remarks no longer claim "all" or "every" for the whole site unless the evidence covers the whole of it.
+- The statement's "Website or organisation name" field is now "Website name".
+
 ## 1.5.0 - 2026-09-25 [CRITICAL]
 
 ### Added

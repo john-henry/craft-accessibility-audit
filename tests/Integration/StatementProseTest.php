@@ -46,6 +46,20 @@ describe('the commitment sentence', function() {
             ->not->toContain('accessible,.');
     });
 
+    it('names the organisation where one is given, and the website otherwise', function() {
+        $siteId = Craft::$app->getSites()->getPrimarySite()->id;
+
+        $meta = new StatementMetaModel();
+        $meta->profile = StatementProfiles::PROFILE_GENERIC;
+        AccessibilityAudit::getInstance()->getStatement()->saveMeta($siteId, $meta);
+
+        expect(renderProseStatement($siteId))->toContain('Acme Council is committed to making this website accessible.');
+
+        saveVpatMetaFlat($siteId, ['organisationName' => 'Acme County Council', 'productName' => 'Acme Council']);
+
+        expect(renderProseStatement($siteId))->toContain('Acme County Council is committed to making this website accessible.');
+    });
+
     it('names the legislation where the profile carries one', function() {
         $siteId = Craft::$app->getSites()->getPrimarySite()->id;
 
