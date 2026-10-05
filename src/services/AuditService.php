@@ -117,6 +117,58 @@ class AuditService extends Component
     public const RULE_POTENTIAL_CONTRAST = 'potential:contrast-unmeasurable';
 
     /**
+     * @var string Rule id for a stylesheet rule that removes the focus outline
+     * with nothing in the stylesheet drawing an indicator in its place. Read
+     * from the stylesheet by the Inspect report.
+     */
+    public const RULE_POTENTIAL_FOCUS_OUTLINE = 'potential:focus-outline-removed';
+
+    /**
+     * @var string Rule id for a control that showed no visible change when
+     * the browser pass moved keyboard focus onto it.
+     */
+    public const RULE_POTENTIAL_FOCUS_NOT_VISIBLE = 'potential:focus-not-visible';
+
+    /**
+     * @var string Rule id for a fixed or sticky element that completely
+     * covered controls as the browser pass moved keyboard focus onto them.
+     */
+    public const RULE_POTENTIAL_FOCUS_OBSCURED = 'potential:focus-obscured';
+
+    /**
+     * @var string[] The rules the browser pass's keyboard walk owns. Its rows
+     * are stored under the axe source, so the axe stores leave these alone
+     * and only the walk replaces them.
+     */
+    public const FOCUS_WALK_RULES = [
+        self::RULE_POTENTIAL_FOCUS_NOT_VISIBLE,
+        self::RULE_POTENTIAL_FOCUS_OBSCURED,
+    ];
+
+    /**
+     * @var int The most "focus not visible" questions one page may carry.
+     * Past this the page has one problem repeated, not fifty to answer.
+     */
+    private const MAX_FOCUS_NOT_VISIBLE = 50;
+
+    /**
+     * @var int The most covering elements one page may report.
+     */
+    private const MAX_FOCUS_COVERERS = 10;
+
+    /**
+     * @var int The most stylesheet rules one store request may report. The
+     * Inspect report sends at most 20; this bounds a request that arrives
+     * from anything else.
+     */
+    private const MAX_FOCUS_OUTLINE_RULES = 40;
+
+    /**
+     * @var int The highest element count a focus question will state.
+     */
+    private const MAX_FOCUS_COUNT = 10000;
+
+    /**
      * @var array<string, string> Axe rules whose finding duplicates a PHP
      * scanner rule. When the PHP scanner has already flagged the equivalent
      * rule on a scan, the axe violation is skipped so the same problem isn't
@@ -554,6 +606,7 @@ class AuditService extends Component
      * @param bool $withHeadless Whether to queue the server-side browser pass.
      * @return array{scanId: int, score: int, url: string, error?: string, limitReached?: bool}
      * @throws \Exception
+     * @throws Throwable
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
@@ -607,7 +660,7 @@ class AuditService extends Component
 
         $plugin = AccessibilityAudit::getInstance();
         $definiteIssues = $plugin->getContent()->scan($html, $this->_ignoredRuleIds());
-        $potentialIssues = $plugin->getPotential()->scan($html);
+        $potentialIssues = $plugin->getPotential()->scan($html, $this->_ignoredRuleIds());
 
         $scanId = $this->_createUrlScan($url, $siteId, $this->_pageTitle($html), $definiteIssues, $potentialIssues);
         $score = $this->_calculateScore($definiteIssues);
@@ -634,7 +687,9 @@ class AuditService extends Component
      * @param IssueModel[] $issues Definite findings.
      * @param IssueModel[] $potentialIssues Findings needing a human eye.
      * @return int The new scan id.
+     * @throws Exception
      * @throws \Exception
+     * @throws Throwable
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
@@ -644,42 +699,64 @@ class AuditService extends Component
         $db = Craft::$app->getDb();
         $scores = $this->_calculateScoreByLevel($issues);
 
-        $db->createCommand()->insert('{{%accessibilityaudit_scans}}', [
-            'elementId' => null,
-            'elementType' => null,
-            'url' => $url,
-            'title' => $title,
-            'siteId' => $siteId,
-            'score' => $scores['overall'],
-            'scoreA' => $scores['A'],
-            'scoreAA' => $scores['AA'],
-            'scoreAAA' => $scores['AAA'],
-            'errorCount' => count(array_filter($issues, fn($i) => $i->severity === 'error')),
-            'warningCount' => count(array_filter($issues, fn($i) => $i->severity === 'warning')),
-            'noticeCount' => count(array_filter($issues, fn($i) => $i->severity === 'notice')),
-            'dateScanned' => Db::prepareDateForDb(new DateTime()),
-            'dateCreated' => Db::prepareDateForDb(new DateTime()),
-            'dateUpdated' => Db::prepareDateForDb(new DateTime()),
-            'uid' => StringHelper::UUID(),
-        ])->execute();
+        return $db->transaction(function() use ($db, $url, $siteId, $title, $issues, $potentialIssues, $scores): int {
+            $previousScan = (new Query())
+                ->select(['id', 'focusVisibleChecked', 'focusObscuredChecked'])
+                ->from('{{%accessibilityaudit_scans}}')
+                ->where(['elementId' => null, 'url' => $url, 'siteId' => $siteId])
+                ->orderBy(['dateScanned' => SORT_DESC, 'id' => SORT_DESC])
+                ->one();
 
-        $scanId = (int) $db->getLastInsertID('{{%accessibilityaudit_scans}}');
+            $db->createCommand()->insert('{{%accessibilityaudit_scans}}', [
+                'elementId' => null,
+                'elementType' => null,
+                'url' => $url,
+                'title' => $title,
+                'siteId' => $siteId,
+                'score' => $scores['overall'],
+                'scoreA' => $scores['A'],
+                'scoreAA' => $scores['AA'],
+                'scoreAAA' => $scores['AAA'],
+                'errorCount' => count(array_filter($issues, fn($i) => $i->severity === 'error')),
+                'warningCount' => count(array_filter($issues, fn($i) => $i->severity === 'warning')),
+                'noticeCount' => count(array_filter($issues, fn($i) => $i->severity === 'notice')),
+                // Travels with the walk rows carried forward below.
+                'focusVisibleChecked' => (bool)($previousScan['focusVisibleChecked'] ?? false),
+                'focusObscuredChecked' => (bool)($previousScan['focusObscuredChecked'] ?? false),
+                'dateScanned' => Db::prepareDateForDb(new DateTime()),
+                'dateCreated' => Db::prepareDateForDb(new DateTime()),
+                'dateUpdated' => Db::prepareDateForDb(new DateTime()),
+                'uid' => StringHelper::UUID(),
+            ])->execute();
 
-        // Answers the author has already given for this URL, carried onto the
-        // fresh rows. Fetched once rather than per issue. Without this a
-        // dismissed question comes back on every re-scan.
-        $verdicts = AccessibilityAudit::getInstance()->getVerdicts();
-        $verdictMap = $verdicts->mapForElement(null, $siteId, $url);
+            $scanId = (int) $db->getLastInsertID('{{%accessibilityaudit_scans}}');
 
-        foreach (array_merge($issues, $potentialIssues) as $issue) {
-            $this->_insertIssue(
-                $scanId, null, null, $siteId, $issue,
-                $this->_resolveFirstDetectedForUrl($url, $siteId, $issue->ruleId),
-                $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context),
-            );
-        }
+            // Answers the author has already given for this URL, carried onto the
+            // fresh rows. Fetched once rather than per issue. Without this a
+            // dismissed question comes back on every re-scan.
+            $verdicts = AccessibilityAudit::getInstance()->getVerdicts();
+            $verdictMap = $verdicts->mapForElement(null, $siteId, $url);
 
-        return $scanId;
+            foreach (array_merge($issues, $potentialIssues) as $issue) {
+                $this->_insertIssue(
+                    $scanId, null, null, $siteId, $issue,
+                    $this->_resolveFirstDetectedForUrl($url, $siteId, $issue->ruleId),
+                    $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context),
+                );
+            }
+
+            // The PHP scan cannot see what the browser engines found, so their
+            // rows carry over until the next browser pass replaces them.
+            if ($previousScan) {
+                $phpRuleIds = array_map(fn(IssueModel $issue): string => $issue->ruleId, array_merge($issues, $potentialIssues));
+
+                if ($this->_carryForwardClientIssues((int)$previousScan['id'], $scanId, $phpRuleIds) !== []) {
+                    $this->recalculateScanScore($scanId);
+                }
+            }
+
+            return $scanId;
+        });
     }
 
     /**
@@ -1040,12 +1117,15 @@ class AuditService extends Component
         // its own bucket, the other viewport's findings stand. The desktop
         // bucket also owns untagged (null-viewport) rows, since those predate
         // viewport tagging and came from desktop-width passes.
+        // The keyboard walk's rows are stored under this source too but are
+        // only ever replaced by the walk: the Inspect and overlay passes run
+        // axe without it.
         Craft::$app->getDb()->createCommand()
-            ->delete('{{%accessibilityaudit_issues}}', [
+            ->delete('{{%accessibilityaudit_issues}}', ['and', [
                 'scanId' => $scanId,
                 'source' => 'axe',
                 'viewport' => $this->_viewportBucketCondition($viewport),
-            ])
+            ], ['not in', 'ruleId', self::FOCUS_WALK_RULES]])
             ->execute();
 
         // Rules the PHP scanner already flagged on this scan: axe violations
@@ -1292,6 +1372,26 @@ class AuditService extends Component
             ->scalar();
 
         return $siteId !== false ? (int) $siteId : null;
+    }
+
+    /**
+     * The element a scan belongs to, by ID.
+     *
+     * @param int $scanId The scan ID.
+     * @return int|null The element ID, or null for a URL scan or an unknown scan.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    public function getScanElementId(int $scanId): ?int
+    {
+        $elementId = (new Query())
+            ->select(['elementId'])
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where(['id' => $scanId])
+            ->scalar();
+
+        return $elementId !== false && $elementId !== null ? (int) $elementId : null;
     }
 
     /**
@@ -2877,7 +2977,7 @@ class AuditService extends Component
         $ignoreRules = $settings->ignoreRules;
 
         $definiteIssues = AccessibilityAudit::getInstance()->getContent()->scan($html, $ignoreRules);
-        $potentialIssues = AccessibilityAudit::getInstance()->getPotential()->scan($html);
+        $potentialIssues = AccessibilityAudit::getInstance()->getPotential()->scan($html, $ignoreRules);
 
         // Snapshot the element's previous scan before this one is recorded, so
         // notifications can compare the two. Captured outside the transaction.
@@ -3067,7 +3167,7 @@ class AuditService extends Component
 
         return $db->transaction(function() use ($db, $elementId, $elementType, $siteId, $issues, $potentialIssues): int {
             $previousScan = (new Query())
-                ->select(['id'])
+                ->select(['id', 'focusVisibleChecked', 'focusObscuredChecked'])
                 ->from('{{%accessibilityaudit_scans}}')
                 ->where(['elementId' => $elementId, 'siteId' => $siteId])
                 ->orderBy(['dateScanned' => SORT_DESC, 'id' => SORT_DESC])
@@ -3090,6 +3190,9 @@ class AuditService extends Component
                 'errorCount' => $errorCount,
                 'warningCount' => $warningCount,
                 'noticeCount' => $noticeCount,
+                // Travels with the walk rows carried forward below.
+                'focusVisibleChecked' => (bool)($previousScan['focusVisibleChecked'] ?? false),
+                'focusObscuredChecked' => (bool)($previousScan['focusObscuredChecked'] ?? false),
                 'dateScanned' => Db::prepareDateForDb(new DateTime()),
                 'dateCreated' => Db::prepareDateForDb(new DateTime()),
                 'dateUpdated' => Db::prepareDateForDb(new DateTime()),
@@ -3140,7 +3243,7 @@ class AuditService extends Component
      * Copies the previous scan's unresolved client-side findings (axe and
      * contrast sources) onto a fresh PHP scan, skipping any axe finding whose
      * equivalent rule the new PHP scan has just flagged itself (the reverse of
-     * the store-time dedup).
+     * the store-time dedup), and any rule on the ignore list.
      *
      * @param int $previousScanId The scan being superseded.
      * @param int $newScanId The freshly created scan.
@@ -3159,8 +3262,13 @@ class AuditService extends Component
             ->where(['scanId' => $previousScanId, 'source' => ['axe', 'contrast'], 'isResolved' => false])
             ->all();
 
+        $ignored = $this->_ignoredRuleIds();
         $carried = [];
         foreach ($rows as $row) {
+            if (in_array($row['ruleId'], $ignored, true)) {
+                continue;
+            }
+
             $axeId = str_starts_with($row['ruleId'], 'axe:') ? substr($row['ruleId'], 4) : $row['ruleId'];
             $equivalent = self::AXE_EQUIVALENT_PHP_RULES[$axeId] ?? null;
             if ($row['source'] === 'axe' && $equivalent !== null && in_array($equivalent, $phpRuleIds, true)) {
@@ -3183,6 +3291,10 @@ class AuditService extends Component
                 'viewport' => $row['viewport'],
                 'firstDetected' => $row['firstDetected'],
                 'isResolved' => false,
+                // A browser question answered before this scan stays answered:
+                // the PHP scan cannot re-ask it, so nothing else would restore
+                // the ruling until the next browser pass.
+                'verdict' => $row['verdict'],
                 'dateCreated' => Db::prepareDateForDb(new DateTime()),
                 'dateUpdated' => Db::prepareDateForDb(new DateTime()),
                 'uid' => StringHelper::UUID(),
@@ -3476,6 +3588,9 @@ class AuditService extends Component
      * with no ruling yet. Dismissed and confirmed ones have both been dealt
      * with, so neither belongs in the review queue.
      *
+     * Rules on the ignore list are left out too, so rows stored before a rule
+     * was ignored drop out of the review queues.
+     *
      * @param string $alias The table alias in use, or '' when unaliased.
      * @return array<int|string, mixed> A Yii query condition.
      *
@@ -3487,10 +3602,18 @@ class AuditService extends Component
         $rule = $alias !== '' ? "$alias.ruleId" : 'ruleId';
         $verdict = $alias !== '' ? "$alias.verdict" : 'verdict';
 
-        return ['and',
+        $condition = ['and',
             ['like', $rule, 'potential:%', false],
             [$verdict => null],
         ];
+
+        $ignored = $this->_ignoredRuleIds();
+
+        if (!empty($ignored)) {
+            $condition[] = ['not in', $rule, $ignored];
+        }
+
+        return $condition;
     }
 
     /**
@@ -4032,14 +4155,15 @@ class AuditService extends Component
             $scan['url'] ?? null,
         );
 
-        // Replace previous client-side contrast results for this viewport only.
+        // Replace previous client-side contrast results for this viewport only,
+        // except the focus-outline rows, which storeFocusOutlineIssues() owns.
         // As with axe results, the desktop bucket also sweeps untagged legacy rows.
         Craft::$app->getDb()->createCommand()
-            ->delete('{{%accessibilityaudit_issues}}', [
+            ->delete('{{%accessibilityaudit_issues}}', ['and', [
                 'scanId' => $scanId,
                 'source' => 'contrast',
                 'viewport' => $this->_viewportBucketCondition($viewport),
-            ])
+            ], ['not', ['ruleId' => self::RULE_POTENTIAL_FOCUS_OUTLINE]]])
             ->execute();
 
         $count = 0;
@@ -4110,6 +4234,245 @@ class AuditService extends Component
         if ($count > 0) {
             $this->recalculateScanScore($scanId);
         }
+
+        return $count;
+    }
+
+    /**
+     * Whether a focus check should run and store at all.
+     *
+     * Every focus rule is a Level AA question, so a site targeting Level A
+     * gets none of them, the same way the axe pass only asks for the tags up
+     * to the target level. A rule on the ignore list is muted.
+     *
+     * @param string $ruleId One of the RULE_POTENTIAL_FOCUS_* constants.
+     * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    public function focusRuleApplies(string $ruleId): bool
+    {
+        if (strtoupper(AccessibilityAudit::getInstance()->getSettings()->wcagLevel) === 'A') {
+            return false;
+        }
+
+        return !in_array($ruleId, $this->_ignoredRuleIds(), true);
+    }
+
+    /**
+     * Whether either keyboard walk question can be stored. When both are
+     * ignored, or the site targets Level A, the walk is skipped outright
+     * rather than run for nothing.
+     *
+     * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    public function focusWalkApplies(): bool
+    {
+        foreach (self::FOCUS_WALK_RULES as $ruleId) {
+            if ($this->focusRuleApplies($ruleId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Removes a scan's keyboard walk rows for a viewport, for a browser pass
+     * that skipped the walk because no walk question applies, and records
+     * that neither question was measured on it.
+     *
+     * @param int $scanId The scan to clear.
+     * @param string $viewport The viewport bucket the pass ran at.
+     * @return void
+     * @throws Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    public function clearFocusWalkIssues(int $scanId, string $viewport = self::VIEWPORT_DESKTOP): void
+    {
+        $deleted = Craft::$app->getDb()->createCommand()
+            ->delete('{{%accessibilityaudit_issues}}', [
+                'scanId' => $scanId,
+                'source' => 'axe',
+                'ruleId' => self::FOCUS_WALK_RULES,
+                'viewport' => $this->_viewportBucketCondition($viewport),
+            ])
+            ->execute();
+
+        $this->_recordFocusWalk($scanId, false, false);
+
+        if ($deleted > 0) {
+            $this->recalculateScanScore($scanId);
+        }
+    }
+
+    /**
+     * Stores what the browser pass's keyboard walk found on a page.
+     *
+     * Each rule the walk measured replaces its own rows for the viewport and
+     * nothing else, so the axe and contrast rows on the scan stand. A walk
+     * that did not run measured nothing, and the earlier rows stay. Where the
+     * browser did not treat the walk's focus as keyboard focus, `:focus-visible`
+     * styles never applied, so the 2.4.7 rows are left as they were rather than
+     * rebuilt from a page that never showed its indicators.
+     *
+     * Answers already given are carried onto the rebuilt rows, keyed to the
+     * element's opening tag like every other potential issue. The scan records
+     * which questions the walk measured, for the VPAT evidence; a walk that
+     * did not run leaves that record as it was.
+     *
+     * @param int $scanId The scan to write against.
+     * @param array<string, mixed>|null $walk The walk's result, or null where
+     *        there was none.
+     * @param string $viewport The viewport bucket the walk ran at.
+     * @return int How many rows were stored.
+     * @throws Exception
+     * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    public function storeFocusWalkIssues(int $scanId, ?array $walk, string $viewport = self::VIEWPORT_DESKTOP): int
+    {
+        if ($walk === null || ($walk['ran'] ?? false) !== true) {
+            return 0;
+        }
+
+        $scan = (new Query())
+            ->select(['elementId', 'elementType', 'siteId', 'url'])
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where(['id' => $scanId])
+            ->one();
+
+        if (!$scan) {
+            return 0;
+        }
+
+        $measured = [self::RULE_POTENTIAL_FOCUS_OBSCURED];
+
+        if (($walk['focusVisible'] ?? null) !== false) {
+            $measured[] = self::RULE_POTENTIAL_FOCUS_NOT_VISIBLE;
+        }
+
+        Craft::$app->getDb()->createCommand()
+            ->delete('{{%accessibilityaudit_issues}}', [
+                'scanId' => $scanId,
+                'source' => 'axe',
+                'ruleId' => $measured,
+                'viewport' => $this->_viewportBucketCondition($viewport),
+            ])
+            ->execute();
+
+        $issues = [];
+
+        if (in_array(self::RULE_POTENTIAL_FOCUS_NOT_VISIBLE, $measured, true)) {
+            $issues = $this->_focusNotVisibleIssues($walk, $viewport);
+        }
+
+        $issues = [...$issues, ...$this->_focusObscuredIssues($walk, $viewport)];
+
+        $count = $this->_insertPotentialRows($scanId, $scan, $issues);
+
+        // 2.4.7 counts as measured only where the page confirmed it treated
+        // the walk's focus as keyboard focus.
+        $this->_recordFocusWalk(
+            $scanId,
+            ($walk['focusVisible'] ?? null) === true && $this->focusRuleApplies(self::RULE_POTENTIAL_FOCUS_NOT_VISIBLE),
+            $this->focusRuleApplies(self::RULE_POTENTIAL_FOCUS_OBSCURED),
+        );
+
+        $this->recalculateScanScore($scanId);
+
+        return $count;
+    }
+
+    /**
+     * Stores the stylesheet rules the Inspect report found removing the focus
+     * outline with nothing drawn in its place.
+     *
+     * The rules arrive in a request from the browser, so every field is
+     * capped and checked here: the selector by length, the element by being
+     * markup at all, since the report highlights by it.
+     *
+     * The context carries the selector beside the element, so two rules whose
+     * first match is the same element stay two questions with their own
+     * answers.
+     *
+     * @param int $scanId The scan to write against.
+     * @param array<int|string, mixed> $rules The rules as posted, each with a
+     *        `selector`, the `html` of the first focusable element it matches,
+     *        and how many it matches as `count`.
+     * @param string $viewport The viewport bucket the report measured at.
+     * @return int How many rows were stored.
+     * @throws Exception
+     * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    public function storeFocusOutlineIssues(int $scanId, array $rules, string $viewport = self::VIEWPORT_DESKTOP): int
+    {
+        $scan = (new Query())
+            ->select(['elementId', 'elementType', 'siteId', 'url'])
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where(['id' => $scanId])
+            ->one();
+
+        if (!$scan) {
+            return 0;
+        }
+
+        Craft::$app->getDb()->createCommand()
+            ->delete('{{%accessibilityaudit_issues}}', [
+                'scanId' => $scanId,
+                'source' => 'contrast',
+                'ruleId' => self::RULE_POTENTIAL_FOCUS_OUTLINE,
+                'viewport' => $this->_viewportBucketCondition($viewport),
+            ])
+            ->execute();
+
+        $issues = [];
+
+        if ($this->focusRuleApplies(self::RULE_POTENTIAL_FOCUS_OUTLINE)) {
+            foreach (array_slice(array_values($rules), 0, self::MAX_FOCUS_OUTLINE_RULES) as $rule) {
+                if (!is_array($rule)) {
+                    continue;
+                }
+
+                $selector = mb_substr(trim((string)($rule['selector'] ?? '')), 0, 200);
+                $html = self::openingTagOf(mb_substr(trim((string)($rule['html'] ?? '')), 0, 300));
+
+                if ($selector === '' || !str_starts_with($html, '<')) {
+                    continue;
+                }
+
+                $issues[] = IssueModel::make(
+                    ruleId: self::RULE_POTENTIAL_FOCUS_OUTLINE,
+                    severity: 'notice',
+                    message: Craft::t(
+                        'accessibility-audit',
+                        'The stylesheet rule "{selector}" removes the keyboard focus outline, and no other rule draws anything in its place. It applies to {n, plural, =1{# focusable element} other{# focusable elements}} on this page.',
+                        ['selector' => $selector, 'n' => min(max(1, (int)($rule['count'] ?? 1)), self::MAX_FOCUS_COUNT)],
+                        'en',
+                    ),
+                    wcagCriterion: '2.4.7',
+                    wcagLevel: 'AA',
+                    context: Json::encode(['html' => $html, 'rule' => $selector]),
+                    helpUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/focus-visible',
+                    source: 'contrast',
+                    viewport: $viewport,
+                );
+            }
+        }
+
+        $count = $this->_insertPotentialRows($scanId, $scan, $issues);
+        $this->recalculateScanScore($scanId);
 
         return $count;
     }
@@ -4192,6 +4555,31 @@ class AuditService extends Component
     }
 
     /**
+     * The markup a stored context is about, for display.
+     *
+     * Most contexts are the markup itself. Contrast findings and the
+     * stylesheet focus check store JSON with the markup under `html`.
+     *
+     * @param string|null $context The stored context.
+     * @return string The markup, or the context unchanged where it holds none.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    public static function contextMarkup(?string $context): string
+    {
+        $context = (string)$context;
+
+        if (!str_starts_with($context, '{')) {
+            return $context;
+        }
+
+        $decoded = Json::decodeIfJson($context);
+
+        return is_array($decoded) && is_string($decoded['html'] ?? null) ? $decoded['html'] : $context;
+    }
+
+    /**
      * An element's opening tag, as the identity a finding is keyed to.
      *
      * @param string $markup The element's markup.
@@ -4244,6 +4632,10 @@ class AuditService extends Component
      */
     private function _storeContrastNeedsReview(int $scanId, array $scan, array $axeIncomplete, string $viewport): void
     {
+        if (in_array(self::RULE_POTENTIAL_CONTRAST, $this->_ignoredRuleIds(), true)) {
+            return;
+        }
+
         // These rows are rebuilt from scratch on every browser pass, so an
         // answer already given has to be carried onto the new ones. Without
         // this the browser pass undoes the reader's work: a question dismissed
@@ -4297,6 +4689,258 @@ class AuditService extends Component
                 ), null, $verdicts->lookup($verdictMap, self::RULE_POTENTIAL_CONTRAST, $html));
             }
         }
+    }
+
+    /**
+     * Records on a scan which keyboard walk questions its browser pass
+     * measured, so the VPAT claims the walk only for pages it covered.
+     *
+     * @param int $scanId The scan to update.
+     * @param bool $focusVisible Whether 2.4.7 was measured.
+     * @param bool $focusObscured Whether 2.4.11 was measured.
+     * @return void
+     * @throws Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    private function _recordFocusWalk(int $scanId, bool $focusVisible, bool $focusObscured): void
+    {
+        Craft::$app->getDb()->createCommand()
+            ->update('{{%accessibilityaudit_scans}}', [
+                'focusVisibleChecked' => $focusVisible,
+                'focusObscuredChecked' => $focusObscured,
+            ], ['id' => $scanId])
+            ->execute();
+    }
+
+    /**
+     * The "focus not visible" questions from a keyboard walk, one per
+     * distinct element.
+     *
+     * @param array<string, mixed> $walk The walk's result.
+     * @param string $viewport The viewport bucket the walk ran at.
+     * @return IssueModel[]
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    private function _focusNotVisibleIssues(array $walk, string $viewport): array
+    {
+        if (!$this->focusRuleApplies(self::RULE_POTENTIAL_FOCUS_NOT_VISIBLE)) {
+            return [];
+        }
+
+        $message = Craft::t(
+            'accessibility-audit',
+            'Nothing about this control or the elements around it changed when it took keyboard focus: no outline, shadow, border, background, colour or underline.',
+            [],
+            'en',
+        ) . $this->_focusWalkCoverageClause($walk);
+
+        $issues = [];
+
+        foreach ($this->_focusWalkTags((array)($walk['notVisible'] ?? []), self::MAX_FOCUS_NOT_VISIBLE) as $html => $_) {
+            $issues[] = IssueModel::make(
+                ruleId: self::RULE_POTENTIAL_FOCUS_NOT_VISIBLE,
+                severity: 'notice',
+                message: $message,
+                wcagCriterion: '2.4.7',
+                wcagLevel: 'AA',
+                context: $html,
+                helpUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/focus-visible',
+                source: 'axe',
+                viewport: $viewport,
+            );
+        }
+
+        return $issues;
+    }
+
+    /**
+     * The "focus obscured" questions from a keyboard walk, one per covering
+     * element rather than one per control it covered: the fix is made once,
+     * on the element doing the covering.
+     *
+     * @param array<string, mixed> $walk The walk's result.
+     * @param string $viewport The viewport bucket the walk ran at.
+     * @return IssueModel[]
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    private function _focusObscuredIssues(array $walk, string $viewport): array
+    {
+        if (!$this->focusRuleApplies(self::RULE_POTENTIAL_FOCUS_OBSCURED)) {
+            return [];
+        }
+
+        $cap = $this->_focusWalkCoverageClause($walk);
+        $issues = [];
+
+        foreach ($this->_focusWalkTags((array)($walk['obscured'] ?? []), self::MAX_FOCUS_COVERERS) as $html => $coverer) {
+            $examples = [];
+
+            foreach (array_slice((array)($coverer['examples'] ?? []), 0, 3) as $example) {
+                $example = mb_substr(trim((string)$example), 0, 100);
+
+                if ($example !== '') {
+                    $examples[] = $example;
+                }
+            }
+
+            $position = ($coverer['position'] ?? '') === 'sticky' ? 'sticky' : 'fixed';
+            $n = min(max(1, (int)($coverer['count'] ?? 1)), self::MAX_FOCUS_COUNT);
+
+            $message = $examples !== []
+                ? Craft::t(
+                    'accessibility-audit',
+                    'This {position} element completely covered {n, plural, =1{# control} other{# controls}} when they took keyboard focus, for example {examples}.',
+                    ['position' => $position, 'n' => $n, 'examples' => implode(', ', $examples)],
+                    'en',
+                )
+                : Craft::t(
+                    'accessibility-audit',
+                    'This {position} element completely covered {n, plural, =1{# control} other{# controls}} when they took keyboard focus.',
+                    ['position' => $position, 'n' => $n],
+                    'en',
+                );
+
+            $issues[] = IssueModel::make(
+                ruleId: self::RULE_POTENTIAL_FOCUS_OBSCURED,
+                severity: 'warning',
+                message: $message . $cap,
+                wcagCriterion: '2.4.11',
+                wcagLevel: 'AA',
+                context: $html,
+                helpUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/focus-not-obscured-minimum',
+                source: 'axe',
+                viewport: $viewport,
+            );
+        }
+
+        return $issues;
+    }
+
+    /**
+     * A walk's findings keyed by the opening tag each one is about, the first
+     * of any repeat kept and the rest dropped, up to a cap.
+     *
+     * @param array<int|string, mixed> $entries The walk's findings for one rule.
+     * @param int $max The most to keep.
+     * @return array<string, array<string, mixed>> Each finding, keyed by tag.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    private function _focusWalkTags(array $entries, int $max): array
+    {
+        $tags = [];
+
+        foreach ($entries as $entry) {
+            if (count($tags) >= $max) {
+                break;
+            }
+
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $html = self::openingTagOf(mb_substr(trim((string)($entry['html'] ?? '')), 0, HeadlessScanner::MAX_NODE_HTML_LENGTH));
+
+            if (!str_starts_with($html, '<') || isset($tags[$html])) {
+                continue;
+            }
+
+            $tags[$html] = $entry;
+        }
+
+        return $tags;
+    }
+
+    /**
+     * The sentence saying a walk did not reach every control on the page, or
+     * an empty string where it did.
+     *
+     * A walk that stopped early, out of time, at a dialog, on an address
+     * change or because the page kept refusing focus, says so and why. One
+     * that ran to its cap says how many it was allowed.
+     *
+     * @param array<string, mixed> $walk The walk's result.
+     * @return string The sentence, with a leading space.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    private function _focusWalkCoverageClause(array $walk): string
+    {
+        $total = (int)($walk['total'] ?? 0);
+        $limit = (int)($walk['limit'] ?? 0);
+        $reachable = $limit > 0 ? min($total, $limit) : $total;
+        $checked = (int)($walk['checked'] ?? $reachable);
+        $stopped = is_string($walk['stopped'] ?? null) ? $walk['stopped'] : '';
+
+        if ($stopped !== '' || $checked < $reachable) {
+            return ' ' . Craft::t(
+                'accessibility-audit',
+                'The check stopped after {checked} of {total} focusable elements on this page{stopped, select, budget{, when it ran out of time} dialog{, when a dialog opened} refused{, because most of them would not take focus} navigation{, when the page changed its address} other{}}.',
+                ['checked' => $checked, 'total' => $total, 'stopped' => $stopped !== '' ? $stopped : 'other'],
+                'en',
+            );
+        }
+
+        if ($limit <= 0 || $total <= $limit) {
+            return '';
+        }
+
+        return ' ' . Craft::t(
+            'accessibility-audit',
+            'Only the first {max} of {total} focusable elements on this page were checked.',
+            ['max' => $limit, 'total' => $total],
+            'en',
+        );
+    }
+
+    /**
+     * Inserts rebuilt potential rows for a scan, carrying any answer already
+     * given for the same rule and element.
+     *
+     * @param int $scanId The scan to write against.
+     * @param array<string, mixed> $scan The scan's own row.
+     * @param IssueModel[] $issues The rows to write.
+     * @return int How many rows were written.
+     * @throws Exception
+     * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    private function _insertPotentialRows(int $scanId, array $scan, array $issues): int
+    {
+        if ($issues === []) {
+            return 0;
+        }
+
+        $verdicts = AccessibilityAudit::getInstance()->getVerdicts();
+        $verdictMap = $verdicts->mapForElement(
+            !empty($scan['elementId']) ? (int)$scan['elementId'] : null,
+            (int)$scan['siteId'],
+            $scan['url'] ?? null,
+        );
+
+        foreach ($issues as $issue) {
+            $this->_insertIssue(
+                $scanId,
+                $scan['elementId'],
+                $scan['elementType'],
+                (int)$scan['siteId'],
+                $issue,
+                null,
+                $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context),
+            );
+        }
+
+        return count($issues);
     }
 
     /**

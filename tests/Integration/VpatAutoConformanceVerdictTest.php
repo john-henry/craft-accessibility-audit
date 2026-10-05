@@ -90,6 +90,27 @@ it('does fail a criterion on a question the author has confirmed', function() {
         ->toBe('Partially Supports');
 });
 
+it('never sets a level from a confirmed focus question', function() {
+    // A confirmed focus question says a control needs looking at, not how
+    // much of the site fails, so the level stays the author's to pick.
+    Craft::$app->getDb()->createCommand()
+        ->delete('{{%accessibilityaudit_issues}}', ['wcagCriterion' => '2.4.7'])
+        ->execute();
+
+    vpatIssue($this->scanId, $this->elementId, $this->siteId, [
+        'ruleId' => 'potential:focus-not-visible', 'wcagCriterion' => '2.4.7', 'wcagLevel' => 'AA',
+        'source' => 'axe', 'verdict' => VerdictService::VERDICT_CONFIRMED,
+    ]);
+    vpatIssue($this->scanId, $this->elementId, $this->siteId, [
+        'verdict' => VerdictService::VERDICT_CONFIRMED,
+    ]);
+
+    $auto = $this->vpat->getAutoConformance($this->siteId);
+
+    expect($auto)->not->toHaveKey('2.4.7')
+        ->and($auto['1.3.1']['level'])->toBe('Partially Supports');
+});
+
 it('does not fail a criterion on a question nobody has answered yet', function() {
     // An unanswered question is not evidence of a failure, which is why it
     // does not move the score either.

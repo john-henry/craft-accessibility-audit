@@ -103,7 +103,7 @@ it('breaks the tie everywhere the latest scan for a page is read', function() {
     $withTiebreak = substr_count($source, "orderBy(['dateScanned' => SORT_DESC, 'id' => SORT_DESC])");
     $without = substr_count($source, "orderBy(['dateScanned' => SORT_DESC])");
 
-    expect($withTiebreak)->toBe(5)
+    expect($withTiebreak)->toBe(6)
         // The one left alone reads a date across a whole site rather than
         // picking a row, so a tie has nothing to decide.
         ->and($without)->toBe(1);

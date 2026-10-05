@@ -231,6 +231,51 @@ describe('HeadlessScanner::scanUrl', function() {
         }
     })->skip(fn() => !file_exists('/usr/bin/chromium'), 'chromium is not installed in this environment');
 
+    it('walks keyboard focus on the desktop pass only', function() {
+        AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
+        AccessibilityAudit::getInstance()->getSettings()->browserSettleMs = 0;
+        headlessSetChromePath('/usr/bin/chromium');
+
+        $html = '<!DOCTYPE html><html lang="en"><head><title>t</title></head><body><main>'
+            . '<a href="#one">One</a> <a href="#two">Two</a></main></body></html>';
+
+        $results = AccessibilityAudit::getInstance()->getHeadless()->scanUrlViewports(
+            'data:text/html;charset=utf-8,' . rawurlencode($html),
+            array_keys(\johnhenry\accessibilityaudit\services\HeadlessScanner::VIEWPORTS),
+        );
+
+        expect($results['desktop'])->toBeArray()
+            ->and($results['desktop']['focus'])->toBeArray()->toHaveKey('ran')
+            ->and($results['mobile'])->toBeArray()
+            ->and($results['mobile'])->not->toHaveKey('focus');
+    })->skip(fn() => !file_exists('/usr/bin/chromium'), 'chromium is not installed in this environment');
+
+    it('skips the walk when both of its questions are ignored', function() {
+        AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
+        AccessibilityAudit::getInstance()->getSettings()->browserSettleMs = 0;
+        AccessibilityAudit::getInstance()->getSettings()->ignoreRules = \johnhenry\accessibilityaudit\services\AuditService::FOCUS_WALK_RULES;
+        headlessSetChromePath('/usr/bin/chromium');
+
+        $findings = AccessibilityAudit::getInstance()->getHeadless()->scanUrl(
+            'data:text/html;charset=utf-8,' . rawurlencode('<!DOCTYPE html><html lang="en"><title>t</title><a href="#x">x</a></html>'),
+        );
+
+        expect($findings)->toBeArray()->not->toHaveKey('focus');
+    })->skip(fn() => !file_exists('/usr/bin/chromium'), 'chromium is not installed in this environment');
+
+    it('presses a real Tab key, with focus emulation on', function() {
+        // chrome-php's keyboard helper sends the key code of the key name's
+        // first letter, so Tab arrives as "T" and focus never moves. And a tab
+        // that is not the active one never matches :focus without emulation.
+        $source = (string) file_get_contents(
+            (new ReflectionClass(\johnhenry\accessibilityaudit\services\HeadlessScanner::class))->getFileName(),
+        );
+
+        expect($source)->toContain("'windowsVirtualKeyCode' => 9")
+            ->and($source)->toContain("'Emulation.setFocusEmulationEnabled'")
+            ->and($source)->not->toContain('->keyboard()');
+    });
+
     it('uses the remote endpoint even when a working local binary is also configured', function() {
         // Precedence is documented in the setting's own instructions, so pin it
         // by behaviour: with an unreachable endpoint and a perfectly good binary

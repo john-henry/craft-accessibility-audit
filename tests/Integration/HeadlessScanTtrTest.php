@@ -64,6 +64,23 @@ it('does not retry, as it did not before', function() {
     expect(headlessJob()->canRetry(1, new Exception('boom')))->toBeFalse();
 });
 
+it('leaves room for the keyboard walk on top of both viewport passes', function() {
+    // The walk runs once, on the desktop pass, after axe: four bounded setup
+    // round trips and the walk itself. Read off the private bounds so a new
+    // round trip moves the reservation with it.
+    $scanner = new ReflectionClass(HeadlessScanner::class);
+    $const = static fn(string $name): int => (int) $scanner->getConstant($name);
+
+    $passes = $const('PAGE_TIMEOUT_MS')
+        + count(HeadlessScanner::VIEWPORTS) * ($const('AWAITS_PER_VIEWPORT') * $const('PAGE_TIMEOUT_MS') + HeadlessScanner::MAX_SETTLE_MS);
+    $walk = $const('FOCUS_WALK_AWAITS') * $const('FOCUS_STEP_TIMEOUT_MS') + $const('FOCUS_WALK_TIMEOUT_MS');
+
+    expect(HeadlessScanner::worstCaseScanSeconds())->toBe((int) ceil(($passes + $walk) / 1000))
+        // The page stops itself before PHP stops waiting, so a slow walk hands
+        // back what it found rather than nothing.
+        ->and($const('FOCUS_WALK_BUDGET_MS'))->toBeLessThan($const('FOCUS_WALK_TIMEOUT_MS'));
+});
+
 it('counts the browser bounds rather than restating a number', function() {
     // If a viewport is added, or a round trip, the reservation follows.
     $floor = count(HeadlessScanner::VIEWPORTS) * (int)(HeadlessScanner::MAX_SETTLE_MS / 1000);

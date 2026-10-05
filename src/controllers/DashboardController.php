@@ -311,6 +311,7 @@ class DashboardController extends Controller
                     continue;
                 }
 
+                $row['markup'] = AuditService::contextMarkup($row['context'] ?? null);
                 $row['viewports'] = [(string)($row['viewport'] ?? '')];
                 $row['viewportLabel'] = $this->_viewportLabel($row['viewports']);
                 $seen[$ruleId][$key] = count($potential[$ruleId]['occurrences']);
@@ -327,6 +328,7 @@ class DashboardController extends Controller
 
             foreach ($audit->getDismissedPotentialForScan((int)$scan['id']) as $row) {
                 $row['question'] = $this->_potentialQuestion($row['ruleId']);
+                $row['markup'] = AuditService::contextMarkup($row['context'] ?? null);
                 $dismissed[] = $row;
             }
         }
@@ -361,6 +363,9 @@ class DashboardController extends Controller
                     'axe/axe.min.js',
                 ),
                 'storeAxeUrl' => UrlHelper::actionUrl('accessibility-audit/audit/store-axe-results'),
+                // With a server-side browser the focus walk answers 2.4.7, so
+                // the page skips reading focus outlines from the stylesheet.
+                'headlessAvailable' => $plugin->getHeadless()->isAvailable(),
                 // Compared against a freshly computed axe pass to decide whether
                 // the stored counts are stale; -1 stands for "never scanned".
                 'current' => [
@@ -1234,7 +1239,7 @@ class DashboardController extends Controller
                 // cell value, so the text and context have to travel together.
                 'question' => [
                     'text' => (string)($row['message'] ?? ''),
-                    'context' => (string)($row['context'] ?? ''),
+                    'context' => AuditService::contextMarkup($row['context'] ?? null),
                 ],
                 // A deleted user leaves the ruling standing but unattributed,
                 // so the name falls back rather than the whole cell going blank.
@@ -1687,6 +1692,9 @@ class DashboardController extends Controller
             'potential:table-layout' => Craft::t('accessibility-audit', 'Is this a data table or a layout table?'),
             'potential:video-audio-desc' => Craft::t('accessibility-audit', 'Does this video need an audio description?'),
             'potential:contrast-unmeasurable' => Craft::t('accessibility-audit', 'Does this text have enough contrast against what is behind it?'),
+            AuditService::RULE_POTENTIAL_FOCUS_OUTLINE => Craft::t('accessibility-audit', 'Does something replace the focus outline this stylesheet removes?'),
+            AuditService::RULE_POTENTIAL_FOCUS_NOT_VISIBLE => Craft::t('accessibility-audit', 'Can you see where keyboard focus is on this control?'),
+            AuditService::RULE_POTENTIAL_FOCUS_OBSCURED => Craft::t('accessibility-audit', 'Does this fixed or sticky element hide controls when they take keyboard focus?'),
             default => str_replace('potential:', '', $ruleId),
         };
     }

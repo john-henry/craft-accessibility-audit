@@ -10,13 +10,15 @@ use Craft;
 use craft\db\Query;
 use craft\queue\BaseJob;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\services\AuditService;
 use johnhenry\accessibilityaudit\services\HeadlessScanner;
 use yii\db\Exception;
 use yii\queue\RetryableJobInterface;
 
 /**
  * Runs server-side axe-core browser passes against one page and stores the
- * findings on its scan record.
+ * findings on its scan record, with the keyboard focus walk from the desktop
+ * pass.
  *
  * The page is rendered once per viewport bucket (desktop and mobile) on a
  * single shared browser, each pass stored into its own bucket, so mobile-only
@@ -130,6 +132,16 @@ class HeadlessScanJob extends BaseJob implements RetryableJobInterface
                 $viewport,
                 $findings['incomplete'],
             );
+
+            // Only the desktop pass walks focus. A walk skipped because no walk
+            // question applies clears the old ones; a walk that failed leaves
+            // the questions from the last one standing.
+            if ($viewport === AuditService::VIEWPORT_DESKTOP && !$plugin->getAudit()->focusWalkApplies()) {
+                $plugin->getAudit()->clearFocusWalkIssues($this->scanId, $viewport);
+            } elseif (($findings['focus'] ?? null) !== null) {
+                $plugin->getAudit()->storeFocusWalkIssues($this->scanId, $findings['focus'], $viewport);
+            }
+
             Craft::info("Headless axe scan ({$viewport}) stored for scan {$this->scanId}", 'accessibility-audit');
         }
     }

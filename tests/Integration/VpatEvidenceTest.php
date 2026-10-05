@@ -8,6 +8,8 @@ use craft\elements\User;
 use craft\helpers\Db;
 use craft\helpers\StringHelper;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\services\AuditService;
+use johnhenry\accessibilityaudit\services\HeadlessScanner;
 use johnhenry\accessibilityaudit\services\VerdictService;
 use markhuot\craftpest\factories\User as UserFactory;
 
@@ -54,6 +56,14 @@ function evidenceIssue(int $scanId, int $elementId, int $siteId, array $override
         'isResolved' => false, 'firstDetected' => $now,
         'dateCreated' => $now, 'dateUpdated' => $now, 'uid' => StringHelper::UUID(),
     ], $overrides))->execute();
+}
+
+/** Records the keyboard walk as having measured both questions on a scan. */
+function evidenceWalked(int $scanId): void
+{
+    Craft::$app->getDb()->createCommand()->update('{{%accessibilityaudit_scans}}', [
+        'focusVisibleChecked' => true, 'focusObscuredChecked' => true,
+    ], ['id' => $scanId])->execute();
 }
 
 beforeEach(function() {
@@ -132,18 +142,113 @@ describe('VpatService::getEvidence', function() {
     });
 
     it('leaves a criterion no scanner contributes to blank rather than inventing coverage', function() {
-        // 2.4.7 Focus Visible: a static pass cannot exercise focus states, so
-        // the plugin deliberately makes no claim about it.
-        $row = $this->vpat->getEvidence($this->siteId)['2.4.7'];
+        // 2.5.7 Dragging Movements: nothing here drags anything.
+        $row = $this->vpat->getEvidence($this->siteId)['2.5.7'];
 
         expect($row['checks'])->toBeNull()
             ->and($row['cannot'])->toBeNull();
     });
 
-    it('counts the findings still open against a criterion', function() {
-        evidenceIssue($this->scanId, $this->elementId, $this->siteId);
+    it('claims the focus checks only where the browser pass can run them', function() {
+        evidenceWalked($this->scanId);
+        AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
+        AccessibilityAudit::getInstance()->getSettings()->chromePath = '';
+        AccessibilityAudit::getInstance()->getSettings()->chromeWsEndpoint = '';
 
-        expect($this->vpat->getEvidence($this->siteId)['1.3.1']['findings'])->toBe(1);
+        $without = $this->vpat->getEvidence($this->siteId);
+
+        // Any file that exists stands in for Chrome: availability checks the
+        // path, not what is at the end of it.
+        AccessibilityAudit::getInstance()->getSettings()->chromePath = '/bin/sh';
+        $with = $this->vpat->getEvidence($this->siteId);
+
+        foreach (['2.4.7', '2.4.11'] as $criterion) {
+            expect($without[$criterion]['checks'])->toBeNull()
+                ->and($with[$criterion]['checks'])->toContain('keyboard focus')
+                ->and($with[$criterion]['cannot'])->not->toBeNull();
+        }
+    });
+
+    it('claims the keyboard walk only where it would run and store the question', function() {
+        evidenceWalked($this->scanId);
+        AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
+        AccessibilityAudit::getInstance()->getSettings()->chromePath = '/bin/sh';
+        AccessibilityAudit::getInstance()->getSettings()->ignoreRules = [AuditService::RULE_POTENTIAL_FOCUS_NOT_VISIBLE];
+
+        $ignored = $this->vpat->getEvidence($this->siteId);
+
+        AccessibilityAudit::getInstance()->getSettings()->ignoreRules = [];
+        AccessibilityAudit::getInstance()->getSettings()->wcagLevel = 'A';
+
+        $levelA = $this->vpat->getEvidence($this->siteId);
+
+        expect($ignored['2.4.7']['checks'])->toBeNull()
+            ->and($ignored['2.4.11']['checks'])->toContain('keyboard focus')
+            ->and($levelA['2.4.7']['checks'])->toBeNull()
+            ->and($levelA['2.4.11']['checks'])->toBeNull();
+    });
+
+    it('states the walk limit the scanner actually uses', function() {
+        evidenceWalked($this->scanId);
+        AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
+        AccessibilityAudit::getInstance()->getSettings()->chromePath = '/bin/sh';
+
+        expect($this->vpat->getEvidence($this->siteId)['2.4.7']['checks'])
+            ->toContain('up to ' . HeadlessScanner::FOCUS_WALK_MAX_ELEMENTS . ' controls');
+    });
+
+    it('limits browser evidence to viewed pages where there is no browser pass', function() {
+        AccessibilityAudit::getInstance()->edition = AccessibilityAudit::EDITION_PRO;
+        AccessibilityAudit::getInstance()->getSettings()->chromePath = '';
+        AccessibilityAudit::getInstance()->getSettings()->chromeWsEndpoint = '';
+
+        $without = $this->vpat->getEvidence($this->siteId);
+
+        AccessibilityAudit::getInstance()->getSettings()->chromePath = '/bin/sh';
+        $with = $this->vpat->getEvidence($this->siteId);
+
+        // Without the queued pass, axe runs only on pages someone opens, so
+        // "every element" or "both viewports" would claim pages never checked.
+        foreach (['1.4.3', '1.4.11', '2.5.8'] as $criterion) {
+            expect($without[$criterion]['checks'])->toContain('pages someone has viewed')
+                ->and($without[$criterion]['cannot'])->toContain('pages nobody has viewed')
+                ->and($with[$criterion]['checks'])->toContain('both viewports');
+        }
+    });
+
+    it('counts the questions still waiting for an answer', function() {
+        // Three, so the count cannot be mistaken for the criterion's first digit.
+        evidenceIssue($this->scanId, $this->elementId, $this->siteId, [
+            'ruleId' => 'potential:focus-not-visible', 'wcagCriterion' => '2.4.7', 'wcagLevel' => 'AA',
+            'severity' => 'notice', 'source' => 'axe',
+        ]);
+        evidenceIssue($this->scanId, $this->elementId, $this->siteId, [
+            'ruleId' => 'potential:focus-not-visible', 'wcagCriterion' => '2.4.7', 'wcagLevel' => 'AA',
+            'severity' => 'notice', 'source' => 'axe', 'context' => '<button>',
+        ]);
+        evidenceIssue($this->scanId, $this->elementId, $this->siteId, [
+            'ruleId' => 'potential:focus-outline-removed', 'wcagCriterion' => '2.4.7', 'wcagLevel' => 'AA',
+            'severity' => 'notice', 'source' => 'contrast', 'context' => '<a href="/">',
+        ]);
+        evidenceIssue($this->scanId, $this->elementId, $this->siteId, [
+            'ruleId' => 'potential:focus-not-visible', 'wcagCriterion' => '2.4.7', 'wcagLevel' => 'AA',
+            'severity' => 'notice', 'source' => 'axe', 'context' => '<a href="/x">',
+            'verdict' => VerdictService::VERDICT_DISMISSED,
+        ]);
+
+        $row = $this->vpat->getEvidence($this->siteId)['2.4.7'];
+
+        // A question is not a finding, and one already answered is neither.
+        expect($row['questions'])->toBe(3)
+            ->and($row['findings'])->toBe(0);
+    });
+
+    it('counts the findings still open against a criterion', function() {
+        for ($i = 0; $i < 4; $i++) {
+            evidenceIssue($this->scanId, $this->elementId, $this->siteId);
+        }
+
+        expect($this->vpat->getEvidence($this->siteId)['1.3.1']['findings'])->toBe(4);
     });
 
     it('does not count a question the author has answered', function() {
@@ -202,7 +307,11 @@ describe('drafting with no findings', function() {
             (new ReflectionClass(\johnhenry\accessibilityaudit\services\VpatService::class))->getFileName(),
         );
 
-        expect($source)->toContain('$hasCoverage = isset(self::EVIDENCE[$criterion]) && !empty($latestScanIds);')
+        expect($source)->toContain('$hasCoverage = $coverage !== null && !empty($latestScanIds);')
+            // One source for the evidence shown and the coverage drafted from,
+            // so a draft never claims a check that did not run.
+            ->and($source)->toContain('$coverage = $this->_evidenceFor($criterion, $this->_walkedPages($latestScanIds), count($latestScanIds));')
+            ->and($source)->toContain('$coverage = $this->_evidenceFor((string)$num, $walked, $pages);')
             // The nudge is now only for criteria no scanner touches at all.
             ->and($source)->toContain("if (empty(\$evidence) && \$notes === '' && !\$hasCoverage) {");
     });
@@ -213,6 +322,8 @@ describe('drafting with no findings', function() {
         );
 
         expect($source)->toContain('An untested thing is untested, not passing.')
+            // Open questions are neither, and the draft is told so.
+            ->and($source)->toContain('They are neither failures nor passes.')
             ->and($source)->toContain('Do not write that nothing was found or that no issues exist')
             // The material handed to the model must not invite it either.
             ->and($source)->toContain('unassessed rather than passing');
@@ -276,6 +387,21 @@ describe('a remark that has outlived its findings', function() {
             ->execute();
 
         expect($this->vpat->getFullReport($this->siteId)['levelA']['1.3.1']['remarkStale'])->toBeTrue();
+    });
+
+    it('notices when some of the findings behind a remark are fixed and others are not', function() {
+        for ($i = 0; $i < 3; $i++) {
+            evidenceIssue($this->scanId, $this->elementId, $this->siteId, ['context' => "<h2 class=\"h{$i}\">"]);
+        }
+
+        $this->vpat->saveOverride($this->siteId, '1.3.1', 'Partially Supports', 'Three headings are empty.');
+
+        Craft::$app->getDb()->createCommand()
+            ->update('{{%accessibilityaudit_issues}}', ['isResolved' => true], ['scanId' => $this->scanId, 'context' => '<h2 class="h0">'])
+            ->execute();
+
+        expect($this->vpat->getRecord($this->siteId)['overrides']['1.3.1']['remarkFindings'])->toBe(3)
+            ->and($this->vpat->getFullReport($this->siteId)['levelA']['1.3.1']['remarkStale'])->toBeTrue();
     });
 
     it('stays quiet while the findings still match', function() {

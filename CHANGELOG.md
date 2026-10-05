@@ -1,15 +1,34 @@
 # Release Notes for Accessibility Audit
 
-## Unreleased
+## 1.6.0 - 2026-10-05
 
 ### Added
 - An optional Organisation Name, shared by the VPAT and the accessibility statement. It goes in the title of the exported VPAT and the OpenACR file.
 - The accessibility statement names the organisation, where one is given, as the one committed to accessibility.
+- The Inspect report asks about stylesheet rules that remove the focus outline with nothing in its place (2.4.7).
+- The server-side browser pass walks keyboard focus through each page and asks about controls that show no visible change when focused (2.4.7), on Pro.
+- The same walk asks about fixed or sticky elements that completely hide a focused control (2.4.11), on Pro.
+- With server-side browser scanning on, the VPAT rows for 2.4.7 and 2.4.11 show what the browser checked.
+- Every VPAT row says how many questions from the scans are still waiting for an answer.
 
 ### Changed
+- Server-side browser passes take a bit longer per page, for the keyboard walk.
 - The exported VPAT prints in landscape, the way published conformance reports do.
 - Drafted remarks no longer claim "all" or "every" for the whole site unless the evidence covers the whole of it.
 - The statement's "Website or organisation name" field is now "Website name".
+- The conformance terms in the VPAT editor and export use the ITI template's own definitions, and the scope note is printed in full.
+
+### Fixed
+- Without a server-side browser set up, the VPAT no longer says the colour contrast and target size checks covered every page. It says they covered the pages viewed in the Inspect preview or with the front-end overlay.
+- VPAT criterion 2.4.11 is now Focus Not Obscured (Minimum), as WCAG 2.2 has it. It was listed under an old draft name and described a different check, so if you've answered 2.4.11 already, have another look at it.
+- Ignored Rules now covers the potential-issue checks as well.
+- Questions dismissed on a page no longer come back after a re-scan from the Inspect report.
+- The VPAT editor no longer says Non-text Contrast and Target Size mark themselves Supports.
+- The VPAT shows the real number of open findings and questions against each criterion, and warns when a saved remark no longer matches them.
+- A re-scan no longer carries over browser findings for rules on Ignored Rules.
+
+### Security
+- Someone with the Run scans permission can no longer store browser findings against a page they aren't allowed to view.
 
 ## 1.5.0 - 2026-09-25 [CRITICAL]
 

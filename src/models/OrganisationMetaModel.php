@@ -33,7 +33,10 @@ class OrganisationMetaModel extends Model
     /**
      * @var string The organisation that owns the product. Heads the VPAT, as
      * the ITI template's company placeholder does, and names the owner in the
-     * statement. Optional: blank leaves the product name to stand in.
+     * statement. Optional. Left blank, the statement names the website
+     * instead, the VPAT heading goes without a name, and the exported
+     * document's title (and so its PDF filename) and the OpenACR title use
+     * the product name.
      *
      * @since 1.6.0
      */

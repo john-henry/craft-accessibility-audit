@@ -123,7 +123,9 @@ describe('reducing an occurrence to its opening tag', function() {
     it('is what the scanner stores', function() {
         $source = (string) file_get_contents((new ReflectionClass(AuditService::class))->getFileName());
 
-        expect(substr_count($source, 'self::openingTagOf('))->toBe(3);
+        // The three contrast stores, plus the focus walk and stylesheet focus
+        // stores, which key their questions the same way.
+        expect(substr_count($source, 'self::openingTagOf('))->toBe(5);
     });
 });
 

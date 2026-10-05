@@ -247,8 +247,8 @@
                                                            aria-label="{{ 'Select all {n} for bulk dismissal'|t('accessibility-audit', { n: cluster.count }) }}">
                                                 </label>
                                             {% endif %}
-                                            <p class="accessibility-audit-pr-review__ctx" title="{{ cluster.occurrences|first.context|default('') }}">
-                                                {{ cluster.occurrences|first.context|default('') }}
+                                            <p class="accessibility-audit-pr-review__ctx" title="{{ cluster.occurrences|first.markup|default('') }}">
+                                                {{ cluster.occurrences|first.markup|default('') }}
                                             </p>
                                             {% set clusterReason = cluster.occurrences|first.message|default('') %}
                                             {% if clusterReason and clusterReason != group.question %}
@@ -279,8 +279,8 @@
                                                    aria-label="{{ 'Select for bulk dismissal'|t('accessibility-audit') }}">
                                         </label>
                                     {% endif %}
-                                    {% if row.context %}
-                                        <p class="accessibility-audit-pr-review__ctx" title="{{ row.context }}">{{ row.context }}</p>
+                                    {% if row.markup %}
+                                        <p class="accessibility-audit-pr-review__ctx" title="{{ row.markup }}">{{ row.markup }}</p>
                                     {% endif %}
                                     {% if row.message and row.message != group.question %}
                                         <p class="accessibility-audit-pr-review__msg light">{{ row.message }}</p>
@@ -311,8 +311,8 @@
                                                    aria-label="{{ 'Select for bulk dismissal'|t('accessibility-audit') }}">
                                         </label>
                                     {% endif %}
-                                    {% if row.context %}
-                                        <p class="accessibility-audit-pr-review__ctx" title="{{ row.context }}">{{ row.context }}</p>
+                                    {% if row.markup %}
+                                        <p class="accessibility-audit-pr-review__ctx" title="{{ row.markup }}">{{ row.markup }}</p>
                                     {% endif %}
                                     {% if row.message and row.message != group.question %}
                                         <p class="accessibility-audit-pr-review__msg light">{{ row.message }}</p>
@@ -348,7 +348,7 @@
                                          data-accessibility-audit-review
                                          data-rule-id="{{ row.ruleId }}"
                                          data-context="{{ row.context|default('') }}">
-                                        <p class="accessibility-audit-pr-review__ctx" title="{{ row.context|default('') }}">{{ row.context|default(row.question) }}</p>
+                                        <p class="accessibility-audit-pr-review__ctx" title="{{ row.markup }}">{{ row.markup|default(row.question) }}</p>
                                         {% if canRunScans %}
                                             <div class="accessibility-audit-pr-review__actions">
                                                 <button type="button" class="btn small" data-verdict="">{{ 'Restore'|t('accessibility-audit') }}</button>

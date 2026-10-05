@@ -81,6 +81,94 @@ it('keeps a dismissed contrast question dismissed after the browser pass runs ag
 });
 
 // ---------------------------------------------------------------------------
+// The PHP scan copies browser questions forward, answer and all.
+//
+// A re-scan from Inspect runs the PHP scan only and copies the browser rows
+// from the previous scan onto the new one. The PHP scan cannot ask a browser
+// question again, so the ruling has to travel with the copy: nothing else
+// would put it back until the next browser pass.
+// ---------------------------------------------------------------------------
+
+it('keeps a dismissed browser question dismissed after a PHP re-scan', function() {
+    $this->actingAs(UserFactory::factory()->admin(true)->create());
+
+    $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
+    $elementId = (int) UserFactory::factory()->create()->id;
+    $now = Db::prepareDateForDb(new DateTime('-1 hour'));
+    $db = Craft::$app->getDb();
+
+    $db->createCommand()->insert('{{%accessibilityaudit_scans}}', [
+        'elementId' => $elementId, 'elementType' => User::class, 'siteId' => $siteId,
+        'score' => 100, 'scoreA' => 100, 'scoreAA' => 100, 'scoreAAA' => 100,
+        'errorCount' => 0, 'warningCount' => 0, 'noticeCount' => 0,
+        'dateScanned' => $now, 'dateCreated' => $now, 'dateUpdated' => $now,
+        'uid' => StringHelper::UUID(),
+    ])->execute();
+    $scanId = (int) $db->getLastInsertID('{{%accessibilityaudit_scans}}');
+
+    $audit = AccessibilityAudit::getInstance()->getAudit();
+    $audit->storeAxeIssues($scanId, [], 'desktop', [[
+        'id' => 'color-contrast',
+        'nodes' => [[
+            'html' => '<span class="badge">Sale</span>',
+            'target' => ['span'],
+            'any' => [['data' => ['messageKey' => 'bgImage', 'expectedContrastRatio' => '4.5:1']]],
+        ]],
+    ]]);
+
+    AccessibilityAudit::getInstance()->getVerdicts()->setVerdict(
+        $siteId, $elementId, 'potential:contrast-unmeasurable', '<span class="badge">', 'dismissed',
+    );
+
+    // The PHP half of a re-scan, with nothing of its own to report.
+    $createScan = new ReflectionMethod($audit, '_createScan');
+    $createScan->setAccessible(true);
+    $newScanId = (int) $createScan->invoke($audit, $elementId, User::class, $siteId, [], []);
+
+    $carried = (new Query())->select(['verdict'])->from('{{%accessibilityaudit_issues}}')
+        ->where(['scanId' => $newScanId, 'ruleId' => 'potential:contrast-unmeasurable'])->scalar();
+
+    expect($newScanId)->not->toBe($scanId)
+        ->and($carried)->toBe('dismissed')
+        ->and($audit->getPendingPotentialForScan($newScanId))->toHaveCount(0);
+});
+
+it('keeps the keyboard walk questions on a URL scan re-scanned from Inspect', function() {
+    $this->actingAs(UserFactory::factory()->admin(true)->create());
+
+    $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
+    $url = 'https://example.test/search?q=' . StringHelper::randomString(6);
+    $audit = AccessibilityAudit::getInstance()->getAudit();
+
+    $createUrlScan = new ReflectionMethod($audit, '_createUrlScan');
+    $createUrlScan->setAccessible(true);
+    $scanId = (int) $createUrlScan->invoke($audit, $url, $siteId, 'Search', [], []);
+
+    $audit->storeFocusWalkIssues($scanId, [
+        'ran' => true,
+        'focusVisible' => true,
+        'total' => 4,
+        'limit' => 150,
+        'notVisible' => [['html' => '<a href="/a" id="plain">']],
+        'obscured' => [['html' => '<div id="bar">', 'position' => 'fixed', 'count' => 2, 'examples' => ['#x', '#y']]],
+    ]);
+
+    AccessibilityAudit::getInstance()->getVerdicts()->setVerdict(
+        $siteId, null, 'potential:focus-not-visible', '<a href="/a" id="plain">', 'dismissed', null, $url,
+    );
+
+    // Inspect re-scans a URL with the PHP scan only; the walk never runs there.
+    $newScanId = (int) $createUrlScan->invoke($audit, $url, $siteId, 'Search', [], []);
+
+    $rows = (new Query())->select(['ruleId', 'verdict'])->from('{{%accessibilityaudit_issues}}')
+        ->where(['scanId' => $newScanId, 'ruleId' => ['potential:focus-not-visible', 'potential:focus-obscured']])
+        ->pairs();
+
+    expect($newScanId)->not->toBe($scanId)
+        ->and($rows)->toBe(['potential:focus-not-visible' => 'dismissed', 'potential:focus-obscured' => null]);
+});
+
+// ---------------------------------------------------------------------------
 // The client-side contrast pass rebuilds too.
 //
 // It tears down its rows for a viewport and writes them again every time the

@@ -95,6 +95,8 @@ class Install extends Migration
                 'errorCount' => $this->smallInteger()->unsigned()->notNull()->defaultValue(0),
                 'warningCount' => $this->smallInteger()->unsigned()->notNull()->defaultValue(0),
                 'noticeCount' => $this->smallInteger()->unsigned()->notNull()->defaultValue(0),
+                'focusVisibleChecked' => $this->boolean()->notNull()->defaultValue(false),
+                'focusObscuredChecked' => $this->boolean()->notNull()->defaultValue(false),
                 'dateScanned' => $this->dateTime()->notNull(),
                 'dateCreated' => $this->dateTime()->notNull(),
                 'dateUpdated' => $this->dateTime()->notNull(),

@@ -4,6 +4,7 @@
  * @copyright Copyright (c) John Henry Donovan
  */
 
+use johnhenry\accessibilityaudit\services\AuditService;
 use johnhenry\accessibilityaudit\services\ContentScanner;
 use johnhenry\accessibilityaudit\services\PotentialScanner;
 use johnhenry\accessibilityaudit\services\RuleRegistry;
@@ -20,7 +21,8 @@ use johnhenry\accessibilityaudit\services\RuleRegistry;
 // ---------------------------------------------------------------------------
 
 /**
- * Rule IDs the two PHP scanners can emit, read from the source.
+ * Rule IDs the scanners can emit: the two PHP scanners' literals, read from
+ * the source, plus the browser rules AuditService names as constants.
  *
  * @return string[]
  */
@@ -40,6 +42,12 @@ function emittedRuleIds(): array
         $ids = [...$ids, ...$named[1], ...$positional[1], ...$checks[1]];
     }
 
+    foreach ((new ReflectionClass(AuditService::class))->getConstants() as $name => $value) {
+        if (str_starts_with($name, 'RULE_POTENTIAL_') && is_string($value)) {
+            $ids[] = $value;
+        }
+    }
+
     return array_values(array_unique($ids));
 }
 
@@ -49,9 +57,11 @@ it('has registry metadata for every rule the scanners emit', function() {
     // A floor, so a broken reader cannot pass by finding nothing.
     expect(count($emitted))->toBeGreaterThan(25);
 
+    // get() never returns null: an unknown rule gets the fallback, whose
+    // element type is "Other". No registered rule uses that category.
     $missing = array_values(array_filter(
         $emitted,
-        static fn(string $ruleId): bool => RuleRegistry::get($ruleId) === null,
+        static fn(string $ruleId): bool => RuleRegistry::get($ruleId)['elementType'] === 'Other',
     ));
 
     expect($missing)->toBe([], sprintf(
@@ -72,10 +82,6 @@ it('gives every registry entry a value from the documented sets', function() {
 
     foreach (emittedRuleIds() as $ruleId) {
         $meta = RuleRegistry::get($ruleId);
-
-        if ($meta === null) {
-            continue;
-        }
 
         if (!in_array($meta['difficulty'] ?? '', $difficulties, true)) {
             $bad[] = "$ruleId: difficulty '" . ($meta['difficulty'] ?? '') . "'";

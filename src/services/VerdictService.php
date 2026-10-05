@@ -559,10 +559,11 @@ class VerdictService extends Component
     /**
      * A context snippet reduced to what identifies it, ready to hash.
      *
-     * Line endings are settled first, then a contrast finding's JSON is taken
-     * apart: its CSS path is for highlighting rather than identity, so it comes
-     * out whole, the markup has its id references stripped, and the keys are
-     * sorted so two encodings of the same data cannot hash differently.
+     * Line endings are settled first, then a JSON context is taken apart: its
+     * CSS path is for highlighting rather than identity, so it comes out
+     * whole, the markup has its id references stripped, and the keys are
+     * sorted so two encodings of the same data cannot hash differently. Every
+     * other key stays part of the identity.
      *
      * @param string|null $context The occurrence's context snippet.
      * @return string The normalised form, empty where nothing was given.

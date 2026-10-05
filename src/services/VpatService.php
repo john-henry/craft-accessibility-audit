@@ -32,7 +32,7 @@ use yii\db\Exception;
  *
  * @property-read array<string, array<string, mixed>> $criteria
  *
- * @phpstan-type VpatEvidence array{checks: ?string, cannot: ?string, findings: int, pages: int}
+ * @phpstan-type VpatEvidence array{checks: ?string, cannot: ?string, findings: int, questions: int, pages: int}
  * @phpstan-type VpatOverride array{level?: string, remarks?: string, remarkFindings?: int, remarkSavedAt?: string}
  * @phpstan-type VpatRevision array{date: string, changes: array<int, array{criterion: string, name: string, from: string, to: string}>, remarkEdits: int}
  * @phpstan-type VpatCriterionRow array{
@@ -489,12 +489,12 @@ class VpatService extends Component
             'desc' => 'Any keyboard operable user interface has a mode of operation where the keyboard focus indicator is visible.',
         ],
         '2.4.11' => [
-            'name' => 'Focus Appearance',
+            'name' => 'Focus Not Obscured (Minimum)',
             'level' => 'AA',
             'principle' => 'Operable',
-            'url' => 'https://www.w3.org/WAI/WCAG22/Understanding/focus-appearance',
+            'url' => 'https://www.w3.org/WAI/WCAG22/Understanding/focus-not-obscured-minimum',
             'auto' => 'manual',
-            'desc' => 'When a keyboard focus indicator is visible, the focus indicator area meets minimum size (at least the perimeter of the component) and contrast requirements (3:1 change ratio).',
+            'desc' => 'When a user interface component receives keyboard focus, the component is not entirely hidden due to author-created content.',
         ],
         '2.5.7' => [
             'name' => 'Dragging Movements',
@@ -643,6 +643,68 @@ class VpatService extends Component
             'checks' => 'buttons, links, iframes and form controls for an accessible name',
             'cannot' => 'widgets built in script, or whether a name matches the label a reader can see',
         ],
+    ];
+
+    /**
+     * @var array<string, array{checks: string, cannot: string}> Evidence only
+     *      the server-side browser pass's keyboard walk can give, so it is
+     *      claimed only where that pass is available, the walk would store
+     *      the criterion's question, and the latest scan of at least one page
+     *      records the walk measuring it. The checks text is completed with
+     *      how many pages that is.
+     */
+    private const BROWSER_EVIDENCE = [
+        '2.4.7' => [
+            'checks' => 'whether anything visibly changes as keyboard focus moves onto each control, for up to ' . HeadlessScanner::FOCUS_WALK_MAX_ELEMENTS . ' controls a page, in a real browser at desktop width',
+            'cannot' => 'whether a change it found is clear enough to see, or focus inside content that only appears part way through an interaction',
+        ],
+        '2.4.11' => [
+            'checks' => 'whether a fixed or sticky element completely covers each control as keyboard focus moves forward through the page, in a real browser at desktop width',
+            'cannot' => 'focus moving backwards, other screen sizes, or content that only appears part way through an interaction',
+        ],
+    ];
+
+    /**
+     * @var array<string, string> The keyboard walk rule behind each entry in
+     *      BROWSER_EVIDENCE.
+     */
+    private const BROWSER_EVIDENCE_RULES = [
+        '2.4.7' => AuditService::RULE_POTENTIAL_FOCUS_NOT_VISIBLE,
+        '2.4.11' => AuditService::RULE_POTENTIAL_FOCUS_OBSCURED,
+    ];
+
+    /**
+     * @var array<string, array{checks: string, cannot: string}> Evidence that
+     *      comes from a browser, worded for a site with no server-side browser
+     *      pass. axe then runs only where someone views a page in the Inspect
+     *      preview or with the front-end overlay, so the claim covers those
+     *      pages and no others.
+     */
+    private const VIEWED_PAGES_EVIDENCE = [
+        '1.4.3' => [
+            'checks' => 'the computed text and background colour of every element, including hover, focus and selection states, on the pages someone has viewed in the Inspect preview or with the front-end overlay',
+            'cannot' => 'pages nobody has viewed that way, or text baked into an image',
+        ],
+        '1.4.11' => [
+            'checks' => 'the contrast of interface components and graphics in a real browser, on the pages someone has viewed in the Inspect preview or with the front-end overlay',
+            'cannot' => 'pages nobody has viewed that way, or components that only appear part way through an interaction',
+        ],
+        '2.5.8' => [
+            'checks' => 'the size and spacing of touch targets in a real browser, on the pages someone has viewed in the Inspect preview or with the front-end overlay',
+            'cannot' => 'pages nobody has viewed that way, or targets that only appear part way through an interaction',
+        ],
+    ];
+
+    /**
+     * @var string[] Questions that never set a conformance level, even once
+     *      confirmed. Each is a judgement about how something looks, and a
+     *      confirmed one says a control needs looking at, not how much of the
+     *      site fails the criterion.
+     */
+    private const NO_AUTO_LEVEL_RULES = [
+        AuditService::RULE_POTENTIAL_FOCUS_OUTLINE,
+        AuditService::RULE_POTENTIAL_FOCUS_NOT_VISIBLE,
+        AuditService::RULE_POTENTIAL_FOCUS_OBSCURED,
     ];
 
     // Public Methods
@@ -1039,7 +1101,8 @@ class VpatService extends Component
      * @param int $siteId The site to report on.
      * @return array<string, VpatEvidence>
      *         Keyed by criterion number. checks and cannot are null where no
-     *         scanner contributes to that criterion at all.
+     *         scanner contributes to that criterion at all. questions counts
+     *         the potential issues against it still waiting for an answer.
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
@@ -1054,27 +1117,43 @@ class VpatService extends Component
             ->column();
 
         $counts = [];
+        $questions = [];
 
         if (!empty($latestScanIds)) {
+            $audit = AccessibilityAudit::getInstance()->getAudit();
+
+            // pairs(): criterion => count.
             $counts = (new Query())
-                ->select(['wcagCriterion', 'COUNT(*) as n'])
+                ->select(['wcagCriterion', 'n' => 'COUNT(*)'])
                 ->from('{{%accessibilityaudit_issues}}')
                 ->where(['scanId' => $latestScanIds, 'isResolved' => false])
-                ->andWhere(AccessibilityAudit::getInstance()->getAudit()->definiteCondition())
+                ->andWhere($audit->definiteCondition())
                 ->andWhere(['not', ['wcagCriterion' => null]])
                 ->groupBy(['wcagCriterion'])
-                ->indexBy('wcagCriterion')
-                ->column();
+                ->pairs();
+
+            $questions = (new Query())
+                ->select(['wcagCriterion', 'n' => 'COUNT(*)'])
+                ->from('{{%accessibilityaudit_issues}}')
+                ->where(['scanId' => $latestScanIds, 'isResolved' => false])
+                ->andWhere($audit->pendingPotentialCondition())
+                ->andWhere(['not', ['wcagCriterion' => null]])
+                ->groupBy(['wcagCriterion'])
+                ->pairs();
         }
 
         $pages = count($latestScanIds);
+        $walked = $this->_walkedPages($latestScanIds);
         $evidence = [];
 
         foreach (array_keys(self::CRITERIA) as $num) {
+            $coverage = $this->_evidenceFor((string)$num, $walked, $pages);
+
             $evidence[(string)$num] = [
-                'checks' => self::EVIDENCE[$num]['checks'] ?? null,
-                'cannot' => self::EVIDENCE[$num]['cannot'] ?? null,
+                'checks' => $coverage['checks'] ?? null,
+                'cannot' => $coverage['cannot'] ?? null,
                 'findings' => (int)($counts[$num] ?? 0),
+                'questions' => (int)($questions[$num] ?? 0),
                 'pages' => $pages,
             ];
         }
@@ -1127,6 +1206,7 @@ class VpatService extends Component
             ->where(['scanId' => $latestScanIds, 'isResolved' => false])
             ->andWhere($audit->definiteCondition())
             ->andWhere(['not', ['wcagCriterion' => null]])
+            ->andWhere(['not in', 'ruleId', self::NO_AUTO_LEVEL_RULES])
             ->all();
 
         // Accumulate worst severity per criterion
@@ -1354,7 +1434,16 @@ class VpatService extends Component
 
         // Whether the scans have anything to say about this criterion at all,
         // as opposed to anything to report against it.
-        $hasCoverage = isset(self::EVIDENCE[$criterion]) && !empty($latestScanIds);
+        $coverage = $this->_evidenceFor($criterion, $this->_walkedPages($latestScanIds), count($latestScanIds));
+        $hasCoverage = $coverage !== null && !empty($latestScanIds);
+
+        $questions = !empty($latestScanIds)
+            ? (int)(new Query())
+                ->from('{{%accessibilityaudit_issues}}')
+                ->where(['scanId' => $latestScanIds, 'wcagCriterion' => $criterion, 'isResolved' => false])
+                ->andWhere(AccessibilityAudit::getInstance()->getAudit()->pendingPotentialCondition())
+                ->count()
+            : 0;
 
         // No findings and no notes, but the scans did cover part of this
         // criterion. There is something honest to write: what was tested and
@@ -1392,17 +1481,26 @@ class VpatService extends Component
                 $evidence,
             );
             $sources[] = "Scanner findings for this criterion (latest scans):\n" . implode("\n", $lines);
-        } elseif (isset(self::EVIDENCE[$criterion]) && !empty($latestScanIds)) {
+        } elseif ($hasCoverage) {
             // What the sweep covered, stated as coverage rather than as a
             // verdict, and paired with what it could not reach. The author has
             // written notes to get this far; this tells the model what the
             // scans can and cannot back those notes up with.
+            // The keyboard walk's checks already say how many pages it covered.
             $sources[] = sprintf(
-                'Scan coverage: the scanner checked %s across %d scanned page(s) and recorded no findings against this criterion. '
+                'Scan coverage: the scanner checked %s%s and recorded no findings against this criterion. '
                 . 'It cannot establish %s, so that part of the criterion is unassessed rather than passing.',
-                self::EVIDENCE[$criterion]['checks'],
-                count($latestScanIds),
-                self::EVIDENCE[$criterion]['cannot'],
+                $coverage['checks'],
+                isset(self::BROWSER_EVIDENCE[$criterion]) ? '' : sprintf(' across %d scanned page(s)', count($latestScanIds)),
+                $coverage['cannot'],
+            );
+        }
+
+        if ($questions > 0) {
+            $sources[] = sprintf(
+                'Open questions: the scans raised %d question(s) against this criterion that nobody has answered yet. '
+                . 'They are neither failures nor passes. Say that review of them is still open; do not count them as either.',
+                $questions,
             );
         }
 
@@ -1493,6 +1591,100 @@ class VpatService extends Component
 
     // Private Methods
     // =========================================================================
+
+    /**
+     * What the scans check for a criterion and what they cannot establish, or
+     * null where nothing here contributes to it.
+     *
+     * The one source for both the evidence shown beside a row and the
+     * coverage a drafted remark may claim, so a draft never claims a check
+     * that did not run.
+     *
+     * @param string $criterion The WCAG criterion number.
+     * @param array<string, int> $walked How many pages' latest scans record
+     *        the keyboard walk measuring each criterion, from _walkedPages().
+     * @param int $pages How many pages have been scanned.
+     * @return array{checks: string, cannot: string}|null
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    private function _evidenceFor(string $criterion, array $walked, int $pages): ?array
+    {
+        $headless = AccessibilityAudit::getInstance()->getHeadless()->isAvailable();
+
+        if (!$headless && isset(self::VIEWED_PAGES_EVIDENCE[$criterion])) {
+            return self::VIEWED_PAGES_EVIDENCE[$criterion];
+        }
+
+        if (isset(self::EVIDENCE[$criterion])) {
+            return self::EVIDENCE[$criterion];
+        }
+
+        // The walk skips a rule that is ignored or above the target level.
+        if (
+            !$headless
+            || !isset(self::BROWSER_EVIDENCE[$criterion])
+            || !AccessibilityAudit::getInstance()->getAudit()->focusRuleApplies(self::BROWSER_EVIDENCE_RULES[$criterion])
+        ) {
+            return null;
+        }
+
+        $measured = $walked[$criterion] ?? 0;
+
+        if ($measured === 0) {
+            return null;
+        }
+
+        $scope = match (true) {
+            $measured < $pages => "on {$measured} of the {$pages} pages scanned",
+            $pages === 1 => 'on the only page scanned',
+            default => "on all {$pages} pages scanned",
+        };
+
+        return [
+            'checks' => self::BROWSER_EVIDENCE[$criterion]['checks'] . ', ' . $scope,
+            'cannot' => self::BROWSER_EVIDENCE[$criterion]['cannot'],
+        ];
+    }
+
+    /**
+     * How many of the given scans record the keyboard walk measuring each of
+     * its questions.
+     *
+     * @param int[] $scanIds The latest scan of each page.
+     * @return array<string, int> Keyed by criterion number.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    private function _walkedPages(array $scanIds): array
+    {
+        $walked = ['2.4.7' => 0, '2.4.11' => 0];
+
+        if ($scanIds === []) {
+            return $walked;
+        }
+
+        $rows = (new Query())
+            ->select(['focusVisibleChecked', 'focusObscuredChecked', 'n' => 'COUNT(*)'])
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where(['id' => $scanIds])
+            ->groupBy(['focusVisibleChecked', 'focusObscuredChecked'])
+            ->all();
+
+        foreach ($rows as $row) {
+            if ((bool)$row['focusVisibleChecked']) {
+                $walked['2.4.7'] += (int)$row['n'];
+            }
+
+            if ((bool)$row['focusObscuredChecked']) {
+                $walked['2.4.11'] += (int)$row['n'];
+            }
+        }
+
+        return $walked;
+    }
 
     /**
      * Whether a saved remark was written against a different set of findings

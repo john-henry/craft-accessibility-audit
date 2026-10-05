@@ -519,6 +519,261 @@
     return results;
   }
 
+  /* ── Focus outlines the stylesheet takes away ────────────────────────── */
+
+  var FOCUSABLE_SELECTOR = 'a[href], area[href], button, input, select, textarea, iframe, summary, '
+    + '[tabindex], [contenteditable]:not([contenteditable="false"])';
+
+  /* The text caret is an indicator in its own right. */
+  var TEXT_ENTRY_TYPES = ['', 'text', 'email', 'search', 'url', 'tel', 'password', 'number',
+    'date', 'datetime-local', 'month', 'time', 'week'];
+
+  var DRAWING_PROPERTIES = [
+    'box-shadow', 'background-color', 'background-image', 'color', 'opacity', 'transform',
+    'text-decoration-line', 'text-decoration-color',
+    'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
+    'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
+  ];
+
+  var FOCUS_PSEUDO = /:focus(?:-visible)?(?![\w-])/;
+
+  function splitSelectorList(sel) {
+    var parts = [];
+    var depth = 0;
+    var current = '';
+
+    for (var i = 0; i < sel.length; i++) {
+      var ch = sel.charAt(i);
+      if (ch === '(') depth++;
+      if (ch === ')') depth--;
+      if (ch === ',' && depth === 0) {
+        parts.push(current.trim());
+        current = '';
+        continue;
+      }
+      current += ch;
+    }
+
+    if (current.trim() !== '') parts.push(current.trim());
+    return parts;
+  }
+
+  /* A negated pseudo-class does not apply, so :not(...) is dropped before
+     looking for one. */
+  function withoutNegations(sel) {
+    var out = '';
+    var i = 0;
+
+    while (i < sel.length) {
+      if (sel.substr(i, 5) === ':not(') {
+        var depth = 1;
+        i += 5;
+        while (i < sel.length && depth > 0) {
+          if (sel.charAt(i) === '(') depth++;
+          if (sel.charAt(i) === ')') depth--;
+          i++;
+        }
+        continue;
+      }
+      out += sel.charAt(i);
+      i++;
+    }
+
+    return out;
+  }
+
+  /* The last compound of a complex selector: the element it styles. */
+  function subjectCompound(sel) {
+    var depth = 0;
+    var start = 0;
+
+    for (var i = 0; i < sel.length; i++) {
+      var ch = sel.charAt(i);
+      if (ch === '(' || ch === '[') depth++;
+      if (ch === ')' || ch === ']') depth--;
+      if (depth === 0 && (ch === ' ' || ch === '>' || ch === '+' || ch === '~')) start = i + 1;
+    }
+
+    return sel.slice(start);
+  }
+
+  function stripFocusPseudos(sel) {
+    return sel.replace(/:focus(?:-visible|-within)?(?![\w-])/g, '');
+  }
+
+  function isTextEntryControl(el) {
+    if (el.isContentEditable || el.tagName === 'TEXTAREA') return true;
+    if (el.tagName !== 'INPUT') return false;
+
+    return TEXT_ENTRY_TYPES.indexOf((el.getAttribute('type') || '').toLowerCase()) !== -1;
+  }
+
+  function isTabbable(el) {
+    if (el.tabIndex < 0) return false;
+    if (el.tagName === 'INPUT' && (el.getAttribute('type') || '').toLowerCase() === 'hidden') return false;
+    if (el.matches(':disabled') || el.closest('[inert]')) return false;
+
+    return el.getClientRects().length > 0;
+  }
+
+  /* `outline: 0` leaves outline-style as "initial", which is none. */
+  function removesOutline(style) {
+    var outlineStyle = (style.getPropertyValue('outline-style') || '').trim();
+    var width = (style.getPropertyValue('outline-width') || '').trim();
+    var colour = (style.getPropertyValue('outline-color') || '').trim();
+
+    if (outlineStyle === '' && width === '' && colour === '') return false;
+    if (/var\(/.test(outlineStyle + width + colour)) return false;
+    if (outlineStyle === 'none' || outlineStyle === 'hidden' || outlineStyle === 'initial') return true;
+    if (/^0(?:\.0+)?[a-z]*$/i.test(width)) return true;
+    if (colour === 'transparent') return true;
+
+    var parsed = colour ? parseRgb(colour) : null;
+    return !!parsed && parsed.a === 0;
+  }
+
+  function drawsSomething(style) {
+    var outlineStyle = (style.getPropertyValue('outline-style') || '').trim();
+    if (outlineStyle !== '' && !removesOutline(style)) return true;
+
+    for (var i = 0; i < DRAWING_PROPERTIES.length; i++) {
+      var value = (style.getPropertyValue(DRAWING_PROPERTIES[i]) || '').trim();
+      if (value === '' || value === 'initial' || value === 'inherit' || value === 'unset') continue;
+      if (DRAWING_PROPERTIES[i] === 'box-shadow' && value === 'none') continue;
+      return true;
+    }
+
+    return false;
+  }
+
+  function openingTagOf(el, length) {
+    var shallow = el.cloneNode(false).outerHTML;
+    var closing = '</' + el.tagName.toLowerCase() + '>';
+
+    if (shallow.slice(-closing.length).toLowerCase() === closing) {
+      shallow = shallow.slice(0, -closing.length);
+    }
+
+    return shallow.slice(0, length);
+  }
+
+  /**
+   * Stylesheet rules that remove the focus outline with nothing in its place.
+   * Anything this cannot resolve (a custom property, a focus-visible polyfill
+   * class) counts as a replacement, so it errs towards not asking.
+   *
+   * @param {Document} doc
+   * @param {Object} [opts] limit (default 20), htmlLength (default 300), skipEl
+   * @returns {Array} one entry per rule: selector, html of the first focusable
+   *          element left without an indicator, and how many there are
+   */
+  function collectFocusIndicatorRemovals(doc, opts) {
+    opts = opts || {};
+    var limit = opts.limit || 20;
+    var htmlLength = opts.htmlLength || 300;
+    var results = [];
+
+    if (!doc || !doc.body) return results;
+    var win = doc.defaultView;
+    if (!win) return results;
+
+    try {
+      var removals = [];
+      var focusTargets = [];
+      var sheets = doc.styleSheets;
+
+      for (var s = 0; s < sheets.length; s++) {
+        eachStyleRule(sheets[s], win, function (rule, parentSel) {
+          var parts = splitSelectorList(rule.selectorText);
+
+          for (var p = 0; p < parts.length; p++) {
+            var part = resolveSelector(parts[p], parentSel);
+            var live = withoutNegations(part);
+
+            /* Mouse-only: the keyboard indicator is left alone. */
+            if (/:not\(\s*(?::focus-visible|\.focus-visible|\[data-focus-visible-added\])\s*\)/.test(part)) continue;
+
+            var cut = live.search(/:focus(?:-visible|-within)?(?![\w-])/);
+            var polyfill = /\.focus-visible\b|\[data-focus-visible-added\]/.test(live);
+
+            if ((cut !== -1 || polyfill) && drawsSomething(rule.style)) {
+              /* The element whose focus it responds to: `input:focus + label`
+                 responds to the input. */
+              var target = cut !== -1
+                ? live.slice(0, cut) + live.slice(cut).replace(/[\s>+~].*$/, '')
+                : live.replace(/\.js-focus-visible\s*/g, '');
+
+              focusTargets.push({
+                selector: stripFocusPseudos(target)
+                  .replace(/\.focus-visible\b|\[data-focus-visible-added\]/g, '')
+                  .replace(/::?(?:before|after)\b/g, '')
+                  .trim() || '*',
+                within: /:focus-within(?![\w-])/.test(live),
+              });
+            }
+
+            if (!removesOutline(rule.style)) continue;
+
+            /* Not the focused element's own outline. */
+            if (part.indexOf('::') !== -1) continue;
+            if (/:focus-within(?![\w-])/.test(live)) continue;
+            if (/:(?:hover|active)(?![\w-])/.test(live)) continue;
+
+            var subject = subjectCompound(live);
+            if (FOCUS_PSEUDO.test(live) && !FOCUS_PSEUDO.test(subject)) continue;
+
+            removals.push({
+              rule: rule,
+              /* Shown to the reader, so a single-selector :is() wrapper from
+                 nesting is unwrapped. */
+              selector: resolveSelector(rule.selectorText, parentSel).replace(/:is\(([^(),]+)\)/g, '$1'),
+              base: stripFocusPseudos(part).trim() || '*',
+            });
+          }
+        });
+      }
+
+      var byRule = new Map();
+
+      for (var r = 0; r < removals.length && byRule.size < limit; r++) {
+        var removal = removals[r];
+        var matched;
+        try { matched = doc.querySelectorAll(removal.base); } catch (_) { continue; }
+
+        for (var m = 0; m < matched.length; m++) {
+          var el = matched[m];
+          if (!el.matches(FOCUSABLE_SELECTOR) || !isTabbable(el) || isTextEntryControl(el)) continue;
+          if (opts.skipEl && opts.skipEl(el)) continue;
+
+          var replaced = focusTargets.some(function (t) {
+            try {
+              return t.within ? !!el.closest(t.selector) : el.matches(t.selector);
+            } catch (_) {
+              return true;
+            }
+          });
+          if (replaced) continue;
+
+          var finding = byRule.get(removal.rule);
+          if (!finding) {
+            finding = { selector: removal.selector, html: openingTagOf(el, htmlLength), count: 0, seen: [] };
+            byRule.set(removal.rule, finding);
+          }
+          if (finding.seen.indexOf(el) === -1) {
+            finding.seen.push(el);
+            finding.count++;
+          }
+        }
+      }
+
+      byRule.forEach(function (finding) {
+        results.push({ selector: finding.selector, html: finding.html, count: finding.count });
+      });
+    } catch (_) { /* collection must never break the caller's render */ }
+
+    return results.slice(0, limit);
+  }
+
   /* A state background may be translucent, in which case what the reader sees
      is it composited over whatever is already there. */
   function blendOver(top, beneath) {
@@ -612,6 +867,9 @@
     cssPath: cssPath,
     collectContrastFailures: collectContrastFailures,
     collectStateContrastFailures: collectStateContrastFailures,
+    collectFocusIndicatorRemovals: collectFocusIndicatorRemovals,
+    isTextEntryControl: isTextEntryControl,
+    openingTagOf: openingTagOf,
     escHtml: escHtml,
     scoreClass: scoreClass,
   };

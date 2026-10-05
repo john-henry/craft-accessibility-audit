@@ -12,6 +12,7 @@ use craft\helpers\Json;
 use HeadlessChromium\Browser;
 use HeadlessChromium\BrowserFactory;
 use HeadlessChromium\Communication\Connection;
+use HeadlessChromium\Communication\Message;
 use HeadlessChromium\Communication\Socket\Wrench as WrenchSocket;
 use HeadlessChromium\Page;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
@@ -39,7 +40,8 @@ use yii\base\InvalidConfigException;
  * @since 1.0.0
  *
  * @phpstan-type AxeNode array<string, mixed>
- * @phpstan-type AxeFindings array{violations: array<int, AxeNode>, incomplete: array<int, AxeNode>}
+ * @phpstan-type FocusWalk array<string, mixed>
+ * @phpstan-type AxeFindings array{violations: array<int, AxeNode>, incomplete: array<int, AxeNode>, focus?: FocusWalk|null}
  */
 class HeadlessScanner extends Component
 {
@@ -81,12 +83,6 @@ class HeadlessScanner extends Component
     private const HANDSHAKE_ORIGIN = 'http://localhost';
 
     /**
-     * @var int Nodes stored per violation. Bounds the payload on pathological
-     * pages (a broken template can fail one rule thousands of times). Public
-     * because the Inspect preview's client-side axe pass must slim its payload
-     * to the same shape (injected via window.AccessibilityAudit).
-     */
-    /**
      * @var int The Chrome round trips one viewport pass waits on, each bounded
      * by PAGE_TIMEOUT_MS. Counted from {@see self::_runViewportPass()}: the
      * viewport, the user agent, the navigation, reading the landed URL, and
@@ -95,7 +91,44 @@ class HeadlessScanner extends Component
      */
     private const AWAITS_PER_VIEWPORT = 7;
 
+    /**
+     * @var int Nodes stored per violation. Bounds the payload on pathological
+     * pages (a broken template can fail one rule thousands of times). Public
+     * because the Inspect preview's client-side axe pass must slim its payload
+     * to the same shape (injected via window.AccessibilityAudit).
+     */
     public const MAX_NODES_PER_VIOLATION = 50;
+
+    /**
+     * @var int The most focusable elements the keyboard walk visits on one
+     * page.
+     */
+    public const FOCUS_WALK_MAX_ELEMENTS = 150;
+
+    /**
+     * @var int How long the walk may run inside the page, in milliseconds.
+     * Kept under FOCUS_WALK_TIMEOUT_MS so the page stops itself and hands back
+     * what it found before PHP stops waiting.
+     */
+    private const FOCUS_WALK_BUDGET_MS = 15000;
+
+    /**
+     * @var int The bound on each of the walk's setup round trips.
+     */
+    private const FOCUS_STEP_TIMEOUT_MS = 10000;
+
+    /**
+     * @var int The bound on the round trip that runs the walk itself.
+     */
+    private const FOCUS_WALK_TIMEOUT_MS = 30000;
+
+    /**
+     * @var int The setup round trips the walk waits on, each bounded by
+     * FOCUS_STEP_TIMEOUT_MS. Counted from {@see self::_runFocusWalk()}: focus
+     * emulation, the evaluate that injects and prepares the walk, and the Tab
+     * key's down and up events.
+     */
+    private const FOCUS_WALK_AWAITS = 4;
 
     /**
      * @var int Characters of a node's HTML snippet stored per occurrence.
@@ -112,6 +145,12 @@ class HeadlessScanner extends Component
      */
     private ?string $_axeSource = null;
 
+    /**
+     * @var string|null Memoized keyboard walk source, with the shared helpers
+     * it relies on, read once per request.
+     */
+    private ?string $_focusWalkSource = null;
+
     // Public Methods
     // =========================================================================
 
@@ -121,7 +160,8 @@ class HeadlessScanner extends Component
      * Every Chrome call this makes is bounded, so the total is arithmetic
      * rather than a guess: one acquisition, then a pass per viewport, each of
      * which waits on {@see self::AWAITS_PER_VIEWPORT} round trips and sleeps
-     * out the settle window.
+     * out the settle window, and the keyboard walk, which runs once, on the
+     * desktop pass.
      *
      * A queue job that drives this needs it. Craft reserves a job for 300
      * seconds by default, which is shorter than this, and a job outliving its
@@ -137,9 +177,10 @@ class HeadlessScanner extends Component
     public static function worstCaseScanSeconds(): int
     {
         $perViewport = (self::AWAITS_PER_VIEWPORT * self::PAGE_TIMEOUT_MS) + self::MAX_SETTLE_MS;
+        $focusWalk = (self::FOCUS_WALK_AWAITS * self::FOCUS_STEP_TIMEOUT_MS) + self::FOCUS_WALK_TIMEOUT_MS;
 
         return (int)ceil(
-            (self::PAGE_TIMEOUT_MS + ($perViewport * count(self::VIEWPORTS))) / 1000
+            (self::PAGE_TIMEOUT_MS + ($perViewport * count(self::VIEWPORTS)) + $focusWalk) / 1000
         );
     }
 
@@ -183,7 +224,8 @@ class HeadlessScanner extends Component
      *
      * The `incomplete` bucket carries only contrast results, the nodes axe
      * could measure neither way, which are stored as needs-review items rather
-     * than counted against the score.
+     * than counted against the score. A desktop pass also carries `focus`, the
+     * keyboard walk's result, null where the walk could not run.
      *
      * Single-viewport convenience over [[scanUrlViewports()]]. Anything
      * scanning more than one viewport for the same URL must call that instead,
@@ -473,10 +515,17 @@ class HeadlessScanner extends Component
                 return null;
             }
 
-            return [
+            $findings = [
                 'violations' => $decoded['violations'],
                 'incomplete' => is_array($decoded['incomplete'] ?? null) ? $decoded['incomplete'] : [],
             ];
+
+            // Desktop only: the walk is the slowest part of the pass.
+            if ($viewport === AuditService::VIEWPORT_DESKTOP && AccessibilityAudit::getInstance()->getAudit()->focusWalkApplies()) {
+                $findings['focus'] = $this->_runFocusWalk($page, $url);
+            }
+
+            return $findings;
         } catch (Throwable $e) {
             Craft::error("HeadlessScanner: {$viewport} scan of {$url} failed: " . $e->getMessage(), 'accessibility-audit');
 
@@ -488,6 +537,135 @@ class HeadlessScanner extends Component
                 // Page already gone with its browser: nothing to clean up.
             }
         }
+    }
+
+    /**
+     * Walks keyboard focus through the page and reports what it could not see.
+     *
+     * One real Tab key press starts it, so the browser treats the focus that
+     * follows as keyboard focus and `:focus-visible` styles apply. Without
+     * focus emulation a tab that is not the active one, which is every tab on
+     * a shared remote browser, never matches `:focus` at all; a browser that
+     * refuses emulation is logged and the walk carries on, and the page then
+     * reports itself unable to run rather than reporting every control.
+     *
+     * Its own failures stay here. The axe findings for the pass are already
+     * in hand and a broken walk must not lose them.
+     *
+     * @param Page $page The page, loaded and already scanned by axe.
+     * @param string $url The URL being scanned, for log context only.
+     * @return FocusWalk|null The walk's result, or null where it failed.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    private function _runFocusWalk(Page $page, string $url): ?array
+    {
+        $source = $this->_loadFocusWalkSource();
+
+        if ($source === null) {
+            return null;
+        }
+
+        try {
+            $session = $page->getSession();
+
+            $emulation = $session->sendMessageSync(
+                new Message('Emulation.setFocusEmulationEnabled', ['enabled' => true]),
+                self::FOCUS_STEP_TIMEOUT_MS,
+            );
+
+            if (!$emulation->isSuccessful()) {
+                Craft::warning(
+                    "HeadlessScanner: the browser refused focus emulation for {$url}, so the keyboard walk " .
+                    'may not be able to run: ' . $emulation->getErrorMessage(),
+                    'accessibility-audit',
+                );
+            }
+
+            $exclude = Json::encode(AccessibilityAudit::getInstance()->getSettings()->resolvedExcludedSelectors());
+
+            $page->evaluate($source . "\nwindow.__aaFocusWalk.prepare({ exclude: {$exclude} });")
+                ->waitForResponse(self::FOCUS_STEP_TIMEOUT_MS);
+
+            // Sent raw: chrome-php's keyboard helper sends the key code of the
+            // first letter of the key's name, which Chrome reads as "T".
+            foreach (['rawKeyDown', 'keyUp'] as $type) {
+                $session->sendMessageSync(new Message('Input.dispatchKeyEvent', [
+                    'type' => $type,
+                    'key' => 'Tab',
+                    'code' => 'Tab',
+                    'windowsVirtualKeyCode' => 9,
+                    'nativeVirtualKeyCode' => 9,
+                ]), self::FOCUS_STEP_TIMEOUT_MS);
+            }
+
+            $result = $page->callFunction(
+                'function (config) { return window.__aaFocusWalk.run(config); }',
+                [[
+                    'max' => self::FOCUS_WALK_MAX_ELEMENTS,
+                    'budgetMs' => self::FOCUS_WALK_BUDGET_MS,
+                ]],
+            )->getReturnValue(self::FOCUS_WALK_TIMEOUT_MS);
+
+            if (!is_array($result) || !isset($result['ran'])) {
+                Craft::warning("HeadlessScanner: unexpected keyboard walk result for {$url}", 'accessibility-audit');
+
+                return null;
+            }
+
+            if ($result['ran'] !== true) {
+                Craft::info(
+                    "HeadlessScanner: keyboard walk did not run on {$url}: " . (string)($result['reason'] ?? 'unknown'),
+                    'accessibility-audit',
+                );
+            } elseif (is_string($result['stopped'] ?? null)) {
+                Craft::info(
+                    "HeadlessScanner: keyboard walk on {$url} stopped early ({$result['stopped']}) after "
+                    . (int)($result['checked'] ?? 0) . ' of ' . (int)($result['total'] ?? 0) . ' focusable elements',
+                    'accessibility-audit',
+                );
+            }
+
+            return $result;
+        } catch (Throwable $e) {
+            Craft::warning("HeadlessScanner: keyboard walk of {$url} failed: " . $e->getMessage(), 'accessibility-audit');
+
+            return null;
+        }
+    }
+
+    /**
+     * Reads the keyboard walk's source, with the shared helpers it uses
+     * prepended, memoized per request.
+     *
+     * @return string|null The source, or null where a bundled file is missing.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    private function _loadFocusWalkSource(): ?string
+    {
+        if ($this->_focusWalkSource !== null) {
+            return $this->_focusWalkSource;
+        }
+
+        $source = '';
+
+        foreach (['accessibility-audit-shared.js', 'focus-walk.js'] as $file) {
+            $path = dirname(__DIR__) . '/resources/js/' . $file;
+            $part = is_readable($path) ? file_get_contents($path) : false;
+
+            if ($part === false || $part === '') {
+                Craft::error("HeadlessScanner: bundled {$file} missing at {$path}", 'accessibility-audit');
+
+                return null;
+            }
+
+            $source .= $part . "\n";
+        }
+
+        return $this->_focusWalkSource = $source;
     }
 
     /**

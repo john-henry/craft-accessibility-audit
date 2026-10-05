@@ -301,3 +301,25 @@ describe('rulings on a page scanned by URL', function() {
         expect((int) $rows)->toBe(1);
     });
 });
+
+it('stores a URL scan whole or not at all', function() {
+    $audit = AccessibilityAudit::getInstance()->getAudit();
+    $siteId = (int) Craft::$app->getSites()->getPrimarySite()->id;
+    $url = 'https://example.test/atomic-' . StringHelper::randomString(6);
+
+    $createUrlScan = new ReflectionMethod($audit, '_createUrlScan');
+    $createUrlScan->setAccessible(true);
+
+    // A row that cannot be written, after the scan row has been.
+    $broken = (object) ['ruleId' => 'img-alt', 'context' => null];
+
+    expect(fn() => $createUrlScan->invoke($audit, $url, $siteId, 'Atomic', [], [$broken]))
+        ->toThrow(TypeError::class);
+
+    $scans = (new \craft\db\Query())
+        ->from('{{%accessibilityaudit_scans}}')
+        ->where(['url' => $url, 'siteId' => $siteId])
+        ->count();
+
+    expect((int) $scans)->toBe(0);
+});

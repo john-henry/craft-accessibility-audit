@@ -13,6 +13,7 @@
 // teardown, keeping the database clean between tests.
 use craft\elements\Entry;
 use craft\elements\User;
+use craft\debug\Module as DebugModule;
 use craft\helpers\Cp;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\models\OrganisationMetaModel;
@@ -118,6 +119,16 @@ uses()->beforeEach(function() {
     // does not fail, it agrees with whatever came first, which is worse.
     $memo = new ReflectionProperty(Cp::class, '_requestedSite');
     $memo->setValue(null, null);
+
+    // The debug toolbar's log target keeps everything logged for the life of
+    // the process, and craft-pest exports it after every test whether or not
+    // the test benchmarks anything. A suite is one process, so each export
+    // re-serialises the whole run so far: half a second per test by the end,
+    // and snapshot files of 500MB. Nothing here benchmarks, so it goes.
+    if (DebugModule::getInstance() !== null) {
+        unset(Craft::$app->getLog()->targets['debug']);
+        DebugModule::setInstance(null);
+    }
 })->in('Integration');
 
 /**
