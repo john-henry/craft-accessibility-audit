@@ -95,6 +95,38 @@ class RuleRegistry
         'potential:table-layout' => ['difficulty' => 'intermediate', 'responsibility' => 'development', 'elementType' => 'Tables',   'abilities' => ['cognition']],
         'potential:video-audio-desc' => ['difficulty' => 'intermediate', 'responsibility' => 'content',     'elementType' => 'Media',    'abilities' => ['vision']],
         'potential:contrast-unmeasurable' => ['difficulty' => 'intermediate', 'responsibility' => 'design',      'elementType' => 'Text',     'abilities' => ['vision']],
+        'potential:focus-outline-removed' => [
+            'difficulty' => 'beginner',
+            'responsibility' => 'design',
+            'elementType' => 'Interactive',
+            'abilities' => ['vision', 'motor'],
+            'description' => 'A rule in the stylesheet turns off the outline browsers draw around whatever has '
+                . 'keyboard focus, and nothing else in the stylesheet draws an indicator in its place. Someone '
+                . 'using the keyboard moves through the page without being able to see where they are. Read '
+                . 'from the stylesheet, so a script that adds its own focus styling is not seen: tab through '
+                . 'the page to check before answering.',
+        ],
+        'potential:focus-not-visible' => [
+            'difficulty' => 'intermediate',
+            'responsibility' => 'design',
+            'elementType' => 'Interactive',
+            'abilities' => ['vision', 'motor'],
+            'description' => 'The browser pass moved keyboard focus onto this control and nothing changed: '
+                . 'no outline, shadow, border, background, colour or underline, on the control or on the '
+                . 'elements around it. A change too faint to see still passes this check, so it asks rather '
+                . 'than fails. Tab to the control in a browser and look.',
+        ],
+        'potential:focus-obscured' => [
+            'difficulty' => 'intermediate',
+            'responsibility' => 'development',
+            'elementType' => 'Page structure',
+            'abilities' => ['vision', 'motor'],
+            'description' => 'A fixed or sticky element, usually a header, a footer bar or a chat button, '
+                . 'completely covered controls as keyboard focus reached them, so someone using the keyboard '
+                . 'cannot see where they are. Reported once per covering element, since that is where the fix '
+                . 'goes: scroll-padding on the page, or a smaller element. Consent banners on the excluded '
+                . 'list are hidden during the check.',
+        ],
 
         // axe-core rules (common ones)
         'color-contrast' => ['difficulty' => 'intermediate', 'responsibility' => 'design',      'elementType' => 'Text',           'abilities' => ['vision']],

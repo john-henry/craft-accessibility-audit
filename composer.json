@@ -2,7 +2,7 @@
   "name": "johnhenry/craft-accessibility-audit",
   "description": "WCAG 2.2 accessibility audits for Craft CMS 5: scan every page, fix what fails, and keep the record, statement and VPAT to show for it.",
   "type": "craft-plugin",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "keywords": [
     "accessibility",
     "accessibility checker",

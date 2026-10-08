@@ -31,6 +31,18 @@ class OrganisationMetaModel extends Model
     // =========================================================================
 
     /**
+     * @var string The organisation that owns the product. Heads the VPAT, as
+     * the ITI template's company placeholder does, and names the owner in the
+     * statement. Optional. Left blank, the statement names the website
+     * instead, the VPAT heading goes without a name, and the exported
+     * document's title (and so its PDF filename) and the OpenACR title use
+     * the product name.
+     *
+     * @since 1.6.0
+     */
+    public string $organisationName = '';
+
+    /**
      * @var string The product / site name the reporting covers.
      */
     public string $productName = '';
@@ -89,6 +101,7 @@ class OrganisationMetaModel extends Model
     public function toStorageArray(): array
     {
         return [
+            'organisationName' => $this->organisationName,
             'productName' => $this->productName,
             'productDescription' => $this->productDescription,
             'contactName' => $this->contactName,
@@ -115,6 +128,7 @@ class OrganisationMetaModel extends Model
     public static function storageKeys(): array
     {
         return [
+            'organisationName',
             'productName',
             'productDescription',
             'contactName',
@@ -139,7 +153,7 @@ class OrganisationMetaModel extends Model
         return array_merge(parent::defineRules(), [
             // The one field every document meaningfully needs.
             [['productName'], 'required'],
-            [['productName', 'contactName'], 'string', 'max' => 255],
+            [['organisationName', 'productName', 'contactName'], 'string', 'max' => 255],
             [['productDescription', 'evalMethodology'], 'string', 'max' => 2000],
             [['evalMethods', 'scopePages'], 'each', 'rule' => ['string', 'max' => 255]],
             [['contactEmail'], 'string', 'max' => 255],

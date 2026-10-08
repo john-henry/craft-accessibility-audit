@@ -21,23 +21,23 @@
 
 
 {% set tabs = {
-    issues: {
+    'accessibility-audit-pane-issues': {
         label: 'Issues'|t('accessibility-audit') ~ (byRule|length ? ' (' ~ byRule|length ~ ')' : ''),
         url: url('accessibility-audit/issues', { site: siteHandle, tab: 'issues' }),
     },
-    pages: {
+    'accessibility-audit-pane-pages': {
         label: 'Pages with Issues'|t('accessibility-audit') ~ (result.total ? ' (' ~ result.total ~ ')' : ''),
         url: url('accessibility-audit/issues', { site: siteHandle, tab: 'pages' }),
     },
-    resolved: {
+    'accessibility-audit-pane-resolved': {
         label: 'Resolved'|t('accessibility-audit') ~ (resolvedByRule|length ? ' (' ~ resolvedByRule|length ~ ')' : ''),
         url: url('accessibility-audit/issues', { site: siteHandle, tab: 'resolved' }),
     },
 } %}
-{% set selectedTab = activeTab %}
+{% set selectedTab = 'accessibility-audit-pane-' ~ activeTab %}
 
 {% block content %}
-<div>
+<div id="{{ selectedTab }}" role="tabpanel" aria-labelledby="tab-{{ selectedTab }}">
 
 
 {% if activeTab == 'issues' %}
@@ -213,7 +213,7 @@
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
             <h2 style="margin:0">{{ 'Remediation over time'|t('accessibility-audit') }}</h2>
             <span class="light">{{ 'Issues resolved, cumulative'|t('accessibility-audit') }}</span>
-            <span class="btngroup" id="accessibility-audit-rtrend-range" role="group" aria-label="{{ 'Trend date range'|t('accessibility-audit') }}" style="margin-left:auto">
+            <span class="btngroup btngroup--exclusive" id="accessibility-audit-rtrend-range" role="group" aria-label="{{ 'Trend date range'|t('accessibility-audit') }}" style="margin-left:auto">
                 {% for r in [{d: 30, l: '30 days'}, {d: 90, l: '90 days'}, {d: 180, l: '6 months'}] %}
                     <button type="button" class="btn small{{ resolvedTrendRange == r.d ? ' active' }}" data-range="{{ r.d }}" aria-pressed="{{ resolvedTrendRange == r.d ? 'true' : 'false' }}">{{ r.l|t('accessibility-audit') }}</button>
                 {% endfor %}

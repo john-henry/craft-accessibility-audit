@@ -60,12 +60,13 @@ class PotentialScanner extends Component
      * cannot answer it by looking at the page.
      *
      * @param string $html The rendered page.
+     * @param string[] $ignoreRules Rule ids to leave out of the findings.
      * @return IssueModel[] The questions raised, in check order.
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function scan(string $html): array
+    public function scan(string $html, array $ignoreRules = []): array
     {
         if (empty(trim($html))) {
             return [];
@@ -85,7 +86,7 @@ class PotentialScanner extends Component
         // cannot answer it by looking at the page.
         InertMarkup::removeFrom($xpath);
 
-        return array_merge(
+        $issues = array_merge(
             $this->_checkShortAlt($xpath),
             $this->_checkLongAlt($xpath),
             $this->_checkIdenticalLinks($xpath),
@@ -95,6 +96,15 @@ class PotentialScanner extends Component
             $this->_checkTableLayout($xpath),
             $this->_checkVideoNoAudioDesc($xpath),
         );
+
+        if ($ignoreRules === []) {
+            return $issues;
+        }
+
+        return array_values(array_filter(
+            $issues,
+            static fn(IssueModel $issue): bool => !in_array($issue->ruleId, $ignoreRules, true),
+        ));
     }
 
     // Private Methods

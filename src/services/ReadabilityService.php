@@ -940,7 +940,7 @@ class ReadabilityService extends Component
 
         if ($withClaude) {
             $settings = AccessibilityAudit::getInstance()->getSettings();
-            $apiKey = trim(App::parseEnv($settings->anthropicApiKey));
+            $apiKey = trim((string)App::parseEnv($settings->anthropicApiKey));
             if ($apiKey !== '') {
                 $claudeResult = $this->_analyseWithClaude($text, $apiKey);
                 if ($claudeResult !== null) {

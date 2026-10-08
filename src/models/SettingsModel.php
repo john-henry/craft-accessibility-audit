@@ -567,7 +567,7 @@ class SettingsModel extends Model
      */
     public function getScannerUserAgent(): string
     {
-        return trim(App::parseEnv($this->scannerUserAgent));
+        return trim((string)App::parseEnv($this->scannerUserAgent));
     }
 
     /**

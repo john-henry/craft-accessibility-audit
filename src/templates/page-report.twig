@@ -237,26 +237,25 @@
 
                             {% for cluster in group.clusters %}
                                 {% if cluster.count > 1 %}
+                                    {% set clusterReason = cluster.occurrences|first.message|default('') %}
+                                    {% set clusterVp = (cluster.occurrences|first).viewportLabel ?? '' %}
+                                    {% set sharedVp = cluster.occurrences|filter(o => (o.viewportLabel ?? '') != clusterVp)|length == 0 %}
                                     <div class="accessibility-audit-pr-cluster" data-accessibility-audit-cluster
                                          data-rule-id="{{ group.ruleId }}"
                                          data-contexts="{{ cluster.occurrences|map(o => o.context|default(''))|json_encode }}">
-                                        <div class="accessibility-audit-pr-review">
+                                        <div class="accessibility-audit-pr-review accessibility-audit-pr-cluster__head">
                                             {% if canRunScans and potentialCount > 1 %}
                                                 <label class="accessibility-audit-pr-review__pick">
                                                     <input type="checkbox" class="checkbox" data-bulk-pick-cluster
                                                            aria-label="{{ 'Select all {n} for bulk dismissal'|t('accessibility-audit', { n: cluster.count }) }}">
                                                 </label>
                                             {% endif %}
-                                            <p class="accessibility-audit-pr-review__ctx" title="{{ cluster.occurrences|first.context|default('') }}">
-                                                {{ cluster.occurrences|first.context|default('') }}
-                                            </p>
-                                            {% set clusterReason = cluster.occurrences|first.message|default('') %}
                                             {% if clusterReason and clusterReason != group.question %}
                                                 <p class="accessibility-audit-pr-review__msg light">{{ clusterReason }}</p>
                                             {% endif %}
-                                            <p class="accessibility-audit-pr-review__msg light">
-                                                {{ 'The same markup repeats {n} times on this page. Answering here answers all of them.'|t('accessibility-audit', { n: cluster.count }) }}
-                                            </p>
+                                            {% if sharedVp and clusterVp %}
+                                                <p class="accessibility-audit-pr-review__vp">{{ clusterVp }}</p>
+                                            {% endif %}
                                             <div class="accessibility-audit-pr-review__actions">
                                                 <button type="button" class="btn small" data-highlight-cluster>{{ 'Show all on page'|t('accessibility-audit') }}</button>
                                                 {% if canRunScans %}
@@ -265,12 +264,15 @@
                                                     <span class="accessibility-audit-pr-review__status" role="status" aria-live="polite"></span>
                                                 {% endif %}
                                             </div>
+                                            <p class="accessibility-audit-pr-review__msg light accessibility-audit-pr-cluster__note">
+                                                {{ 'The same markup repeats {n} times on this page. Answering here answers all of them.'|t('accessibility-audit', { n: cluster.count }) }}
+                                            </p>
                                         </div>
 
                                         <details class="accessibility-audit-pr-cluster__each">
                                             <summary>{{ 'Answer these {n} separately'|t('accessibility-audit', { n: cluster.count }) }}</summary>
                                             {% for row in cluster.occurrences %}
-                                <div class="accessibility-audit-pr-review" data-accessibility-audit-review
+                                <div class="accessibility-audit-pr-review accessibility-audit-pr-cluster__row" data-accessibility-audit-review="pending"
                                      data-rule-id="{{ row.ruleId }}"
                                      data-context="{{ row.context|default('') }}">
                                     {% if canRunScans and potentialCount > 1 %}
@@ -279,13 +281,13 @@
                                                    aria-label="{{ 'Select for bulk dismissal'|t('accessibility-audit') }}">
                                         </label>
                                     {% endif %}
-                                    {% if row.context %}
-                                        <p class="accessibility-audit-pr-review__ctx" title="{{ row.context }}">{{ row.context }}</p>
+                                    {% if row.markup %}
+                                        <p class="accessibility-audit-pr-review__ctx" title="{{ row.markup }}">{{ row.markup }}</p>
                                     {% endif %}
-                                    {% if row.message and row.message != group.question %}
+                                    {% if row.message and row.message != group.question and row.message != clusterReason %}
                                         <p class="accessibility-audit-pr-review__msg light">{{ row.message }}</p>
                                     {% endif %}
-                                    {% if row.viewportLabel is defined and row.viewportLabel %}
+                                    {% if not sharedVp and row.viewportLabel is defined and row.viewportLabel %}
                                         <p class="accessibility-audit-pr-review__vp">{{ row.viewportLabel }}</p>
                                     {% endif %}
                                     <div class="accessibility-audit-pr-review__actions">
@@ -302,7 +304,7 @@
                                     </div>
                                 {% else %}
                                     {% set row = cluster.occurrences|first %}
-                                <div class="accessibility-audit-pr-review" data-accessibility-audit-review
+                                <div class="accessibility-audit-pr-review" data-accessibility-audit-review="pending"
                                      data-rule-id="{{ row.ruleId }}"
                                      data-context="{{ row.context|default('') }}">
                                     {% if canRunScans and potentialCount > 1 %}
@@ -311,8 +313,8 @@
                                                    aria-label="{{ 'Select for bulk dismissal'|t('accessibility-audit') }}">
                                         </label>
                                     {% endif %}
-                                    {% if row.context %}
-                                        <p class="accessibility-audit-pr-review__ctx" title="{{ row.context }}">{{ row.context }}</p>
+                                    {% if row.markup %}
+                                        <p class="accessibility-audit-pr-review__ctx" title="{{ row.markup }}">{{ row.markup }}</p>
                                     {% endif %}
                                     {% if row.message and row.message != group.question %}
                                         <p class="accessibility-audit-pr-review__msg light">{{ row.message }}</p>
@@ -345,10 +347,10 @@
                             <div id="accessibility-audit-pr-dismissed-body" hidden>
                                 {% for row in dismissed %}
                                     <div class="accessibility-audit-pr-review accessibility-audit-pr-review--dismissed"
-                                         data-accessibility-audit-review
+                                         data-accessibility-audit-review="dismissed"
                                          data-rule-id="{{ row.ruleId }}"
                                          data-context="{{ row.context|default('') }}">
-                                        <p class="accessibility-audit-pr-review__ctx" title="{{ row.context|default('') }}">{{ row.context|default(row.question) }}</p>
+                                        <p class="accessibility-audit-pr-review__ctx" title="{{ row.markup }}">{{ row.markup|default(row.question) }}</p>
                                         {% if canRunScans %}
                                             <div class="accessibility-audit-pr-review__actions">
                                                 <button type="button" class="btn small" data-verdict="">{{ 'Restore'|t('accessibility-audit') }}</button>
@@ -424,6 +426,12 @@
                 {{ 'Accessibility Explorer'|t('accessibility-audit') }}
             </button>
         </div>
+
+        {% if pageUrl %}
+            <p class="warning has-icon accessibility-audit-pr-domain-notice" id="accessibility-audit-pr-domain-notice" hidden>
+                {{ "This page is on {domain}, a different domain from the control panel, so the browser won't let the report reach into the preview. Highlighting, View HTML and the Accessibility Explorer are switched off here."|t('accessibility-audit', { domain: pageUrl|split('/')[2] ?? pageUrl }) }}
+            </p>
+        {% endif %}
 
         <div class="accessibility-audit-pr-pane" id="accessibility-audit-pane-content" role="tabpanel" aria-labelledby="accessibility-audit-tab-content">
             <div class="accessibility-audit-preview-loading" id="accessibility-audit-preview-loading" aria-hidden="true">

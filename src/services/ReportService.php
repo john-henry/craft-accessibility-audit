@@ -93,7 +93,7 @@ class ReportService extends Component
                 $issue['wcagCriterion'] ?? '',
                 $issue['wcagLevel'] ?? '',
                 $issue['message'],
-                $issue['context'] ?? '',
+                AuditService::contextMarkup($issue['context'] ?? null),
                 $issue['helpUrl'] ?? '',
                 $issue['source'],
                 $issue['dateScanned'],

@@ -29,11 +29,17 @@
 {% set crumbs = baseCrumbs|merge(crumbs ?? []) %}
 
 {% set tabs = {
-    general:       { label: sectionLabels.general,       url: url('accessibility-audit/settings/general') },
-    scanning:      { label: sectionLabels.scanning,      url: url('accessibility-audit/settings/scanning') },
-    maintenance:   { label: sectionLabels.maintenance,   url: url('accessibility-audit/settings/maintenance') },
-    tools:         { label: sectionLabels.tools,         url: url('accessibility-audit/settings/tools') },
-    notifications: { label: sectionLabels.notifications, url: url('accessibility-audit/settings/notifications') },
-    support:       { label: sectionLabels.support,       url: url('accessibility-audit/settings/support') },
+    'accessibility-audit-pane-general':       { label: sectionLabels.general,       url: url('accessibility-audit/settings/general') },
+    'accessibility-audit-pane-scanning':      { label: sectionLabels.scanning,      url: url('accessibility-audit/settings/scanning') },
+    'accessibility-audit-pane-maintenance':   { label: sectionLabels.maintenance,   url: url('accessibility-audit/settings/maintenance') },
+    'accessibility-audit-pane-tools':         { label: sectionLabels.tools,         url: url('accessibility-audit/settings/tools') },
+    'accessibility-audit-pane-notifications': { label: sectionLabels.notifications, url: url('accessibility-audit/settings/notifications') },
+    'accessibility-audit-pane-support':       { label: sectionLabels.support,       url: url('accessibility-audit/settings/support') },
 } %}
-{% set selectedTab = segment ?: 'general' %}
+{% set selectedTab = 'accessibility-audit-pane-' ~ (segment ?: 'general') %}
+
+{% block content %}
+    <div id="{{ selectedTab }}" class="accessibility-audit-tabpanel" role="tabpanel" aria-labelledby="tab-{{ selectedTab }}">
+        {{ parent() }}
+    </div>
+{% endblock %}

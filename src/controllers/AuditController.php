@@ -7,6 +7,7 @@
 namespace johnhenry\accessibilityaudit\controllers;
 
 use Craft;
+use craft\base\ElementInterface;
 use craft\elements\Asset;
 use craft\errors\MissingComponentException;
 use craft\errors\SiteNotFoundException;
@@ -307,6 +308,7 @@ class AuditController extends Controller
      */
     public function actionStoreAxeResults(): Response
     {
+        $this->requireAcceptsJson();
         $this->requirePostRequest();
         $this->requirePermission('accessibility-audit:run-scans');
 
@@ -316,15 +318,14 @@ class AuditController extends Controller
         // script posts violations alone and still works.
         $incomplete = $this->_arrayBodyParam('incomplete');
 
-        ['scanId' => $scanId, 'elementId' => $elementId, 'elementType' => $elementType, 'siteId' => $siteId]
-            = $this->_scanTarget();
+        ['scanId' => $scanId, 'elementId' => $elementId, 'siteId' => $siteId] = $this->_scanTarget();
 
-        if (($refusal = $this->_refuseUnlessTargetAllowed($siteId, $scanId)) !== null) {
+        if (($refusal = $this->_refuseUnlessTargetAllowed($siteId, $scanId, $elementId, $element)) !== null) {
             return $refusal;
         }
 
-        if ($scanId === 0 && $elementId > 0) {
-            $scanId = $audit->ensureScan($elementId, $elementType, $siteId);
+        if ($scanId === 0 && $element !== null) {
+            $scanId = $audit->ensureScan($elementId, $element::class, $siteId);
         }
 
         $summary = $this->storeAxeResults($audit, $scanId, $violations, $incomplete);
@@ -334,7 +335,13 @@ class AuditController extends Controller
 
     /**
      * POST /accessibility-audit/store-contrast-results
-     * Accepts client-side colour-contrast occurrences from the page-report iframe.
+     * Accepts client-side colour-contrast occurrences from the page-report iframe,
+     * and the stylesheet rules it found removing the focus outline.
+     *
+     * The page always posts `focusRules`, as an empty list when it skipped the
+     * check, so the stored rules are replaced each time. A request without it
+     * comes from a report page cached before the check existed, and leaves the
+     * stored rules alone.
      *
      * @return Response
      * @throws SiteNotFoundException
@@ -348,28 +355,33 @@ class AuditController extends Controller
      */
     public function actionStoreContrastResults(): Response
     {
+        $this->requireAcceptsJson();
         $this->requirePostRequest();
         $this->requirePermission('accessibility-audit:run-scans');
 
         $audit = AccessibilityAudit::getInstance()->getAudit();
         $occurrences = $this->_arrayBodyParam('occurrences');
 
-        ['scanId' => $scanId, 'elementId' => $elementId, 'elementType' => $elementType, 'siteId' => $siteId]
-            = $this->_scanTarget();
+        ['scanId' => $scanId, 'elementId' => $elementId, 'siteId' => $siteId] = $this->_scanTarget();
 
-        if (($refusal = $this->_refuseUnlessTargetAllowed($siteId, $scanId)) !== null) {
+        if (($refusal = $this->_refuseUnlessTargetAllowed($siteId, $scanId, $elementId, $element)) !== null) {
             return $refusal;
         }
 
-        if ($scanId === 0 && $elementId > 0) {
-            $scanId = $audit->ensureScan($elementId, $elementType, $siteId);
+        if ($scanId === 0 && $element !== null) {
+            $scanId = $audit->ensureScan($elementId, $element::class, $siteId);
         }
 
         if ($scanId === 0) {
             return $this->asJson(['success' => false, 'error' => Craft::t('accessibility-audit', 'No scan found.')]);
         }
 
-        $count = $audit->storeContrastIssues($scanId, $occurrences, $this->resolveViewport());
+        $viewport = $this->resolveViewport();
+        $count = $audit->storeContrastIssues($scanId, $occurrences, $viewport);
+
+        if ($this->request->getBodyParam('focusRules') !== null) {
+            $count += $audit->storeFocusOutlineIssues($scanId, $this->_arrayBodyParam('focusRules'), $viewport);
+        }
 
         return $this->asJson(['success' => true, 'scanId' => $scanId, 'stored' => $count]);
     }
@@ -422,7 +434,8 @@ class AuditController extends Controller
      * clears the ruling and puts the question back.
      *
      * Gated on run-scans rather than view-reports: this changes the score, so it
-     * is an editorial act, not a read.
+     * is an editorial act, not a read. `run-scans` is install-wide, so the
+     * element is fenced as well, the same way as a store request.
      *
      * @return Response
      * @throws ForbiddenHttpException
@@ -446,7 +459,7 @@ class AuditController extends Controller
         $note = trim((string) $this->request->getBodyParam('note', '')) ?: null;
         $siteId = (int) ($this->request->getBodyParam('siteId') ?: Craft::$app->getSites()->getPrimarySite()->id);
 
-        if (($refusal = $this->_requireAllowedSite($siteId)) !== null) {
+        if (($refusal = $this->_refuseUnlessTargetAllowed($siteId, 0, $elementId)) !== null) {
             return $refusal;
         }
 
@@ -496,9 +509,9 @@ class AuditController extends Controller
      * cards carry, and it is the pair a ruling is keyed to.
      *
      * Same gates as the single action: run-scans (an editorial act, not a
-     * read), potential rules only, and a verdict from the known set. Clearing
-     * in bulk is what actionRestoreVerdicts() is for, so an empty verdict is
-     * refused here.
+     * read), a page the user can view, potential rules only, and a verdict
+     * from the known set. Clearing in bulk is what actionRestoreVerdicts() is
+     * for, so an empty verdict is refused here.
      *
      * @return Response
      * @throws ForbiddenHttpException
@@ -519,7 +532,7 @@ class AuditController extends Controller
         $elementId = (int) $this->request->getBodyParam('elementId', 0);
         $siteId = (int) ($this->request->getBodyParam('siteId') ?: Craft::$app->getSites()->getPrimarySite()->id);
 
-        if (($refusal = $this->_requireAllowedSite($siteId)) !== null) {
+        if (($refusal = $this->_refuseUnlessTargetAllowed($siteId, 0, $elementId)) !== null) {
             return $refusal;
         }
 
@@ -715,9 +728,11 @@ class AuditController extends Controller
      *
      * The scan may be named outright or reached through the element it belongs
      * to, and the site falls back to the primary one. Nothing here is trusted
-     * yet: run it through _refuseUnlessTargetAllowed() before writing.
+     * yet: run it through _refuseUnlessTargetAllowed() before writing. No
+     * element type is read, since the posted one could name any class; the
+     * loaded element's own class is used instead.
      *
-     * @return array{scanId: int, elementId: int, elementType: string, siteId: int}
+     * @return array{scanId: int, elementId: int, siteId: int}
      * @throws SiteNotFoundException
      *
      * @author John Henry Donovan <info@johnhenry.ie>
@@ -728,41 +743,68 @@ class AuditController extends Controller
         return [
             'scanId' => (int) $this->request->getBodyParam('scanId', 0),
             'elementId' => (int) $this->request->getBodyParam('elementId', 0),
-            'elementType' => (string) $this->request->getBodyParam('elementType', ''),
             'siteId' => (int) ($this->request->getBodyParam('siteId')
                 ?: Craft::$app->getSites()->getPrimarySite()->id),
         ];
     }
 
     /**
-     * Refuses a store request aimed at a site the edition or user cannot write.
+     * Refuses a store request or a ruling aimed at a site the edition or user
+     * cannot write, or at an element the user cannot view.
      *
      * Both the posted site and, when a scan is named outright, the scan's own
      * site are fenced. A raw scanId writes against the scan's site rather than
      * the posted one, so checking only the posted site would let a user pair
      * their own allowed siteId with another site's scanId and slip findings
-     * onto a site they cannot edit.
+     * onto a site they cannot edit. The element is fenced the same way: the
+     * scan's own element when a scan is named, the posted one otherwise.
+     * `run-scans` is install-wide, so viewing the element is what scopes it,
+     * as it does for scanning an entry.
      *
      * @param int $siteId The posted site.
      * @param int $scanId The posted scan, 0 when none was named.
+     * @param int $elementId The posted element, 0 when none was named.
+     * @param ElementInterface|null $element Set to the element the write
+     *        targets once it has passed the fence, null when there is none.
+     * @param-out ElementInterface|null $element
      * @return Response|null A JSON refusal, or null when the write may proceed.
      * @throws SiteNotFoundException
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.1
      */
-    private function _refuseUnlessTargetAllowed(int $siteId, int $scanId): ?Response
+    private function _refuseUnlessTargetAllowed(int $siteId, int $scanId, int $elementId = 0, ?ElementInterface &$element = null): ?Response
     {
+        $element = null;
+
         if (($refusal = $this->_requireAllowedSite($siteId)) !== null) {
             return $refusal;
         }
 
-        if ($scanId > 0) {
-            return $this->_requireAllowedScanSite($scanId);
+        if ($scanId > 0 && ($refusal = $this->_requireAllowedScanSite($scanId)) !== null) {
+            return $refusal;
         }
+
+        $audit = AccessibilityAudit::getInstance()->getAudit();
+        $targetId = $scanId > 0 ? ($audit->getScanElementId($scanId) ?? 0) : $elementId;
+
+        if ($targetId === 0) {
+            return null;
+        }
+
+        $targetSiteId = $scanId > 0 ? ($audit->getScanSiteId($scanId) ?? $siteId) : $siteId;
+        $elements = Craft::$app->getElements();
+        $target = $elements->getElementById($targetId, null, $targetSiteId);
+
+        if ($target === null || !$elements->canView($target)) {
+            return $this->asJson(['success' => false, 'error' => Craft::t('accessibility-audit', 'Element not found.')]);
+        }
+
+        $element = $target;
 
         return null;
     }
+
     /**
      * Refuses a store request whose `scanId` targets a site the edition or user
      * is not allowed to write. Loads the scan's own site and runs it through the

@@ -82,7 +82,7 @@ class AccessibilityAudit extends BasePlugin
     /**
      * @var string The plugin's schema version, used to track migrations.
      */
-    public string $schemaVersion = '1.3.2';
+    public string $schemaVersion = '1.6.0';
 
     // Public Methods
     // =========================================================================
@@ -151,6 +151,12 @@ class AccessibilityAudit extends BasePlugin
             $this->_registerElementSidebarPanel();
         }
 
+        // Sign-in, sign-out and control panel requests all keep the marker in
+        // step, so this can't wait for a site request.
+        if (!Craft::$app instanceof ConsoleApplication) {
+            $this->_registerOverlayMarker();
+        }
+
         if (Craft::$app->getRequest()->getIsSiteRequest()) {
             $this->_registerSiteUrlRules();
             $this->_maybeInjectFrontendAxe();
@@ -161,7 +167,7 @@ class AccessibilityAudit extends BasePlugin
         if ($settings->scanOnSave) {
             $this->_registerScanOnSave();
         }
-        if ($settings->autoGenerateAlt && !empty(trim(App::parseEnv($settings->anthropicApiKey)))) {
+        if ($settings->autoGenerateAlt && !empty(trim((string)App::parseEnv($settings->anthropicApiKey)))) {
             $this->_registerAutoGenerateAlt();
         }
     }

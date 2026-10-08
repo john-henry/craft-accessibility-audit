@@ -47,15 +47,15 @@
             <div class="meta accessibility-audit-ref">
                 <dl class="accessibility-audit-vpat-legend__list accessibility-audit-vpat-legend__list--stacked">
                     <dt><span class="accessibility-audit-vpat-badge accessibility-audit-vpat-badge--supports">Supports</span></dt>
-                    <dd>{{ 'The functionality of the product meets the criterion without exception.'|t('accessibility-audit') }}</dd>
+                    <dd>{{ 'The functionality of the product has at least one method that meets the criterion without known defects or meets with equivalent facilitation.'|t('accessibility-audit') }}</dd>
                     <dt><span class="accessibility-audit-vpat-badge accessibility-audit-vpat-badge--partial">Partially Supports</span></dt>
-                    <dd>{{ 'Some functionality meets the criterion; some does not.'|t('accessibility-audit') }}</dd>
+                    <dd>{{ 'Some functionality of the product does not meet the criterion.'|t('accessibility-audit') }}</dd>
                     <dt><span class="accessibility-audit-vpat-badge accessibility-audit-vpat-badge--fail">Does Not Support</span></dt>
                     <dd>{{ 'The majority of product functionality does not meet the criterion.'|t('accessibility-audit') }}</dd>
                     <dt><span class="accessibility-audit-vpat-badge accessibility-audit-vpat-badge--na">Not Applicable</span></dt>
-                    <dd>{{ 'The criterion is not relevant to this product.'|t('accessibility-audit') }}</dd>
+                    <dd>{{ 'The criterion is not relevant to the product.'|t('accessibility-audit') }}</dd>
                     <dt><span class="accessibility-audit-vpat-badge accessibility-audit-vpat-badge--not-evaluated">Not Evaluated</span></dt>
-                    <dd>{{ 'The product has not been evaluated against this criterion.'|t('accessibility-audit') }} <strong>{{ 'Do not use for Level A or AA in a published conformance claim.'|t('accessibility-audit') }}</strong></dd>
+                    <dd>{{ 'The product has not been evaluated against the criterion.'|t('accessibility-audit') }} <strong>{{ 'Do not use for Level A or AA in a published conformance claim.'|t('accessibility-audit') }}</strong></dd>
                 </dl>
             </div>
         </fieldset>
@@ -67,7 +67,7 @@
             <li>{{ 'A report that claims "Supports" on everything reads as unevaluated, not excellent.'|t('accessibility-audit') }}</li>
             <li>{{ 'Use "Not Applicable" when the criterion cannot arise, e.g. Captions when the site has no video.'|t('accessibility-audit') }}</li>
             <li>{{ '"Not Evaluated" is a placeholder while you work, not an answer to publish.'|t('accessibility-audit') }}</li>
-            <li>{{ 'With server-side browser scanning on, Non-text Contrast (1.4.11) and Target Size (2.5.8) mark themselves "Supports" when a clean sweep says so. The sweep renders every page at desktop and mobile widths, so both criteria are genuinely exercised. Focus Visible (2.4.7) always needs your own keyboard check.'|t('accessibility-audit') }}</li>
+            <li>{{ 'With server-side browser scanning on, the rows for Non-text Contrast (1.4.11), Target Size (2.5.8), Focus Visible (2.4.7) and Focus Not Obscured (2.4.11) say what the browser checked. A clean sweep never marks a row "Supports" for you, and the focus rows still need your own keyboard check.'|t('accessibility-audit') }}</li>
         </ul>
     </div>
         </fieldset>
@@ -190,6 +190,17 @@
         </p>
 
         <div class="accessibility-audit-vpat-meta-grid">
+            <div class="accessibility-audit-grid-full">
+                {{ forms.textField({
+                    label: 'Organisation Name',
+                    instructions: 'The company or body that owns the website. It heads the exported report. Leave it blank to use the heading on its own.'|t('accessibility-audit'),
+                    id: 'vpat-organisationName',
+                    name: 'organisationName',
+                    value: report.meta.organisationName ?? '',
+                    placeholder: 'e.g. Acme Ltd',
+                    errors: metaErrors.organisationName ?? [],
+                }) }}
+            </div>
             <div class="accessibility-audit-grid-full">
                 {{ forms.textField({
                     label: 'Product Name',
@@ -441,7 +452,11 @@
                                         {% if row.evidence.checks %}
                                             <p class="accessibility-audit-vpat-evidence__line">
                                                 <span class="accessibility-audit-vpat-evidence__tag">{{ 'Scanned'|t('accessibility-audit') }}</span>
-                                                {%- if row.evidence.findings > 0 -%}
+                                                {%- if row.evidence.scoped and row.evidence.findings > 0 -%}
+                                                    {{ ' ' }}{{ 'Checked {what}, and found {n} still open.'|t('accessibility-audit', { what: row.evidence.checks, n: row.evidence.findings }) }}
+                                                {%- elseif row.evidence.scoped -%}
+                                                    {{ ' ' }}{{ 'Checked {what}, and found nothing.'|t('accessibility-audit', { what: row.evidence.checks }) }}
+                                                {%- elseif row.evidence.findings > 0 -%}
                                                     {{ ' ' }}{{ 'Checked {what} across {pages} pages, and found {n} still open.'|t('accessibility-audit', { what: row.evidence.checks, pages: row.evidence.pages, n: row.evidence.findings }) }}
                                                 {%- elseif row.evidence.pages > 0 -%}
                                                     {{ ' ' }}{{ 'Checked {what} across {pages} pages, and found nothing.'|t('accessibility-audit', { what: row.evidence.checks, pages: row.evidence.pages }) }}
@@ -457,6 +472,12 @@
                                             <p class="accessibility-audit-vpat-evidence__line accessibility-audit-vpat-evidence__line--gap">
                                                 <span class="accessibility-audit-vpat-evidence__tag accessibility-audit-vpat-evidence__tag--gap">{{ 'For you'|t('accessibility-audit') }}</span>
                                                 {{ ' ' }}{{ 'Nothing here can be established by a scanner. It needs a person.'|t('accessibility-audit') }}
+                                            </p>
+                                        {% endif %}
+                                        {% if row.evidence.questions > 0 %}
+                                            <p class="accessibility-audit-vpat-evidence__line accessibility-audit-vpat-evidence__line--gap">
+                                                <span class="accessibility-audit-vpat-evidence__tag accessibility-audit-vpat-evidence__tag--gap">{{ 'To answer'|t('accessibility-audit') }}</span>
+                                                {{ ' ' }}{{ '{n, plural, =1{# question from the scans is} other{# questions from the scans are}} still waiting for an answer under Potential issues.'|t('accessibility-audit', { n: row.evidence.questions }) }}
                                             </p>
                                         {% endif %}
                                     </div>

@@ -11,22 +11,29 @@ use craft\base\Element;
 use craft\base\ElementInterface;
 use craft\errors\SiteNotFoundException;
 use craft\helpers\UrlHelper;
+use craft\web\Response as WebResponse;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\assets\FrontendAxeAsset;
 use Throwable;
 use yii\base\Component;
 use yii\base\InvalidConfigException;
+use yii\web\Cookie;
 
 /**
- * Builds and authenticates the frontend axe-core overlay for pages Craft does
- * not serve itself.
+ * Builds and authenticates the frontend axe-core overlay.
  *
  * On a monolith site the overlay is injected server-side (the plugin's
  * EVENT_END_BODY listener), with its config built from the matched element and
- * the admin's session. A decoupled front end (Next, Nuxt, Astro, any headless
- * consumer) never triggers that event, so this service provides the same
- * pieces over HTTP instead: it verifies the overlay token, resolves the
- * requesting page's URL back to a Craft element, and builds the identical
- * config payload the injection path uses, so the two paths cannot drift.
+ * the admin's session. A page served from a full-page cache never renders for
+ * the admin, so a static loader on every page asks the session config
+ * endpoint for the same payload instead; both go through
+ * canShowFrontendOverlay() and buildSessionConfig() here.
+ *
+ * A decoupled front end (Next, Nuxt, Astro, any headless consumer) never
+ * triggers that event either, so this service also provides the token-based
+ * pieces: it verifies the overlay token, resolves the requesting page's URL
+ * back to a Craft element, and builds the identical config payload, so the
+ * delivery paths cannot drift.
  *
  * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
@@ -35,6 +42,18 @@ use yii\base\InvalidConfigException;
  */
 class OverlayService extends Component
 {
+    // Const Properties
+    // =========================================================================
+
+    /**
+     * @var string The cookie marking a browser an admin signed in from. The
+     * static loader reads it to decide whether asking for the overlay is worth
+     * a request; it grants nothing.
+     *
+     * @since 1.6.0
+     */
+    public const MARKER_COOKIE = 'a11yOverlay';
+
     // Public Methods
     // =========================================================================
 
@@ -125,8 +144,10 @@ class OverlayService extends Component
      * element types. A URI matched by an excluded pattern resolves to no
      * element and is flagged `excluded`, so the loader keeps the overlay off it.
      *
+     * `uri` is the page's path relative to the site it resolved to.
+     *
      * @param string $url The full URL of the page the overlay is running on.
-     * @return array{element: ElementInterface|null, siteId: int, excluded: bool}
+     * @return array{element: ElementInterface|null, siteId: int, excluded: bool, uri: string}
      * @throws SiteNotFoundException|InvalidConfigException
      * @since 1.0.0
      *
@@ -139,7 +160,7 @@ class OverlayService extends Component
 
         $parsed = parse_url($url);
         if ($parsed === false || empty($parsed['host'])) {
-            return ['element' => null, 'siteId' => $primaryId, 'excluded' => false];
+            return ['element' => null, 'siteId' => $primaryId, 'excluded' => false, 'uri' => ''];
         }
 
         $origin = $this->_origin($url);
@@ -168,18 +189,18 @@ class OverlayService extends Component
             foreach ($candidates as $group) {
                 foreach ($group as [$siteId, $uri]) {
                     if ($this->isPageExcluded(null, $uri, (int)$siteId)) {
-                        return ['element' => null, 'siteId' => (int)$siteId, 'excluded' => true];
+                        return ['element' => null, 'siteId' => (int)$siteId, 'excluded' => true, 'uri' => $uri];
                     }
                     $element = $this->_findByUri($uri, $siteId);
                     if ($element !== null) {
-                        return ['element' => $element, 'siteId' => $siteId, 'excluded' => false];
+                        return ['element' => $element, 'siteId' => $siteId, 'excluded' => false, 'uri' => $uri];
                     }
                 }
             }
             // The origin belongs to a site but nothing matched the URI: stay on
             // that site so the overlay at least reports against the right one.
             $first = reset($candidates)[0];
-            return ['element' => null, 'siteId' => $first[0], 'excluded' => false];
+            return ['element' => null, 'siteId' => $first[0], 'excluded' => false, 'uri' => $first[1]];
         }
 
         // No site claims the origin (dev server, preview deploy): try the URI
@@ -190,15 +211,15 @@ class OverlayService extends Component
 
         foreach ($siteIds as $siteId) {
             if ($this->isPageExcluded(null, $uri, (int)$siteId)) {
-                return ['element' => null, 'siteId' => (int)$siteId, 'excluded' => true];
+                return ['element' => null, 'siteId' => (int)$siteId, 'excluded' => true, 'uri' => $uri];
             }
             $element = $this->_findByUri($uri, $siteId);
             if ($element !== null) {
-                return ['element' => $element, 'siteId' => (int)$siteId, 'excluded' => false];
+                return ['element' => $element, 'siteId' => (int)$siteId, 'excluded' => false, 'uri' => $uri];
             }
         }
 
-        return ['element' => null, 'siteId' => $primaryId, 'excluded' => false];
+        return ['element' => null, 'siteId' => $primaryId, 'excluded' => false, 'uri' => $uri];
     }
 
     /**
@@ -314,6 +335,201 @@ class OverlayService extends Component
     }
 
     /**
+     * The overlay config for a page Craft renders, with the current session's
+     * CSRF pair the overlay stores its results with.
+     *
+     * The CSRF value belongs to one session, so this payload may only reach
+     * the admin it was built for: an uncacheable render or an uncached JSON
+     * response, never anything a shared cache could hand to someone else.
+     *
+     * @param ElementInterface|null $element The matched element, if any.
+     * @param int $siteId The site the page belongs to.
+     * @return array<string, mixed>
+     * @throws InvalidConfigException|Throwable
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    public function buildSessionConfig(?ElementInterface $element, int $siteId): array
+    {
+        $config = $this->buildConfig($element, $siteId);
+        $config['csrfName'] = Craft::$app->getConfig()->getGeneral()->csrfTokenName;
+        $config['csrfValue'] = Craft::$app->getRequest()->getCsrfToken();
+
+        return $config;
+    }
+
+    /**
+     * Whether the front-end overlay may run for the current user on a page
+     * Craft serves.
+     *
+     * The one gate for both delivery paths on such a page: the server-side
+     * injection and the session config endpoint a cached page's loader calls.
+     * The overlay setting has to be on and the user an admin. On Standard the
+     * page has to be on the primary site, since multi-site is a Pro feature
+     * and the plugin stores nothing for the other sites. An excluded page is
+     * refused, since nothing found there could be stored.
+     *
+     * The identity is resolved here, so call this from a request handler or an
+     * event listener, never during init(): resolving it at bootstrap caches the
+     * User element before Craft Commerce registers CustomerBehavior, stripping
+     * it off currentUser.
+     *
+     * @param ElementInterface|null $element The page's element, if any.
+     * @param string $path The page's path relative to its site, for a page
+     *                     with no element or an element with no URI.
+     * @param int $siteId The site the page belongs to.
+     * @return bool
+     * @throws InvalidConfigException
+     * @throws SiteNotFoundException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    public function canShowFrontendOverlay(?ElementInterface $element, string $path, int $siteId): bool
+    {
+        $plugin = AccessibilityAudit::getInstance();
+
+        if (!$plugin->getSettings()->frontendAxe) {
+            return false;
+        }
+
+        if (!Craft::$app->getUser()->getIsAdmin()) {
+            return false;
+        }
+
+        if (!$plugin->isPro() && $siteId !== (int)Craft::$app->getSites()->getPrimarySite()->id) {
+            return false;
+        }
+
+        return !$this->isPageExcluded($element, $path, $siteId);
+    }
+
+    /**
+     * Published URLs of the overlay's stylesheets and scripts, in the order a
+     * page has to load them. Read off the asset bundle the injection path
+     * registers, so an overlay loaded late gets exactly the same files.
+     *
+     * @return array{css: string[], js: string[]}
+     * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    public function frontendAssetUrls(): array
+    {
+        $assetManager = Craft::$app->getAssetManager();
+        $bundle = $assetManager->getBundle(FrontendAxeAsset::class);
+        $url = static fn(string|array $file): string => $assetManager->getAssetUrl(
+            $bundle,
+            is_array($file) ? (string)$file[0] : $file,
+        );
+
+        return [
+            'css' => array_map($url, $bundle->css),
+            'js' => array_map($url, $bundle->js),
+        ];
+    }
+
+    /**
+     * Keeps the current response out of every shared cache: no-cache headers
+     * for proxies and CDNs, and Blitz told not to store it.
+     *
+     * @return void
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    public function preventFullPageCaching(): void
+    {
+        $response = Craft::$app->getResponse();
+
+        if ($response instanceof WebResponse) {
+            $response->setNoCacheHeaders();
+        }
+
+        if (class_exists(\putyourlightson\blitz\Blitz::class)) {
+            \putyourlightson\blitz\Blitz::$plugin->generateCache->options->cachingEnabled = false;
+        }
+    }
+
+    /**
+     * Root-relative URL of the session config endpoint, for the static loader.
+     *
+     * The loader's tag is cached along with the page, so the URL has to be the
+     * same for everyone and has to reach whichever origin served the cached
+     * copy, whatever scheme or host the render that produced it saw.
+     *
+     * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    public function sessionConfigUrl(): string
+    {
+        $parts = parse_url(UrlHelper::actionUrl('accessibility-audit/frontend-overlay/config'));
+        $path = '/' . ltrim((string)($parts['path'] ?? ''), '/');
+
+        return isset($parts['query']) ? $path . '?' . $parts['query'] : $path;
+    }
+
+    /**
+     * Marks the browser on the current response as one an admin signed in
+     * from, so the static loader knows a request for the overlay is worth
+     * making.
+     *
+     * Not HttpOnly, since the loader has to read it, and it grants nothing:
+     * the session config endpoint decides from the session alone. Domain and
+     * Secure follow Craft's own cookie config, so the marker is seen on every
+     * host the session cookie is.
+     *
+     * @return void
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    public function addMarkerCookie(): void
+    {
+        $response = Craft::$app->getResponse();
+
+        if ($response instanceof WebResponse) {
+            $response->getCookies()->add(new Cookie($this->_markerCookieConfig() + ['value' => '1']));
+        }
+    }
+
+    /**
+     * Whether the current request carries the admin marker cookie.
+     *
+     * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    public function hasMarkerCookie(): bool
+    {
+        $request = Craft::$app->getRequest();
+
+        return !$request->getIsConsoleRequest() && $request->getCookies()->has(self::MARKER_COOKIE);
+    }
+
+    /**
+     * Expires the admin marker cookie on the current response.
+     *
+     * @return void
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    public function removeMarkerCookie(): void
+    {
+        $response = Craft::$app->getResponse();
+
+        if ($response instanceof WebResponse) {
+            $response->getCookies()->remove(new Cookie($this->_markerCookieConfig()));
+        }
+    }
+
+    /**
      * Whether the page the overlay would run on is excluded from scanning.
      *
      * A matched element is judged by its own URI, or its canonical's inside a
@@ -367,6 +583,25 @@ class OverlayService extends Component
 
     // Private Methods
     // =========================================================================
+
+    /**
+     * Cookie config for the admin marker. SameSite Lax so it travels on a
+     * top-level visit from another site, and readable by script.
+     *
+     * @return array<string, mixed>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    private function _markerCookieConfig(): array
+    {
+        return Craft::cookieConfig([
+            'name' => self::MARKER_COOKIE,
+            'path' => '/',
+            'httpOnly' => false,
+            'sameSite' => Cookie::SAME_SITE_LAX,
+        ]);
+    }
 
     /**
      * The scheme://host[:port] origin of a URL, or null when it has no host.

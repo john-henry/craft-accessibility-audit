@@ -289,6 +289,13 @@
   gap: 12px;
 }
 
+.accessibility-audit-pr-domain-notice {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
 .accessibility-audit-pr-tabs {
   margin: 0;
 }

@@ -491,6 +491,10 @@ class VpatController extends Controller
         //  - The conformance table breaks across pages and repeats its header,
         //    because a table of fifty rows kept whole is pushed to a fresh page
         //    and leaves the one before it empty.
+        //  - The page prints landscape, as published ACRs do, because the
+        //    remarks column is the only one holding prose and portrait leaves
+        //    it the narrowest. The paper size is left to the printer so A4
+        //    and Letter both work.
         return $this->_inSiteLanguage(
             $report['siteId'],
             fn(): string => $this->_renderExportTemplate($report),

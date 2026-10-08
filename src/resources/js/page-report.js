@@ -70,6 +70,15 @@
        which toggles that class off before the click can read it. */
     var _currentRuleId = null;
 
+    /* The browser blocks any access to a frame on another domain, so a
+       preview there can be shown but not read, highlighted or filtered. */
+    var crossOrigin = (function () {
+        var url = iframe && iframe.dataset.pageUrl;
+        if (!url) return false;
+        try { return new URL(url, window.location.href).origin !== window.location.origin; }
+        catch (_) { return false; }
+    })();
+
     /* ── Rule → CSS selector map ────────────────────────────────────── */
     /* Covers ContentScanner PHP rules + common axe-core rule IDs.
        Selectors target the elements that are checked for each rule.    */
@@ -157,6 +166,10 @@
         'potential:possible-heading': 'p strong, p b, p[style*="font-weight"]',
         'potential:table-layout':     'table',
         'potential:video-audio-desc': 'video',
+        'potential:focus-outline-removed': 'a[href], button, input, select, textarea, summary, iframe, [tabindex]',
+        'potential:focus-not-visible':     'a[href], button, input, select, textarea, summary, iframe, [tabindex]',
+        /* The context is the covering element, which can be any layout box. */
+        'potential:focus-obscured':        'header, footer, nav, aside, div, section, [role="banner"], [role="dialog"]',
     };
 
     /* Findings with no offending element to point at: something the page
@@ -617,7 +630,7 @@
                 if (!ctxHtml) {
                     /* title carries the full context string so it's reachable on hover
                        even after CSS truncates the single-line display to an ellipsis. */
-                    var shown = occ.markup || occ.context;
+                    var shown = occ.markup || _occContextHtml(occ);
                     ctxHtml = shown ? '<code class="accessibility-audit-pr-occ-ctx" title="' + escHtml(shown) + '">' + escHtml(shown) + '</code>' : '';
                 }
                 /* Template path + selector: populated by enrichOccurrencesWithTemplateInfo
@@ -1274,9 +1287,10 @@
         if (!doc || !selector) return;
 
         var ctx = (context || '').trim();
+        var markup = (_occContextHtml({ context: ctx }) || '').trim();
         var found = [];
 
-        if (ctx.charAt(0) === '<') {
+        if (markup.charAt(0) === '<') {
             var el = findElementByContext(doc, ctx);
             if (el) {
                 found.push(el);
@@ -1296,12 +1310,12 @@
                    mid-attribute, and a lazy-loaded image keeps its real URL
                    in data-src rather than src. Match on the leading part of
                    the URL that survived instead. */
-                found = matchByUrlPrefix(doc, selector, ctx);
+                found = matchByUrlPrefix(doc, selector, markup);
             }
-        } else if (ctx) {
-            found = matchByText(doc, selector, ctx);
+        } else if (markup) {
+            found = matchByText(doc, selector, markup);
             if (found.length === 0) {
-                found = matchByAlt(doc, ctx);
+                found = matchByAlt(doc, markup);
             }
         }
 
@@ -1428,7 +1442,8 @@
     /* ── HTML view: highlight occurrence context strings ────────────── */
 
     /* Extract the HTML fragment to search for in the source view.
-       Contrast occurrences store JSON context: pull out the html field. */
+       Contrast and stylesheet focus occurrences store JSON context: pull out
+       the html field. */
     function _occContextHtml(occ) {
         if (!occ.context) return null;
         try {
@@ -1740,7 +1755,7 @@
     if (viewTablist) {
         viewTablist.addEventListener('keydown', function (e) {
             if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].indexOf(e.key) === -1) return;
-            var tabs = Array.prototype.slice.call(viewTablist.querySelectorAll('[data-pr-view]'));
+            var tabs = Array.prototype.slice.call(viewTablist.querySelectorAll('[data-pr-view]:not(:disabled)'));
             var idx = tabs.indexOf(document.activeElement);
             if (idx === -1) return;
             e.preventDefault();
@@ -1818,18 +1833,20 @@
         try { return !!el.closest(joined); } catch (_) { return false; }
     }
 
+    /* Skip the highlight layer, whose badges carry text of their own.
+       Excluded page furniture is skipped too, matching the axe pass. */
+    function skipOwnAndExcluded(el) {
+        if (el.closest && el.closest('#' + HL_LAYER_ID)) return true;
+        return inExcluded(el);
+    }
+
     function collectContrastOccurrences(doc) {
         if (!doc || !doc.body) return null;
 
         var opts = {
             limit: 150,
             htmlLength: 200,
-            /* Skip the highlight layer, whose badges carry text of their own.
-               Excluded page furniture is skipped too, matching the axe pass. */
-            skipEl: function (el) {
-                if (el.closest && el.closest('#' + HL_LAYER_ID)) return true;
-                return inExcluded(el);
-            },
+            skipEl: skipOwnAndExcluded,
         };
 
         /* Resting-state failures, then the ones only a hover, focus or text
@@ -1965,6 +1982,16 @@
         if (!occurrences) return;
         _contrastStored[viewport] = true;
 
+        /* The browser pass's focus walk answers this where it runs. Posted
+           empty then, so rows from an earlier visit clear. */
+        var focusRules = CFG.headlessAvailable
+            ? []
+            : AccessibilityAuditShared.collectFocusIndicatorRemovals(doc, {
+                limit: 20,
+                htmlLength: 300,
+                skipEl: skipOwnAndExcluded,
+            });
+
         var cfg      = window.AccessibilityAudit || {};
         var storeUrl = cfg.storeContrastUrl || '';
         var scanId   = CFG.scanId;
@@ -1987,8 +2014,9 @@
             fd.append('viewport',    viewport);
             /* Send occurrences as JSON string: FormData can't nest arrays natively */
             fd.append('occurrences', JSON.stringify(occurrences));
+            fd.append('focusRules', JSON.stringify(focusRules));
 
-            var res  = await fetch(storeUrl, { method: 'POST', body: fd, credentials: 'same-origin' });
+            var res  = await fetch(storeUrl, { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
             var data = await res.json();
 
             if (data.success) {
@@ -2110,7 +2138,7 @@
             fd.append('violations',  JSON.stringify(violations));
             fd.append('incomplete',  JSON.stringify(incomplete));
 
-            var res  = await fetch(CFG.storeAxeUrl, { method: 'POST', body: fd, credentials: 'same-origin' });
+            var res  = await fetch(CFG.storeAxeUrl, { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
             var data = await res.json();
 
             if (data.success) {
@@ -2258,6 +2286,14 @@
         note.hidden = true;
     }
 
+    function lockCrossOriginPreview() {
+        var notice = document.getElementById('accessibility-audit-pr-domain-notice');
+        if (notice) notice.hidden = false;
+        [document.querySelector('[data-pr-view="html"]'), explorerTrigger].forEach(function (btn) {
+            if (btn) btn.disabled = true;
+        });
+    }
+
     function endViewportSweep() {
         try {
             sessionStorage.removeItem(_sweepFlagKey);
@@ -2325,7 +2361,13 @@
 
     paintViewportButtons();
     fitPreviewScale();
-    resumeViewportSweep();
+    if (crossOrigin) {
+        /* The sweep waits on in-frame passes that can never run here. */
+        lockCrossOriginPreview();
+        endViewportSweep();
+    } else {
+        resumeViewportSweep();
+    }
     if (previewPane && typeof ResizeObserver !== 'undefined') {
         new ResizeObserver(fitPreviewScale).observe(previewPane);
     } else {
@@ -2333,24 +2375,35 @@
     }
 
     /* Re-apply filter + highlights after iframe navigation, and auto-run contrast */
-    if (iframe) {
-        iframe.addEventListener('load', function () {
-            /* Hide the loading overlay once the embedded page has actually finished
-               loading, so users never see it mid-render (e.g. before its own web
-               fonts/layout have settled) and mistake that for a plugin bug. */
-            if (previewLoading) previewLoading.hidden = true;
+    function onPreviewLoad() {
+        /* Hide the loading overlay once the embedded page has actually finished
+           loading, so users never see it mid-render (e.g. before its own web
+           fonts/layout have settled) and mistake that for a plugin bug. */
+        if (previewLoading) previewLoading.hidden = true;
 
-            if (currentFilter !== 'none') applyColourFilter(currentFilter);
-            if (activeRuleId && _currentRuleId === activeRuleId && _currentOccurrences && _currentOccurrences.length) {
-                highlightFromOccurrences(_currentOccurrences, activeRuleId);
-            } else if (activeRuleId) {
-                highlightInIframe(activeRuleId, selectorFor(activeRuleId));
-            }
-            /* Auto-store contrast results on first load */
-            autoStoreContrastResults();
-            /* And the full axe pass, once per scan */
-            autoRunAxeInIframe();
-        });
+        if (currentFilter !== 'none') applyColourFilter(currentFilter);
+        if (activeRuleId && _currentRuleId === activeRuleId && _currentOccurrences && _currentOccurrences.length) {
+            highlightFromOccurrences(_currentOccurrences, activeRuleId);
+        } else if (activeRuleId) {
+            highlightInIframe(activeRuleId, selectorFor(activeRuleId));
+        }
+        /* Auto-store contrast results on first load */
+        autoStoreContrastResults();
+        /* And the full axe pass, once per scan */
+        autoRunAxeInIframe();
+    }
+
+    if (iframe) {
+        iframe.addEventListener('load', onPreviewLoad);
+
+        /* A frame that finished before this script ran has already fired its
+           load event. A frame on another domain can't be asked, and nothing
+           here waits on it, so its overlay goes straight away. */
+        if (crossOrigin) {
+            if (previewLoading) previewLoading.hidden = true;
+        } else if (iframeReady()) {
+            onPreviewLoad();
+        }
     }
 
     /* ── Accessibility Explorer ─────────────────────────────────────── */
@@ -2505,6 +2558,8 @@
         var endpoint = (window.AccessibilityAudit || {}).setVerdictUrl;
         if (!endpoint) { return; }
 
+        var bulkEndpoint = (window.AccessibilityAudit || {}).setVerdictsBulkUrl;
+
         function csrf() {
             var name = (window.Craft && Craft.csrfTokenName) || window.csrfTokenName || 'CRAFT_CSRF_TOKEN';
             var value = (window.Craft && Craft.csrfTokenValue) || window.csrfTokenValue || '';
@@ -2634,7 +2689,7 @@
                 return { ruleId: ruleId, context: context };
             })));
 
-            fetch(endpoint, {
+            fetch(bulkEndpoint, {
                 method: 'POST',
                 body: body,
                 headers: { 'Accept': 'application/json' },
@@ -2661,7 +2716,6 @@
            the reload paints the server-rendered counts, same as a single
            ruling does. */
         var bulkBar = document.getElementById('accessibility-audit-pr-bulk-bar');
-        var bulkEndpoint = (window.AccessibilityAudit || {}).setVerdictsBulkUrl;
         if (bulkBar && bulkEndpoint) {
             var bulkAll = document.getElementById('accessibility-audit-pr-bulk-all');
             var bulkBtn = document.getElementById('accessibility-audit-pr-bulk-dismiss');

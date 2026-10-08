@@ -202,7 +202,7 @@
 <div class="pane">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
         <h2 style="margin:0">{{ 'Progress with this issue'|t('accessibility-audit') }}</h2>
-        <span class="btngroup" id="accessibility-audit-trend-range" role="group" aria-label="{{ 'Trend date range'|t('accessibility-audit') }}" style="margin-left:auto">
+        <span class="btngroup btngroup--exclusive" id="accessibility-audit-trend-range" role="group" aria-label="{{ 'Trend date range'|t('accessibility-audit') }}" style="margin-left:auto">
             {% for r in [{d: 30, l: '30 days'}, {d: 90, l: '90 days'}, {d: 180, l: '6 months'}] %}
                 <button type="button" class="btn small{{ trendRange == r.d ? ' active' }}" data-range="{{ r.d }}" aria-pressed="{{ trendRange == r.d ? 'true' : 'false' }}">{{ r.l|t('accessibility-audit') }}</button>
             {% endfor %}

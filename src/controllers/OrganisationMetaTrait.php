@@ -38,6 +38,7 @@ trait OrganisationMetaTrait
     protected function organisationMetaFromRequest(): OrganisationMetaModel
     {
         $shared = new OrganisationMetaModel();
+        $shared->organisationName = trim((string) $this->request->getBodyParam('organisationName', ''));
         $shared->productName = trim((string) $this->request->getBodyParam('productName', ''));
         $shared->productDescription = trim((string) $this->request->getBodyParam('productDescription', ''));
         $shared->contactName = trim((string) $this->request->getBodyParam('contactName', ''));

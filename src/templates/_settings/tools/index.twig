@@ -196,7 +196,7 @@
     {{ forms.textareaField({
         label: 'Additional Allowed Origins'|t('accessibility-audit'),
         instructions: 'Origins allowed to call the overlay endpoints, one per line, e.g. {example}. Every site\'s base URL origin is always allowed; add entries here for dev servers and preview deployments Craft doesn\'t know about.'|t('accessibility-audit', {
-            example: '<code>http://localhost:3000</code>',
+            example: '`http://localhost:3000`',
         }),
         id: 'overlayAllowedOrigins',
         name: 'settings[overlayAllowedOrigins]',

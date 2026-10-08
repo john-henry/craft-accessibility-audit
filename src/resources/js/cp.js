@@ -20,6 +20,18 @@
     fd.append(name, value);
   }
 
+  /* Whether the Inspect preview can run the browser pass itself. A frame on
+     another domain can't be read from here, so it never runs. */
+  function previewRunsBrowserPass() {
+    const iframe = document.getElementById('accessibility-audit-preview-iframe');
+    if (!iframe) return false;
+    try {
+      return new URL(iframe.dataset.pageUrl || iframe.src, window.location.href).origin === window.location.origin;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /*
      The page's status region, created once so it is in the DOM well before
      anything writes to it: a live region inserted and filled in the same tick
@@ -224,7 +236,9 @@
         // On the Inspect page the preview iframe runs the browser pass itself
         // after the reload; skip the queued headless pass so exactly one
         // browser engine writes this scan's findings (no overwrite race).
-        if (document.getElementById('accessibility-audit-preview-iframe')) {
+        // A preview on another domain can't run it, so the queued pass stays.
+        const previewRunsPass = previewRunsBrowserPass();
+        if (previewRunsPass) {
           fd.append('skipHeadless', '1');
         }
 
@@ -255,7 +269,7 @@
              one covering both viewports. Ask the preview to sweep them itself
              after the reload, so a re-scan means a re-scan of the page rather
              than of whichever width happens to be on screen. */
-          if (document.getElementById('accessibility-audit-preview-iframe')) {
+          if (previewRunsPass) {
             try { sessionStorage.setItem('a11y_sweep_viewports', '1'); } catch (_) {}
           }
 
