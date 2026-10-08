@@ -32,7 +32,7 @@ use yii\db\Exception;
  *
  * @property-read array<string, array<string, mixed>> $criteria
  *
- * @phpstan-type VpatEvidence array{checks: ?string, cannot: ?string, findings: int, questions: int, pages: int}
+ * @phpstan-type VpatEvidence array{checks: ?string, cannot: ?string, scoped: bool, findings: int, questions: int, pages: int}
  * @phpstan-type VpatOverride array{level?: string, remarks?: string, remarkFindings?: int, remarkSavedAt?: string}
  * @phpstan-type VpatRevision array{date: string, changes: array<int, array{criterion: string, name: string, from: string, to: string}>, remarkEdits: int}
  * @phpstan-type VpatCriterionRow array{
@@ -1101,8 +1101,10 @@ class VpatService extends Component
      * @param int $siteId The site to report on.
      * @return array<string, VpatEvidence>
      *         Keyed by criterion number. checks and cannot are null where no
-     *         scanner contributes to that criterion at all. questions counts
-     *         the potential issues against it still waiting for an answer.
+     *         scanner contributes to that criterion at all. scoped is true
+     *         where checks already says how many pages it covered, so nothing
+     *         showing it adds a page count of its own. questions counts the
+     *         potential issues against it still waiting for an answer.
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
@@ -1122,7 +1124,6 @@ class VpatService extends Component
         if (!empty($latestScanIds)) {
             $audit = AccessibilityAudit::getInstance()->getAudit();
 
-            // pairs(): criterion => count.
             $counts = (new Query())
                 ->select(['wcagCriterion', 'n' => 'COUNT(*)'])
                 ->from('{{%accessibilityaudit_issues}}')
@@ -1152,6 +1153,7 @@ class VpatService extends Component
             $evidence[(string)$num] = [
                 'checks' => $coverage['checks'] ?? null,
                 'cannot' => $coverage['cannot'] ?? null,
+                'scoped' => $coverage['scoped'] ?? false,
                 'findings' => (int)($counts[$num] ?? 0),
                 'questions' => (int)($questions[$num] ?? 0),
                 'pages' => $pages,
@@ -1398,7 +1400,7 @@ class VpatService extends Component
         }
 
         $settings = AccessibilityAudit::getInstance()->getSettings();
-        $apiKey = trim(App::parseEnv($settings->anthropicApiKey));
+        $apiKey = trim((string)App::parseEnv($settings->anthropicApiKey));
         if ($apiKey === '') {
             return ['success' => false, 'error' => Craft::t('accessibility-audit', 'Add an Anthropic API key under Settings → Tools to draft remarks.')];
         }
@@ -1486,12 +1488,11 @@ class VpatService extends Component
             // verdict, and paired with what it could not reach. The author has
             // written notes to get this far; this tells the model what the
             // scans can and cannot back those notes up with.
-            // The keyboard walk's checks already say how many pages it covered.
             $sources[] = sprintf(
                 'Scan coverage: the scanner checked %s%s and recorded no findings against this criterion. '
                 . 'It cannot establish %s, so that part of the criterion is unassessed rather than passing.',
                 $coverage['checks'],
-                isset(self::BROWSER_EVIDENCE[$criterion]) ? '' : sprintf(' across %d scanned page(s)', count($latestScanIds)),
+                $coverage['scoped'] ? '' : sprintf(' across %d scanned page(s)', count($latestScanIds)),
                 $coverage['cannot'],
             );
         }
@@ -1598,13 +1599,14 @@ class VpatService extends Component
      *
      * The one source for both the evidence shown beside a row and the
      * coverage a drafted remark may claim, so a draft never claims a check
-     * that did not run.
+     * that did not run. scoped is true where checks ends by saying how many
+     * pages it covered.
      *
      * @param string $criterion The WCAG criterion number.
      * @param array<string, int> $walked How many pages' latest scans record
      *        the keyboard walk measuring each criterion, from _walkedPages().
      * @param int $pages How many pages have been scanned.
-     * @return array{checks: string, cannot: string}|null
+     * @return array{checks: string, cannot: string, scoped: bool}|null
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.6.0
@@ -1614,11 +1616,11 @@ class VpatService extends Component
         $headless = AccessibilityAudit::getInstance()->getHeadless()->isAvailable();
 
         if (!$headless && isset(self::VIEWED_PAGES_EVIDENCE[$criterion])) {
-            return self::VIEWED_PAGES_EVIDENCE[$criterion];
+            return self::VIEWED_PAGES_EVIDENCE[$criterion] + ['scoped' => false];
         }
 
         if (isset(self::EVIDENCE[$criterion])) {
-            return self::EVIDENCE[$criterion];
+            return self::EVIDENCE[$criterion] + ['scoped' => false];
         }
 
         // The walk skips a rule that is ignored or above the target level.
@@ -1645,6 +1647,7 @@ class VpatService extends Component
         return [
             'checks' => self::BROWSER_EVIDENCE[$criterion]['checks'] . ', ' . $scope,
             'cannot' => self::BROWSER_EVIDENCE[$criterion]['cannot'],
+            'scoped' => true,
         ];
     }
 

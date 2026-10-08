@@ -131,15 +131,14 @@
     return nodes;
   }
 
-  /* The control's own box, in page coordinates so the scroll that focus
-     causes does not count as a change. A skip link revealed on focus moves
-     and grows. */
+  /* The control's own size, without its position: focus scrolls the window
+     or an overflow container to bring the control into view, and that moves
+     it without showing anything. A skip link revealed on focus grows, and its
+     position and clip change in the signature. */
   function box(el) {
     var rect = el.getBoundingClientRect();
 
-    return 'r:' + [rect.left + window.scrollX, rect.top + window.scrollY, rect.width, rect.height]
-      .map(Math.round)
-      .join(',');
+    return 'r:' + [rect.width, rect.height].map(Math.round).join(',');
   }
 
   /* nodes[0] is the control itself. */

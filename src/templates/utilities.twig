@@ -10,16 +10,16 @@
 {% set siteParam = craft.app.request.getQueryParam('site') %}
 {% set tabBase = siteParam ? { site: siteParam } : {} %}
 {% set tabs = {
-    contrast:  { label: 'Contrast'|t('accessibility-audit'),  url: url('accessibility-audit/colour-tools', tabBase|merge({ tab: 'contrast' })) },
-    simulator: { label: 'Simulator'|t('accessibility-audit'), url: url('accessibility-audit/colour-tools', tabBase|merge({ tab: 'simulator' })) },
-    grid:      { label: 'Grid'|t('accessibility-audit'),      url: url('accessibility-audit/colour-tools', tabBase|merge({ tab: 'grid' })) },
+    'accessibility-audit-pane-contrast':  { label: 'Contrast'|t('accessibility-audit'),  url: url('accessibility-audit/colour-tools', tabBase|merge({ tab: 'contrast' })) },
+    'accessibility-audit-pane-simulator': { label: 'Simulator'|t('accessibility-audit'), url: url('accessibility-audit/colour-tools', tabBase|merge({ tab: 'simulator' })) },
+    'accessibility-audit-pane-grid':      { label: 'Grid'|t('accessibility-audit'),      url: url('accessibility-audit/colour-tools', tabBase|merge({ tab: 'grid' })) },
 } %}
-{% set selectedTab = activeTab %}
+{% set selectedTab = 'accessibility-audit-pane-' ~ activeTab %}
 
 {% block content %}
 {% import '_includes/forms' as forms %}
 
-<div class="accessibility-audit-util-wrap">
+<div class="accessibility-audit-util-wrap" id="{{ selectedTab }}" role="tabpanel" aria-labelledby="tab-{{ selectedTab }}">
 
     {% if activeTab == 'contrast' %}
     <section class="accessibility-audit-tool">

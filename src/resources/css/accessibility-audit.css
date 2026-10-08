@@ -1694,6 +1694,18 @@ body.use-shapes .accessibility-audit-pr-dot--error {
   margin: 0;
 }
 
+/* A link inside a sentence needs a cue besides colour (WCAG 1.4.1). */
+.accessibility-audit-ref__intro a[href],
+.accessibility-audit-util-wrap blockquote.note a[href] {
+  text-decoration: underline;
+}
+
+/* The settings screens sit inside a tab panel, one level below the content
+   pane, so Craft's full-bleed rule for .content-pane > hr has to be repeated. */
+.content-pane > .accessibility-audit-tabpanel > hr {
+  margin-inline: calc(var(--padding) * -1);
+}
+
 .accessibility-audit-scale {
   width: 100%;
   border-collapse: collapse;
@@ -3081,33 +3093,82 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   cursor: pointer;
 }
 
-/* Repeated markup gathered into one question. The cluster card looks like an
-   ordinary review card; what marks it out is the disclosure underneath, which
-   holds the individual occurrences for anyone who wants them one at a time. */
+/* Repeated markup gathered into one question: one card, the explanation said
+   once, and the individual occurrences behind a full-width toggle as compact
+   rows inside the same card. */
 .accessibility-audit-pr-cluster {
+  background: var(--aa-surface-tint);
+  border: 1px solid var(--aa-border-section);
+  border-radius: var(--aa-radius-small, 4px);
   margin-bottom: 6px;
+  overflow: hidden;
 }
 
 .accessibility-audit-pr-cluster .accessibility-audit-pr-review {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   margin-bottom: 0;
 }
 
-.accessibility-audit-pr-cluster__each > summary {
-  cursor: pointer;
-  padding: 6px 10px;
-  font-size: 12px;
-  color: var(--aa-text-secondary);
+.accessibility-audit-pr-cluster__head > .accessibility-audit-pr-review__msg:first-of-type {
+  margin-top: 0;
 }
 
-.accessibility-audit-pr-cluster__each > summary:hover {
+.accessibility-audit-pr-cluster__note {
+  margin-top: 6px;
+}
+
+/* Styled as a bar with a chevron so it reads as something to open; the chevron replaces the native marker. */
+.accessibility-audit-pr-cluster__each > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  padding: 7px 10px;
+  border-top: 1px solid var(--aa-border-section);
+  background: rgba(0, 0, 0, 0.03);
+  font-size: 12px;
+  font-weight: 600;
   color: var(--aa-text-body);
 }
 
-/* Indented so an occurrence reads as belonging to the cluster above it. */
-.accessibility-audit-pr-cluster__each[open] {
-  padding-left: 14px;
-  border-left: 2px solid var(--aa-border-section);
-  margin-top: 4px;
+.accessibility-audit-pr-cluster__each > summary::-webkit-details-marker {
+  display: none;
+}
+
+.accessibility-audit-pr-cluster__each > summary::after {
+  content: '';
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  margin-right: 2px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.accessibility-audit-pr-cluster__each[open] > summary::after {
+  transform: translateY(2px) rotate(-135deg);
+}
+
+.accessibility-audit-pr-cluster__each > summary:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.accessibility-audit-pr-cluster__each > summary:focus-visible {
+  outline: 2px solid var(--link-color);
+  outline-offset: -2px;
+}
+
+.accessibility-audit-pr-cluster .accessibility-audit-pr-cluster__row {
+  border-top: 1px solid var(--aa-border-section);
+}
+
+.accessibility-audit-pr-cluster__row .accessibility-audit-pr-review__actions {
+  margin-top: 6px;
 }
 
 /* Bulk dismissal: the selection bar above the queue, and a pick box on the
@@ -3180,7 +3241,6 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
    screen there is no way to tell those apart from outside. */
 .accessibility-audit-pr-scanref {
   margin-left: 8px;
-  opacity: 0.75;
 }
 
 .accessibility-audit-pr-pageurl {
@@ -3412,6 +3472,13 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   color: var(--aa-text-secondary);
 }
 
+/* Out of the flow while it has nothing to say, so a wrapped button row gets no
+   empty extra line. It stays in the page as a live region and joins the row
+   once it has text. */
+.accessibility-audit-pr-review__status:empty {
+  position: absolute;
+}
+
 /* The two rulings carry equal visual weight, both plain buttons: dismissing
    must never look like the primary action (the score only moves on confirm,
    so a loud dismiss button invites clearing the queue unread). Confirm's
@@ -3471,8 +3538,11 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
 }
 
 .accessibility-audit-pr-review--dismissed {
-  opacity: 0.75;
   margin-top: 8px;
+}
+
+.accessibility-audit-pr-review--dismissed .accessibility-audit-pr-review__ctx {
+  color: var(--aa-text-secondary);
 }
 
 /* EN 301 549 standing note, under the WCAG conformance scores. */

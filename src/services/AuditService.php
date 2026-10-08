@@ -990,9 +990,10 @@ class AuditService extends Component
      */
     public function ensureScan(int $elementId, string $elementType, int $siteId): int
     {
-        // Block the overlay from writing a scan for an excluded element type.
-        // The type is posted with the results, so no element load is needed;
-        // an empty type is left to the checks below rather than assumed out.
+        // Block a scan for an excluded element type. The control panel passes
+        // the class of the element it loaded; the token overlay passes the
+        // posted one. An empty type is left to the checks below rather than
+        // assumed out.
         if (
             $elementType !== '' &&
             !in_array($elementType, AccessibilityAudit::getInstance()->getSettings()->resolvedScannedElementTypes(), true)
@@ -4317,15 +4318,16 @@ class AuditService extends Component
      *
      * Each rule the walk measured replaces its own rows for the viewport and
      * nothing else, so the axe and contrast rows on the scan stand. A walk
-     * that did not run measured nothing, and the earlier rows stay. Where the
-     * browser did not treat the walk's focus as keyboard focus, `:focus-visible`
-     * styles never applied, so the 2.4.7 rows are left as they were rather than
-     * rebuilt from a page that never showed its indicators.
+     * that did not run measured nothing, and the earlier rows stay. Unless the
+     * browser confirmed it treated the walk's focus as keyboard focus,
+     * `:focus-visible` styles may never have applied, so the 2.4.7 rows are
+     * left as they were and 2.4.7 is not recorded as measured.
      *
      * Answers already given are carried onto the rebuilt rows, keyed to the
      * element's opening tag like every other potential issue. The scan records
-     * which questions the walk measured, for the VPAT evidence; a walk that
-     * did not run leaves that record as it was.
+     * which questions the walk measured, for the VPAT evidence: only a walk
+     * that did not stop early counts, and a walk that did not run leaves that
+     * record as it was.
      *
      * @param int $scanId The scan to write against.
      * @param array<string, mixed>|null $walk The walk's result, or null where
@@ -4354,9 +4356,10 @@ class AuditService extends Component
             return 0;
         }
 
+        $keyboardFocus = ($walk['focusVisible'] ?? null) === true;
         $measured = [self::RULE_POTENTIAL_FOCUS_OBSCURED];
 
-        if (($walk['focusVisible'] ?? null) !== false) {
+        if ($keyboardFocus) {
             $measured[] = self::RULE_POTENTIAL_FOCUS_NOT_VISIBLE;
         }
 
@@ -4379,12 +4382,15 @@ class AuditService extends Component
 
         $count = $this->_insertPotentialRows($scanId, $scan, $issues);
 
-        // 2.4.7 counts as measured only where the page confirmed it treated
-        // the walk's focus as keyboard focus.
+        // The VPAT reads a recorded question as the walk having covered the
+        // page, so a walk that stopped early records neither, though its
+        // findings stand.
+        $complete = ($walk['stopped'] ?? null) === null;
+
         $this->_recordFocusWalk(
             $scanId,
-            ($walk['focusVisible'] ?? null) === true && $this->focusRuleApplies(self::RULE_POTENTIAL_FOCUS_NOT_VISIBLE),
-            $this->focusRuleApplies(self::RULE_POTENTIAL_FOCUS_OBSCURED),
+            $complete && $keyboardFocus && $this->focusRuleApplies(self::RULE_POTENTIAL_FOCUS_NOT_VISIBLE),
+            $complete && $this->focusRuleApplies(self::RULE_POTENTIAL_FOCUS_OBSCURED),
         );
 
         $this->recalculateScanScore($scanId);
@@ -4792,6 +4798,11 @@ class AuditService extends Component
             $position = ($coverer['position'] ?? '') === 'sticky' ? 'sticky' : 'fixed';
             $n = min(max(1, (int)($coverer['count'] ?? 1)), self::MAX_FOCUS_COUNT);
 
+            // Answers are keyed to the markup with its ids stripped, which would
+            // merge covering elements told apart only by an id. The covering
+            // element's CSS path keeps them apart.
+            $cover = mb_substr(trim((string)($coverer['selector'] ?? '')), 0, 300);
+
             $message = $examples !== []
                 ? Craft::t(
                     'accessibility-audit',
@@ -4812,7 +4823,7 @@ class AuditService extends Component
                 message: $message . $cap,
                 wcagCriterion: '2.4.11',
                 wcagLevel: 'AA',
-                context: $html,
+                context: $cover !== '' ? Json::encode(['html' => $html, 'cover' => $cover]) : $html,
                 helpUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/focus-not-obscured-minimum',
                 source: 'axe',
                 viewport: $viewport,

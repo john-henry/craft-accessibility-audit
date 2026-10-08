@@ -20,23 +20,23 @@
 {% import 'accessibility-audit/_macros' as macros %}
 
 {% set tabs = {
-    issues: {
+    'accessibility-audit-pane-issues': {
         label: 'Potential Issues'|t('accessibility-audit') ~ (potentialRules|length ? ' (' ~ potentialRules|length ~ ')' : ''),
         url: url('accessibility-audit/potential', { site: siteHandle, tab: 'issues' }),
     },
-    pages: {
+    'accessibility-audit-pane-pages': {
         label: 'Pages with Potential Issues'|t('accessibility-audit') ~ (pages.total ? ' (' ~ pages.total ~ ')' : ''),
         url: url('accessibility-audit/potential', { site: siteHandle, tab: 'pages' }),
     },
-    dismissed: {
+    'accessibility-audit-pane-dismissed': {
         label: 'Dismissed'|t('accessibility-audit') ~ (dismissedTotal ? ' (' ~ dismissedTotal ~ ')' : ''),
         url: url('accessibility-audit/potential', { site: siteHandle, tab: 'dismissed' }),
     },
 } %}
-{% set selectedTab = activeTab %}
+{% set selectedTab = 'accessibility-audit-pane-' ~ activeTab %}
 
 {% block content %}
-<div>
+<div id="{{ selectedTab }}" role="tabpanel" aria-labelledby="tab-{{ selectedTab }}">
 
 {% set potentialEmpty = (activeTab == 'issues' and potentialRules|length == 0)
     or (activeTab == 'pages' and pages.total == 0) %}

@@ -116,6 +116,11 @@
       // page's panel, or the page is excluded and gets none.
       if (injectedOwnsPage || data.excluded) return;
 
+      // On a page Craft serves, the session loader (frontend-overlay-loader.js)
+      // may be fetching the same overlay. Whichever claims it first boots it.
+      if (window.__accessibilityAudit || window.__accessibilityAuditOverlayClaim) return;
+      window.__accessibilityAuditOverlayClaim = 'token';
+
       var cfg = data.config;
       cfg.token = token;
       window.__accessibilityAudit = cfg;

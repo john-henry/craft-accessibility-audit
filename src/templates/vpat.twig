@@ -452,7 +452,11 @@
                                         {% if row.evidence.checks %}
                                             <p class="accessibility-audit-vpat-evidence__line">
                                                 <span class="accessibility-audit-vpat-evidence__tag">{{ 'Scanned'|t('accessibility-audit') }}</span>
-                                                {%- if row.evidence.findings > 0 -%}
+                                                {%- if row.evidence.scoped and row.evidence.findings > 0 -%}
+                                                    {{ ' ' }}{{ 'Checked {what}, and found {n} still open.'|t('accessibility-audit', { what: row.evidence.checks, n: row.evidence.findings }) }}
+                                                {%- elseif row.evidence.scoped -%}
+                                                    {{ ' ' }}{{ 'Checked {what}, and found nothing.'|t('accessibility-audit', { what: row.evidence.checks }) }}
+                                                {%- elseif row.evidence.findings > 0 -%}
                                                     {{ ' ' }}{{ 'Checked {what} across {pages} pages, and found {n} still open.'|t('accessibility-audit', { what: row.evidence.checks, pages: row.evidence.pages, n: row.evidence.findings }) }}
                                                 {%- elseif row.evidence.pages > 0 -%}
                                                     {{ ' ' }}{{ 'Checked {what} across {pages} pages, and found nothing.'|t('accessibility-audit', { what: row.evidence.checks, pages: row.evidence.pages }) }}

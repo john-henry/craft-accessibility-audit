@@ -1,6 +1,6 @@
 # Release Notes for Accessibility Audit
 
-## 1.6.0 - 2026-10-05
+## 1.6.0 - 2026-10-08
 
 ### Added
 - An optional Organisation Name, shared by the VPAT and the accessibility statement. It goes in the title of the exported VPAT and the OpenACR file.
@@ -12,13 +12,17 @@
 - Every VPAT row says how many questions from the scans are still waiting for an answer.
 
 ### Changed
+- Repeated questions in the page report share one card: the explanation is shown once, and each element is a compact row behind a clearer toggle.
 - Server-side browser passes take a bit longer per page, for the keyboard walk.
 - The exported VPAT prints in landscape, the way published conformance reports do.
 - Drafted remarks no longer claim "all" or "every" for the whole site unless the evidence covers the whole of it.
 - The statement's "Website or organisation name" field is now "Website name".
 - The conformance terms in the VPAT editor and export use the ITI template's own definitions, and the scope note is printed in full.
+- With the front-end overlay on, every site page loads a small script, and admins get a functional `a11yOverlay` cookie.
 
 ### Fixed
+- The front-end overlay now shows for admins on pages served from a full-page cache such as Blitz. Clear the cache once after updating.
+- Answering a group of repeated questions with Not an issue or Confirm as failure no longer fails with an error.
 - Without a server-side browser set up, the VPAT no longer says the colour contrast and target size checks covered every page. It says they covered the pages viewed in the Inspect preview or with the front-end overlay.
 - VPAT criterion 2.4.11 is now Focus Not Obscured (Minimum), as WCAG 2.2 has it. It was listed under an old draft name and described a different check, so if you've answered 2.4.11 already, have another look at it.
 - Ignored Rules now covers the potential-issue checks as well.
@@ -26,9 +30,16 @@
 - The VPAT editor no longer says Non-text Contrast and Target Size mark themselves Supports.
 - The VPAT shows the real number of open findings and questions against each criterion, and warns when a saved remark no longer matches them.
 - A re-scan no longer carries over browser findings for rules on Ignored Rules.
+- Tabs on the plugin's screens now point screen readers at the content they show, rather than at nothing.
+- The "Open the VPAT" links on the Statement screen are underlined, so they don't rely on colour alone.
+- Several faint labels in the control panel now meet 4.5:1 contrast.
+- A setting that points at an empty environment variable, such as the Chrome path, no longer raises a PHP deprecation.
+- The Context column of the CSV export shows the element's markup for colour contrast findings, not raw JSON.
+- When the page is on a different domain from the control panel, the Inspect report says so and switches off the tools that can't reach the preview, instead of them doing nothing.
+- Re-scanning a page on a different domain from the control panel, from the Inspect report, now refreshes its browser findings when server-side browser scanning is set up.
 
 ### Security
-- Someone with the Run scans permission can no longer store browser findings against a page they aren't allowed to view.
+- Someone with the Run scans permission can no longer store browser findings, or answer questions, for a page they aren't allowed to view.
 
 ## 1.5.0 - 2026-09-25 [CRITICAL]
 

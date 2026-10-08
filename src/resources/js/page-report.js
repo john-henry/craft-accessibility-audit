@@ -70,6 +70,15 @@
        which toggles that class off before the click can read it. */
     var _currentRuleId = null;
 
+    /* The browser blocks any access to a frame on another domain, so a
+       preview there can be shown but not read, highlighted or filtered. */
+    var crossOrigin = (function () {
+        var url = iframe && iframe.dataset.pageUrl;
+        if (!url) return false;
+        try { return new URL(url, window.location.href).origin !== window.location.origin; }
+        catch (_) { return false; }
+    })();
+
     /* ── Rule → CSS selector map ────────────────────────────────────── */
     /* Covers ContentScanner PHP rules + common axe-core rule IDs.
        Selectors target the elements that are checked for each rule.    */
@@ -1746,7 +1755,7 @@
     if (viewTablist) {
         viewTablist.addEventListener('keydown', function (e) {
             if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].indexOf(e.key) === -1) return;
-            var tabs = Array.prototype.slice.call(viewTablist.querySelectorAll('[data-pr-view]'));
+            var tabs = Array.prototype.slice.call(viewTablist.querySelectorAll('[data-pr-view]:not(:disabled)'));
             var idx = tabs.indexOf(document.activeElement);
             if (idx === -1) return;
             e.preventDefault();
@@ -2277,6 +2286,14 @@
         note.hidden = true;
     }
 
+    function lockCrossOriginPreview() {
+        var notice = document.getElementById('accessibility-audit-pr-domain-notice');
+        if (notice) notice.hidden = false;
+        [document.querySelector('[data-pr-view="html"]'), explorerTrigger].forEach(function (btn) {
+            if (btn) btn.disabled = true;
+        });
+    }
+
     function endViewportSweep() {
         try {
             sessionStorage.removeItem(_sweepFlagKey);
@@ -2344,7 +2361,13 @@
 
     paintViewportButtons();
     fitPreviewScale();
-    resumeViewportSweep();
+    if (crossOrigin) {
+        /* The sweep waits on in-frame passes that can never run here. */
+        lockCrossOriginPreview();
+        endViewportSweep();
+    } else {
+        resumeViewportSweep();
+    }
     if (previewPane && typeof ResizeObserver !== 'undefined') {
         new ResizeObserver(fitPreviewScale).observe(previewPane);
     } else {
@@ -2352,24 +2375,35 @@
     }
 
     /* Re-apply filter + highlights after iframe navigation, and auto-run contrast */
-    if (iframe) {
-        iframe.addEventListener('load', function () {
-            /* Hide the loading overlay once the embedded page has actually finished
-               loading, so users never see it mid-render (e.g. before its own web
-               fonts/layout have settled) and mistake that for a plugin bug. */
-            if (previewLoading) previewLoading.hidden = true;
+    function onPreviewLoad() {
+        /* Hide the loading overlay once the embedded page has actually finished
+           loading, so users never see it mid-render (e.g. before its own web
+           fonts/layout have settled) and mistake that for a plugin bug. */
+        if (previewLoading) previewLoading.hidden = true;
 
-            if (currentFilter !== 'none') applyColourFilter(currentFilter);
-            if (activeRuleId && _currentRuleId === activeRuleId && _currentOccurrences && _currentOccurrences.length) {
-                highlightFromOccurrences(_currentOccurrences, activeRuleId);
-            } else if (activeRuleId) {
-                highlightInIframe(activeRuleId, selectorFor(activeRuleId));
-            }
-            /* Auto-store contrast results on first load */
-            autoStoreContrastResults();
-            /* And the full axe pass, once per scan */
-            autoRunAxeInIframe();
-        });
+        if (currentFilter !== 'none') applyColourFilter(currentFilter);
+        if (activeRuleId && _currentRuleId === activeRuleId && _currentOccurrences && _currentOccurrences.length) {
+            highlightFromOccurrences(_currentOccurrences, activeRuleId);
+        } else if (activeRuleId) {
+            highlightInIframe(activeRuleId, selectorFor(activeRuleId));
+        }
+        /* Auto-store contrast results on first load */
+        autoStoreContrastResults();
+        /* And the full axe pass, once per scan */
+        autoRunAxeInIframe();
+    }
+
+    if (iframe) {
+        iframe.addEventListener('load', onPreviewLoad);
+
+        /* A frame that finished before this script ran has already fired its
+           load event. A frame on another domain can't be asked, and nothing
+           here waits on it, so its overlay goes straight away. */
+        if (crossOrigin) {
+            if (previewLoading) previewLoading.hidden = true;
+        } else if (iframeReady()) {
+            onPreviewLoad();
+        }
     }
 
     /* ── Accessibility Explorer ─────────────────────────────────────── */
@@ -2524,6 +2558,8 @@
         var endpoint = (window.AccessibilityAudit || {}).setVerdictUrl;
         if (!endpoint) { return; }
 
+        var bulkEndpoint = (window.AccessibilityAudit || {}).setVerdictsBulkUrl;
+
         function csrf() {
             var name = (window.Craft && Craft.csrfTokenName) || window.csrfTokenName || 'CRAFT_CSRF_TOKEN';
             var value = (window.Craft && Craft.csrfTokenValue) || window.csrfTokenValue || '';
@@ -2653,7 +2689,7 @@
                 return { ruleId: ruleId, context: context };
             })));
 
-            fetch(endpoint, {
+            fetch(bulkEndpoint, {
                 method: 'POST',
                 body: body,
                 headers: { 'Accept': 'application/json' },
@@ -2680,7 +2716,6 @@
            the reload paints the server-rendered counts, same as a single
            ruling does. */
         var bulkBar = document.getElementById('accessibility-audit-pr-bulk-bar');
-        var bulkEndpoint = (window.AccessibilityAudit || {}).setVerdictsBulkUrl;
         if (bulkBar && bulkEndpoint) {
             var bulkAll = document.getElementById('accessibility-audit-pr-bulk-all');
             var bulkBtn = document.getElementById('accessibility-audit-pr-bulk-dismiss');

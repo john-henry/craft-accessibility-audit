@@ -472,7 +472,7 @@ class ReadabilityController extends Controller
         $cached = $readability->getCachedSuggestions((int)$element->getCanonicalId(), (int)$element->siteId);
 
         $canSuggest = Craft::$app->getUser()->checkPermission('accessibility-audit:run-scans')
-            && trim(App::parseEnv($plugin->getSettings()->anthropicApiKey)) !== '';
+            && trim((string)App::parseEnv($plugin->getSettings()->anthropicApiKey)) !== '';
 
         // Rendered as a plain template rather than a page, so the CSS and JS
         // other code registers for CP screens and front-end pages (the CP

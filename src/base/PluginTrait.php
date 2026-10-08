@@ -11,6 +11,7 @@ use craft\base\Element;
 use craft\db\Query;
 use craft\db\Table;
 use craft\elements\Asset;
+use craft\elements\User;
 use craft\errors\SiteNotFoundException;
 use craft\events\DefineHtmlEvent;
 use craft\events\RegisterComponentTypesEvent;
@@ -31,6 +32,7 @@ use craft\queue\Queue as CraftQueue;
 use craft\services\Dashboard;
 use craft\services\Gc;
 use craft\services\UserPermissions;
+use craft\web\Application as WebApplication;
 use craft\web\Request as WebRequest;
 use craft\web\twig\variables\CraftVariable;
 use craft\web\UrlManager;
@@ -38,6 +40,7 @@ use craft\web\View;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\assets\AccessibilityAuditAsset;
 use johnhenry\accessibilityaudit\assets\FrontendAxeAsset;
+use johnhenry\accessibilityaudit\assets\FrontendOverlayLoaderAsset;
 use johnhenry\accessibilityaudit\helpers\ScannableElementTypes;
 use johnhenry\accessibilityaudit\jobs\GenerateAltTextJob;
 use johnhenry\accessibilityaudit\jobs\RecordReadability;
@@ -57,6 +60,8 @@ use yii\base\Event;
 use yii\base\InvalidRouteException;
 use yii\console\Response as ConsoleResponse;
 use yii\web\Response as WebResponse;
+use yii\web\User as WebUser;
+use yii\web\UserEvent;
 use yii\web\View as ViewAlias;
 
 /**
@@ -724,7 +729,7 @@ trait PluginTrait
 
                 $this->_cpAssetsViews[$view] = true;
                 $settings = $this->getSettings();
-                $hasApiKey = !empty(trim(App::parseEnv($settings->anthropicApiKey)));
+                $hasApiKey = !empty(trim((string)App::parseEnv($settings->anthropicApiKey)));
 
                 $view->registerAssetBundle(AccessibilityAuditAsset::class);
 
@@ -804,7 +809,7 @@ trait PluginTrait
                 }
 
                 $settings = self::$plugin->getSettings();
-                $hasApiKey = !empty(trim(App::parseEnv($settings->anthropicApiKey)));
+                $hasApiKey = !empty(trim((string)App::parseEnv($settings->anthropicApiKey)));
 
                 // A decorative image correctly carries an empty alt, so the
                 // edit page shows a note instead of a Generate button that
@@ -943,7 +948,7 @@ trait PluginTrait
             // findings collapse into a count instead of filling the panel.
             // Same query the page report's issue list uses.
             $issues = $scan ? $plugin->getAudit()->getIssuesGroupedByScan((int) $scan['id']) : [];
-            $hasApiKey = trim(App::parseEnv($plugin->getSettings()->anthropicApiKey)) !== '';
+            $hasApiKey = trim((string)App::parseEnv($plugin->getSettings()->anthropicApiKey)) !== '';
             $readabilityPro = $plugin->isPro();
 
             $readabilityResult = null;
@@ -1026,7 +1031,16 @@ trait PluginTrait
     }
 
     /**
-     * Injects the front-end axe overlay, where the setting asks for it.
+     * Puts the front-end axe overlay on site pages, where the setting asks for
+     * it.
+     *
+     * Every page, for every visitor, gets the static loader: the tag is the
+     * same whoever the page rendered for, so a full-page cache can store it,
+     * and when that cached copy reaches an admin the loader fetches the
+     * overlay from the session config endpoint. A page rendered for an
+     * eligible admin also gets the overlay injected directly, and that render
+     * is kept out of every shared cache. Eligibility is decided by the gate
+     * the endpoint uses too, so the two paths can't drift.
      *
      * @return void
      *
@@ -1043,56 +1057,79 @@ trait PluginTrait
 
         Event::on(View::class, ViewAlias::EVENT_END_BODY,
             function() {
-                // Resolve the identity here, not during init(): calling it at
-                // bootstrap caches the User element before Craft Commerce
-                // registers CustomerBehavior, stripping it off currentUser.
-                if (!Craft::$app->getUser()->getIsAdmin()) {
-                    return;
-                }
-
-                // Multi-site is a Pro feature: on Standard the overlay only runs
-                // on the primary site, so it never appears on a site whose scans
-                // the plugin won't store anyway.
-                $sites = Craft::$app->getSites();
-                if (!self::$plugin->isPro() && $sites->getCurrentSite()->id !== $sites->getPrimarySite()->id) {
-                    return;
-                }
-
-                // An excluded page is left alone by every scan path, and the
-                // overlay could store nothing it found there.
-                $element = Craft::$app->getUrlManager()->getMatchedElement() ?: null;
-                $siteId = (int)$sites->getCurrentSite()->id;
-                if ($this->getOverlay()->isPageExcluded($element, Craft::$app->getRequest()->getPathInfo(), $siteId)) {
-                    return;
-                }
-
-                // The overlay is per-admin markup carrying this session's CSRF
-                // token. A full-page cache that stores this render would serve
-                // both to every visitor, so mark the response uncacheable and,
-                // when Blitz is installed, keep this render out of its cache.
-                Craft::$app->getResponse()->setNoCacheHeaders();
-                if (class_exists(\putyourlightson\blitz\Blitz::class)) {
-                    \putyourlightson\blitz\Blitz::$plugin->generateCache->options->cachingEnabled = false;
-                }
-
                 $view = Craft::$app->getView();
+                $view->registerAssetBundle(FrontendOverlayLoaderAsset::class);
+
+                $overlay = $this->getOverlay();
+                $element = Craft::$app->getUrlManager()->getMatchedElement() ?: null;
+                $siteId = (int)Craft::$app->getSites()->getCurrentSite()->id;
+
+                if (!$overlay->canShowFrontendOverlay($element, Craft::$app->getRequest()->getPathInfo(), $siteId)) {
+                    return;
+                }
+
+                // The injected config carries this session's CSRF token, so a
+                // shared cache must never store this render.
+                $overlay->preventFullPageCaching();
+
                 $view->registerAssetBundle(FrontendAxeAsset::class);
-
-                // The payload (element resolution, stored-scan hydration, the
-                // resolved axe tag list, overlay settings) is built by the
-                // shared OverlayService builder — the same one the decoupled
-                // resolve endpoint uses — so the two delivery paths can't
-                // drift. Only the session's CSRF pair is added here: it's this
-                // path's credential, where the decoupled loader appends its
-                // bearer token client-side instead.
-                $config = $this->getOverlay()->buildConfig($element, $siteId);
-                $config['csrfName'] = Craft::$app->getConfig()->getGeneral()->csrfTokenName;
-                $config['csrfValue'] = Craft::$app->getRequest()->getCsrfToken();
-
                 $view->registerJs(
-                    'window.__accessibilityAudit = ' . Json::encode($config) . ';',
+                    'window.__accessibilityAudit = ' . Json::encode($overlay->buildSessionConfig($element, $siteId)) . ';',
                     ViewAlias::POS_HEAD
                 );
+            }
+        );
+    }
+
+    /**
+     * Keeps the overlay marker cookie in step with who is signed in: set when
+     * an admin signs in, and on an admin's control panel requests when it is
+     * missing, so an admin already signed in gets one too. Expired on sign-out,
+     * and when a non-admin signs in on a browser that still carries one.
+     *
+     * Every decision is made inside the handlers, so the identity is only ever
+     * resolved once a request is under way, never during init().
+     *
+     * @return void
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.6.0
+     */
+    private function _registerOverlayMarker(): void
+    {
+        Event::on(WebUser::class, WebUser::EVENT_AFTER_LOGIN,
+            function(UserEvent $event) {
+                $overlay = $this->getOverlay();
+                $identity = $event->identity;
+
+                if ($identity instanceof User && $identity->admin && $this->getSettings()->frontendAxe) {
+                    $overlay->addMarkerCookie();
+                    return;
+                }
+
+                if ($overlay->hasMarkerCookie()) {
+                    $overlay->removeMarkerCookie();
+                }
+            }
+        );
+
+        Event::on(WebUser::class, WebUser::EVENT_AFTER_LOGOUT,
+            function() {
+                $this->getOverlay()->removeMarkerCookie();
+            }
+        );
+
+        Craft::$app->on(WebApplication::EVENT_BEFORE_ACTION,
+            function() {
+                if (!Craft::$app->getRequest()->getIsCpRequest() || !$this->getSettings()->frontendAxe) {
+                    return;
+                }
+
+                $overlay = $this->getOverlay();
+
+                if (!$overlay->hasMarkerCookie() && Craft::$app->getUser()->getIsAdmin()) {
+                    $overlay->addMarkerCookie();
+                }
             }
         );
     }

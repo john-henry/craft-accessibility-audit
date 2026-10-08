@@ -321,7 +321,7 @@ class HeadlessScanner extends Component
     {
         $settings = AccessibilityAudit::getInstance()->getSettings();
 
-        return trim(App::parseEnv($settings->chromePath));
+        return trim((string)App::parseEnv($settings->chromePath));
     }
 
     /**
@@ -342,7 +342,7 @@ class HeadlessScanner extends Component
     public function chromeWsEndpoint(): string
     {
         $settings = AccessibilityAudit::getInstance()->getSettings();
-        $uri = trim(App::parseEnv($settings->chromeWsEndpoint));
+        $uri = trim((string)App::parseEnv($settings->chromeWsEndpoint));
 
         if ($uri === '' || (string)parse_url($uri, PHP_URL_PATH) !== '') {
             return $uri;

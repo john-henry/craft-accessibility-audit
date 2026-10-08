@@ -622,7 +622,7 @@ class DashboardController extends Controller
         // AI remark drafting is only offered when an Anthropic API key is
         // configured; without one the button would just error.
         $settings = $plugin->getSettings();
-        $canDraftRemarks = $isPro && trim(App::parseEnv($settings->anthropicApiKey)) !== '';
+        $canDraftRemarks = $isPro && trim((string)App::parseEnv($settings->anthropicApiKey)) !== '';
 
         // Pages the scanner has actually covered, offered to the editor's
         // "Fill from scanned pages" button so the Scope section starts from
@@ -844,7 +844,7 @@ class DashboardController extends Controller
             'total' => $paged['total'],
             'totalPages' => $paged['totalPages'],
             'pageInfo' => $this->_pageInfo('accessibility-audit/assets', $paged['page'], $paged['perPage'], $paged['total'], $paged['totalPages'], $extraParams),
-            'hasApiKey' => !empty(trim(App::parseEnv($settings->anthropicApiKey))),
+            'hasApiKey' => !empty(trim((string)App::parseEnv($settings->anthropicApiKey))),
             // The same number the long-alt check reports on, so the count
             // beside the field agrees with the finding.
             'altGuideline' => PotentialScanner::MAX_ALT_LENGTH,
