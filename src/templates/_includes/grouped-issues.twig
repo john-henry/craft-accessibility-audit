@@ -9,12 +9,22 @@
         <button type="button" class="btn" data-filter="{{ cat|e }}" aria-pressed="false">{{ cat|t('accessibility-audit') }}</button>
     {% endfor %}
 </div>
+<div class="accessibility-audit-filter-select">
+    <div class="select">
+    <select aria-label="{{ 'Filter by element type'|t('accessibility-audit') }}">
+        <option value="all">{{ 'All'|t('accessibility-audit') }}</option>
+        {% for cat in categories %}
+            <option value="{{ cat }}">{{ cat|t('accessibility-audit') }}</option>
+        {% endfor %}
+    </select>
+    </div>
+</div>
 {% endif %}
 
 {% set severityGroups = [
-    { key: 'error',   label: 'Errors'|t('accessibility-audit') },
-    { key: 'warning', label: 'Warnings'|t('accessibility-audit') },
-    { key: 'notice',  label: 'Notices'|t('accessibility-audit') },
+    { key: 'error',   label: 'Errors'|t('accessibility-audit'),   rowLabel: 'Error'|t('accessibility-audit') },
+    { key: 'warning', label: 'Warnings'|t('accessibility-audit'), rowLabel: 'Warning'|t('accessibility-audit') },
+    { key: 'notice',  label: 'Notices'|t('accessibility-audit'),  rowLabel: 'Notice'|t('accessibility-audit') },
 ] %}
 <div class="accessibility-audit-table-scroll">
     <table class="data fullwidth accessibility-audit-grouped-table">
@@ -25,7 +35,7 @@
             <th scope="col">{{ 'SC'|t('accessibility-audit') }}</th>
             <th scope="col">{{ 'Difficulty'|t('accessibility-audit') }}</th>
             <th scope="col">{{ 'Owner'|t('accessibility-audit') }}</th>
-            <th scope="col" class="rightalign">{{ 'Count'|t('accessibility-audit') }}</th>
+            <th scope="col" class="rightalign">{{ 'Occurrences'|t('accessibility-audit') }}</th>
             <th scope="col" class="rightalign">{{ 'Points'|t('accessibility-audit') }}</th>
         </tr>
     </thead>
@@ -39,9 +49,8 @@
         <tr data-category="{{ row.elementType ?? '' }}">
             <th scope="row">
                 <span class="accessibility-audit-rowline" style="gap:8px">
-                    <span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--{{ group.key }}" aria-hidden="true" title="{{ group.label }}"></span>
-                    <span class="visually-hidden">{{ group.label }}:</span>
-                    <a href="{{ url('accessibility-audit/issues/detail', {ruleId: row.ruleId, site: siteHandle}) }}">{{ row.ruleId }}</a>
+                    <span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--{{ group.key }}" role="img" aria-label="{{ group.rowLabel }}"></span>
+                    <span>{{ macros.ruleName(row.title ?? row.ruleId, row.ruleId, url('accessibility-audit/issues/detail', {ruleId: row.ruleId, site: siteHandle})) }}</span>
                     {% if row.elementType is defined and row.elementType %}
                         <span class="token">{{ row.elementType|t('accessibility-audit') }}</span>
                     {% endif %}
@@ -61,13 +70,7 @@
             </td>
             <td>
                 {%- if resp -%}
-                    {%- set ownerMod = resp == 'content' ? 'content' : (resp == 'design' ? 'design' : (resp == 'development' ? 'dev' : 'technical')) -%}
-                    <span class="token accessibility-audit-owner--{{ ownerMod }}">
-                        {{- resp == 'content' ? 'Content'|t('accessibility-audit')
-                          : resp == 'design' ? 'Design'|t('accessibility-audit')
-                          : resp == 'development' ? 'Development'|t('accessibility-audit')
-                          : 'Technical'|t('accessibility-audit') -}}
-                    </span>
+                    {{ macros.responsibility(resp) }}
                 {%- else -%}<span class="light">—</span>{%- endif -%}
             </td>
             <td class="rightalign">{{ row.occurrences }}</td>

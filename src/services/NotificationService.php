@@ -74,10 +74,10 @@ class NotificationService extends Component
      */
     public function evaluateScan(array $newResult, ?array $previousResult): void
     {
-        // Notifications are a Pro-only feature. Bail immediately on Standard so
+        // Notifications need Standard or higher. Bail immediately on Lite so
         // nothing fires even if something internally still calls this: a
-        // belt-and-suspenders guard alongside the controller-level gating.
-        if (!AccessibilityAudit::getInstance()->isPro()) {
+        // second guard alongside the controller-level gating.
+        if (!AccessibilityAudit::getInstance()->isStandard()) {
             return;
         }
 

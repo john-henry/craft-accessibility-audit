@@ -67,6 +67,8 @@ class Install extends Migration
         $this->dropTableIfExists('{{%accessibilityaudit_asset_issues}}');
         $this->dropTableIfExists('{{%accessibilityaudit_asset_stats}}');
         $this->dropTableIfExists('{{%accessibilityaudit_asset_flags}}');
+        $this->dropTableIfExists('{{%accessibilityaudit_pdf_checks}}');
+        $this->dropTableIfExists('{{%accessibilityaudit_alt_drafts}}');
         return true;
     }
 
@@ -279,6 +281,45 @@ class Install extends Migration
             ]);
         }
 
+        if (!$this->db->tableExists('{{%accessibilityaudit_pdf_checks}}')) {
+            // One row per PDF asset: whether it was checked, and the file it
+            // was checked as. The findings themselves go into asset_issues.
+            $this->createTable('{{%accessibilityaudit_pdf_checks}}', [
+                'id' => $this->primaryKey(),
+                'assetId' => $this->integer()->notNull(),
+                'fileSize' => $this->bigInteger(),
+                'fileModified' => $this->dateTime(),
+                'status' => $this->string(20)->notNull(),
+                'reason' => $this->string(30),
+                'ruleSetVersion' => $this->smallInteger()->notNull()->defaultValue(0),
+                'hasForm' => $this->boolean()->notNull()->defaultValue(false),
+                'meta' => $this->mediumText(),
+                'dateChecked' => $this->dateTime()->notNull(),
+                'dateCreated' => $this->dateTime()->notNull(),
+                'dateUpdated' => $this->dateTime()->notNull(),
+                'uid' => $this->uid(),
+            ]);
+        }
+
+        if (!$this->db->tableExists('{{%accessibilityaudit_alt_drafts}}')) {
+            // One row per image: the AI alt text drafted for it, waiting for an
+            // editor to approve, or why no draft could be written.
+            $this->createTable('{{%accessibilityaudit_alt_drafts}}', [
+                'id' => $this->primaryKey(),
+                'assetId' => $this->integer()->notNull(),
+                'shortAlt' => $this->text(),
+                'standardAlt' => $this->text(),
+                'detailedAlt' => $this->text(),
+                'imageType' => $this->string(30),
+                'reviewReasons' => $this->text(),
+                'status' => $this->string(20)->notNull(),
+                'error' => $this->text(),
+                'dateCreated' => $this->dateTime()->notNull(),
+                'dateUpdated' => $this->dateTime()->notNull(),
+                'uid' => $this->uid(),
+            ]);
+        }
+
         return true;
     }
 
@@ -309,6 +350,10 @@ class Install extends Migration
         $this->createIndex(null, '{{%accessibilityaudit_asset_issues}}', ['assetId', 'ruleId'], true);
         $this->createIndex(null, '{{%accessibilityaudit_asset_issues}}', ['ruleId']);
         $this->createIndex(null, '{{%accessibilityaudit_asset_flags}}', ['assetId'], true);
+        $this->createIndex(null, '{{%accessibilityaudit_pdf_checks}}', ['assetId'], true);
+        $this->createIndex(null, '{{%accessibilityaudit_pdf_checks}}', ['status', 'reason']);
+        $this->createIndex(null, '{{%accessibilityaudit_alt_drafts}}', ['assetId'], true);
+        $this->createIndex(null, '{{%accessibilityaudit_alt_drafts}}', ['status']);
         $this->createIndex(null, '{{%accessibilityaudit_issues}}', ['verdict']);
         $this->createIndex(null, '{{%accessibilityaudit_issues}}', ['origin']);
         // One ruling per target + rule + occurrence.
@@ -391,6 +436,18 @@ class Install extends Migration
         $this->addForeignKey(
             null,
             '{{%accessibilityaudit_asset_flags}}', 'assetId',
+            '{{%elements}}', 'id',
+            'CASCADE', 'CASCADE'
+        );
+        $this->addForeignKey(
+            null,
+            '{{%accessibilityaudit_pdf_checks}}', 'assetId',
+            '{{%elements}}', 'id',
+            'CASCADE', 'CASCADE'
+        );
+        $this->addForeignKey(
+            null,
+            '{{%accessibilityaudit_alt_drafts}}', 'assetId',
             '{{%elements}}', 'id',
             'CASCADE', 'CASCADE'
         );

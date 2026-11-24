@@ -12,11 +12,13 @@ use craft\console\Controller;
 use craft\db\Query;
 use craft\elements\Asset;
 use craft\errors\SiteNotFoundException;
+use craft\helpers\Queue as QueueHelper;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\base\ConsoleSiteTrait;
 use johnhenry\accessibilityaudit\helpers\ElementLabel;
 use johnhenry\accessibilityaudit\jobs\AuditAssets;
-use johnhenry\accessibilityaudit\services\AuditService;
+use johnhenry\accessibilityaudit\jobs\CheckPdf;
+use johnhenry\accessibilityaudit\jobs\CheckPdfs;
 use Throwable;
 use yii\base\InvalidConfigException;
 use yii\console\ExitCode;
@@ -30,6 +32,7 @@ use yii\helpers\Console;
  *   php craft accessibility-audit/audit/scan-all
  *   php craft accessibility-audit/audit/scan-element --element-id=42
  *   php craft accessibility-audit/audit/scan-assets
+ *   php craft accessibility-audit/audit/check-pdfs --force
  *   php craft accessibility-audit/audit/prune --days=90
  *   php craft accessibility-audit/audit/prune-excluded
  *   php craft accessibility-audit/audit/report
@@ -78,6 +81,11 @@ class AuditController extends Controller
      */
     public ?string $url = null;
 
+    /**
+     * @var bool Check every PDF again, including those unchanged since their last check.
+     */
+    public bool $force = false;
+
     // Public Methods
     // =========================================================================
 
@@ -91,6 +99,7 @@ class AuditController extends Controller
             'scan-element' => ['elementId', 'site'],
             'scan-url' => ['url', 'site'],
             'prune' => ['days'],
+            'check-pdfs' => ['force'],
             default => [],
         });
     }
@@ -372,6 +381,37 @@ class AuditController extends Controller
     }
 
     /**
+     * Queue a check of every PDF asset for accessibility (Pro).
+     *
+     * PDFs already checked as they are now are passed over unless --force is given.
+     *
+     * @return int
+     * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function actionCheckPdfs(): int
+    {
+        $pdfAudit = AccessibilityAudit::getInstance()->getPdfAudit();
+
+        if (!$pdfAudit->isEnabled()) {
+            $this->stderr("PDF checks need the Standard edition, with the Check PDF Files setting on.\n", Console::FG_RED);
+
+            return ExitCode::UNAVAILABLE;
+        }
+
+        $total = (int)$pdfAudit->pdfQuery()->count();
+
+        QueueHelper::push(new CheckPdfs(['force' => $this->force]), ttr: CheckPdf::ttr());
+
+        $this->stdout("PDF check queued: {$total} PDF(s) will be checked as the queue runs.\n", Console::FG_GREEN);
+        $this->stdout("Run the queue with: php craft queue/run\n");
+
+        return ExitCode::OK;
+    }
+
+    /**
      * Prune old scan results.
      *
      * @return int
@@ -385,12 +425,13 @@ class AuditController extends Controller
         $plugin = AccessibilityAudit::getInstance();
 
         $days = $this->days;
+        $cap = $plugin->retentionCap();
 
         // Zero means "keep history for good" everywhere else the setting is
         // read, including the garbage-collection prune, so it means that here
         // too. Read as a cutoff instead it puts the boundary at this moment and
         // takes every scan ever recorded with it.
-        if ($days <= 0 && $plugin->isPro()) {
+        if ($days <= 0 && $cap === null) {
             $this->stdout(
                 "A retention of 0 keeps history for good. Nothing pruned.\n",
                 Console::FG_YELLOW
@@ -399,12 +440,12 @@ class AuditController extends Controller
             return ExitCode::OK;
         }
 
-        if (!$plugin->isPro() && ($days <= 0 || $days > AuditService::STANDARD_RETENTION_CAP)) {
+        if ($cap !== null && ($days <= 0 || $days > $cap)) {
             $this->stdout(
-                "Standard edition keeps at most " . AuditService::STANDARD_RETENTION_CAP . " days of history; pruning to that.\n",
+                AccessibilityAudit::editionName($plugin->edition) . " edition keeps at most {$cap} days of history; pruning to that.\n",
                 Console::FG_YELLOW
             );
-            $days = AuditService::STANDARD_RETENTION_CAP;
+            $days = $cap;
         }
 
         $this->stdout("Pruning scan results older than {$days} days...\n");

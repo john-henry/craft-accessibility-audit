@@ -12,6 +12,7 @@ use craft\helpers\AdminTable;
 use craft\helpers\App;
 use craft\helpers\ArrayHelper;
 use craft\helpers\DateTimeHelper;
+use craft\helpers\Html;
 use craft\helpers\Json;
 use craft\helpers\UrlHelper;
 use craft\web\Controller;
@@ -24,10 +25,17 @@ use johnhenry\accessibilityaudit\assets\VpatAsset;
 use johnhenry\accessibilityaudit\helpers\AffectedExample;
 use johnhenry\accessibilityaudit\helpers\Csv;
 use johnhenry\accessibilityaudit\helpers\ElementLabel;
+use johnhenry\accessibilityaudit\helpers\FindingHtml;
 use johnhenry\accessibilityaudit\helpers\OccurrenceCluster;
+use johnhenry\accessibilityaudit\helpers\RuleRows;
 use johnhenry\accessibilityaudit\helpers\ScanTarget;
+use johnhenry\accessibilityaudit\jobs\DraftAltText;
 use johnhenry\accessibilityaudit\models\StatementExclusionModel;
+use johnhenry\accessibilityaudit\services\AltDrafts;
+use johnhenry\accessibilityaudit\services\AssetScanner;
 use johnhenry\accessibilityaudit\services\AuditService;
+use johnhenry\accessibilityaudit\services\PdfAuditService;
+use johnhenry\accessibilityaudit\services\PdfChecker;
 use johnhenry\accessibilityaudit\services\PotentialScanner;
 use johnhenry\accessibilityaudit\services\RuleRegistry;
 use johnhenry\accessibilityaudit\services\StatementProfiles;
@@ -35,6 +43,7 @@ use yii\base\InvalidConfigException;
 use yii\db\Exception;
 use yii\web\BadRequestHttpException;
 use yii\web\ForbiddenHttpException;
+use yii\web\NotFoundHttpException;
 use yii\web\Response;
 
 /**
@@ -68,6 +77,17 @@ class DashboardController extends Controller
      * table actually asks for.
      */
     private const TABLE_PER_PAGE_MAX = 200;
+
+    /**
+     * @var int Occurrences shown under each page of a rule's page listing. The
+     * rest are a click away on the page's own report.
+     */
+    private const OCCURRENCES_PER_PAGE = 10;
+
+    /**
+     * @var int PDFs per page on the Assets screen's PDFs tab.
+     */
+    private const PDF_PER_PAGE = 50;
 
     // Protected Properties
     // =========================================================================
@@ -110,10 +130,11 @@ class DashboardController extends Controller
         $settings = $plugin->getSettings();
 
         $isPro = $plugin->isPro();
+        $scanLimit = $plugin->scanLimit();
 
-        // Standard's scan cap counts distinct elements across the whole install
-        // (all sites), matching Craft's plugin licensing. Only show the "across
-        // all sites" wording on multi-site installs.
+        // Lite's scan cap counts distinct pages across the whole install (all
+        // sites), matching Craft's plugin licensing. Only show the "across all
+        // sites" wording on multi-site installs.
         $isMultiSite = count($sites) > 1;
 
         // A score of 100 with unanswered questions behind it is not the same
@@ -154,10 +175,19 @@ class DashboardController extends Controller
             // WCAG 2.1 AA, so the level is the reliable signal for every issue.
             'en301549' => $settings->en301549,
             'assetStats' => $plugin->getAssets()->getStoredAssetStats(),
+            // The assets band's other figures, all already kept by the Assets
+            // page: drafts waiting, a drafting run under way, decorative images,
+            // and from Standard up the PDF results.
+            'assetDraftCount' => $plugin->isStandard() ? $plugin->getAltDrafts()->countReady() : 0,
+            'assetDraftRunning' => DraftAltText::isRunning(),
+            'assetDecorativeCount' => $plugin->getAssets()->getDecorativeCount(),
+            'assetHasApiKey' => $plugin->canGenerateAltText(),
+            'pdfStats' => $plugin->getPdfAudit()->isEnabled() ? $plugin->getPdfAudit()->getStats() : null,
+            'edition' => $plugin->edition,
             'isPro' => $isPro,
             'isMultiSite' => $isMultiSite,
-            'scannedElementCount' => $isPro ? 0 : $plugin->getAudit()->getScannedElementCount(),
-            'scanLimit' => AuditService::STANDARD_SCAN_LIMIT,
+            'scannedElementCount' => $scanLimit !== null ? $plugin->getAudit()->getScannedElementCount() : 0,
+            'scanLimit' => $scanLimit,
         ]);
     }
 
@@ -493,8 +523,26 @@ class DashboardController extends Controller
         $trendRange = max(1, min(365, (int) ($this->request->getQueryParam('range') ?? 90)));
         $trend = $audit->getRuleTrend($ruleId, $siteId, $trendRange);
 
+        // An axe rule's guidance link goes to Deque's page for the rule, which
+        // is a guide to fixing it. The plugin's own rules link to WCAG's
+        // Understanding documents, which explain the criterion instead.
+        $helpUrl = (string)($detail['helpUrl'] ?? '');
+        $isFixGuide = str_starts_with($helpUrl, 'https://dequeuniversity.com/');
+        $pluginRule = RuleRegistry::pluginRuleFor($ruleId);
+        $ruleTitle = RuleRegistry::title($ruleId);
+        $ruleDescription = RuleRegistry::description($ruleId);
+        $exampleFinding = RuleRegistry::exampleFinding((string)($detail['message'] ?? ''), $ruleTitle, $ruleDescription);
+
         return $this->renderTemplate('accessibility-audit/issue-detail', [
             'ruleId' => $ruleId,
+            'ruleTitle' => $ruleTitle,
+            'ruleDescription' => $ruleDescription,
+            // Encoded by the formatter, so the template prints it raw.
+            'exampleFinding' => $exampleFinding !== '' ? FindingHtml::format($exampleFinding) : '',
+            'ruleFix' => RuleRegistry::fix($ruleId),
+            'fixGuideUrl' => $isFixGuide ? $helpUrl : null,
+            'guidanceUrl' => !$isFixGuide && preg_match('/^https?:\/\//i', $helpUrl) === 1 ? $helpUrl : null,
+            'pluginRule' => $pluginRule !== null ? ['ruleId' => $pluginRule, 'title' => RuleRegistry::title($pluginRule)] : null,
             'meta' => $meta,
             'detail' => $detail,
             'pages' => $pages,
@@ -614,7 +662,7 @@ class DashboardController extends Controller
         $sites = $plugin->allowedSites();
 
         // VPAT is Pro-only, but the page is reachable from the CP nav, so render
-        // an upsell state on Standard instead of throwing. The report is only
+        // an upsell state below Pro instead of throwing. The report is only
         // built when it will actually be shown.
         $isPro = $plugin->isPro();
         $report = $isPro ? $plugin->getVpat()->getFullReport($siteId) : null;
@@ -768,7 +816,8 @@ class DashboardController extends Controller
     }
 
     /**
-     * Renders the Assets screen, covering the alt text on the site's images.
+     * Renders the Assets screen: the alt text on the site's images, and on
+     * Pro the accessibility of its PDFs.
      *
      * @return Response
      * @throws SiteNotFoundException
@@ -802,29 +851,73 @@ class DashboardController extends Controller
             ));
         }
         $volume = trim((string) ($this->request->getQueryParam('volume') ?? ''));
-        if ($volume !== '' && !ArrayHelper::firstWhere($volumes, 'handle', $volume)) {
+        $volumeModel = $volume !== '' ? ArrayHelper::firstWhere($volumes, 'handle', $volume) : null;
+        if ($volumeModel === null) {
             $volume = '';
         }
+        $volumeId = $volumeModel !== null ? (int)$volumeModel->id : null;
 
         $search = trim((string) ($this->request->getQueryParam('search') ?? ''));
 
         // Issue-type filter acts on the whole library server-side, so a chip's
         // count matches the rows it shows. Validated against the known asset
-        // rules so a junk param can't reach the query.
+        // rules so a junk param can't reach the query. The PDFs tab reads its
+        // own status and problem params, and older PDF filter links are mapped
+        // onto them, so the tab always carries the one canonical filter.
         $filter = trim((string) ($this->request->getQueryParam('filter') ?? ''));
-        if (!in_array($filter, ['asset-alt-missing', 'asset-alt-filename', 'asset-alt-short', 'pdf-accessibility', 'decorative'], true)) {
+        $pdfAudit = $plugin->getPdfAudit();
+        $pdfListing = $pdfAudit->resolveListing(
+            $filter,
+            trim((string) ($this->request->getQueryParam('status') ?? '')),
+            trim((string) ($this->request->getQueryParam('problem') ?? '')),
+        );
+        $pdfView = $pdfListing !== null;
+
+        // The drafts list is the AI alt text review queue, which Lite lacks.
+        $aiAltText = $plugin->isStandard();
+        $filters = ['asset-alt-missing', 'asset-alt-filename', 'asset-alt-short', 'decorative'];
+        if ($aiAltText) {
+            $filters[] = AltDrafts::FILTER;
+        }
+
+        if ($pdfView) {
+            $filter = PdfAuditService::FILTER_ALL;
+        } elseif (!in_array($filter, $filters, true)) {
             $filter = '';
         }
+
+        $pdfEnabled = $pdfAudit->isEnabled();
+        $pdfStats = $pdfEnabled ? $pdfAudit->getStats() : null;
+        $pdfPaged = $pdfEnabled && $pdfListing !== null
+            ? $pdfAudit->listPaged($page, self::PDF_PER_PAGE, $volume ?: null, $search ?: null, $pdfListing['status'], $pdfListing['problem'])
+            : null;
 
         // Paginate: scanning every image on every render OOMs/times out on
         // large media libraries. The decorative filter lists images currently
         // marked decorative (from the flags table) instead of the issues list,
-        // so a marked image can be reviewed and switched back off; every other
-        // filter runs the issue scan.
-        $paged = $filter === 'decorative'
-            ? $plugin->getAssets()->listDecorativePaged($page, $perPage, $volume ?: null, $search ?: null)
-            : $plugin->getAssets()->scanImagesPaged($page, $perPage, $volume ?: null, $search ?: null, $filter ?: null);
+        // so a marked image can be reviewed and switched back off; the drafts
+        // filter lists the AI drafts waiting for review; every other filter
+        // runs the issue scan.
+        $altDrafts = $plugin->getAltDrafts();
+        $paged = match (true) {
+            $pdfView => ['results' => [], 'total' => 0, 'page' => 1, 'perPage' => $perPage, 'totalPages' => 0],
+            $filter === 'decorative' => $plugin->getAssets()->listDecorativePaged($page, $perPage, $volume ?: null, $search ?: null),
+            $filter === AltDrafts::FILTER => $altDrafts->listReadyPaged($page, $perPage, $volume ?: null, $search ?: null),
+            default => $plugin->getAssets()->scanImagesPaged($page, $perPage, $volume ?: null, $search ?: null, $filter ?: null),
+        };
         $stats = $plugin->getAssets()->getSiteAssetStats();
+
+        // Which images on this page already have a draft waiting, so their rows
+        // can say so. One query for the page, not one per row.
+        $draftedIds = [];
+        if ($aiAltText && !$pdfView && $filter !== AltDrafts::FILTER) {
+            $pageIds = array_map(static fn(array $row): int => (int)$row['asset']->id, $paged['results']);
+            foreach ($altDrafts->forAssets($pageIds) as $assetId => $draft) {
+                if ($draft['status'] === AltDrafts::STATUS_READY) {
+                    $draftedIds[] = (int)$assetId;
+                }
+            }
+        }
 
         // Preserve the volume filter, filename search, and issue-type filter
         // across pagination links.
@@ -834,7 +927,28 @@ class DashboardController extends Controller
             'filter' => $filter,
         ], static fn(string $value): bool => $value !== '');
 
+        // The PDF status and problem only travel when they differ from the
+        // default, so the tab's own link and page one are the same URL.
+        $pdfPageInfo = $pdfPaged !== null
+            ? $this->_pageInfo('accessibility-audit/assets', $pdfPaged['page'], $pdfPaged['perPage'], $pdfPaged['total'], $pdfPaged['totalPages'], array_filter([
+                'site' => trim((string) ($this->request->getQueryParam('site') ?? '')),
+                'status' => $pdfListing['status'] !== PdfAuditService::LIST_ISSUES ? $pdfListing['status'] : '',
+                'problem' => (string) $pdfListing['problem'],
+            ], static fn(string $value): bool => $value !== '') + $extraParams)
+            : null;
+
         return $this->renderTemplate('accessibility-audit/assets', [
+            'isStandard' => $aiAltText,
+            'pdfEnabled' => $pdfEnabled,
+            'pdfView' => $pdfView,
+            'pdfStatus' => $pdfListing['status'] ?? PdfAuditService::LIST_ISSUES,
+            'pdfProblem' => $pdfListing['problem'] ?? null,
+            'pdfProblemOptions' => $pdfStats !== null ? $pdfAudit->problemOptions($pdfStats['byRule'], $pdfListing['problem'] ?? null) : [],
+            'pdfRows' => $pdfPaged['results'] ?? [],
+            'pdfTotalPages' => $pdfPaged['totalPages'] ?? 0,
+            'pdfPageInfo' => $pdfPageInfo,
+            'pdfStats' => $pdfStats,
+            'pdfReasons' => PdfChecker::reasonTexts(),
             'assetIssues' => $paged['results'],
             'stats' => $stats,
             'storedStats' => $plugin->getAssets()->getStoredAssetStats(),
@@ -844,7 +958,7 @@ class DashboardController extends Controller
             'total' => $paged['total'],
             'totalPages' => $paged['totalPages'],
             'pageInfo' => $this->_pageInfo('accessibility-audit/assets', $paged['page'], $paged['perPage'], $paged['total'], $paged['totalPages'], $extraParams),
-            'hasApiKey' => !empty(trim((string)App::parseEnv($settings->anthropicApiKey))),
+            'hasApiKey' => $plugin->canGenerateAltText(),
             // The same number the long-alt check reports on, so the count
             // beside the field agrees with the finding.
             'altGuideline' => PotentialScanner::MAX_ALT_LENGTH,
@@ -853,6 +967,52 @@ class DashboardController extends Controller
             'currentSearch' => $search,
             'activeFilter' => $filter,
             'decorativeCount' => $plugin->getAssets()->getDecorativeCount($volume ?: null, $search ?: null),
+            'draftCount' => $aiAltText ? $altDrafts->countReady($volume ?: null, $search ?: null) : 0,
+            'draftedIds' => $draftedIds,
+            'failedDraftCount' => $aiAltText ? $altDrafts->countFailed($volume ?: null, $search ?: null) : 0,
+            'draftingRunning' => $aiAltText && DraftAltText::isRunning(),
+            // The drafting run covers the volume filter but not the filename
+            // search, so the count it asks to confirm is the volume's alone.
+            'pendingDraftCount' => $pdfView || !$aiAltText ? 0 : $altDrafts->pendingCount($volumeId),
+        ]);
+    }
+
+    /**
+     * Renders one PDF's page under the Assets screen: what its check found,
+     * failure by failure, and what to do about it (Pro).
+     *
+     * A file the audit does not cover gets the same 404 as one that does not
+     * exist, and with PDF checks off the audit covers nothing.
+     *
+     * @param int $assetId The PDF's asset id.
+     * @return Response
+     * @throws ForbiddenHttpException
+     * @throws NotFoundHttpException
+     * @throws SiteNotFoundException
+     * @throws InvalidConfigException
+     * @throws \yii\base\Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function actionPdf(int $assetId): Response
+    {
+        $this->requirePermission('accessibility-audit:view-reports');
+
+        $pdfAudit = AccessibilityAudit::getInstance()->getPdfAudit();
+        $asset = $pdfAudit->isEnabled() ? AssetScanner::findAsset($assetId) : null;
+
+        if ($asset === null || !$pdfAudit->covers($asset)) {
+            throw new NotFoundHttpException('PDF not found.');
+        }
+
+        if (!Craft::$app->getElements()->canView($asset)) {
+            throw new ForbiddenHttpException('User is not authorized to view this asset.');
+        }
+
+        return $this->renderTemplate('accessibility-audit/_assets/pdf', $pdfAudit->detail($asset) + [
+            'asset' => $asset,
+            'canRunScans' => Craft::$app->getUser()->checkPermission('accessibility-audit:run-scans'),
         ]);
     }
 
@@ -986,7 +1146,7 @@ class DashboardController extends Controller
         // The list is bounded (one row per rule) and its points/owner columns are
         // derived after the query, so it is sorted and paged in PHP here.
         $key = match ($this->request->getParam('sort.0.field')) {
-            'rule' => static fn(array $r): string => (string)$r['ruleId'],
+            'rule' => static fn(array $r): string => (string)$r['title'],
             'occurrences' => static fn(array $r): int => (int)$r['occurrences'],
             'points' => static fn(array $r): float => (float)$r['pointsGained'],
             default => static fn(array $r): string => (string)($r['dateResolved'] ?? ''),
@@ -1002,6 +1162,43 @@ class DashboardController extends Controller
         return $this->asSuccess(data: [
             'pagination' => AdminTable::paginationLinks($page, $total, $limit),
             'data' => $this->_resolvedTableData($paged, $siteId),
+        ]);
+    }
+
+    /**
+     * Returns the open issues, one row per rule, a page at a time.
+     *
+     * @return Response
+     * @throws ForbiddenHttpException
+     * @throws BadRequestHttpException
+     * @throws SiteNotFoundException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function actionOpenIssuesTable(): Response
+    {
+        $this->requireAcceptsJson();
+        $this->requirePermission('accessibility-audit:view-reports');
+
+        $siteId = AccessibilityAudit::getInstance()->resolveSiteId($this->request->getParam('siteId'));
+        $page = max(1, (int)$this->request->getParam('page', 1));
+        $limit = max(1, min(self::TABLE_PER_PAGE_MAX, (int)$this->request->getParam('per_page', self::TABLE_PER_PAGE)));
+
+        $rows = RuleRows::filter(
+            AccessibilityAudit::getInstance()->getAudit()->getIssuesByImpact($siteId, PHP_INT_MAX),
+            (string)$this->request->getParam('search', ''),
+            (string)$this->request->getParam('elementType', ''),
+        );
+        $rows = RuleRows::sort(
+            $rows,
+            $this->request->getParam('sort.0.field'),
+            $this->request->getParam('sort.0.direction') === 'asc',
+        );
+
+        return $this->asSuccess(data: [
+            'pagination' => AdminTable::paginationLinks($page, count($rows), $limit),
+            'data' => $this->_openIssuesTableData(array_slice($rows, ($page - 1) * $limit, $limit), $siteId),
         ]);
     }
 
@@ -1234,7 +1431,10 @@ class DashboardController extends Controller
                         ScanTarget::reportParams(array_merge($row, ['id' => (int)$row['scanId']]), $siteHandle),
                     ),
                 ],
-                'rule' => (string)$row['ruleId'],
+                'rule' => [
+                    'title' => RuleRegistry::title((string)$row['ruleId']),
+                    'ruleId' => (string)$row['ruleId'],
+                ],
                 // One object, not two columns: a table callback only gets its own
                 // cell value, so the text and context have to travel together.
                 'question' => [
@@ -1362,6 +1562,7 @@ class DashboardController extends Controller
                     'elementId' => (int)($row['elementId'] ?? 0),
                     'siteId' => (int)($row['siteId'] ?? 0),
                     'url' => (string)($row['url'] ?? ''),
+                    'title' => (string)($row['title'] ?: $row['url']),
                 ],
             ];
         }
@@ -1432,7 +1633,7 @@ class DashboardController extends Controller
 
         $handle = fopen('php://temp', 'r+');
         assert($handle !== false);
-        fputcsv($handle, ['Page', 'URL', 'Issues', 'Count', 'Last scanned']);
+        fputcsv($handle, ['Page', 'URL', 'Question types', 'Needs review', 'Last scanned']);
 
         foreach ($rows as $row) {
             $uri = (string)($row['uri'] ?? '');
@@ -1494,7 +1695,7 @@ class DashboardController extends Controller
 
         return $this->asSuccess(data: [
             'pagination' => AdminTable::paginationLinks($page, (int)$result['total'], $limit),
-            'data' => $this->_issuePagesTableData($result['entries'], $siteId),
+            'data' => $this->_issuePagesTableData($result['entries'], $siteId, $ruleId),
         ]);
     }
 
@@ -1522,7 +1723,7 @@ class DashboardController extends Controller
 
         $handle = fopen('php://temp', 'r+');
         assert($handle !== false);
-        fputcsv($handle, ['Page', 'URL', 'Score', 'Count', 'First detected', 'Last scanned']);
+        fputcsv($handle, ['Page', 'URL', 'Score', 'Occurrences', 'First detected', 'Last scanned']);
 
         foreach ($rows as $row) {
             $uri = (string)($row['uri'] ?? '');
@@ -1578,11 +1779,12 @@ class DashboardController extends Controller
                 ScanTarget::reportParams($scan, $siteHandle),
             );
             $lastScanned = !empty($scan['dateScanned']) ? DateTimeHelper::toDateTime($scan['dateScanned']) : false;
+            $label = ScanTarget::label($scan, $element);
 
             $data[] = [
                 'id' => $elementId,
                 'page' => [
-                    'title' => ScanTarget::label($scan, $element),
+                    'title' => $label,
                     'inspectUrl' => $reportUrl,
                     'url' => ScanTarget::url($scan, $element),
                     'scanId' => (int)$scan['id'],
@@ -1594,8 +1796,10 @@ class DashboardController extends Controller
                     'notices' => (int)($scan['noticeCount'] ?? 0),
                 ],
                 'lastScanned' => $lastScanned !== false ? $lastScanned->format('d M Y') : '—',
-                'rescan' => $element->id ?? 0,
-                'report' => $reportUrl,
+                // The row buttons carry the page's name, so each one is told
+                // apart from the next by its accessible name.
+                'rescan' => ['id' => $element->id ?? 0, 'title' => $label],
+                'report' => ['url' => $reportUrl, 'title' => $label],
             ];
         }
 
@@ -1621,6 +1825,7 @@ class DashboardController extends Controller
             $data[] = [
                 'question' => [
                     'title' => $this->_potentialQuestion($ruleId, $row['wcagCriterion'] ?? null),
+                    'ruleId' => $ruleId,
                     'url' => UrlHelper::cpUrl('accessibility-audit/issues/detail', ['ruleId' => $ruleId, 'site' => $siteHandle]),
                 ],
                 'conformance' => $row['wcagLevel'] ?? null,
@@ -1682,21 +1887,7 @@ class DashboardController extends Controller
             return Craft::t('accessibility-audit', 'Do these identical links read the same out of context?');
         }
 
-        return match ($ruleId) {
-            'potential:short-alt' => Craft::t('accessibility-audit', 'Is this image alt text descriptive enough?'),
-            'potential:long-alt' => Craft::t('accessibility-audit', 'Is this image alt text too long?'),
-            'potential:identical-links' => Craft::t('accessibility-audit', 'Are these identical links going to different places?'),
-            'potential:url-as-link-text' => Craft::t('accessibility-audit', 'Is this link text meaningful?'),
-            'potential:decorative-image' => Craft::t('accessibility-audit', 'Is this image purely decorative?'),
-            'potential:possible-heading' => Craft::t('accessibility-audit', 'Should this bold paragraph be a heading?'),
-            'potential:table-layout' => Craft::t('accessibility-audit', 'Is this a data table or a layout table?'),
-            'potential:video-audio-desc' => Craft::t('accessibility-audit', 'Does this video need an audio description?'),
-            'potential:contrast-unmeasurable' => Craft::t('accessibility-audit', 'Does this text have enough contrast against what is behind it?'),
-            AuditService::RULE_POTENTIAL_FOCUS_OUTLINE => Craft::t('accessibility-audit', 'Does something replace the focus outline this stylesheet removes?'),
-            AuditService::RULE_POTENTIAL_FOCUS_NOT_VISIBLE => Craft::t('accessibility-audit', 'Can you see where keyboard focus is on this control?'),
-            AuditService::RULE_POTENTIAL_FOCUS_OBSCURED => Craft::t('accessibility-audit', 'Does this fixed or sticky element hide controls when they take keyboard focus?'),
-            default => str_replace('potential:', '', $ruleId),
-        };
+        return RuleRegistry::title($ruleId);
     }
 
     /**
@@ -1722,19 +1913,20 @@ class DashboardController extends Controller
                 ScanTarget::reportParams($row, $siteHandle),
             );
             $lastScanned = $row['dateScanned'] ? DateTimeHelper::toDateTime($row['dateScanned']) : false;
+            $label = ScanTarget::label($row, $element);
 
             $data[] = [
                 'id' => (int)$row['elementId'],
                 'page' => [
-                    'title' => ScanTarget::label($row, $element),
+                    'title' => $label,
                     'inspectUrl' => $reportUrl,
                     'url' => ScanTarget::url($row, $element),
                 ],
                 'issues' => (int)$row['issueCount'],
                 'count' => (int)$row['occurrences'],
                 'lastScanned' => $lastScanned !== false ? $lastScanned->format('d M Y') : '—',
-                'rescan' => $element->id ?? 0,
-                'report' => $reportUrl,
+                'rescan' => ['id' => $element->id ?? 0, 'title' => $label],
+                'report' => ['url' => $reportUrl, 'title' => $label],
             ];
         }
 
@@ -1742,19 +1934,27 @@ class DashboardController extends Controller
     }
 
     /**
-     * Shapes issue-page rows for the table.
+     * Shapes issue-page rows for the table, each with the rule's first few
+     * occurrences on that page in its detail row.
      *
      * @param array<int, array<string, mixed>> $entries
+     * @param int $siteId The site the rows are for.
+     * @param string $ruleId The rule the pages are listed for.
      * @return array<int, array<string, mixed>>
      * @throws \Exception
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    private function _issuePagesTableData(array $entries, int $siteId): array
+    private function _issuePagesTableData(array $entries, int $siteId, string $ruleId): array
     {
         $data = [];
         $siteHandle = Craft::$app->getSites()->getSiteById($siteId)?->handle;
+        $occurrences = AccessibilityAudit::getInstance()->getAudit()->getRuleOccurrencesForScans(
+            $ruleId,
+            array_column($entries, 'id'),
+            self::OCCURRENCES_PER_PAGE,
+        );
 
         foreach ($entries as $row) {
             $element = $row['element'] ?? null;
@@ -1764,11 +1964,22 @@ class DashboardController extends Controller
             );
             $firstDetected = $row['firstDetected'] ? DateTimeHelper::toDateTime($row['firstDetected']) : false;
             $lastScanned = $row['dateScanned'] ? DateTimeHelper::toDateTime($row['dateScanned']) : false;
+            $label = ScanTarget::label($row, $element);
+            $elementId = (int)$row['elementId'];
 
             $data[] = [
-                'id' => (int)$row['elementId'],
+                // The table tracks its detail rows by this, and every page
+                // scanned by URL shares an empty element ID, so those rows are
+                // told apart by their scan.
+                'id' => $elementId !== 0 ? $elementId : 'scan-' . (int)$row['id'],
+                'detail' => $this->_occurrencesDetail(
+                    $occurrences[(int)$row['id']] ?? [],
+                    (int)$row['occurrences'],
+                    $reportUrl,
+                    $label,
+                ),
                 'page' => [
-                    'title' => ScanTarget::label($row, $element),
+                    'title' => $label,
                     'inspectUrl' => $reportUrl,
                     'url' => ScanTarget::url($row, $element),
                 ],
@@ -1776,12 +1987,94 @@ class DashboardController extends Controller
                 'count' => (int)$row['occurrences'],
                 'firstDetected' => $firstDetected !== false ? $firstDetected->format('d M Y') : '—',
                 'lastScanned' => $lastScanned !== false ? $lastScanned->format('d M Y') : '—',
-                'rescan' => $element->id ?? 0,
-                'report' => $reportUrl,
+                'rescan' => ['id' => $element->id ?? 0, 'title' => $label],
+                'report' => ['url' => $reportUrl, 'title' => $label],
             ];
         }
 
         return $data;
+    }
+
+    /**
+     * The detail row for one page of a rule's page listing: what each
+     * occurrence said and the markup it was found on.
+     *
+     * Built as HTML because that is what the table's detail row renders. Every
+     * value in it came off a scanned page, so all of it is encoded.
+     *
+     * @param array<int, array{message: string, markup: string, selector: string}> $occurrences
+     *        The occurrences to show, already capped.
+     * @param int $total How many occurrences the page has in all.
+     * @param string $reportUrl The page's report, where the rest are.
+     * @param string $label The page's name, for the toggle's accessible name.
+     * @return array{handle: string, content: string}
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _occurrencesDetail(array $occurrences, int $total, string $reportUrl, string $label): array
+    {
+        if ($occurrences === []) {
+            return ['handle' => '', 'content' => ''];
+        }
+
+        $rows = '';
+
+        foreach ($occurrences as $occurrence) {
+            $rows .= Html::tag('tr', implode('', [
+                Html::tag('th', FindingHtml::format($occurrence['message']), ['scope' => 'row']),
+                Html::tag('td', $occurrence['markup'] !== ''
+                    ? Html::tag('code', Html::encode($occurrence['markup']), ['class' => 'accessibility-audit-occ-markup'])
+                    : Html::tag('span', '—', ['class' => 'light'])),
+                Html::tag('td', $occurrence['selector'] !== ''
+                    ? Html::tag('code', Html::encode($occurrence['selector']), ['class' => 'accessibility-audit-occ-selector'])
+                    : Html::tag('span', '—', ['class' => 'light'])),
+            ]));
+        }
+
+        $head = Html::tag('thead', Html::tag('tr', implode('', [
+            Html::tag('th', Html::encode(Craft::t('accessibility-audit', 'Finding')), ['scope' => 'col']),
+            Html::tag('th', Html::encode(Craft::t('accessibility-audit', 'Markup')), ['scope' => 'col']),
+            Html::tag('th', Html::encode(Craft::t('accessibility-audit', 'Selector')), ['scope' => 'col']),
+        ])));
+
+        $content = Html::tag('table', $head . Html::tag('tbody', $rows), [
+            'class' => ['data', 'fullwidth', 'accessibility-audit-page-issues-table', 'accessibility-audit-occurrences'],
+        ]);
+        $more = $total - count($occurrences);
+
+        if ($more > 0) {
+            $content .= Html::tag(
+                'p',
+                Html::encode(Craft::t('accessibility-audit', 'And {n} more on this page.', ['n' => $more])) . ' '
+                    . Html::a(Html::encode(Craft::t('accessibility-audit', 'View report')), $reportUrl, [
+                        'target' => '_blank',
+                        'rel' => 'noopener',
+                    ]),
+                ['class' => 'light accessibility-audit-occ-more'],
+            );
+        }
+
+        return [
+            // A button inside the table's own toggle, so the toggle can be
+            // reached and pressed from the keyboard. The table's click handler
+            // sits on the wrapper and still fires.
+            'handle' => Html::tag(
+                'button',
+                Html::tag('span', '', [
+                    'class' => 'accessibility-audit-expand-icon',
+                    'data-icon' => 'downangle',
+                    'aria-hidden' => 'true',
+                ]),
+                [
+                    'type' => 'button',
+                    'class' => 'accessibility-audit-expand-btn accessibility-audit-occ-toggle',
+                    'aria-expanded' => 'false',
+                    'aria-label' => Craft::t('accessibility-audit', 'Show the occurrences on {page}', ['page' => $label]),
+                ],
+            ),
+            'content' => Html::tag('div', $content, ['class' => 'accessibility-audit-issues-detail']),
+        ];
     }
 
     /**
@@ -1805,6 +2098,7 @@ class DashboardController extends Controller
 
             $data[] = [
                 'rule' => [
+                    'title' => (string)$row['title'],
                     'ruleId' => $ruleId,
                     'severity' => (string)($row['severity'] ?? ''),
                     'elementType' => (string)($row['elementType'] ?? ''),
@@ -1819,6 +2113,51 @@ class DashboardController extends Controller
                 'occurrences' => (int)$row['occurrences'],
                 'points' => number_format((float)$row['pointsGained'], 2),
                 'resolved' => $resolved !== false ? $resolved->format('d M Y') : '—',
+            ];
+        }
+
+        return $data;
+    }
+
+    /**
+     * Shapes open-issue rule rows for the table.
+     *
+     * @param array<int, array<string, mixed>> $rows Rows from getIssuesByImpact().
+     * @param int $siteId The site the rows are for.
+     * @return array<int, array<string, mixed>>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _openIssuesTableData(array $rows, int $siteId): array
+    {
+        $data = [];
+        $siteHandle = Craft::$app->getSites()->getSiteById($siteId)?->handle;
+
+        foreach ($rows as $row) {
+            $ruleId = (string)$row['ruleId'];
+            $severity = (string)($row['severity'] ?? '');
+
+            $data[] = [
+                // A rule can list more than once, split by criterion or by
+                // severity, so the ID alone does not identify a row.
+                'id' => implode('|', [$ruleId, (string)($row['wcagCriterion'] ?? ''), $severity]),
+                'rule' => [
+                    'title' => (string)$row['title'],
+                    'ruleId' => $ruleId,
+                    'severity' => $severity,
+                    'elementType' => (string)($row['elementType'] ?? ''),
+                    'detailUrl' => UrlHelper::cpUrl('accessibility-audit/issues/detail', [
+                        'ruleId' => $ruleId,
+                        'site' => $siteHandle,
+                    ]),
+                ],
+                'wcagLevel' => (string)($row['wcagLevel'] ?? ''),
+                'sc' => (string)($row['wcagCriterion'] ?? ''),
+                'difficulty' => (string)($row['difficulty'] ?? ''),
+                'owner' => (string)($row['responsibility'] ?? ''),
+                'count' => (int)$row['occurrences'],
+                'points' => number_format((float)$row['pointsToGain'], 2),
             ];
         }
 

@@ -365,7 +365,7 @@ class OverlayService extends Component
      *
      * The one gate for both delivery paths on such a page: the server-side
      * injection and the session config endpoint a cached page's loader calls.
-     * The overlay setting has to be on and the user an admin. On Standard the
+     * The overlay setting has to be on and the user an admin. Below Pro the
      * page has to be on the primary site, since multi-site is a Pro feature
      * and the plugin stores nothing for the other sites. An excluded page is
      * refused, since nothing found there could be stored.
@@ -712,6 +712,9 @@ class OverlayService extends Component
             'elementPlural' => Craft::t('accessibility-audit', '{count} elements'),
             'contrastBelowMin' => Craft::t('accessibility-audit', 'Colour contrast below the minimum ratio'),
             'contrastNeedsReview' => Craft::t('accessibility-audit', 'Colour contrast needs manual review'),
+            'contrastNeed' => Craft::t('accessibility-audit', '(need {ratio})'),
+            'contrastColours' => Craft::t('accessibility-audit', 'Text {fg} on {bg}'),
+            'contrastWorst' => Craft::t('accessibility-audit', 'Lowest found:'),
             'scoreEstimated' => Craft::t('accessibility-audit', '/100 est.'),
             'scoreFinal' => Craft::t('accessibility-audit', '/100'),
         ];

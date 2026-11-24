@@ -90,8 +90,8 @@ class AccessibilityScoreWidget extends Widget
         try {
             // Resolved through the plugin rather than read off Craft directly,
             // the way every other control-panel screen does it. Craft's current
-            // site is not gated by edition or by what the reader may edit: on
-            // Standard, where only the primary site is ever scanned, a
+            // site is not gated by edition or by what the reader may edit:
+            // below Pro, where only the primary site is ever scanned, a
             // non-primary current site put an empty score on the dashboard for
             // a site the plugin had never looked at.
             $plugin = AccessibilityAudit::getInstance();
@@ -125,7 +125,7 @@ class AccessibilityScoreWidget extends Widget
      *
      * The figure below is for one site, and on a multi-site install the tile
      * has nothing else on it that says which. It is not always the site the
-     * control panel is on either: on Standard only the primary site is ever
+     * control panel is on either: below Pro only the primary site is ever
      * scanned, so a reader sitting on a second site is shown the primary
      * site's score. Naming the site the number belongs to is the difference
      * between that and a wrong number.

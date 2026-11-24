@@ -222,6 +222,12 @@
         'empty-heading': function (el) {
             return !visibleText(el);
         },
+        /* Mirrors PotentialScanner::_checkTableLayout: a table with no header
+           cells or caption that isn't marked as presentation. */
+        'potential:table-layout': function (el) {
+            var role = el.getAttribute('role');
+            return !el.querySelector('th, caption') && role !== 'presentation' && role !== 'none';
+        },
         /* axe's list test: a list with element children that aren't li. */
         'list': function (el) {
             for (var lc = 0; lc < el.children.length; lc++) {
@@ -564,6 +570,24 @@
         return (typeof value === 'string' && /^#[0-9a-f]{3,8}$|^rgba?\(\s*[0-9.\s,%/]+\)$/i.test(value.trim())) ? value.trim() : '';
     }
 
+    /* A finding's message as HTML, laid out like the rule page's: the first
+       ratio in bold, and the part naming colours on its own line with a
+       swatch beside each hex. The message is escaped first, so only the markup
+       added here is HTML; the lookbehind leaves numeric entities alone. */
+    function formatFinding(message) {
+        var hex = /(?<!&)#(?:[0-9a-f]{6}|[0-9a-f]{3})\b/gi;
+        var html = escHtml(message).replace(/\b\d+(?:\.\d+)?:1\b/, '<strong class="accessibility-audit-occ-ratio">$&</strong>');
+
+        return html.split(' · ').map(function (part, i) {
+            hex.lastIndex = 0;
+            if (hex.test(part)) {
+                return '<span class="accessibility-audit-occ-colours">' + part.replace(hex,
+                    '<span class="accessibility-audit-occ-colour"><span class="accessibility-audit-occ-swatch" style="background:$&" aria-hidden="true"></span>$&</span>') + '</span>';
+            }
+            return (i > 0 ? ' · ' : '') + part;
+        }).join('');
+    }
+
     /* Render a colour-contrast occurrence card from JSON context data */
     function renderContrastOccurrence(data, markup) {
         data = Object.assign({}, data, { fg: cssColour(data.fg), bg: cssColour(data.bg) });
@@ -613,7 +637,7 @@
     function renderExpandPanel(body, issue, occurrences) {
         var lvl = issue.wcagLevel ? '<span class="accessibility-audit-level">' + escHtml(issue.wcagLevel) + '</span>' : '<span class="accessibility-audit-level accessibility-audit-level--bp">BP</span>';
         var criterion = issue.wcagCriterion ? '<span class="light" style="font-size:11px;margin-left:4px">' + escHtml(issue.wcagCriterion) + '</span>' : '';
-        var helpLink  = (issue.helpUrl && /^https?:\/\//i.test(issue.helpUrl)) ? '<a href="' + escHtml(issue.helpUrl) + '" target="_blank" rel="noopener" class="accessibility-audit-pr-help-link">How to fix ↗</a>' : '';
+        var helpLink  = (issue.helpUrl && /^https?:\/\//i.test(issue.helpUrl)) ? '<a href="' + escHtml(issue.helpUrl) + '" target="_blank" rel="noopener" class="accessibility-audit-pr-help-link">' + escHtml(Craft.t('accessibility-audit', 'How to fix')) + '<span class="visually-hidden"> (' + escHtml(Craft.t('accessibility-audit', 'opens in new tab')) + ')</span> <span aria-hidden="true">↗</span></a>' : '';
         var isContrast = CONTRAST_RULE_IDS.indexOf(issue.ruleId) !== -1;
 
         var occHtml = '';
@@ -649,22 +673,24 @@
 
                 /* One layout for every occurrence, contrast included: number and
                    selector sit inline on the head row, detail stacks full-width
-                   beneath it. */
+                   beneath it. The head row is the keyboard target: the card
+                   holds block-level context, which a <button> can't contain,
+                   and its click handler picks up the head's click as it bubbles. */
                 occHtml += '<div class="accessibility-audit-pr-occ-item" data-occ-idx="' + i + '">' +
-                    '<div class="accessibility-audit-pr-occ-head">' +
+                    '<button type="button" class="accessibility-audit-pr-occ-head" aria-pressed="false">' +
                         '<span class="accessibility-audit-pr-occ-num">' + (i + 1) + '</span>' +
                         viewportHtml +
                         selectorHtml +
-                    '</div>' +
+                    '</button>' +
                     tplHtml +
                     ctxHtml +
                     '</div>';
             });
             occHtml += '</div>';
         } else if (occurrences) {
-            occHtml = '<p class="accessibility-audit-pr-expand-empty">No occurrence detail available.</p>';
+            occHtml = '<p class="accessibility-audit-pr-expand-empty">' + escHtml(Craft.t('accessibility-audit', 'No occurrence detail available.')) + '</p>';
         } else {
-            occHtml = '<p class="accessibility-audit-pr-expand-empty accessibility-audit-loading">Loading…</p>';
+            occHtml = '<p class="accessibility-audit-pr-expand-empty accessibility-audit-loading">' + escHtml(Craft.t('accessibility-audit', 'Loading…')) + '</p>';
         }
 
         /* Some rules (e.g. meta-description) can only ever produce one occurrence,
@@ -675,20 +701,24 @@
            right), matching the entry sidebar panel. No severity dot: the row
            this panel hangs off already shows one. */
         body.innerHTML =
-            (issue.message ? '<p class="accessibility-audit-pr-expand-msg">' + escHtml(issue.message) + '</p>' : '') +
+            (issue.message ? '<p class="accessibility-audit-pr-expand-msg">' + formatFinding(issue.message) + '</p>' : '') +
             ((lvl || criterion || helpLink)
                 ? '<div class="accessibility-audit-pr-expand-meta">' + lvl + criterion + helpLink + '</div>'
                 : '') +
             (singleOccurrenceRule ? '' :
-                '<p class="accessibility-audit-pr-expand-occ-heading">' + escHtml(String(issue.occurrences)) + ' occurrence' + (issue.occurrences !== 1 ? 's' : '') + '</p>' +
+                '<p class="accessibility-audit-pr-expand-occ-heading">' + escHtml(Craft.t('accessibility-audit', '{n, plural, =1{# occurrence} other{# occurrences}}', { n: issue.occurrences })) + '</p>' +
                 occHtml);
 
         /* Click on occurrence → scroll iframe to that element */
         body.querySelectorAll('.accessibility-audit-pr-occ-item').forEach(function (item) {
             item.addEventListener('click', function () {
                 var idx = parseInt(item.dataset.occIdx, 10);
-                body.querySelectorAll('.accessibility-audit-pr-occ-item').forEach(function (i) { i.classList.remove('accessibility-audit-pr-occ-item--active'); });
+                body.querySelectorAll('.accessibility-audit-pr-occ-item').forEach(function (i) {
+                    i.classList.remove('accessibility-audit-pr-occ-item--active');
+                    i.querySelector('.accessibility-audit-pr-occ-head').setAttribute('aria-pressed', 'false');
+                });
                 item.classList.add('accessibility-audit-pr-occ-item--active');
+                item.querySelector('.accessibility-audit-pr-occ-head').setAttribute('aria-pressed', 'true');
 
                 /* Highlight in whichever view is showing now, not forced to
                    HTML just because it was loaded once. */
@@ -1207,16 +1237,45 @@
         var needle = (quoted ? quoted[1] : ctx).trim();
         if (!needle) return [];
 
-        var out = [];
+        var candidates;
         try {
-            Array.prototype.forEach.call(doc.querySelectorAll(selector), function (el) {
-                if (visibleText(el) === needle) out.push(el);
-            });
+            candidates = Array.prototype.slice.call(doc.querySelectorAll(selector));
         } catch (e) {
             return [];
         }
 
-        return out;
+        var exact = candidates.filter(function (el) { return visibleText(el) === needle; });
+        if (exact.length || needle.charAt(0) === '<') return exact;
+
+        /* The scanner reads text from the parsed source and the preview reads
+           it from the rendered DOM, so line breaks and runs of spaces can
+           differ between the two. */
+        var flat = collapseSpace(needle);
+        var spaced = candidates.filter(function (el) { return collapseSpace(visibleText(el)) === flat; });
+        if (spaced.length) return spaced;
+
+        /* A stored text is cut at a fixed length (some marked with an
+           ellipsis, some not), so what survives is the start of the element's
+           text. A long stem identifies its element; a short one only counts
+           when exactly one element starts with it. */
+        var capped = flat.slice(-1) === '…';
+        var stem = (capped ? flat.slice(0, -1) : flat).trim();
+        if (!stem) return [];
+
+        var prefixed = candidates.filter(function (el) { return collapseSpace(visibleText(el)).indexOf(stem) === 0; });
+        if (capped || stem.length >= 20 || prefixed.length === 1) return prefixed;
+
+        return [];
+    }
+
+    function collapseSpace(text) {
+        return text.replace(/\s+/g, ' ').trim();
+    }
+
+    /* A class attribute as a sorted token list, so order and spacing don't
+       matter and an empty attribute equals a missing one. */
+    function classKey(value) {
+        return collapseSpace(value || '').split(' ').filter(Boolean).sort().join(' ');
     }
 
     function visibleText(el) {
@@ -1326,6 +1385,19 @@
             if (flt) {
                 try { found = Array.prototype.filter.call(doc.querySelectorAll(selector), flt); } catch (_) {}
             }
+
+            /* Offenders the stored opening tag can still tell apart by class,
+               an empty or missing class attribute counting as no class. Kept
+               only when something matches, else every offender stands. */
+            var openingTag = markup.match(/^<[a-z][^>]*>/i);
+            if (found.length > 1 && openingTag) {
+                var storedClass = openingTag[0].match(/\sclass="([^"]*)"/i);
+                var wantClasses = classKey(storedClass ? storedClass[1] : '');
+                var sameClass = found.filter(function (cand) {
+                    return classKey(cand.getAttribute('class')) === wantClasses;
+                });
+                if (sameClass.length) { found = sameClass; }
+            }
         }
 
         if (found.length === 0) {
@@ -1420,6 +1492,13 @@
         if (!base) return;
         var sep    = base.includes('?') ? '&' : '?';
         var url    = base + sep + 'scanId=' + encodeURIComponent(row.dataset.scanId) + '&ruleId=' + encodeURIComponent(row.dataset.ruleId);
+        var showFailed = function () {
+            var loading = expandBody.querySelector('.accessibility-audit-loading');
+            if (loading) {
+                loading.textContent = Craft.t('accessibility-audit', 'Failed to load.');
+                loading.classList.remove('accessibility-audit-loading');
+            }
+        };
         try {
             var res  = await fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
             var data = await res.json();
@@ -1433,9 +1512,11 @@
                 highlightHtmlViewContext(data.occurrences);
                 /* Replace broad-selector highlights with accurate context-based ones */
                 highlightFromOccurrences(data.occurrences, row.dataset.ruleId);
+            } else {
+                showFailed();
             }
         } catch (err) {
-            expandBody.querySelector('.accessibility-audit-loading') && (expandBody.querySelector('.accessibility-audit-loading').textContent = Craft.t('accessibility-audit', 'Failed to load.'));
+            showFailed();
         }
     }
 

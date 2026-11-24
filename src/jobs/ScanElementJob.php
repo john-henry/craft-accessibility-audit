@@ -58,10 +58,10 @@ class ScanElementJob extends BaseJob
 
         $result = AccessibilityAudit::getInstance()->getAudit()->scanElement($element);
 
-        // On the Standard edition the distinct-page cap can refuse a brand-new
+        // On Lite the distinct-page cap can refuse a brand-new
         // page. Treat that as a quiet skip: no exception, no failed job.
         if (!empty($result['limitReached'])) {
-            Craft::info('Scan skipped: Standard edition page limit reached', 'accessibility-audit');
+            Craft::info('Scan skipped: Lite edition page limit reached', 'accessibility-audit');
         }
     }
 

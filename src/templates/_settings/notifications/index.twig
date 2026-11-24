@@ -6,22 +6,23 @@
 {% set crumbs = [] %}
 
 
-{% set fullPageForm = (isPro ?? false) and not (readOnly ?? false) %}
+{% set fullPageForm = (isStandard ?? false) and not (readOnly ?? false) %}
 
 {% block blockContent %}
     {% if readOnly %}<fieldset class="accessibility-audit-readonly" disabled>{% endif %}
  
 
-    {% if not (isPro ?? false) %}
+    {% if not (isStandard ?? false) %}
         {% include 'accessibility-audit/_includes/pro-upsell' with {
             feature: 'Notifications'|t('accessibility-audit'),
             headline: 'Never ship an accessibility regression again'|t('accessibility-audit'),
-            description: 'Pro watches every scan for you and alerts your team the moment something breaks. Plus everything else in Pro:'|t('accessibility-audit'),
+            description: 'Standard watches every scan for you and alerts your team the moment something breaks. Plus everything else in Standard:'|t('accessibility-audit'),
+            edition: 'standard',
             checklist: [
                 'Email & Slack alerts'|t('accessibility-audit'),
-                'VPAT export'|t('accessibility-audit'),
+                'AI alt text'|t('accessibility-audit'),
+                'PDF checks'|t('accessibility-audit'),
                 'Readability analysis'|t('accessibility-audit'),
-                'CI/CD Integration'|t('accessibility-audit'),
             ],
         } only %}
     {% else %}
@@ -49,9 +50,11 @@
         id: 'notifyOnScoreDrop',
         name: 'settings[notifyOnScoreDrop]',
         on: settings.notifyOnScoreDrop,
+        toggle: 'accessibility-audit-score-drop-threshold',
         errors: settings.getErrors('notifyOnScoreDrop'),
     }) }}
 
+    <div id="accessibility-audit-score-drop-threshold"{% if not settings.notifyOnScoreDrop and not settings.hasErrors('notifyScoreDropThreshold') %} class="hidden"{% endif %}>
     {{ forms.textField({
         label: 'Score drop threshold'|t('accessibility-audit'),
         instructions: 'How many points a score has to fall before a notification fires.'|t('accessibility-audit'),
@@ -64,6 +67,7 @@
         max: 100,
         errors: settings.getErrors('notifyScoreDropThreshold'),
     }) }}
+    </div>
 
     <hr>
 
@@ -74,9 +78,11 @@
         id: 'notifyEmailEnabled',
         name: 'settings[notifyEmailEnabled]',
         on: settings.notifyEmailEnabled,
+        toggle: 'accessibility-audit-email-recipients',
         errors: settings.getErrors('notifyEmailEnabled'),
     }) }}
 
+    <div id="accessibility-audit-email-recipients"{% if not settings.notifyEmailEnabled and not settings.hasErrors('notifyEmailRecipients') %} class="hidden"{% endif %}>
     {{ forms.textareaField({
         label: 'Recipients'|t('accessibility-audit'),
         instructions: 'One address per line, or separated by commas. Notifications go to every address listed.'|t('accessibility-audit'),
@@ -87,6 +93,7 @@
         placeholder: 'team@example.com',
         errors: settings.getErrors('notifyEmailRecipients'),
     }) }}
+    </div>
 
     <hr>
 
@@ -97,9 +104,11 @@
         id: 'notifySlackEnabled',
         name: 'settings[notifySlackEnabled]',
         on: settings.notifySlackEnabled,
+        toggle: 'accessibility-audit-slack-webhook',
         errors: settings.getErrors('notifySlackEnabled'),
     }) }}
 
+    <div id="accessibility-audit-slack-webhook"{% if not settings.notifySlackEnabled and not settings.hasErrors('notifySlackWebhookUrl') %} class="hidden"{% endif %}>
     {{ forms.autosuggestField({
         label: 'Incoming webhook URL'|t('accessibility-audit'),
         instructions: 'Create an incoming webhook in Slack and paste its URL here. You can also reference an environment variable: type $ to see suggestions.'|t('accessibility-audit'),
@@ -111,6 +120,7 @@
         placeholder: '$SLACK_WEBHOOK_URL or https://hooks.slack.com/services/…',
         errors: settings.getErrors('notifySlackWebhookUrl'),
     }) }}
+    </div>
 
     <hr>
     

@@ -127,7 +127,7 @@
         // reads red, not a green pill with "Fail" in it.
         var el = document.createElement('span');
         el.className = pass ? 'accessibility-audit-badge-pass' : 'accessibility-audit-badge-fail';
-        el.textContent = pass ? 'Pass' : 'Fail';
+        el.textContent = pass ? Craft.t('accessibility-audit', 'Pass') : Craft.t('accessibility-audit', 'Fail');
         return el;
     }
 
@@ -398,8 +398,8 @@
         var LEVELS = [
             { key: 'aaa',   min: 7,   label: 'AAA',      note: '\u2265 7:1' },
             { key: 'aa',    min: 4.5, label: 'AA',       note: '\u2265 4.5:1' },
-            { key: 'large', min: 3,   label: 'AA Large', note: '\u2265 3:1 \u2014 large text and UI components only' },
-            { key: 'fail',  min: 0,   label: 'Fail',     note: '< 3:1' },
+            { key: 'large', min: 3,   label: Craft.t('accessibility-audit', 'AA Large'), note: '\u2265 3:1 (' + Craft.t('accessibility-audit', 'large text and UI components only') + ')' },
+            { key: 'fail',  min: 0,   label: Craft.t('accessibility-audit', 'Fail'), note: '< 3:1' },
         ];
 
         function levelFor(ratio) {

@@ -28,8 +28,8 @@
                 <button type="button" id="a11y-vpat-undo-record" class="btn">{{ 'Undo last revision'|t('accessibility-audit') }}</button>
             {% endif %}
         {% endif %}
-        <a href="{{ cpUrl('accessibility-audit/vpat/export-openacr', { site: siteHandle }) }}" class="btn">{{ 'Export OpenACR'|t('accessibility-audit') }}</a>
-        <a href="{{ exportUrl }}" target="_blank" class="btn submit">{{ 'Export HTML'|t('accessibility-audit') }}</a>
+        <a href="{{ cpUrl('accessibility-audit/vpat/export-openacr', { site: siteHandle }) }}" id="a11y-vpat-export-openacr" class="btn" data-vpat-export>{{ 'Export OpenACR'|t('accessibility-audit') }}</a>
+        <a href="{{ exportUrl }}" target="_blank" rel="noopener" id="a11y-vpat-export-html" class="btn submit" data-vpat-export>{{ 'Export HTML'|t('accessibility-audit') }}<span class="visually-hidden"> ({{ 'opens in new tab'|t('accessibility-audit') }})</span></a>
     {% endif %}
 {% endblock %}
 
@@ -111,10 +111,10 @@
             <legend class="h6">{{ 'Resources'|t('accessibility-audit') }}</legend>
         <div class="meta accessibility-audit-ref">
         <ul class="accessibility-audit-reflist">
-            <li><a href="https://www.itic.org/policy/accessibility/vpat" target="_blank" rel="noopener">ITI: the official VPAT</a></li>
-            <li><a href="https://www.section508.gov/sell/how-to-create-acr-with-vpat/" target="_blank" rel="noopener">Section508.gov: creating an ACR</a></li>
-            <li><a href="https://www.w3.org/WAI/WCAG22/quickref/" target="_blank" rel="noopener">How to Meet WCAG 2.2 (quick reference)</a></li>
-            <li><a href="https://www.w3.org/WAI/test-evaluate/" target="_blank" rel="noopener">W3C WAI: evaluating accessibility</a></li>
+            <li><a href="https://www.itic.org/policy/accessibility/vpat" target="_blank" rel="noopener">ITI: the official VPAT<span class="visually-hidden"> ({{ 'opens in new tab'|t('accessibility-audit') }})</span></a></li>
+            <li><a href="https://www.section508.gov/sell/how-to-create-acr-with-vpat/" target="_blank" rel="noopener">Section508.gov: creating an ACR<span class="visually-hidden"> ({{ 'opens in new tab'|t('accessibility-audit') }})</span></a></li>
+            <li><a href="https://www.w3.org/WAI/WCAG22/quickref/" target="_blank" rel="noopener">How to Meet WCAG 2.2 (quick reference)<span class="visually-hidden"> ({{ 'opens in new tab'|t('accessibility-audit') }})</span></a></li>
+            <li><a href="https://www.w3.org/WAI/test-evaluate/" target="_blank" rel="noopener">W3C WAI: evaluating accessibility<span class="visually-hidden"> ({{ 'opens in new tab'|t('accessibility-audit') }})</span></a></li>
         </ul>
     </div>
         </fieldset>
@@ -128,11 +128,12 @@
         feature: 'VPAT Conformance Reporting'|t('accessibility-audit'),
         headline: 'Win the contracts that ask for a VPAT'|t('accessibility-audit'),
         description: 'Pro generates a WCAG 2.2 AA conformance report from your live scan data, with per-criterion overrides and a standalone HTML export ready to hand to procurement. Plus everything else in Pro:'|t('accessibility-audit'),
+        edition: 'pro',
         checklist: [
             'VPAT export'|t('accessibility-audit'),
-            'Email & Slack alerts'|t('accessibility-audit'),
-            'Readability analysis'|t('accessibility-audit'),
+            'Multi-site scanning'|t('accessibility-audit'),
             'CI/CD Integration'|t('accessibility-audit'),
+            'Decoupled Frontends'|t('accessibility-audit'),
         ],
     } only %}
 {% else %}
@@ -384,6 +385,23 @@
         {{ 'are pre-filled from your latest scan, and changes save automatically. Give every criterion a real answer before you export; the full guidance is in the panel beside.'|t('accessibility-audit') }}
     </p>
 
+    {% set remarkLevels = ['Not Applicable', 'Partially Supports', 'Does Not Support'] %}
+    {% set allRows = report.levelA|merge(report.levelAA) %}
+    {% set unansweredCount = allRows|filter(r => r.effectiveLevel in ['', 'Not Evaluated'])|length %}
+    {% set missingRemarkCount = allRows|filter(r => r.effectiveLevel in remarkLevels and r.effectiveRemarks|trim == '')|length %}
+    <p class="warning has-icon accessibility-audit-vpat-gaps" id="vpat-gaps"{% if unansweredCount == 0 and missingRemarkCount == 0 %} hidden{% endif %}>
+        <span class="icon" aria-hidden="true"></span>
+        <span id="vpat-gaps-text">
+            {%- if unansweredCount > 0 -%}
+                {{ '{n, plural, =1{# criterion still needs an answer.} other{# criteria still need an answer.}} Unanswered criteria export as Not Evaluated.'|t('accessibility-audit', { n: unansweredCount }) }}
+            {%- endif -%}
+            {%- if unansweredCount > 0 and missingRemarkCount > 0 %} {% endif -%}
+            {%- if missingRemarkCount > 0 -%}
+                {{ '{n, plural, =1{# criterion needs a remark to say why it got that level.} other{# criteria need a remark to say why they got that level.}}'|t('accessibility-audit', { n: missingRemarkCount }) }}
+            {%- endif -%}
+        </span>
+    </p>
+
     {% for level in [
         { key: 'level-a', label: 'Success Criteria, Level A', rows: report.levelA },
         { key: 'level-aa', label: 'Success Criteria, Level AA', rows: report.levelAA },
@@ -403,11 +421,11 @@
                         aria-expanded="true" aria-controls="vpat-{{ level.key }}-body">
                     <span class="accessibility-audit-vpat-card__toggle-label">{{ tableLabel }}</span>
                     <span class="accessibility-audit-vpat-table-count">
-                        {{ rows|length }} criteria
+                        {{ rows|length }} {{ 'criteria'|t('accessibility-audit') }}
                         &nbsp;·&nbsp;
-                        <span class="accessibility-audit-vpat-completed-count">{{ completedCount }}</span> completed<span
+                        <span class="accessibility-audit-vpat-completed-count">{{ completedCount }}</span> {{ 'completed'|t('accessibility-audit') }}<span
                             class="accessibility-audit-vpat-needs-remarks{% if needRemarksCount == 0 %} hidden{% endif %}">&nbsp;·&nbsp;<span
-                            class="accessibility-audit-vpat-needs-remarks-count">{{ needRemarksCount }}</span> awaiting remarks</span>
+                            class="accessibility-audit-vpat-needs-remarks-count">{{ needRemarksCount }}</span> {{ 'awaiting remarks'|t('accessibility-audit') }}</span>
                     </span>
                     <span class="accessibility-audit-vpat-progress" aria-hidden="true">
                         <span class="accessibility-audit-vpat-progress__fill{% if completedCount == rows|length %} accessibility-audit-vpat-progress__fill--complete{% endif %}"
@@ -438,7 +456,7 @@
                         <tr class="accessibility-audit-vpat-row" data-criterion="{{ num }}" data-auto-level="{{ row.autoLevel ?? '' }}">
                             <td class="accessibility-audit-vpat-num">
                                 <a href="{{ row.url }}" target="_blank" rel="noopener"
-                                   title="{{ row.desc|e }}">{{ num }}</a>
+                                   title="{{ row.desc|e }}">{{ num }}<span class="visually-hidden"> ({{ 'opens in new tab'|t('accessibility-audit') }})</span></a>
                                 {% if row.auto == 'automated' %}
                                     <span class="accessibility-audit-vpat-auto-badge accessibility-audit-vpat-auto-badge--full" role="img" title="{{ 'Fully automated detection'|t('accessibility-audit') }}" aria-label="{{ 'Fully automated detection'|t('accessibility-audit') }}">⚡</span>
                                 {% elseif row.auto == 'partial' %}
@@ -496,7 +514,7 @@
                                 <div class="select fullwidth">
                                     <select class="accessibility-audit-vpat-select" data-criterion="{{ num }}"
                                             aria-label="{{ 'Conformance level for {name}'|t('accessibility-audit', { name: row.name }) }}">
-                                        <option value="">{{ '— Select —'|t('accessibility-audit') }}</option>
+                                        <option value="">{{ 'Select…'|t('accessibility-audit') }}</option>
                                         {% for opt in ['Supports', 'Partially Supports', 'Does Not Support', 'Not Applicable', 'Not Evaluated'] %}
                                             <option value="{{ opt }}"
                                                     {% if conformanceValue == opt %}selected{% endif %}>

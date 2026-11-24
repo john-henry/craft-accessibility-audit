@@ -43,15 +43,40 @@ class AccessibilityAudit extends BasePlugin
     // =========================================================================
 
     /**
-     * @var string The Standard edition handle. The scan-count cap applies to
-     * this edition.
+     * @var string The free Lite edition handle, and the lowest edition: a
+     * fresh install starts here. Scanning is capped at self::LITE_SCAN_LIMIT
+     * pages and history at self::LITE_RETENTION_DAYS days.
+     */
+    public const EDITION_LITE = 'lite';
+
+    /**
+     * @var string The Standard edition handle. Scanning is unlimited and
+     * history is kept for up to self::STANDARD_RETENTION_DAYS days.
      */
     public const EDITION_STANDARD = 'standard';
 
     /**
-     * @var string The Pro edition handle. Scanning is unlimited on this edition.
+     * @var string The Pro edition handle. Scanning and history retention are
+     * both unlimited, and every site can be scanned.
      */
     public const EDITION_PRO = 'pro';
+
+    /**
+     * @var int The most distinct pages a Lite install may scan. Re-scanning a
+     * page already scanned never counts against it. An edition boundary, not
+     * a user setting.
+     */
+    public const LITE_SCAN_LIMIT = 25;
+
+    /**
+     * @var int The longest scan-history retention, in days, on Lite.
+     */
+    public const LITE_RETENTION_DAYS = 7;
+
+    /**
+     * @var int The longest scan-history retention, in days, on Standard.
+     */
+    public const STANDARD_RETENTION_DAYS = 90;
 
     // Static Properties
     // =========================================================================
@@ -82,17 +107,52 @@ class AccessibilityAudit extends BasePlugin
     /**
      * @var string The plugin's schema version, used to track migrations.
      */
-    public string $schemaVersion = '1.6.0';
+    public string $schemaVersion = '2.0.0';
 
     // Public Methods
     // =========================================================================
 
     /**
+     * The display name of an edition, for messages and upgrade prompts.
+     *
+     * Edition names are product names, the same in every language the
+     * Plugin Store shows them in, so they are not translated.
+     *
+     * @param string $edition One of the EDITION_* handles.
+     * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public static function editionName(string $edition): string
+    {
+        return match ($edition) {
+            self::EDITION_LITE => 'Lite',
+            self::EDITION_STANDARD => 'Standard',
+            default => 'Pro',
+        };
+    }
+
+    /**
+     * Whether AI alt text can run: Standard or higher, with an Anthropic API
+     * key set.
+     *
+     * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function canGenerateAltText(): bool
+    {
+        return $this->isStandard()
+            && trim((string)App::parseEnv($this->getSettings()->anthropicApiKey)) !== '';
+    }
+
+    /**
      * Whether the active edition is Pro.
      *
-     * The single check the whole plugin routes its Pro-only feature gating
-     * through, so the edition comparison lives in one place rather than being
-     * repeated as `->is(self::EDITION_PRO)` across every controller and service.
+     * The check every Pro-only feature routes through, so the edition
+     * comparison lives in one place.
      *
      * @return bool
      *
@@ -102,6 +162,51 @@ class AccessibilityAudit extends BasePlugin
     public function isPro(): bool
     {
         return $this->is(self::EDITION_PRO);
+    }
+
+    /**
+     * Whether the active edition is Standard or higher.
+     *
+     * The check every feature Lite lacks routes through. Pro passes it too.
+     *
+     * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function isStandard(): bool
+    {
+        return $this->is(self::EDITION_STANDARD, '>=');
+    }
+
+    /**
+     * The longest scan history the active edition keeps, in days.
+     *
+     * @return int|null The cap in days, or null where retention is unlimited.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function retentionCap(): ?int
+    {
+        return match (true) {
+            $this->isPro() => null,
+            $this->isStandard() => self::STANDARD_RETENTION_DAYS,
+            default => self::LITE_RETENTION_DAYS,
+        };
+    }
+
+    /**
+     * The most distinct pages the active edition may scan.
+     *
+     * @return int|null The cap, or null where scanning is unlimited.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function scanLimit(): ?int
+    {
+        return $this->isStandard() ? null : self::LITE_SCAN_LIMIT;
     }
 
     /**
@@ -144,6 +249,10 @@ class AccessibilityAudit extends BasePlugin
         // and is dropped without a word.
         $this->_registerPermissions();
 
+        // Every request: the HTTP server answers on a site URL, and the stdio
+        // server is a console command.
+        $this->_registerMcpTools();
+
         if (Craft::$app->getRequest()->getIsCpRequest()) {
             $this->_registerWidgets();
             $this->_registerCpAssets();
@@ -167,7 +276,7 @@ class AccessibilityAudit extends BasePlugin
         if ($settings->scanOnSave) {
             $this->_registerScanOnSave();
         }
-        if ($settings->autoGenerateAlt && !empty(trim((string)App::parseEnv($settings->anthropicApiKey)))) {
+        if ($settings->autoGenerateAlt && $this->canGenerateAltText()) {
             $this->_registerAutoGenerateAlt();
         }
     }

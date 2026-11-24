@@ -1,0 +1,69 @@
+{% import '_includes/forms' as forms %}
+{% set folderPath = (asset.folder.path ?? '')|trim('/') %}
+{% set draft = draft ?? null %}
+
+<div class="accessibility-audit-alt-editor" data-asset-id="{{ asset.id }}"{% if draft %} data-draft="{{ draft|json_encode|e }}"{% endif %}>
+    {{ hiddenInput('assetId', asset.id) }}
+
+    <figure class="accessibility-audit-alt-editor__preview">
+        {{ asset.getPreviewThumbImg(640, 360)|raw }}
+    </figure>
+    <p class="light smalltext accessibility-audit-alt-editor__meta">
+        {{ asset.filename }}
+        {% if asset.width %}&middot; {{ asset.width }}×{{ asset.height }}{% endif %}
+        &middot; {{ asset.volume.name }}{% if folderPath %}/{{ folderPath }}{% endif %}
+    </p>
+
+    <div class="accessibility-audit-alt-editor__alt"{% if decorative %} hidden{% endif %}>
+        {{ forms.textareaField({
+            label: 'Alt text'|t('accessibility-audit'),
+            instructions: 'Say what the image shows and why it is there. Leave out “image of”, as screen readers already announce it as an image.'|t('accessibility-audit'),
+            id: 'altText',
+            name: 'altText',
+            value: currentAlt,
+            rows: 3,
+            describedBy: 'altText-instructions altText-count',
+            inputAttributes: { class: ['accessibility-audit-alt-editor__input'] },
+        }) }}
+        <p id="altText-count" class="light smalltext accessibility-audit-alt-editor__count" role="status" aria-live="polite"></p>
+
+        {% if hasApiKey or draft %}
+            <div class="accessibility-audit-alt-editor__ai">
+                <div class="flex">
+                    {% if hasApiKey %}
+                        {{ forms.button({
+                            label: 'Generate with AI'|t('accessibility-audit'),
+                            icon: 'sparkles',
+                            spinner: true,
+                            class: ['accessibility-audit-alt-editor__generate'],
+                        }) }}
+                    {% endif %}
+                    {% if draft %}
+                        {{ forms.button({
+                            label: 'Discard draft'|t('accessibility-audit'),
+                            spinner: true,
+                            class: ['chromeless', 'accessibility-audit-alt-editor__discard'],
+                        }) }}
+                    {% endif %}
+                    <span class="light smalltext accessibility-audit-alt-editor__status" role="status" aria-live="polite"></span>
+                </div>
+                <div class="accessibility-audit-alt-editor__reasons" hidden>
+                    <p class="smalltext warning has-icon"><span class="icon" aria-hidden="true"></span><strong>{{ 'Check before saving'|t('accessibility-audit') }}</strong></p>
+                    <ul class="smalltext"></ul>
+                </div>
+                <div class="accessibility-audit-alt-editor__suggestion" role="region" aria-label="{{ 'AI suggestions'|t('accessibility-audit') }}" tabindex="-1" hidden>
+                    <ul class="accessibility-audit-alt-editor__options"></ul>
+                    <button type="button" class="btn small chromeless accessibility-audit-alt-editor__dismiss">{{ 'Dismiss'|t('app') }}</button>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+
+    {{ forms.lightswitchField({
+        label: 'Decorative'|t('accessibility-audit'),
+        instructions: 'Only for images that carry no information, such as a texture or a divider. Screen readers skip them, so they need no alt text.'|t('accessibility-audit'),
+        id: 'decorative',
+        name: 'decorative',
+        on: decorative,
+    }) }}
+</div>

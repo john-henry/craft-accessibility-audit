@@ -3,7 +3,7 @@ import globals from 'globals'
 
 export default [
   {
-    ignores: ['src/resources/axe/**', '**/dist/**'],
+    ignores: ['src/resources/axe/**', 'src/resources/pdfjs/**', '**/dist/**'],
   },
   js.configs.recommended,
   {

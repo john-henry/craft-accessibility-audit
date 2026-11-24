@@ -113,7 +113,7 @@ class OverlayController extends Controller
      * extension-based default caching may hold it at the edge for the short
      * max-age below. The heavy assets it references are Craft-published URLs
      * whose paths change on update, so a cached loader can't pin old code for
-     * longer than that window. On the Standard edition, or with the feature
+     * longer than that window. Below Pro, or with the feature
      * switched off, a no-op stub is served instead so front-end builds never
      * break on a licence or settings change.
      *

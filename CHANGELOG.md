@@ -1,5 +1,92 @@
 # Release Notes for Accessibility Audit
 
+## 2.0.0 - 2026-11-04
+
+> [!IMPORTANT]
+> Things to check when you update:
+> - The plugin now has three editions: Lite, Standard and Pro. New installs start on the free Lite edition, and existing sites keep the edition they're on.
+> - `getAssets()->scanAsset()` is gone. Read PDF results from `getPdfAudit()`, and image alt text issues from the Assets listing methods.
+> - The `accessibility-audit/alt/save` controller action is gone. Alt text is saved through `accessibility-audit/alt/save-screen` now.
+> - The `AuditService::STANDARD_SCAN_LIMIT` and `AuditService::STANDARD_RETENTION_CAP` constants are gone. Read the caps from the plugin's `scanLimit()` and `retentionCap()`.
+> - Generate for New Assets now saves its drafts for review instead of writing alt text to the image. Change the New uploads setting if you want alt text saved straight to the image.
+
+### Added
+- PDF checks, on Standard and Pro. Every PDF in the asset library is checked for the failures a machine can settle for itself: tags, language, title, form field names, images with no alt text, security settings that block screen readers, and a few more.
+- With server-side browser scanning set up, PDFs also get their structure checked: headings, tables, lists, links, and alt text that says nothing.
+- The Assets page lists each PDF once with the checks it fails, forms first, under All issues, Need fixing, Couldn't be checked and Passed, with a filter by problem.
+- Each PDF has its own page listing every failing check with how to fix it, a sidebar with the file's details and a summary of the checks it fails and passes, and a Re-check button. Files that couldn't be checked say why.
+- PDFs are checked when they're uploaded and when the file is replaced.
+- Check all PDFs on the Assets page, and the `accessibility-audit/audit/check-pdfs` console command, check the PDFs already in the library.
+- Check PDF Files and Largest PDF to Check (MB) settings, under Settings → Scanning.
+- Draft alt text on the Assets page has Claude draft alt text in the background for every image missing it, in one volume or the lot. It asks first, and the drafts are saved for review, not to the images.
+- A Drafts to review source on the Assets page lists the waiting drafts. Review opens each one with its Standard version already in the Alt text field and the other versions and notes beside it, so you can save it, swap it, edit it, or discard the draft.
+- On the Assets page, an image with a draft waiting shows Craft's draft icon and a Review button, and its own edit screen opens with the draft ready to pick from.
+- Approve drafts, under Drafts to review, saves the Standard version as alt text on every selected image Claude raised nothing about. Flagged drafts are left for you to check.
+- The VPAT screen tells you how many criteria still need an answer or a remark.
+- Export OpenACR and Export HTML ask before exporting a VPAT that still has gaps.
+- An info icon beside the Overview's average page score explains how pages are scored.
+- Every rule now has a short title in plain words, with its rule ID beside it in small type.
+- A rule's page has a How to fix pane: plain advice for the plugin's own rules, and a link to Deque's guide for axe-core rules.
+- Each page listed on a rule's page expands to show that rule's occurrences on it, with the markup and selector.
+- The frontend overlay shows the lowest contrast ratio found for a contrast issue, with its text and background colours.
+- The Issues tab can be sorted by occurrences and points, and searched by title or rule ID.
+- Download fix guide, on Standard and Pro, gives you a Markdown to-do list for the site, a rule or a page, with an AI prompt for each developer fix.
+- Tools for Craft's MCP server, on Standard and Pro with Craft 5.12 or later: an AI assistant can read the accessibility summary, the open rules and how to fix them, and a page's issues, and can re-scan a page.
+- After updating, admins get a note under What's New in the control panel about the editions and PDF checks.
+
+### Changed
+- Findings on a rule's page, in the page report and in the entry sidebar are easier to scan, with the contrast ratio picked out and the colours on their own line, each with a swatch.
+- Lite, the new free edition, scans up to 25 pages on the primary site and keeps 7 days of history. It has scoring, EN 301 549, issues by rule and page, potential issues, page reports and Inspect, template and resolved issues, the admin and frontend overlays, colour tools, the accessibility statement, scan on save and the console commands.
+- Standard has everything in Lite, scans any number of pages, keeps 90 days of history, and adds server-side browser scanning, AI alt text, PDF checks, email and Slack notifications, and readability.
+- Pro has everything in Standard, keeps history for as long as you like, and adds multi-site scanning and reporting, VPAT conformance reporting, the CI/CD endpoint, the decoupled frontend overlay and a permanent record of resolved issues.
+- Sites already on Standard get server-side browser scanning, PDF checks, notifications and readability, lose the 100-page cap, and keep 90 days of history instead of 30.
+- Upgrade prompts now name the edition a feature needs, Standard or Pro.
+- Edition refusals from the plugin's JSON endpoints, the CI/CD endpoint included, now carry an `editionRequired` key naming the edition needed.
+- The plugin now pulls in `tecnickcom/tc-lib-pdf-parser` and `tecnickcom/tc-lib-pdf-filter` (both LGPL-3.0-or-later) through Composer, and bundles pdf.js (Apache-2.0).
+- The Assets page is laid out like Craft's own asset index, with sources down the side and the search and filters in one bar.
+- Add alt and Rewrite on the Assets page open the image in a side panel, with a large preview and Save and next to move down the list, instead of editing in the row.
+- Generate with AI, in that panel and on an asset's own edit screen, now offers three versions to pick from (Short, Standard and Detailed) with notes on anything to check before saving, instead of writing straight into the field.
+- Mark decorative and Clear decorative for selected images now sit in the footer under the list, as Craft's own actions do, and selected rows are highlighted.
+- The Overview's assets panel now covers images and PDFs, counts drafts waiting for review, links each number to its list, and offers the next step.
+- The All filter on the Assets page is now the All issues source, and lists the images and PDFs with something to fix.
+- AI alt text aims for one short sentence ending with a full stop, follows set rules for people, logos, charts and text in images, takes account of the entry an image is used in, names well-known artworks and landmarks for you to confirm, and no longer calls artworks decorative.
+- An AI draft that runs past 150 characters is flagged for you to shorten instead of being cut off part way through.
+- Generate for New Assets now saves its drafts under Drafts to review by default, instead of saving alt text to the image. A new New uploads setting brings back saving straight to the image when Claude has nothing for you to check.
+- Regenerating the CI or overlay token now asks before the old token stops working.
+- Settings that only apply while a switch is on are hidden until it is.
+- People who aren't admins see "Ask an admin to upgrade" in place of an upgrade button they can't use.
+- The Overview's level cards now lead with the number of criteria failing, with the pages' average for that level underneath, and the target level says so in its label.
+- Owner labels read Content, Design, Development and Technical everywhere, under one Owner heading.
+- A potential issue's page is titled with its question and no longer shows points to gain.
+- Columns that said Count now say Occurrences, and the Potential issues Pages tab says Question types and Needs review, matching the page report.
+- About this rule now says what the rule checks, and an axe-core rule's page links to the plugin's own rule of the same name where there is one.
+- The Ignored Rule IDs setting lists every rule the plugin's own checks can report, grouped by kind, and says how to name an axe-core rule.
+
+### Removed
+- `getAssets()->scanAsset()`. PDF results come from `getPdfAudit()` now, and image alt text issues from the Assets listing methods.
+- The `accessibility-audit/alt/save` controller action. The alt text panel saves through `accessibility-audit/alt/save-screen`.
+- Generate all alt text and Save all drafts on the Assets page. Draft alt text and Drafts to review do the job across the whole library now.
+
+### Fixed
+- The frontend overlay's grey text (the score label, each issue's details and the scan time) now meets the 4.5:1 contrast minimum.
+- Severity and difficulty markers no longer get squashed when a rule's title wraps onto two lines.
+- Server-side browser scans wait for web fonts and skip animations to their end before checking, so text caught halfway through a fade-in is no longer reported for colour contrast, and the same page gives the same results from one scan to the next.
+- Occurrences in the page report can now be picked with the keyboard, not only the mouse.
+- Screen readers now announce the upgrade button by the words it shows, and the locked-feature notices have an upgrade link for admins.
+- Occurrence detail that fails to load in the page report now says so, instead of showing Loading… for good.
+- Analyse every page on the Readability screen can be used again once the analysis finishes.
+- The entry sidebar no longer shows "analysed ." when a readability result has no date.
+- The dashboard widget no longer shows an empty row when there are no errors or warnings.
+- Links that open in a new tab now say so to screen readers.
+- Status messages, labels and criteria counts on the VPAT, page report and Colour Tools screens now show in the control panel's language.
+- On multi-site installs, assets that exist in only some sites are now listed, scanned, checked and given AI alt text. From Craft 5.12, a volume set to let each asset choose its sites saves a new upload to the site it was uploaded from only.
+- New uploads in a volume left out of the audit no longer get AI alt text.
+- The EN 301 549 note on the Overview is now at normal text size.
+- Severity dots in the issue tables are now read out to screen readers in the control panel's language.
+- Re-scan, Re-analyse and View report buttons in the page tables now tell screen readers which page they're for.
+- Show on page in the page report now finds the table behind a data or layout table question, and links and headings whose text was cut short or spaced differently.
+- An ignored axe-core or contrast rule no longer counts against page scores and error counts, or shows on the page report and entry sidebar.
+
 ## 1.6.0 - 2026-10-08
 
 ### Added

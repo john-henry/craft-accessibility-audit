@@ -504,7 +504,7 @@ class ReadabilityService extends Component
      */
     public function recordElementText(ElementInterface $element): bool
     {
-        if (!AccessibilityAudit::getInstance()->isPro()) {
+        if (!AccessibilityAudit::getInstance()->isStandard()) {
             return false;
         }
 

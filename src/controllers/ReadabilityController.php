@@ -78,19 +78,19 @@ class ReadabilityController extends Controller
         $siteHandle = AccessibilityAudit::getInstance()->requestedSite()->handle;
         $sites = AccessibilityAudit::getInstance()->allowedSites();
 
-        // Readability is a Pro-only feature. The page is reachable from the CP
-        // nav, so render an upsell state on Standard rather than throwing. The
+        // Readability needs Standard or higher. The page is reachable from the
+        // CP nav, so render an upsell state on Lite rather than throwing. The
         // stats/results queries only run when they'll actually be shown.
-        $isPro = AccessibilityAudit::getInstance()->isPro();
+        $isStandard = AccessibilityAudit::getInstance()->isStandard();
 
         // Analysing fetches a page and can reach the Anthropic API, so the
         // controls for it are shown only to whoever is allowed to do that.
         // Reading the results stays on the viewing permission.
         $canRunScans = Craft::$app->getUser()->checkPermission('accessibility-audit:run-scans');
 
-        if (!$isPro) {
+        if (!$isStandard) {
             return $this->renderTemplate('accessibility-audit/readability', [
-                'isPro' => false,
+                'isStandard' => false,
                 'canRunScans' => $canRunScans,
                 'siteId' => $siteId,
                 'siteHandle' => $siteHandle,
@@ -101,7 +101,7 @@ class ReadabilityController extends Controller
         $service = AccessibilityAudit::getInstance()->getReadability();
 
         return $this->renderTemplate('accessibility-audit/readability', [
-            'isPro' => true,
+            'isStandard' => true,
             'canRunScans' => $canRunScans,
             'stats' => $service->getStats($siteId),
             'supportsSite' => $service->supportsSite($siteId),
@@ -130,7 +130,7 @@ class ReadabilityController extends Controller
         $this->requireAcceptsJson();
         $this->requirePermission('accessibility-audit:run-scans');
 
-        if (($refusal = $this->requireProJson('Readability analysis')) !== null) {
+        if (($refusal = $this->requireStandardJson('Readability analysis')) !== null) {
             return $refusal;
         }
 
@@ -177,7 +177,7 @@ class ReadabilityController extends Controller
         $this->requirePostRequest();
         $this->requirePermission('accessibility-audit:run-scans');
 
-        if (($refusal = $this->requireProJson('Readability analysis')) !== null) {
+        if (($refusal = $this->requireStandardJson('Readability analysis')) !== null) {
             return $refusal;
         }
 
@@ -227,7 +227,7 @@ class ReadabilityController extends Controller
         // the reading tier's, whatever the results are used for afterwards.
         $this->requirePermission('accessibility-audit:run-scans');
 
-        if (($refusal = $this->requireProJson('Readability analysis')) !== null) {
+        if (($refusal = $this->requireStandardJson('Readability analysis')) !== null) {
             return $refusal;
         }
 
@@ -341,7 +341,7 @@ class ReadabilityController extends Controller
         // Same tier as actionAnalyse, and for the same reason.
         $this->requirePermission('accessibility-audit:run-scans');
 
-        if (($refusal = $this->requireProJson('Readability analysis')) !== null) {
+        if (($refusal = $this->requireStandardJson('Readability analysis')) !== null) {
             return $refusal;
         }
 
@@ -458,7 +458,7 @@ class ReadabilityController extends Controller
         // Split so the log and a dev-mode error page say which of the two it
         // was. The messages never reach a production visitor, who gets the 404
         // template either way.
-        if (!$plugin->isPro() || !$plugin->getSettings()->readabilityPreviewTarget) {
+        if (!$plugin->isStandard() || !$plugin->getSettings()->readabilityPreviewTarget) {
             throw new NotFoundHttpException('The readability preview is switched off for this site.');
         }
 

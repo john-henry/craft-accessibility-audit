@@ -10,21 +10,21 @@ use Craft;
 use craft\db\Query;
 use craft\elements\Asset;
 use craft\errors\ImageTransformException;
-use craft\errors\InvalidFieldException;
+use craft\errors\SiteNotFoundException;
 use craft\helpers\App;
 use craft\queue\BaseJob;
 use craft\queue\Queue;
 use Exception;
 use GuzzleHttp\Exception\ClientException;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
-use johnhenry\accessibilityaudit\helpers\AltTextPrompt;
-use johnhenry\accessibilityaudit\helpers\ImageSource;
-use johnhenry\accessibilityaudit\helpers\VisionImage;
+use johnhenry\accessibilityaudit\services\AssetScanner;
 use Throwable;
 
 /**
- * Generates alt text for a single image asset via the Anthropic API
- * and saves it to the configured alt text field.
+ * Drafts alt text for a newly uploaded image via the Anthropic API. The draft
+ * waits for an editor to review, or, where the New uploads setting asks for it
+ * and Claude flagged nothing to check, its Standard version is saved to the
+ * image. Existing alt text is never overwritten.
  *
  * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
@@ -35,7 +35,7 @@ class GenerateAltTextJob extends BaseJob
     // =========================================================================
 
     /**
-     * @var int The ID of the asset to generate alt text for.
+     * @var int The ID of the asset to draft alt text for.
      */
     public int $assetId = 0;
 
@@ -44,13 +44,13 @@ class GenerateAltTextJob extends BaseJob
 
     /**
      * @inheritdoc
-     * @throws InvalidFieldException
-     * @throws Exception
+     * @throws Exception When the API refuses the request.
      * @throws ImageTransformException
+     * @throws SiteNotFoundException
      */
     public function execute($queue): void
     {
-        $asset = Asset::find()->id($this->assetId)->one();
+        $asset = AssetScanner::findAsset($this->assetId);
 
         // instanceof, not a truthiness check: one() is signed to hand back an
         // array as well as an element, so a falsy test would let one through to
@@ -60,58 +60,37 @@ class GenerateAltTextJob extends BaseJob
         }
 
         $plugin = AccessibilityAudit::getInstance();
-        $settings = $plugin->getSettings();
-        $apiKey = trim((string)App::parseEnv($settings->anthropicApiKey));
+        $apiKey = trim((string)App::parseEnv($plugin->getSettings()->anthropicApiKey));
 
-        if (!$apiKey) {
-            Craft::warning('A11y: GenerateAltTextJob skipped, no API key configured.', 'accessibility-audit');
+        if (!$plugin->canGenerateAltText()) {
+            Craft::warning('A11y: GenerateAltTextJob skipped, AI alt text needs the Standard edition and an API key.', 'accessibility-audit');
             return;
         }
 
-        // Don't overwrite existing alt text
-        $altField = $settings->altTextField ?: 'alt';
-        $currentAlt = $altField === 'alt' ? ($asset->alt ?? '') : ($asset->getFieldValue($altField) ?? '');
-        if (!empty(trim((string) $currentAlt))) {
-            return;
-        }
-
-        $imageSource = ImageSource::for($asset, 'alt job');
-        if (!$imageSource) {
-            Craft::warning(
-                VisionImage::isVector($asset)
-                    ? 'A11y: GenerateAltTextJob: could not render SVG asset ' . $this->assetId . ' for description.'
-                    : 'A11y: GenerateAltTextJob: could not resolve image source for asset ' . $this->assetId,
-                'accessibility-audit',
-            );
+        // Alt text written before the job ran is never second-guessed, and an
+        // image that is decorative, excluded or already drafted needs nothing.
+        $drafts = $plugin->getAltDrafts();
+        if (!$drafts->needsDraft($asset)) {
             return;
         }
 
         try {
-            $altText = AltTextPrompt::draft($apiKey, $imageSource, $asset, $settings);
-
-            if (!$altText) {
-                Craft::warning('A11y: GenerateAltTextJob: empty response from API for asset ' . $this->assetId, 'accessibility-audit');
+            $draft = $this->requestDraft($asset, $apiKey);
+            if ($draft === null) {
                 return;
             }
 
-            if ($altField === 'alt') {
-                $asset->alt = $altText;
-            } else {
-                $asset->setFieldValue($altField, $altText);
-            }
-
-            Craft::$app->getElements()->saveElement($asset, false);
-            Craft::info('A11y: Auto-generated alt text for asset ' . $this->assetId . ': ' . $altText, 'accessibility-audit');
+            $outcome = $drafts->settleNewUpload($asset, $draft, $plugin->getSettings()->newAssetAltMode);
+            Craft::info("A11y: GenerateAltTextJob settled the alt text draft for asset {$this->assetId}: {$outcome}.", 'accessibility-audit');
         } catch (ClientException $e) {
             // Rethrow API refusals (credit balance, invalid key, rate limit)
             // instead of swallowing them, so they surface as failed jobs.
-            $body = json_decode((string)$e->getResponse()->getBody(), true);
-            $reason = $body['error']['message'] ?? $e->getMessage();
+            $reason = self::refusalReason($e);
             Craft::error('A11y: GenerateAltTextJob refused for asset ' . $this->assetId . ': ' . $reason, 'accessibility-audit');
 
             // A billing refusal hits every sibling job the same way, so cancel
             // the rest of the batch. A rate limit (429) is transient, so it doesn't.
-            if ($this->_isBillingRefusal($e, $reason)) {
+            if (self::isBillingRefusal($e, $reason)) {
                 $cancelled = self::cancelPendingJobs();
                 if ($cancelled > 0) {
                     $reason .= ' ' . "Cancelled {$cancelled} pending alt text job(s), since they would all be refused the same way.";
@@ -170,8 +149,22 @@ class GenerateAltTextJob extends BaseJob
         return count($ids);
     }
 
-    // Private Methods
-    // =========================================================================
+    /**
+     * The error message Anthropic gave with a refusal, or the exception's own
+     * where the body carries none.
+     *
+     * @param ClientException $e The refusal.
+     * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public static function refusalReason(ClientException $e): string
+    {
+        $body = json_decode((string)$e->getResponse()->getBody(), true);
+
+        return (string)($body['error']['message'] ?? $e->getMessage());
+    }
 
     /**
      * Whether an API refusal is a billing one: HTTP 400 with Anthropic's
@@ -183,9 +176,9 @@ class GenerateAltTextJob extends BaseJob
      * @return bool
      *
      * @author John Henry Donovan <info@johnhenry.ie>
-     * @since 1.0.0
+     * @since 2.0.0
      */
-    private function _isBillingRefusal(ClientException $e, string $reason): bool
+    public static function isBillingRefusal(ClientException $e, string $reason): bool
     {
         return $e->getResponse()->getStatusCode() === 400
             && stripos($reason, 'credit balance') !== false;
@@ -195,19 +188,27 @@ class GenerateAltTextJob extends BaseJob
     // =========================================================================
 
     /**
+     * Asks Claude for the image's draft.
+     *
+     * @param Asset $asset The image.
+     * @param string $apiKey The resolved API key.
+     * @return array{alt: string, imageType: string, reviewReasons: list<string>, failure: string|null, variants: list<array{key: string, alt: string, tooLong: bool}>}|null
+     *         The draft, or null where the image could not be read.
+     * @throws Throwable When the API request or the image read fails.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    protected function requestDraft(Asset $asset, string $apiKey): ?array
+    {
+        return AccessibilityAudit::getInstance()->getAltDrafts()->requestDraft($asset, $apiKey);
+    }
+
+    /**
      * @inheritdoc
      */
     protected function defaultDescription(): ?string
     {
-        return Craft::t('accessibility-audit', 'Generating alt text for image');
+        return Craft::t('accessibility-audit', 'Drafting alt text for image');
     }
-
-    // Private Methods
-    // =========================================================================
-    /**
-     * Returns whether the given URL is local / non-public.
-     *
-     * @param string $url The URL to test.
-     * @return bool
-     */
 }

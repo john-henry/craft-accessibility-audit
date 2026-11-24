@@ -2,144 +2,304 @@
 
 {% set title = 'Asset Accessibility'|t('accessibility-audit') %}
 {% set selectedSubnavItem = 'assets' %}
+{% set isStandard = isStandard ?? false %}
+{% set pdfEnabled = pdfEnabled ?? false %}
+{% set pdfView = pdfView ?? false %}
+{% set pdfStats = pdfStats ?? null %}
+{% set pdfStatus = pdfStatus ?? 'issues' %}
+{% set draftsView = activeFilter == 'drafts' %}
+{% set draftCount = draftCount ?? 0 %}
+{% set failedDraftCount = failedDraftCount ?? 0 %}
+{% set pendingDraftCount = pendingDraftCount ?? 0 %}
+{% set draftingRunning = draftingRunning ?? false %}
 {% set crumbs = [
     { label: 'Accessibility Audit'|t('accessibility-audit'), url: cpUrl('accessibility-audit') },
     { label: title },
 ] %}
 
+{% set issueGroups = {
+    'asset-alt-missing':  { label: 'Missing alt'|t('accessibility-audit'),        severity: 'warning', rows: [] },
+    'asset-alt-filename': { label: 'Filename as alt'|t('accessibility-audit'),     severity: 'warning', rows: [] },
+    'asset-alt-short':    { label: 'Very short alt'|t('accessibility-audit'),      severity: 'notice',  rows: [] },
+} %}
+
+{% if activeFilter == 'decorative' %}
+    {% set groups = {
+        'decorative': { label: 'Decorative'|t('accessibility-audit'), severity: 'notice', rows: [] },
+    } %}
+    {% for row in assetIssues %}
+        {% set groups = groups|merge({
+            'decorative': groups['decorative']|merge({
+                rows: groups['decorative'].rows|merge([{ asset: row.asset, currentAlt: row.currentAlt ?? '', decorative: true }]),
+            }),
+        }) %}
+    {% endfor %}
+{% elseif draftsView %}
+    {% set groups = {
+        'drafts': { label: 'Drafts to review'|t('accessibility-audit'), severity: 'notice', rows: assetIssues },
+    } %}
+{% else %}
+    {% set groups = issueGroups %}
+    {% for row in assetIssues %}
+        {% for issue in row.issues %}
+            {% if groups[issue.ruleId] is defined %}
+                {% set groups = groups|merge({
+                    (issue.ruleId): groups[issue.ruleId]|merge({
+                        rows: groups[issue.ruleId].rows|merge([{ asset: row.asset, issue: issue, currentAlt: row.currentAlt, decorative: row.decorative ?? false }]),
+                    }),
+                }) %}
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+{% endif %}
+
+{% set siteParam = craft.app.request.getQueryParam('site') %}
+{% set allCount = storedStats ? storedStats.withIssues : (activeFilter in ['decorative', 'drafts'] ? 0 : assetIssues|length) %}
+{% set filterBase = { site: siteParam, volume: currentVolume, search: currentSearch }|filter(v => v) %}
+{% set pdfSourcesOn = isStandard and pdfEnabled and pdfStats %}
+
 {% block actionButton %}
 <div class="flex gap-s">
-    {% if canRunScans %}
-    
-        <form method="post">
-            {{ csrfInput() }}
-            {{ actionInput('accessibility-audit/audit/scan-assets') }}
-            {{ redirectInput(url('accessibility-audit/assets')) }}
-            <button type="submit" class="btn">{{ 'Scan all assets'|t('accessibility-audit') }}</button>
-        </form>
-    {% endif %}
-    {% if assetIssues|length > 0 and activeFilter != 'decorative' %}
-    <button id="accessibility-audit-save-all" class="btn" hidden>
-        {{ 'Save all drafts'|t('accessibility-audit') }}
-        (<span id="accessibility-audit-save-all-count">0</span>)
-    </button>
-    {% endif %}
-    {% if assetIssues|length > 0 and hasApiKey and activeFilter != 'decorative' %}
-    <button id="accessibility-audit-generate-all" class="btn submit">
-        <span class="cp-icon small" aria-hidden="true">{{ iconSvg('sparkles') }}</span>
-        {{ 'Generate all alt text'|t('accessibility-audit') }}
-    </button>
+    {% if pdfView %}
+        {% if canRunScans and pdfEnabled %}
+            <form method="post">
+                {{ csrfInput() }}
+                {{ actionInput('accessibility-audit/audit/check-pdfs') }}
+                {{ redirectInput(url('accessibility-audit/assets', { filter: 'pdf' })) }}
+                <button type="submit" class="btn submit">{{ 'Check all PDFs'|t('accessibility-audit') }}</button>
+            </form>
+        {% endif %}
+    {% else %}
+        {% if canRunScans %}
+            <form method="post">
+                {{ csrfInput() }}
+                {{ actionInput('accessibility-audit/audit/scan-assets') }}
+                {{ redirectInput(url('accessibility-audit/assets')) }}
+                <button type="submit" class="btn">{{ 'Scan all assets'|t('accessibility-audit') }}</button>
+            </form>
+        {% endif %}
+        {% if canRunScans and hasApiKey and not draftingRunning and pendingDraftCount > 0 %}
+            <form method="post" id="accessibility-audit-draft-form" data-confirm="{{ 'Draft alt text for {n, plural, =1{# image} other{# images}} using your Anthropic API key? Drafts are saved for review, not to the images.'|t('accessibility-audit', { n: pendingDraftCount }) }}">
+                {{ csrfInput() }}
+                {{ actionInput('accessibility-audit/alt/queue-drafts') }}
+                {{ redirectInput(url('accessibility-audit/assets', filterBase|merge(activeFilter ? { filter: activeFilter } : {}))) }}
+                {% if currentVolume %}{{ hiddenInput('volume', currentVolume) }}{% endif %}
+                <button type="submit" class="btn submit">
+                    {{ 'Draft alt text'|t('accessibility-audit') }}
+                </button>
+            </form>
+        {% endif %}
     {% endif %}
 </div>
 {% endblock %}
 
-{% block main %}
-<div>
-    
-    
-       
-        {% if not hasApiKey %}
-    <p class="light mb-l">
-            <a href="{{ url('accessibility-audit/settings') }}" class="go">{{ 'Add an Anthropic API key to enable AI alt text generation.'|t('accessibility-audit') }}</a>
-    </p>
-        {% endif %}
-    
-
-
-    {% set issueGroups = {
-        'asset-alt-missing':  { label: 'Missing alt'|t('accessibility-audit'),        severity: 'warning', desc: 'these images are invisible to screen readers unless they are decorative'|t('accessibility-audit'), rows: [] },
-        'asset-alt-filename': { label: 'Filename as alt'|t('accessibility-audit'),     severity: 'warning', desc: 'alt text looks auto-generated from the filename'|t('accessibility-audit'),   rows: [] },
-        'asset-alt-short':    { label: 'Very short alt'|t('accessibility-audit'),      severity: 'notice',  desc: 'very short alt text may not describe the image'|t('accessibility-audit'),    rows: [] },
-        'pdf-accessibility':  { label: 'PDF accessibility'|t('accessibility-audit'),   severity: 'notice',  desc: 'PDF files need a manual accessibility review'|t('accessibility-audit'),      rows: [] },
-    } %}
-
-    {% if activeFilter == 'decorative' %}
-        {% set groups = {
-            'decorative': { label: 'Decorative'|t('accessibility-audit'), severity: 'notice', desc: 'these images are marked decorative and correctly carry no alt text'|t('accessibility-audit'), rows: [] },
-        } %}
-        {% for row in assetIssues %}
-            {% set groups = groups|merge({
-                'decorative': groups['decorative']|merge({
-                    rows: groups['decorative'].rows|merge([{ asset: row.asset, currentAlt: row.currentAlt ?? '', decorative: true }]),
-                }),
-            }) %}
-        {% endfor %}
-    {% else %}
-        {% set groups = issueGroups %}
-        {% for row in assetIssues %}
-            {% for issue in row.issues %}
-                {% if groups[issue.ruleId] is defined %}
-                    {% set groups = groups|merge({
-                        (issue.ruleId): groups[issue.ruleId]|merge({
-                            rows: groups[issue.ruleId].rows|merge([{ asset: row.asset, issue: issue, currentAlt: row.currentAlt, decorative: row.decorative ?? false }]),
-                        }),
-                    }) %}
+{% block sidebar %}
+    {% set pdfSources = pdfSourcesOn ? {
+        'issues': { label: 'All issues'|t('accessibility-audit'), count: pdfStats.withIssues + pdfStats.notChecked },
+        'needs-fixing': { label: 'Need fixing'|t('accessibility-audit'), count: pdfStats.withIssues },
+        'not-checked': { label: 'Couldn’t be checked'|t('accessibility-audit'), count: pdfStats.notChecked },
+        'passed': { label: 'Passed'|t('accessibility-audit'), count: pdfStats.passed },
+    } : {} %}
+    <nav aria-label="{{ 'Asset sources'|t('accessibility-audit') }}">
+        <ul>
+            <li class="heading"><span>{{ 'Images'|t('accessibility-audit') }}</span></li>
+            {% set selected = not pdfView and not activeFilter %}
+            <li>
+                <a href="{{ url('accessibility-audit/assets', filterBase) }}"{% if selected %} class="sel" aria-current="page"{% endif %}>
+                    <span class="label">{{ 'All issues'|t('accessibility-audit') }}</span>
+                    <span class="badge">{{ allCount }}</span>
+                </a>
+            </li>
+            {% for ruleId, group in issueGroups %}
+                {% set ruleCount = storedStats ? (storedStats.byRule[ruleId] ?? 0) : (activeFilter in ['decorative', 'drafts'] ? 0 : group.rows|length) %}
+                {% if ruleCount > 0 or activeFilter == ruleId %}
+                    {% set selected = activeFilter == ruleId %}
+                    <li>
+                        <a href="{{ url('accessibility-audit/assets', filterBase|merge({ filter: ruleId })) }}"{% if selected %} class="sel" aria-current="page"{% endif %}>
+                            <span class="label">{{ group.label }}</span>
+                            <span class="badge">{{ ruleCount }}</span>
+                        </a>
+                    </li>
                 {% endif %}
             {% endfor %}
-        {% endfor %}
-    {% endif %}
+            {% if draftCount > 0 or draftsView %}
+                <li>
+                    <a href="{{ url('accessibility-audit/assets', filterBase|merge({ filter: 'drafts' })) }}"{% if draftsView %} class="sel" aria-current="page"{% endif %}>
+                        <span class="label">{{ 'Drafts to review'|t('accessibility-audit') }}</span>
+                        <span class="badge" id="accessibility-audit-draft-count">{{ draftCount }}</span>
+                    </a>
+                </li>
+            {% endif %}
+            {% if decorativeCount > 0 or activeFilter == 'decorative' %}
+                {% set selected = activeFilter == 'decorative' %}
+                <li>
+                    <a href="{{ url('accessibility-audit/assets', filterBase|merge({ filter: 'decorative' })) }}"{% if selected %} class="sel" aria-current="page"{% endif %}>
+                        <span class="label">{{ 'Decorative'|t('accessibility-audit') }}</span>
+                        <span class="badge" id="accessibility-audit-decorative-count">{{ decorativeCount }}</span>
+                    </a>
+                </li>
+            {% endif %}
 
-   
-    {% set siteParam = craft.app.request.getQueryParam('site') %}
-    {% set hasIssues = (storedStats and storedStats.withIssues > 0) or (activeFilter != 'decorative' and assetIssues|length > 0) %}
-    {% set hasDecorative = decorativeCount > 0 %}
-    {% set allCount = storedStats ? storedStats.withIssues : (activeFilter == 'decorative' ? 0 : assetIssues|length) %}
-    {% if hasIssues or hasDecorative or volumes|length > 1 or currentSearch %}
-        <div class="accessibility-audit-toolbar mb-m">
-            {% if hasIssues or hasDecorative %}
-
-                {% set filterBase = {} %}
-                {% if siteParam %}{% set filterBase = filterBase|merge({site: siteParam}) %}{% endif %}
-                {% if currentVolume %}{% set filterBase = filterBase|merge({volume: currentVolume}) %}{% endif %}
-                {% if currentSearch %}{% set filterBase = filterBase|merge({search: currentSearch}) %}{% endif %}
-                <div class="btngroup accessibility-audit-asset-filters" role="group" aria-label="{{ 'Filter by issue type'|t('accessibility-audit') }}">
-                    <a href="{{ url('accessibility-audit/assets', filterBase) }}" class="btn accessibility-audit-asset-filter{% if not activeFilter %} active{% endif %}"{% if not activeFilter %} aria-current="page"{% endif %}>{{ 'All'|t('accessibility-audit') }} <span class="badge"> {{ allCount }}</span></a>
-                    {% for ruleId, group in issueGroups %}
-                        {% set ruleCount = storedStats ? (storedStats.byRule[ruleId] ?? 0) : (activeFilter == 'decorative' ? 0 : group.rows|length) %}
-                        {% if ruleCount > 0 %}
-                            <a href="{{ url('accessibility-audit/assets', filterBase|merge({filter: ruleId})) }}" class="btn accessibility-audit-asset-filter{% if activeFilter == ruleId %} active{% endif %}"{% if activeFilter == ruleId %} aria-current="page"{% endif %}>{{ group.label }} <span class="badge">  {{ ruleCount }}</span></a>
-                        {% endif %}
-                    {% endfor %}
-                    {% if hasDecorative %}
-                        <a href="{{ url('accessibility-audit/assets', filterBase|merge({filter: 'decorative'})) }}" class="btn accessibility-audit-asset-filter{% if activeFilter == 'decorative' %} active{% endif %}"{% if activeFilter == 'decorative' %} aria-current="page"{% endif %}>{{ 'Decorative'|t('accessibility-audit') }} <span class="badge" id="accessibility-audit-decorative-count">  {{ decorativeCount }}</span></a>
+            <li class="heading"><span>{{ 'PDFs'|t('accessibility-audit') }}</span></li>
+            {% if pdfSources is empty %}
+                <li>
+                    <a href="{{ url('accessibility-audit/assets', filterBase|merge({ filter: 'pdf' })) }}"{% if pdfView %} class="sel" aria-current="page"{% endif %}>
+                        <span class="label">{{ 'PDF checks'|t('accessibility-audit') }}</span>
+                    </a>
+                </li>
+            {% else %}
+                {% for status, source in pdfSources %}
+                    {% if source.count > 0 or status in ['issues', 'needs-fixing'] or (pdfView and pdfStatus == status) %}
+                        {% set selected = pdfView and pdfStatus == status %}
+                        {% set params = filterBase|merge({ filter: 'pdf' })|merge(status == 'issues' ? {} : { status: status }) %}
+                        <li>
+                            <a href="{{ url('accessibility-audit/assets', params) }}"{% if selected %} class="sel" aria-current="page"{% endif %}>
+                                <span class="label">{{ source.label }}</span>
+                                <span class="badge">{{ source.count }}</span>
+                            </a>
+                        </li>
                     {% endif %}
-                </div>
+                {% endfor %}
             {% endif %}
-            <span class="accessibility-audit-spacer"></span>
-       
-            <form method="get" class="accessibility-audit-asset-search" role="search">
-                {% if siteParam %}<input type="hidden" name="site" value="{{ siteParam }}">{% endif %}
-                {% if currentVolume %}<input type="hidden" name="volume" value="{{ currentVolume }}">{% endif %}
-                <div class="texticon search icon clearable">
-                    <input type="text" class="text" name="search" value="{{ currentSearch }}" placeholder="{{ 'Search filenames'|t('accessibility-audit') }}" autocomplete="off" aria-label="{{ 'Search filenames'|t('accessibility-audit') }}">
-                </div>
-                <noscript><button type="submit" class="btn">{{ 'Search'|t('app') }}</button></noscript>
-            </form>
-            {% if volumes|length > 1 %}
-                <form method="get" class="accessibility-audit-asset-volume">
-                    {% if siteParam %}<input type="hidden" name="site" value="{{ siteParam }}">{% endif %}
-                    {% if currentSearch %}<input type="hidden" name="search" value="{{ currentSearch }}">{% endif %}
-                    <label for="accessibility-audit-volume-filter" class="accessibility-audit-meta">{{ 'Volume'|t('accessibility-audit') }}</label>
-                    <div class="select">
-                        <select id="accessibility-audit-volume-filter" name="volume">
-                            <option value="">{{ 'All volumes'|t('accessibility-audit') }}</option>
-                            {% for volume in volumes %}
-                                <option value="{{ volume.handle }}"{% if volume.handle == currentVolume %} selected{% endif %}>{{ volume.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <noscript><button type="submit" class="btn">{{ 'Filter'|t('app') }}</button></noscript>
-                </form>
-            {% endif %}
-        </div>
-    {% endif %}
+        </ul>
+    </nav>
+{% endblock %}
 
-    {% if assetIssues|length == 0 %}
-        <div class="pane accessibility-audit-assets-empty zilch">
+{% block toolbar %}
+    {% set pdfFiltersOn = pdfView and pdfSourcesOn %}
+    {% if not pdfView or pdfFiltersOn %}
+        <form method="get" id="accessibility-audit-asset-toolbar" class="flex flex-nowrap flex-grow" role="search">
+            {% if siteParam %}{{ hiddenInput('site', siteParam) }}{% endif %}
+            {% if pdfView %}
+                {{ hiddenInput('filter', 'pdf') }}
+                {% if pdfStatus != 'issues' %}{{ hiddenInput('status', pdfStatus) }}{% endif %}
+            {% elseif activeFilter %}
+                {{ hiddenInput('filter', activeFilter) }}
+            {% endif %}
+            <div class="flex-grow texticon search icon clearable">
+                <input type="text" class="text fullwidth" name="search" value="{{ currentSearch }}" placeholder="{{ 'Search filenames'|t('accessibility-audit') }}" autocomplete="off" aria-label="{{ 'Search filenames'|t('accessibility-audit') }}">
+            </div>
+            {% if pdfFiltersOn and (pdfProblemOptions ?? {}) is not empty %}
+                <div class="select">
+                    <select name="problem" aria-label="{{ 'Problem'|t('accessibility-audit') }}">
+                        <option value="">{{ 'Any problem'|t('accessibility-audit') }}</option>
+                        {% for ruleId, option in pdfProblemOptions %}
+                            <option value="{{ ruleId }}"{% if ruleId == (pdfProblem ?? null) %} selected{% endif %}>{{ '{label} ({count})'|t('accessibility-audit', { label: option.label, count: option.count }) }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            {% endif %}
+            {% if volumes|length > 1 %}
+                <div class="select">
+                    <select name="volume" aria-label="{{ 'Volume'|t('accessibility-audit') }}">
+                        <option value="">{{ 'All volumes'|t('accessibility-audit') }}</option>
+                        {% for volume in volumes %}
+                            <option value="{{ volume.handle }}"{% if volume.handle == currentVolume %} selected{% endif %}>{{ volume.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            {% endif %}
+            <noscript><button type="submit" class="btn">{{ 'Filter'|t('app') }}</button></noscript>
+        </form>
+        {% js %}
+        (function () {
+          'use strict';
+          var form = document.getElementById('accessibility-audit-asset-toolbar');
+          if (!form) return;
+          form.querySelectorAll('select').forEach(function (select) {
+            select.addEventListener('change', function () { form.submit(); });
+          });
+        })();
+        {% endjs %}
+    {% endif %}
+{% endblock %}
+
+{% block footer %}
+    {% if pdfView %}
+        {% if isStandard and pdfEnabled and pdfStats %}
+            {% import 'accessibility-audit/_macros' as macros %}
+            <div class="flex">
+                <span class="accessibility-audit-meta">
+                    {{ '{n, plural, =1{# PDF} other{# PDFs}}'|t('accessibility-audit', { n: pdfStats.total }) }}
+                    {% if pdfStats.lastChecked %}&middot; {{ 'last checked {date}'|t('accessibility-audit', { date: pdfStats.lastChecked|date('short') }) }}{% endif %}
+                    &middot; <a href="https://johnhenry.ie/plugins/accessibility-audit/docs/guide/pdf-checks" target="_blank" rel="noopener">{{ 'How PDF checks work'|t('accessibility-audit') }}{{ macros.newTabNote() }}</a>
+                </span>
+            </div>
+            <div class="flex">
+                {% if (pdfPageInfo ?? null) and (pdfTotalPages ?? 0) > 1 %}
+                    {% include '_includes/pagination' with {
+                        pageInfo: pdfPageInfo,
+                        itemLabel: 'PDF'|t('accessibility-audit'),
+                        itemsLabel: 'PDFs'|t('accessibility-audit'),
+                    } only %}
+                {% endif %}
+            </div>
+        {% endif %}
+    {% elseif assetIssues|length %}
+            {% set issueCount = stats.withIssues ?? 0 %}
+            <div class="flex">
+                <span class="accessibility-audit-meta">
+                    {{ '{total} images scanned'|t('accessibility-audit', {total: stats.total}) }}
+                    &middot;
+                    {% if issueCount == -1 %}
+                        {{ 'issue count needs a scan on a library this size'|t('accessibility-audit') }}
+                    {% else %}
+                        {{ '{count} with issues'|t('accessibility-audit', {count: issueCount}) }}
+                    {% endif %}
+                    {% if storedStats %}&middot; {{ 'last scanned {date}'|t('accessibility-audit', {date: storedStats.dateScanned|date('short')}) }}{% endif %}
+                </span>
+            </div>
+            <div id="accessibility-audit-bulk-bar" class="flex" hidden>
+                <span class="visually-hidden" id="accessibility-audit-bulk-count" role="status" aria-live="polite"></span>
+                {% if draftsView %}
+                    <button type="button" class="btn secondary accessibility-audit-bulk-approve">{{ 'Approve drafts'|t('accessibility-audit') }}</button>
+                {% endif %}
+                <button type="button" class="btn secondary accessibility-audit-bulk-mark">{{ 'Mark decorative'|t('accessibility-audit') }}</button>
+                {% if not draftsView %}
+                    <button type="button" class="btn secondary accessibility-audit-bulk-clear">{{ 'Clear decorative'|t('accessibility-audit') }}</button>
+                {% endif %}
+            </div>
+            <div class="flex">
+                {% if totalPages > 1 %}
+                    {% include '_includes/pagination' with {
+                        pageInfo: pageInfo,
+                        itemLabel: 'image'|t('accessibility-audit'),
+                        itemsLabel: 'images'|t('accessibility-audit'),
+                    } only %}
+                {% endif %}
+                <a href="{{ cpUrl('assets') }}" class="go">{{ 'Open asset library'|t('accessibility-audit') }}</a>
+            </div>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+    {% if not isStandard and not pdfView %}
+        <div class="mb-l">
+            {% include 'accessibility-audit/_includes/pro-upsell' with {
+                feature: 'AI alt text'|t('accessibility-audit'),
+                text: 'Draft alt text for your images with Claude, one at a time or the whole missing-alt list in one go, with every draft kept for review. Available on the Standard edition.'|t('accessibility-audit'),
+                edition: 'standard',
+                inline: true,
+            } only %}
+        </div>
+    {% elseif not hasApiKey and not pdfView %}
+        <p class="light mb-l">
+            <a href="{{ url('accessibility-audit/settings') }}" class="go">{{ 'Add an Anthropic API key to enable AI alt text generation.'|t('accessibility-audit') }}</a>
+        </p>
+    {% endif %}
+    {% if draftingRunning and not pdfView %}
+        <p class="light mb-m" role="status">{{ 'Drafting alt text in the background. Drafts appear under Drafts to review as they are ready.'|t('accessibility-audit') }}</p>
+    {% endif %}
+    {% if draftsView and failedDraftCount > 0 %}
+        <p class="light mb-m">{{ '{n, plural, =1{# image} other{# images}} couldn’t be drafted. They stay under Missing alt to write by hand, and Draft alt text tries them again.'|t('accessibility-audit', { n: failedDraftCount }) }}</p>
+    {% endif %}
+    {% if not pdfView and assetIssues|length == 0 %}
+        <div class="accessibility-audit-assets-empty zilch">
             {% if activeFilter == 'decorative' %}
                 <p>{{ 'No images marked decorative.'|t('accessibility-audit') }}</p>
+            {% elseif draftsView %}
+                <p>{{ 'No drafts to review.'|t('accessibility-audit') }}</p>
             {% elseif storedStats is null %}
-
                 <p>{{ 'No asset scan has run yet'|t('accessibility-audit') }}</p>
                 <p class="light">{{ 'Run “Scan all assets” to check every image for alt text. It runs in the background as your queue processes.'|t('accessibility-audit') }}</p>
             {% elseif currentSearch %}
@@ -150,20 +310,10 @@
                 <p>{{ 'All images have alt text, nice work!'|t('accessibility-audit') }}</p>
             {% endif %}
         </div>
-    {% else %}
-        <div id="accessibility-audit-generate-progress" class="light mb-m" role="status" aria-live="polite" hidden></div>
+    {% elseif not pdfView %}
+        <div id="accessibility-audit-assets-groups" data-view="{{ activeFilter }}">
 
-        <div id="accessibility-audit-bulk-bar" class="accessibility-audit-bulk-bar mb-m" role="region" aria-label="{{ 'Selected'|t('app') }}" hidden>
-            <span class="accessibility-audit-bulk-count" id="accessibility-audit-bulk-count" role="status" aria-live="polite"></span>
-            <span class="accessibility-audit-spacer"></span>
-            <button type="button" class="btn small accessibility-audit-bulk-mark">{{ 'Mark decorative'|t('accessibility-audit') }}</button>
-            <button type="button" class="btn small accessibility-audit-bulk-clear">{{ 'Clear decorative'|t('accessibility-audit') }}</button>
-            <button type="button" class="btn small accessibility-audit-bulk-deselect">{{ 'Clear selection'|t('accessibility-audit') }}</button>
-        </div>
-
-        <div id="accessibility-audit-assets-groups" class="pane" style="padding:0;overflow:hidden" data-view="{{ activeFilter }}">
-
-            <div class="accessibility-audit-table-scroll">
+            <div class="tableview tablepane">
                 <table class="data fullwidth">
                 <thead>
                     <tr>
@@ -171,67 +321,63 @@
                             <input type="checkbox" id="accessibility-audit-select-all" class="checkbox" aria-label="{{ 'Select all images'|t('accessibility-audit') }}">
                             <label for="accessibility-audit-select-all"></label>
                         </th>
-                        <th scope="col" style="width:56px"><span class="visually-hidden">{{ 'Thumbnail'|t('accessibility-audit') }}</span></th>
                         <th scope="col">{{ 'Asset'|t('accessibility-audit') }}</th>
-                        <th scope="col">{{ 'Alt text'|t('accessibility-audit') }}</th>
-                        <th scope="col" style="width:120px">{{ 'Decorative'|t('accessibility-audit') }}</th>
+                        <th scope="col">{{ 'Filename'|t('app') }}</th>
+                        {% if draftsView %}
+                            <th scope="col">{{ 'Draft'|t('accessibility-audit') }}</th>
+                        {% else %}
+                            {% if not activeFilter %}
+                                <th scope="col">{{ 'Problem'|t('accessibility-audit') }}</th>
+                            {% endif %}
+                            <th scope="col">{{ 'Decorative'|t('accessibility-audit') }}</th>
+                        {% endif %}
                         <th scope="col"><span class="visually-hidden">{{ 'Actions'|t('accessibility-audit') }}</span></th>
                     </tr>
                 </thead>
                 {% for ruleId, group in groups %}
                     {% if group.rows|length > 0 %}
-                        {% set firstIssue = group.rows|first.issue ?? null %}
                         <tbody class="accessibility-audit-asset-group" data-rule="{{ ruleId }}">
-                            <tr class="accessibility-audit-asset-band">
-                                <td colspan="6">
-                                    <span class="accessibility-audit-rowline" style="gap:8px">
-                                        <span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--{{ group.severity }}" aria-hidden="true" title="{{ group.label }}"></span>
-                                        <strong>{{ group.label }}</strong>
-                                        <span class="light">&middot; {% if ruleId == 'decorative' %}<span id="accessibility-audit-decorative-band-count">{{ group.rows|length }}</span>{% else %}{{ group.rows|length }}{% endif %}</span>
-                                        <span class="light">{{ group.desc }}</span>
-                                        <span class="accessibility-audit-spacer"></span>
-                                        {% if firstIssue and firstIssue.wcagCriterion %}
-                                            <span class="light">{{ 'WCAG {c} · Level {l}'|t('accessibility-audit', { c: firstIssue.wcagCriterion, l: firstIssue.wcagLevel ?? 'A' }) }}</span>
-                                        {% endif %}
-                                    </span>
-                                </td>
-                            </tr>
                             {% for item in group.rows %}
                                 {% set asset = item.asset %}
-                                {% set thumbUrl = asset.kind == 'image' ? asset.getUrl({width:104,height:104}) : null %}
-                       
-                                {% set currentAlt = item.currentAlt ?? '' %}
                                 {% set isFilename = ruleId == 'asset-alt-filename' %}
-                                {% set isImageRow = ruleId != 'pdf-accessibility' %}
                                 {% set isDecorative = item.decorative ?? false %}
+                                {% set hasDraft = not draftsView and asset.id in (draftedIds ?? []) %}
                                 <tr class="accessibility-audit-asset-item{% if isDecorative %} accessibility-audit-asset-item--decorative{% endif %}" data-asset-id="{{ asset.id }}" data-rule="{{ ruleId }}">
                                     <td class="checkbox-cell thin">
-                                        {% if isImageRow %}
-                                            <input type="checkbox" id="accessibility-audit-select-{{ asset.id }}" class="checkbox accessibility-audit-row-select" aria-label="{{ 'Select image'|t('accessibility-audit') }}" data-asset-id="{{ asset.id }}">
-                                            <label for="accessibility-audit-select-{{ asset.id }}"></label>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <span class="accessibility-audit-asset-thumb"{% if thumbUrl %} style="background-image:url('{{ thumbUrl|e }}');background-size:cover;background-position:center"{% endif %} aria-hidden="true">
-                                            {% if not thumbUrl %}
-                                                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="3" width="16" height="14" rx="2" stroke="#8A8178" stroke-width="1.5"/><circle cx="7" cy="8" r="1.5" fill="#8A8178"/><path d="M2 14l4-4 3 3 4-5 5 6" stroke="#8A8178" stroke-width="1.5"/></svg>
-                                            {% endif %}
-                                        </span>
+                                        <input type="checkbox" id="accessibility-audit-select-{{ asset.id }}" class="checkbox accessibility-audit-row-select" aria-label="{{ 'Select image'|t('accessibility-audit') }}" data-asset-id="{{ asset.id }}">
+                                        <label for="accessibility-audit-select-{{ asset.id }}"></label>
                                     </td>
                                     <th scope="row">
-                                        <a href="{{ asset.cpEditUrl }}">{{ asset.title ?: asset.filename }}</a>
-                                        <div class="light" style="font-size:11px">{% if asset.width %}{{ asset.width }}×{{ asset.height }} &middot; {% endif %}{{ asset.volume.name ?? '' }}</div>
-                                    </th>
-                                    <td class="accessibility-audit-asset-alt">
-                                        {% if isFilename or ruleId == 'asset-alt-short' %}
-                                            <span class="accessibility-audit-filename-alt">"{{ currentAlt }}"</span>
+                                        {% if hasDraft %}
+                                            <span class="flex flex-nowrap accessibility-audit-has-draft">
+                                                <span data-icon="draft" class="icon" role="img" aria-label="{{ 'Alt text draft waiting for review'|t('accessibility-audit') }}" title="{{ 'Alt text draft waiting for review'|t('accessibility-audit') }}"></span>
+                                                {{ elementChip(asset, { showStatus: false, hyperlink: true, attributes: { class: ['chromeless'] } }) }}
+                                            </span>
                                         {% else %}
-                                            <span class="accessibility-audit-no-alt">{{ 'No alt text'|t('accessibility-audit') }}</span>
+                                            {{ elementChip(asset, { showStatus: false, hyperlink: true, attributes: { class: ['chromeless'] } }) }}
                                         {% endif %}
-                                        <span class="accessibility-audit-decorative-note"{% if not isDecorative %} hidden{% endif %}>{{ 'Marked decorative, no alt text needed.'|t('accessibility-audit') }}</span>
-                                    </td>
-                                    <td class="accessibility-audit-asset-decorative">
-                                        {% if isImageRow %}
+                                    </th>
+                                    <td>{{ asset.filename }}</td>
+                                    {% if draftsView %}
+                                        <td class="accessibility-audit-draft-cell">
+                                            <span class="accessibility-audit-draft-text">{{ item.draft.standardAlt }}</span>
+                                            {% if item.notes is not empty %}
+                                                <span class="token accessibility-audit-problem"><span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--warning" aria-hidden="true"></span>{{ 'Check'|t('accessibility-audit') }}</span>
+                                                <ul class="light smalltext accessibility-audit-draft-notes">
+                                                    {% for note in item.notes %}
+                                                        <li>{{ note }}</li>
+                                                    {% endfor %}
+                                                </ul>
+                                            {% endif %}
+                                        </td>
+                                        <td class="accessibility-audit-asset-action">
+                                            <button type="button" class="btn small accessibility-audit-edit-btn" data-asset-id="{{ asset.id }}">{{ 'Review'|t('accessibility-audit') }}</button>
+                                        </td>
+                                    {% else %}
+                                        {% if not activeFilter %}
+                                            <td><span class="token accessibility-audit-problem"><span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--{{ group.severity }}" aria-hidden="true"></span>{{ group.label }}</span></td>
+                                        {% endif %}
+                                        <td class="accessibility-audit-asset-decorative">
                                             <button type="button"
                                                     class="accessibility-audit-decorative-switch{% if isDecorative %} on{% endif %}"
                                                     role="switch"
@@ -240,15 +386,14 @@
                                                     data-asset-id="{{ asset.id }}">
                                                 <span class="accessibility-audit-decorative-switch__knob"></span>
                                             </button>
-                                        {% endif %}
-                                    </td>
-                                    <td class="accessibility-audit-asset-action">
-                                        <button type="button" class="btn small accessibility-audit-edit-btn"{% if isDecorative %} hidden{% endif %}
-                                                data-asset-id="{{ asset.id }}"
-                                                data-value="{{ currentAlt|e('html_attr') }}">
-                                            {{ isFilename ? 'Rewrite'|t('accessibility-audit') : 'Add alt'|t('accessibility-audit') }}
-                                        </button>
-                                    </td>
+                                        </td>
+                                        <td class="accessibility-audit-asset-action">
+                                            <button type="button" class="btn small accessibility-audit-edit-btn"{% if isDecorative %} hidden{% endif %}
+                                                    data-asset-id="{{ asset.id }}">
+                                                {{ hasDraft ? 'Review'|t('accessibility-audit') : (isFilename ? 'Rewrite'|t('accessibility-audit') : 'Add alt'|t('accessibility-audit')) }}
+                                            </button>
+                                        </td>
+                                    {% endif %}
                                 </tr>
                             {% endfor %}
                         </tbody>
@@ -256,55 +401,47 @@
                 {% endfor %}
             </table>
             </div>
-
-
-            {% set issueCount = stats.withIssues ?? 0 %}
-            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:14px 20px;border-top:1px solid var(--aa-border-section)">
-                <span class="accessibility-audit-meta">
-                    {{ '{total} images scanned'|t('accessibility-audit', {total: stats.total}) }}
-                    &middot;
-                    {% if issueCount == -1 %}
-                        {{ 'issue count needs a scan on a library this size'|t('accessibility-audit') }}
-                    {% else %}
-                        {{ '{count} with issues'|t('accessibility-audit', {count: issueCount}) }}
-                    {% endif %}
-                    {% if storedStats %}&middot; {{ 'last scanned {date}'|t('accessibility-audit', {date: storedStats.dateScanned|date('short')}) }}{% endif %}
-                    <span id="accessibility-audit-asset-draft-stat" hidden>&middot; <span id="accessibility-audit-asset-draft-count">0</span> {{ 'draft pending review'|t('accessibility-audit') }}</span>
-                </span>
-                <span class="accessibility-audit-spacer"></span>
-                {% if totalPages > 1 %}
-                    {% include '_includes/pagination' with {
-                        pageInfo: pageInfo,
-                        itemLabel: 'image'|t('accessibility-audit'),
-                        itemsLabel: 'images'|t('accessibility-audit'),
-                    } only %}
-                {% endif %}
-                <a href="{{ cpUrl('assets') }}" class="go">{{ 'Open asset library'|t('accessibility-audit') }}</a>
-            </div>
         </div>
     {% endif %}
 
-</div>
+    {% if pdfView %}
+        {% include 'accessibility-audit/_assets/pdfs' with {
+            isStandard: isStandard,
+            pdfEnabled: pdfEnabled,
+            pdfStats: pdfStats,
+            pdfStatus: pdfStatus,
+            pdfProblem: pdfProblem ?? null,
+            pdfRows: pdfRows ?? [],
+            pdfReasons: pdfReasons ?? {},
+            pdfPageInfo: pdfPageInfo ?? null,
+            pdfTotalPages: pdfTotalPages ?? 0,
+            filterBase: filterBase,
+        } only %}
+    {% endif %}
 
 {% js %}
 (function () {
   const generateUrl     = {{ actionUrl('accessibility-audit/alt/generate')|json_encode|raw }};
-  const saveUrl         = {{ actionUrl('accessibility-audit/alt/save')|json_encode|raw }};
+  const discardDraftUrl = {{ actionUrl('accessibility-audit/alt/discard-draft')|json_encode|raw }};
   const setDecorativeUrl = {{ actionUrl('accessibility-audit/alt/set-decorative')|json_encode|raw }};
   const setDecorativeBulkUrl = {{ actionUrl('accessibility-audit/alt/set-decorative-bulk')|json_encode|raw }};
+  const approveDraftsUrl = {{ actionUrl('accessibility-audit/alt/approve-drafts')|json_encode|raw }};
+  const networkError = {{ 'Network error. Check your connection and try again.'|t('accessibility-audit')|json_encode|raw }};
   const csrfName    = window.Craft ? Craft.csrfTokenName  : (window.csrfTokenName  || 'CRAFT_CSRF_TOKEN');
   const csrfValue   = window.Craft ? Craft.csrfTokenValue : (window.csrfTokenValue || '');
-  const sparkleIcon = {{ iconSvg('sparkles')|json_encode|raw }};
 
   // The length the long-alt check reports on, so the field counts against the
   // number the report will quote back. Not a cap: Craft's own alt field sets
   // no limit, and truncating an editor mid-description to a number the rule
   // does not even use would be its own bug.
   const ALT_GUIDELINE = {{ altGuideline|json_encode|raw }};
-  const checkIcon   = {{ iconSvg('check')|json_encode|raw }};
   const activeView = {{ activeFilter|json_encode|raw }};
   const emptyAllHaveAlt   = {{ 'All images now have alt text, nice work!'|t('accessibility-audit')|json_encode|raw }};
   const emptyNoDecorative = {{ 'No images marked decorative.'|t('accessibility-audit')|json_encode|raw }};
+  const emptyNoDrafts     = {{ 'No drafts left to review.'|t('accessibility-audit')|json_encode|raw }};
+  const emptyMessage = activeView === 'decorative'
+    ? emptyNoDecorative
+    : (activeView === 'drafts' ? emptyNoDrafts : emptyAllHaveAlt);
 
   function post(url, data) {
     const fd = new FormData();
@@ -326,140 +463,181 @@
   /* Shared with cp.js and the frontend overlay via accessibility-audit-shared.js */
   var esc = window.AccessibilityAuditShared.escHtml;
 
-  (function () {
-    const select = document.getElementById('accessibility-audit-volume-filter');
-    if (select && select.form) {
-      select.addEventListener('change', () => select.form.submit());
-    }
-  })();
-
-  function updateDraftCount() {
-    const count = document.querySelectorAll('.accessibility-audit-alt-input--pending').length;
-    const stat  = document.getElementById('accessibility-audit-asset-draft-stat');
-    const out    = document.getElementById('accessibility-audit-asset-draft-count');
-    if (out) out.textContent = String(count);
-    if (stat) stat.hidden = count === 0;
-
-    // Save all only exists while there is something to save, so the action bar
-    // does not carry a dead button on a page with no open editors.
-    const saveAll      = document.getElementById('accessibility-audit-save-all');
-    const saveAllCount = document.getElementById('accessibility-audit-save-all-count');
-    const saveable     = draftRows().length;
-    if (saveAllCount) saveAllCount.textContent = String(saveable);
-    if (saveAll) saveAll.hidden = saveable === 0;
-  }
-
-  /* Rows with an open editor holding text worth saving. An editor left empty
-     is skipped: saving it would write a blank alt over whatever is there. */
-  function draftRows() {
-    return [...document.querySelectorAll('.accessibility-audit-asset-item')].filter((row) => {
-      const input = row.querySelector('.accessibility-audit-alt-input');
-      return input && input.value.trim() !== '';
+  // Drafting spends API credit on every image in the count, so it asks first.
+  const draftForm = document.getElementById('accessibility-audit-draft-form');
+  if (draftForm) {
+    draftForm.addEventListener('submit', (e) => {
+      if (!window.confirm(draftForm.dataset.confirm)) e.preventDefault();
     });
   }
 
-  const hasApiKey = {{ hasApiKey ? 'true' : 'false' }};
+  // Counts up rather than down. There is no ceiling to run out of, and the
+  // useful number when trimming is how far past the guideline the text sits,
+  // which is what the report quotes.
+  function renderCount(input, out) {
+    const n = [...input.value].length;
+    const over = n - ALT_GUIDELINE;
 
-  function openEditor(row, value) {
-    const assetId = row.dataset.assetId;
-    const altCell = row.querySelector('.accessibility-audit-asset-alt');
-    const actCell = row.querySelector('.accessibility-audit-asset-action');
-    // Guard against re-opening an already-open row.
-    if (!altCell || !actCell || row.querySelector('.accessibility-audit-alt-input')) return;
-
-    row._restAlt = altCell.innerHTML;
-    row._restAct = actCell.innerHTML;
-
-    const labelId = 'accessibility-audit-alt-' + esc(String(assetId));
-    altCell.innerHTML =
-      '<label for="' + labelId + '" class="visually-hidden">{{ 'Alt text'|t('accessibility-audit') }}</label>' +
-      '<input type="text" id="' + labelId + '" class="text accessibility-audit-alt-input accessibility-audit-alt-input--pending" ' +
-      'aria-describedby="' + labelId + '-count" ' +
-      'placeholder="{{ 'Describe what the image shows…'|t('accessibility-audit') }}" value="' + esc(value || '') + '">' +
-      '<span class="accessibility-audit-alt-count light" id="' + labelId + '-count" role="status" aria-live="polite"></span>';
-
-    actCell.innerHTML =
-      (hasApiKey
-        ? '<button type="button" class="btn accessibility-audit-icon-btn accessibility-audit-gen-btn" title="{{ 'Generate with AI'|t('accessibility-audit') }}" aria-label="{{ 'Generate with AI'|t('accessibility-audit') }}"><span class="cp-icon small" aria-hidden="true">' + sparkleIcon + '</span></button>'
-        : '') +
-      '<button type="button" class="btn submit accessibility-audit-save-btn">{{ 'Save'|t('app') }}</button>' +
-      '<button type="button" class="btn accessibility-audit-icon-btn accessibility-audit-cancel-btn" title="{{ 'Cancel'|t('app') }}" aria-label="{{ 'Cancel'|t('app') }}"><span data-icon="remove" aria-hidden="true"></span></button>';
-
-    const altInput = altCell.querySelector('.accessibility-audit-alt-input');
-    const altCount = altCell.querySelector('.accessibility-audit-alt-count');
-
-    // Counts up rather than down. There is no ceiling to run out of, and the
-    // useful number when trimming is how far past the guideline the text sits,
-    // which is what the report quotes.
-    const renderAltCount = () => {
-      const n = [...altInput.value].length;
-      const over = n - ALT_GUIDELINE;
-
-      altCount.textContent = over > 0
-        ? Craft.t('accessibility-audit', '{n} characters, {over} over', { n: n, over: over })
-        : Craft.t('accessibility-audit', '{n} characters', { n: n });
-      altCount.classList.toggle('accessibility-audit-alt-count--low', over > 0);
-    };
-
-    altInput.addEventListener('input', renderAltCount);
-    renderAltCount();
-    altInput.focus();
-    updateDraftCount();
+    out.textContent = over > 0
+      ? Craft.t('accessibility-audit', '{n} characters, {over} over', { n: n, over: over })
+      : Craft.t('accessibility-audit', '{n} characters', { n: n });
+    out.classList.toggle('accessibility-audit-alt-count--low', over > 0);
   }
 
-  function closeEditor(row) {
-    if (row._restAlt != null) row.querySelector('.accessibility-audit-asset-alt').innerHTML = row._restAlt;
-    if (row._restAct != null) row.querySelector('.accessibility-audit-asset-action').innerHTML = row._restAct;
-    updateDraftCount();
+  /* The next row still waiting for alt text, for Save and next. Decorative rows
+     are skipped: their button is hidden, as there is nothing to write. */
+  function nextEditableRow(row) {
+    const rows = [...document.querySelectorAll('.accessibility-audit-asset-item')];
+    return rows.slice(rows.indexOf(row) + 1).find((r) => {
+      const btn = r.querySelector('.accessibility-audit-edit-btn');
+      return btn && !btn.hidden;
+    }) || null;
   }
 
-  async function generateInto(row) {
-    const input  = row.querySelector('.accessibility-audit-alt-input');
-    const genBtn = row.querySelector('.accessibility-audit-gen-btn');
-    if (!input) return;
-    if (genBtn) genBtn.disabled = true;
-    const data = await post(generateUrl, { assetId: row.dataset.assetId });
-    if (genBtn) genBtn.disabled = false;
-    if (data.success) {
-      input.value = data.alt;
-      input.focus();
-    } else if (window.Craft && Craft.cp) {
-      Craft.cp.displayError(data.error);
-    }
-  }
+  function openSlideout(row) {
+    if (!row || !window.Craft || !Craft.CpScreenSlideout) return;
 
-  /* The save request itself, shared by the per-row Save button and Save all so
-     the two cannot drift on what they send. */
-  function postAlt(row) {
-    const input = row.querySelector('.accessibility-audit-alt-input');
-    if (!input) return Promise.resolve({ success: false, error: '' });
+    const next = nextEditableRow(row);
+    let saveAndNext = false;
 
-    return post(saveUrl, { assetId: row.dataset.assetId, altText: input.value.trim() });
-  }
+    const slideout = new Craft.CpScreenSlideout('accessibility-audit/alt/edit', {
+      params: { assetId: row.dataset.assetId },
+    });
 
-  async function saveAlt(row) {
-    const input   = row.querySelector('.accessibility-audit-alt-input');
-    const saveBtn = row.querySelector('.accessibility-audit-save-btn');
-    if (!input || !saveBtn) return;
-    saveBtn.textContent = '{{ 'Saving…'|t('accessibility-audit') }}';
-    saveBtn.disabled    = true;
+    slideout.on('load', () => {
+      wireAltEditor(slideout.$container[0], row.dataset.assetId, () => {
+        if (activeView === 'drafts') removeRow(row);
+      });
 
-    const data = await postAlt(row);
-    if (data.success) {
-      if (window.Craft && Craft.cp) {
-        (Craft.cp.displaySuccess || Craft.cp.displayNotice).call(Craft.cp, '{{ 'Alt text saved.'|t('accessibility-audit') }}');
+      // Craft's slideout has one submit button; Save and next sits beside it and
+      // submits the same form, then opens the next image once this one is saved.
+      if (next && slideout.$saveBtn && !slideout.$container[0].querySelector('.accessibility-audit-save-next')) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn accessibility-audit-save-next';
+        btn.textContent = {{ 'Save and next'|t('accessibility-audit')|json_encode|raw }};
+        btn.addEventListener('click', () => {
+          saveAndNext = true;
+          slideout.submit();
+        });
+        slideout.$saveBtn[0].before(btn);
       }
-      removeRow(row, emptyAllHaveAlt);
-    } else {
-      saveBtn.textContent = '{{ 'Save'|t('app') }}';
-      saveBtn.disabled = false;
-      if (window.Craft && Craft.cp) Craft.cp.displayError(data.error);
-    }
+    });
+
+    let saved = null;
+
+    // The slideout hands focus back to the page body, so it goes back to the row:
+    // its own button, or where the row has left the list, the next row's.
+    slideout.on('close', () => {
+      if (saveAndNext && next) return;
+      const rowGone = (saved && !saved.decorative) || !document.body.contains(row) || row.dataset.removing;
+      const target = rowGone ? next : row;
+      const btn = target && document.body.contains(target)
+        ? (target.querySelector('.accessibility-audit-edit-btn:not([hidden])') || target.querySelector('.accessibility-audit-decorative-switch'))
+        : null;
+      if (btn) btn.focus();
+    });
+
+    slideout.on('submit', (ev) => {
+      const data = (ev.response && ev.response.data) || {};
+      saved = data;
+
+      // Marking decorative retires a draft too, so on the drafts list the row
+      // goes either way.
+      if (data.decorative && activeView !== 'drafts') {
+        applyDecorativeUi(row, true);
+      } else {
+        removeRow(row);
+      }
+
+      if (saveAndNext && next && document.body.contains(next)) {
+        openSlideout(next);
+      }
+    });
   }
 
-  function removeRow(row, emptyMessage) {
+  /* Hooks up the slideout's editor: the character count, the decorative switch
+     hiding the alt field, the AI suggestions with any stored draft shown
+     straight away (its Standard version put into an empty field), and
+     Discard draft, which takes that version back out. Inputs are namespaced
+     by the slideout, so everything is found by class within its container. */
+  function wireAltEditor(container, assetId, onDiscard) {
+    const editor = container.querySelector('.accessibility-audit-alt-editor');
+    if (!editor) return;
+
+    const input = editor.querySelector('textarea');
+    const count = editor.querySelector('.accessibility-audit-alt-editor__count');
+    const altBlock = editor.querySelector('.accessibility-audit-alt-editor__alt');
+    const sw = editor.querySelector('.lightswitch');
+
+    if (input && count) {
+      input.addEventListener('input', () => renderCount(input, count));
+      renderCount(input, count);
+    }
+
+    // Craft's lightswitch changes state without a native event, so its
+    // aria-checked attribute is watched instead.
+    if (sw && altBlock) {
+      new MutationObserver(() => {
+        altBlock.hidden = sw.getAttribute('aria-checked') === 'true';
+      }).observe(sw, { attributes: true, attributeFilter: ['aria-checked'] });
+    }
+
+    if (!input || !window.AccessibilityAuditAltSuggestions) return;
+
+    let draft = null;
+    try {
+      draft = editor.dataset.draft ? JSON.parse(editor.dataset.draft) : null;
+    } catch (e) {
+      draft = null;
+    }
+
+    const suggestions = window.AccessibilityAuditAltSuggestions.wire(editor, {
+      assetId: assetId,
+      url: generateUrl,
+      input: input,
+      guideline: ALT_GUIDELINE,
+      initial: draft,
+      prefill: true,
+    });
+
+    const discardBtn = editor.querySelector('.accessibility-audit-alt-editor__discard');
+    if (!discardBtn) return;
+
+    discardBtn.addEventListener('click', async () => {
+      discardBtn.disabled = true;
+      discardBtn.classList.add('loading');
+
+      let data;
+      try {
+        data = await post(discardDraftUrl, { assetId: assetId });
+      } catch (e) {
+        data = { success: false, error: networkError };
+      }
+
+      discardBtn.classList.remove('loading');
+      if (!data.success) {
+        discardBtn.disabled = false;
+        if (window.Craft && Craft.cp) Craft.cp.displayError(data.error);
+        return;
+      }
+
+      editor.querySelectorAll('.accessibility-audit-alt-editor__suggestion, .accessibility-audit-alt-editor__reasons')
+        .forEach((el) => { el.hidden = true; });
+      if (suggestions) suggestions.undoPrefill();
+      discardBtn.remove();
+      input.focus();
+      if (window.Craft && Craft.cp) Craft.cp.displayNotice(data.message);
+      if (onDiscard) onDiscard();
+    });
+  }
+
+  function removeRow(row) {
+    if (row.dataset.removing) return;
+    row.dataset.removing = '1';
     row.style.transition = 'opacity 0.3s';
     row.style.opacity    = '0';
+    if (activeView === 'drafts') bumpDraftCount();
     setTimeout(() => {
       const section = row.closest('.accessibility-audit-asset-group');
       row.remove();
@@ -469,12 +647,19 @@
       const groups = document.getElementById('accessibility-audit-assets-groups');
       if (groups && groups.querySelectorAll('.accessibility-audit-asset-item').length === 0) {
         groups.innerHTML =
-          '<div class="pane accessibility-audit-assets-empty"><p class="accessibility-audit-empty-title">' + esc(emptyMessage) + '</p></div>';
+          '<div class="accessibility-audit-assets-empty zilch"><p class="accessibility-audit-empty-title">' + esc(emptyMessage) + '</p></div>';
       }
-      updateDraftCount();
       updateDecorativeCount();
       updateBulkBar();
     }, 300);
+  }
+
+  // The badge counts drafts across every page, so it goes down by one per row
+  // rather than being recounted from the rows on this one.
+  function bumpDraftCount() {
+    const badge = document.getElementById('accessibility-audit-draft-count');
+    if (!badge) return;
+    badge.textContent = String(Math.max(0, (parseInt(badge.textContent, 10) || 0) - 1));
   }
 
   function updateDecorativeCount() {
@@ -483,8 +668,6 @@
     const n = groups ? groups.querySelectorAll('.accessibility-audit-asset-item').length : 0;
     const chip = document.getElementById('accessibility-audit-decorative-count');
     if (chip) chip.textContent = String(n);
-    const band = document.getElementById('accessibility-audit-decorative-band-count');
-    if (band) band.textContent = String(n);
   }
 
   async function toggleDecorative(sw) {
@@ -504,12 +687,12 @@
 
     if (window.Craft && Craft.cp) {
       Craft.cp.displayNotice(next
-        ? '{{ 'Marked decorative.'|t('accessibility-audit') }}'
-        : '{{ 'No longer decorative.'|t('accessibility-audit') }}');
+        ? {{ 'Marked decorative.'|t('accessibility-audit')|json_encode|raw }}
+        : {{ 'No longer decorative.'|t('accessibility-audit')|json_encode|raw }});
     }
 
     if (activeView === 'decorative' && !next) {
-      removeRow(row, emptyNoDecorative);
+      removeRow(row);
       return;
     }
 
@@ -517,9 +700,6 @@
   }
 
   function applyDecorativeUi(row, on) {
-
-    if (row.querySelector('.accessibility-audit-alt-input')) closeEditor(row);
-
     const sw = row.querySelector('.accessibility-audit-decorative-switch');
     if (sw) {
       sw.classList.toggle('on', on);
@@ -530,8 +710,6 @@
 
     const editBtn = row.querySelector('.accessibility-audit-edit-btn');
     if (editBtn) editBtn.hidden = on;
-    const note = row.querySelector('.accessibility-audit-decorative-note');
-    if (note) note.hidden = !on;
   }
 
   function selectedRowCheckboxes() {
@@ -547,6 +725,11 @@
 
     bar.hidden = selected.length === 0;
 
+    all.forEach((cb) => {
+      const row = cb.closest('.accessibility-audit-asset-item');
+      if (row) row.classList.toggle('sel', cb.checked);
+    });
+
     const label = document.getElementById('accessibility-audit-bulk-count');
     if (label && window.Craft) {
       label.textContent = Craft.t('accessibility-audit', '{n} selected', { n: selected.length });
@@ -557,12 +740,6 @@
       selectAll.checked = all.length > 0 && selected.length === all.length;
       selectAll.indeterminate = selected.length > 0 && selected.length < all.length;
     }
-  }
-
-  function clearSelection() {
-    document.querySelectorAll('.accessibility-audit-row-select:checked')
-      .forEach((cb) => { cb.checked = false; });
-    updateBulkBar();
   }
 
   function setBulkBusy(busy) {
@@ -598,8 +775,10 @@
       const row = cb.closest('.accessibility-audit-asset-item');
       cb.checked = false;
       if (!row) return;
-      if (activeView === 'decorative' && !decorative) {
-        removeRow(row, emptyNoDecorative);
+      // Unmarking takes a row off the decorative list; marking takes one off
+      // the drafts list, as a decorative image's draft is dropped.
+      if ((activeView === 'decorative' && !decorative) || (activeView === 'drafts' && decorative)) {
+        removeRow(row);
         return;
       }
       applyDecorativeUi(row, decorative);
@@ -613,6 +792,54 @@
       Craft.cp.displayNotice(notice);
     }
   }
+
+  {% verbatim %}
+  // Saves the Standard version of each selected draft as the image's alt
+  // text. Drafts Claude flagged for checking are left on the list for a person.
+  // Kept out of Twig's reach, as the plural messages carry "{#", which Twig
+  // reads as the start of a comment.
+  async function approveDrafts() {
+    const checkboxes = selectedRowCheckboxes();
+    if (!checkboxes.length) return;
+
+    const message = Craft.t(
+      'accessibility-audit',
+      '{n, plural, =1{Save the Standard draft as alt text on # image?} other{Save the Standard draft as alt text on # images?}} Drafts flagged Check are skipped.',
+      { n: checkboxes.length },
+    );
+    if (!window.confirm(message)) return;
+
+    setBulkBusy(true);
+    let data;
+    try {
+      data = await post(approveDraftsUrl, { assetIds: checkboxes.map((cb) => cb.dataset.assetId) });
+    } catch (e) {
+      data = { success: false, error: networkError };
+    }
+    setBulkBusy(false);
+
+    if (!data.success) {
+      if (window.Craft && Craft.cp) Craft.cp.displayError(data.error);
+      return;
+    }
+
+    const approved = (data.approvedIds || []).map(String);
+    checkboxes.forEach((cb) => {
+      cb.checked = false;
+      const row = cb.closest('.accessibility-audit-asset-item');
+      if (row && approved.includes(cb.dataset.assetId)) removeRow(row);
+    });
+    updateBulkBar();
+
+    if (window.Craft && Craft.cp) {
+      let notice = Craft.t('accessibility-audit', '{n, plural, =1{Approved # draft.} other{Approved # drafts.}}', { n: data.approved });
+      if (data.skipped > 0) {
+        notice += ' ' + Craft.t('accessibility-audit', '{n, plural, =1{# draft needs a check before it can be saved.} other{# drafts need a check before they can be saved.}}', { n: data.skipped });
+      }
+      Craft.cp.displayNotice(notice);
+    }
+  }
+  {% endverbatim %}
 
   (function () {
     const selectAll = document.getElementById('accessibility-audit-select-all');
@@ -638,121 +865,14 @@
     const decoSwitch = e.target.closest('.accessibility-audit-decorative-switch');
     if (decoSwitch) { toggleDecorative(decoSwitch); return; }
     const editBtn = e.target.closest('.accessibility-audit-edit-btn');
-    if (editBtn) { openEditor(editBtn.closest('.accessibility-audit-asset-item'), editBtn.dataset.value); return; }
-    const genBtn = e.target.closest('.accessibility-audit-gen-btn');
-    if (genBtn) { generateInto(genBtn.closest('.accessibility-audit-asset-item')); return; }
-    const saveBtn = e.target.closest('.accessibility-audit-save-btn');
-    if (saveBtn) { saveAlt(saveBtn.closest('.accessibility-audit-asset-item')); return; }
-    const cancelBtn = e.target.closest('.accessibility-audit-cancel-btn');
-    if (cancelBtn) { closeEditor(cancelBtn.closest('.accessibility-audit-asset-item')); return; }
+    if (editBtn) { openSlideout(editBtn.closest('.accessibility-audit-asset-item')); return; }
+    const bulkApprove = e.target.closest('.accessibility-audit-bulk-approve');
+    if (bulkApprove) { approveDrafts(); return; }
     const bulkMark = e.target.closest('.accessibility-audit-bulk-mark');
     if (bulkMark) { applyBulk(true); return; }
     const bulkClear = e.target.closest('.accessibility-audit-bulk-clear');
     if (bulkClear) { applyBulk(false); return; }
-    const bulkDeselect = e.target.closest('.accessibility-audit-bulk-deselect');
-    if (bulkDeselect) { clearSelection(); return; }
   });
-
-  // ── Generate all ──────────────────────────────────────────────────────────
-
-  const generateAllBtn  = document.getElementById('accessibility-audit-generate-all');
-  const progressEl      = document.getElementById('accessibility-audit-generate-progress');
-
-  if (generateAllBtn) {
-    generateAllBtn.addEventListener('click', async () => {
-      const rows = [...document.querySelectorAll('.accessibility-audit-asset-item')];
-      generateAllBtn.disabled = true;
-      if (progressEl) progressEl.hidden = false;
-
-      let done = 0;
-      for (const row of rows) {
-        if (progressEl) {
-          progressEl.textContent = `{{ 'Generating'|t('accessibility-audit') }} ${done + 1} / ${rows.length}…`;
-        }
-        const eb = row.querySelector('.accessibility-audit-edit-btn');
-        if (eb) openEditor(row, eb.dataset.value);
-        await generateInto(row);
-        done++;
-        
-        await new Promise(r => setTimeout(r, 300));
-      }
-
-      if (progressEl) progressEl.hidden = true;
-      generateAllBtn.disabled = false;
-      updateDraftCount();
-    });
-  }
-
-  // ── Save all ──────────────────────────────────────────────────────────────
-
-  const saveAllBtn = document.getElementById('accessibility-audit-save-all');
-
-  /* Typing into an editor can turn a row into a draft worth saving (or back
-     again), which no open/close hook would catch. */
-  document.addEventListener('input', (e) => {
-    if (e.target.classList && e.target.classList.contains('accessibility-audit-alt-input')) {
-      updateDraftCount();
-    }
-  });
-
-  if (saveAllBtn) {
-    saveAllBtn.addEventListener('click', async () => {
-      const rows = draftRows();
-      if (!rows.length) return;
-
-      saveAllBtn.disabled = true;
-      if (generateAllBtn) generateAllBtn.disabled = true;
-      if (progressEl) progressEl.hidden = false;
-
-      let saved  = 0;
-      let failed = 0;
-      let lastError = '';
-
-      /* One at a time: each save is an element save on the server, and a
-         hundred at once would only queue behind each other anyway. */
-      for (const [i, row] of rows.entries()) {
-        if (progressEl) {
-          progressEl.textContent =
-            '{{ 'Saving'|t('accessibility-audit') }} ' + (i + 1) + ' / ' + rows.length + '…';
-        }
-
-        const data = await postAlt(row);
-
-        if (data.success) {
-          saved++;
-          removeRow(row, emptyAllHaveAlt);
-        } else {
-          failed++;
-          lastError = data.error || lastError;
-        }
-      }
-
-      if (progressEl) progressEl.hidden = true;
-      saveAllBtn.disabled = false;
-      if (generateAllBtn) generateAllBtn.disabled = false;
-      updateDraftCount();
-
-      /* One summary rather than a notice per row: fifty of them would bury
-         whatever else the page had to say. */
-      if (window.Craft && Craft.cp) {
-        if (failed === 0) {
-          (Craft.cp.displaySuccess || Craft.cp.displayNotice).call(
-            Craft.cp,
-            '{{ 'Saved {count} alt texts.'|t('accessibility-audit') }}'.replace('{count}', saved),
-          );
-        } else {
-          Craft.cp.displayError(
-            '{{ 'Saved {count}, {failed} could not be saved.'|t('accessibility-audit') }}'
-              .replace('{count}', saved)
-              .replace('{failed}', failed) + (lastError ? ' ' + lastError : ''),
-          );
-        }
-      }
-    });
-  }
-
-  updateDraftCount();
-
 })();
 {% endjs %}
 {% endblock %}

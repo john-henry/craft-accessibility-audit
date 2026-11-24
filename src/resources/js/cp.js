@@ -156,10 +156,21 @@
         const table = chips.parentElement && chips.parentElement.querySelector('.accessibility-audit-grouped-table');
         if (!table) return;
 
+        // Narrow panes show a select in place of the buttons; it presses the
+        // matching button, so there is still only one filter.
+        const select = chips.parentElement.querySelector('.accessibility-audit-filter-select select');
+        if (select) {
+          select.addEventListener('change', () => {
+            const target = [...chips.querySelectorAll('[data-filter]')].find((c) => c.dataset.filter === select.value);
+            if (target) target.click();
+          });
+        }
+
         chips.addEventListener('click', (e) => {
           const btn = e.target.closest('[data-filter]');
           if (!btn) return;
           const filter = btn.dataset.filter;
+          if (select) select.value = filter;
 
           chips.querySelectorAll('[data-filter]').forEach((c) => {
             const on = c === btn;
@@ -247,12 +258,12 @@
         const data = await res.json();
 
         if (data.limitReached) {
-          const limit = data.limit || 100;
-          // The Standard cap counts distinct pages across every site on the
+          const limit = data.limit || 25;
+          // The Lite cap counts distinct pages across every site on the
           // install, so on multi-site installs the refusal says so rather than
           // reading as an arbitrary per-site limit.
           const scope = (window.AccessibilityAudit && window.AccessibilityAudit.isMultiSite) ? ' across all sites' : '';
-          const msg = `Scan limit reached (${limit} pages${scope}). Upgrade to Pro for unlimited scanning.`;
+          const msg = `Scan limit reached (${limit} pages${scope}). Upgrade to Standard for unlimited scanning.`;
           if (window.Craft && Craft.cp) Craft.cp.displayError(msg);
           setText(Craft.t('accessibility-audit', 'Limit reached'));
           return;
@@ -415,14 +426,12 @@
       // dot beside each rule, matching the grouped issue board. Each band is
       // its own <tbody>.
       const groups = [
-        { key: 'error',   label: 'Error' },
-        { key: 'warning', label: 'Warning' },
-        { key: 'notice',  label: 'Notice' },
+        { key: 'error',   label: Craft.t('accessibility-audit', 'Error') },
+        { key: 'warning', label: Craft.t('accessibility-audit', 'Warning') },
+        { key: 'notice',  label: Craft.t('accessibility-audit', 'Notice') },
       ];
       // Injected by the plugin so this reads the same labels, in the same
-      // language, as the server-rendered badge. The local copy this replaced
-      // said "Content" where the server said "Content writing", and was never
-      // translated at all.
+      // language, as the server-rendered badge.
       const owners = (window.AccessibilityAudit && window.AccessibilityAudit.responsibilities) || {};
 
       let body = '';
@@ -443,9 +452,8 @@
             : '<span class="light">—</span>';
           rowsHtml += `<tr>
               <th scope="row"><span class="accessibility-audit-rowline" style="gap:8px">
-                <span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--${g.key}" aria-hidden="true" title="${escHtml(g.label)}"></span>
-                <span class="visually-hidden">${escHtml(g.label)}:</span>
-                <a href="${escHtml(detailUrl)}">${escHtml(issue.ruleId)}</a>
+                <span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--${g.key}" role="img" aria-label="${escHtml(g.label)}"></span>
+                <span>${window.AccessibilityAuditTable.ruleName(issue.title, issue.ruleId, detailUrl)}</span>
               </span></th>
               <td class="code">${escHtml(issue.wcagCriterion || '—')}</td>
               <td>${ownerHtml}</td>
@@ -465,7 +473,7 @@
             <th scope="col">${escHtml(Craft.t('accessibility-audit', 'Rule'))}</th>
             <th scope="col">${escHtml(Craft.t('accessibility-audit', 'SC'))}</th>
             <th scope="col">${escHtml(Craft.t('accessibility-audit', 'Owner'))}</th>
-            <th scope="col" style="text-align:right">${escHtml(Craft.t('accessibility-audit', 'Count'))}</th>
+            <th scope="col" style="text-align:right">${escHtml(Craft.t('accessibility-audit', 'Occurrences'))}</th>
           </tr></thead>${body}</table>`;
     },
 
@@ -758,15 +766,11 @@
   }
 })();
 
-// ── Asset alt-text button ──────────────────────────────────────────────────────
-// Injected into the alt-text field on asset edit pages (full-page and slideout).
-// Called immediately on load and again after the assetId is set by PHP (POS_END).
+// ── Asset alt-text field ───────────────────────────────────────────────────────
+// Adds the character count and the AI suggestions under the alt text field on
+// asset edit pages (full-page and slideout).
+// Called immediately on load and again once PHP has added the screen's marker (POS_END).
 window.AccessibilityAuditInjectAltBtn = (function () {
-  function csrfAppend(fd) {
-    const name  = (window.Craft && Craft.csrfTokenName)  || 'CRAFT_CSRF_TOKEN';
-    const value = (window.Craft && Craft.csrfTokenValue) || '';
-    fd.append(name, value);
-  }
 
   // Locate the field the alt text lives in. On a full edit page Craft's
   // built-in field is textarea#alt and a custom field is fields[handle] /
@@ -796,20 +800,53 @@ window.AccessibilityAuditInjectAltBtn = (function () {
     return document.querySelector(sel);
   }
 
+  // The asset this field belongs to, read from the marker PHP adds to the
+  // same screen's sidebar: the slideout the field sits in, or the page itself
+  // for a field outside any slideout. Read per screen, never from a page-wide
+  // setting, so one image's draft can't turn up in the next image's editor.
+  function assetFor(textarea) {
+    const slideout = textarea.closest('.slideout');
+    const marker = slideout
+      ? slideout.querySelector('.accessibility-audit-asset-alt')
+      : [...document.querySelectorAll('.accessibility-audit-asset-alt')].find((el) => !el.closest('.slideout'));
+    if (!marker) return null;
+
+    return {
+      id: Number(marker.dataset.assetId) || 0,
+      decorative: marker.dataset.decorative === '1',
+      generate: marker.dataset.generate === '1',
+      draft: parseDraft(marker.dataset.draft),
+    };
+  }
+
+  function parseDraft(json) {
+    if (!json) return null;
+    try {
+      return JSON.parse(json);
+    } catch {
+      return null;
+    }
+  }
+
   function inject() {
     const cfg = window.AccessibilityAudit || {};
-    if (!cfg.assetId || !cfg.generateAltUrl) return;
+    if (!cfg.generateAltUrl) return;
 
     const textarea = findAltField();
     // The wired flag lives on the field itself, so the page's field and a
     // slideout's field are tracked separately (a document-wide id check would
     // block the slideout whenever the page behind it was already wired).
     if (!textarea || textarea.dataset.aaAltWired) return;
+
+    // Not wired until its marker is in: the field can arrive a frame before
+    // the sidebar does, and the next pass picks it up.
+    const asset = assetFor(textarea);
+    if (!asset || !asset.id) return;
     textarea.dataset.aaAltWired = '1';
 
     // A decorative image is meant to have no alt text, so a Generate button
     // would contradict the flag. Show the state instead.
-    if (cfg.assetDecorative) {
+    if (asset.decorative) {
       const note = document.createElement('p');
       note.className = 'light accessibility-audit-gen-alt-note';
       note.style.cssText = 'margin-top:6px;display:block;';
@@ -841,50 +878,42 @@ window.AccessibilityAuditInjectAltBtn = (function () {
       count.classList.toggle('accessibility-audit-alt-count--low', over > 0);
     };
 
-    const btn = document.createElement('button');
-    btn.type      = 'button';
-    btn.className = 'btn small accessibility-audit-gen-alt-btn';
-    btn.textContent = Craft.t('accessibility-audit', 'Generate Alt Text');
-    btn.style.cssText = 'margin-top:6px;display:block;';
-
     const anchor = textarea.closest('.input') || textarea.parentElement;
-    anchor.after ? anchor.after(count, btn) : anchor.appendChild(count);
+    anchor.after ? anchor.after(count) : anchor.appendChild(count);
 
     textarea.addEventListener('input', renderCount);
     renderCount();
 
-    btn.addEventListener('click', async () => {
-      btn.textContent = Craft.t('accessibility-audit', 'Generating…');
-      btn.disabled    = true;
+    // Generating needs a key, but a draft already waiting in the review queue
+    // can be shown without one.
+    const draft = asset.draft;
+    if ((!asset.generate && !draft) || !window.AccessibilityAuditAltSuggestions) return;
 
-      try {
-        const fd = new FormData();
-        csrfAppend(fd);
-        fd.append('assetId', cfg.assetId);
-
-        const res  = await fetch(cfg.generateAltUrl, { method: 'POST', body: fd, headers: { 'Accept': 'application/json' } });
-        const data = await res.json();
-
-        if (data.success) {
-          textarea.value = data.alt;
-          renderCount();
-          textarea.dispatchEvent(new Event('input', { bubbles: true }));
-          textarea.dispatchEvent(new Event('change', { bubbles: true }));
-          btn.textContent = Craft.t('accessibility-audit', 'Regenerate');
-          btn.disabled    = false;
-          if (window.Craft && Craft.cp) {
-            Craft.cp.displayNotice(Craft.t('accessibility-audit', 'Alt text generated, save the asset to apply it.'));
-          }
-        } else {
-          btn.textContent = Craft.t('accessibility-audit', 'Retry');
-          btn.disabled    = false;
-          if (window.Craft && Craft.cp) Craft.cp.displayError(data.error);
+    const ui = window.AccessibilityAuditAltSuggestions.build();
+    ui.style.marginTop = '6px';
+    if (!asset.generate) {
+      const gen = ui.querySelector('.accessibility-audit-alt-editor__generate');
+      if (gen) gen.remove();
+    }
+    if (draft) {
+      const note = document.createElement('p');
+      note.className = 'light smalltext accessibility-audit-alt-editor__draft-note';
+      note.textContent = Craft.t('accessibility-audit', 'A draft is waiting for review. Pick a version, then save the image.');
+      ui.prepend(note);
+    }
+    count.after(ui);
+    window.AccessibilityAuditAltSuggestions.wire(ui, {
+      assetId: asset.id,
+      url: cfg.generateAltUrl,
+      input: textarea,
+      guideline: guideline,
+      initial: draft,
+      onUse: () => {
+        renderCount();
+        if (window.Craft && Craft.cp) {
+          Craft.cp.displayNotice(Craft.t('accessibility-audit', 'Alt text generated, save the asset to apply it.'));
         }
-      } catch (err) {
-        console.error('[a11y]', err);
-        btn.textContent = Craft.t('accessibility-audit', 'Error, retry');
-        btn.disabled    = false;
-      }
+      },
     });
   }
 
@@ -904,7 +933,7 @@ window.AccessibilityAuditInjectAltBtn = (function () {
     scheduled = true;
     requestAnimationFrame(() => {
       scheduled = false;
-      if (!document.getElementById('accessibility-audit-gen-alt-btn')) inject();
+      inject();
     });
   }
 
@@ -918,3 +947,263 @@ window.AccessibilityAuditInjectAltBtn = (function () {
 
   return inject;
 }());
+
+// AI alt text suggestions, shared by the Assets page's alt text panel and the
+// asset edit screen: three versions to pick from, the notes on what to check,
+// and progress while the request runs. A draft written in the background is
+// passed in as `initial` and shown straight away, with no request. Nothing
+// goes into the field until the editor picks a version, unless the caller
+// asks for `prefill`.
+(function () {
+  'use strict';
+
+  function csrfAppend(fd) {
+    const name = (window.Craft && Craft.csrfTokenName) || window.csrfTokenName;
+    const value = (window.Craft && Craft.csrfTokenValue) || window.csrfTokenValue;
+    if (name && value) fd.append(name, value);
+  }
+
+  // An option past the guideline is not wrong, so its length reads as a note.
+  function lengthNote(text, guideline) {
+    const n = [...text].length;
+    return guideline && n > guideline
+      ? Craft.t('accessibility-audit', '{n} characters, longer than the {max} guideline', { n: n, max: guideline })
+      : Craft.t('accessibility-audit', '{n} characters', { n: n });
+  }
+
+  // The markup the panel's template renders, for screens that have no template
+  // of their own. Craft's own button, with the spinner its loading state shows.
+  function build() {
+    const root = document.createElement('div');
+    root.className = 'accessibility-audit-alt-editor__ai';
+
+    const row = document.createElement('div');
+    row.className = 'flex';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn small accessibility-audit-alt-editor__generate';
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = Craft.t('accessibility-audit', 'Generate with AI');
+    const spinner = document.createElement('div');
+    spinner.className = 'spinner spinner-absolute';
+    btn.append(label, spinner);
+
+    const status = document.createElement('span');
+    status.className = 'light smalltext accessibility-audit-alt-editor__status';
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    row.append(btn, status);
+
+    const reasons = document.createElement('div');
+    reasons.className = 'accessibility-audit-alt-editor__reasons';
+    reasons.hidden = true;
+    const heading = document.createElement('p');
+    heading.className = 'smalltext warning has-icon';
+    const headingIcon = document.createElement('span');
+    headingIcon.className = 'icon';
+    headingIcon.setAttribute('aria-hidden', 'true');
+    heading.append(headingIcon);
+    const strong = document.createElement('strong');
+    strong.textContent = Craft.t('accessibility-audit', 'Check before saving');
+    heading.append(strong);
+    const reasonList = document.createElement('ul');
+    reasonList.className = 'smalltext';
+    reasons.append(heading, reasonList);
+
+    const box = document.createElement('div');
+    box.className = 'accessibility-audit-alt-editor__suggestion';
+    box.setAttribute('role', 'region');
+    box.setAttribute('aria-label', Craft.t('accessibility-audit', 'AI suggestions'));
+    box.tabIndex = -1;
+    box.hidden = true;
+    const options = document.createElement('ul');
+    options.className = 'accessibility-audit-alt-editor__options';
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.className = 'btn small chromeless accessibility-audit-alt-editor__dismiss';
+    dismiss.textContent = Craft.t('accessibility-audit', 'Dismiss');
+    box.append(options, dismiss);
+
+    root.append(row, reasons, box);
+    return root;
+  }
+
+  // opts: { assetId, url, input, guideline, onUse, initial, prefill }
+  // The Generate button is optional: without an API key a stored draft can
+  // still be shown and used.
+  //
+  // With `prefill`, a stored draft's Standard version goes into an empty field
+  // as soon as the panel opens, and the versions stay open to swap between.
+  // Only for the plugin's own editor: on Craft's asset edit screen the change
+  // would mark the element form as edited before the editor has done anything.
+  //
+  // Returns { undoPrefill }, which empties the field again if it still holds
+  // the pre-filled text, for when the draft is discarded.
+  function wire(root, opts) {
+    const genBtn = root.querySelector('.accessibility-audit-alt-editor__generate');
+    const status = root.querySelector('.accessibility-audit-alt-editor__status');
+    const reasons = root.querySelector('.accessibility-audit-alt-editor__reasons');
+    const box = root.querySelector('.accessibility-audit-alt-editor__suggestion');
+    const options = box && box.querySelector('.accessibility-audit-alt-editor__options');
+    const dismiss = box && box.querySelector('.accessibility-audit-alt-editor__dismiss');
+    const input = opts.input;
+    if (!box || !options || !input) return null;
+
+    const labels = { short: Craft.t('accessibility-audit', 'Short'), standard: Craft.t('accessibility-audit', 'Standard'), detailed: Craft.t('accessibility-audit', 'Detailed') };
+    // Each rendered option's button, its version name and its text, so the
+    // one matching the field can read "In use".
+    let choices = [];
+    let prefilled = null;
+
+    function setInput(text) {
+      input.value = text;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function labelButton(btn, text, name) {
+      btn.textContent = text;
+      if (name) {
+        const hidden = document.createElement('span');
+        hidden.className = 'visually-hidden';
+        hidden.textContent = ' (' + name + ')';
+        btn.append(hidden);
+      }
+    }
+
+    function markInUse() {
+      const current = input.value.trim();
+      choices.forEach((c) => {
+        const inUse = current !== '' && c.alt.trim() === current;
+        if (c.btn.disabled === inUse) return;
+        c.btn.disabled = inUse;
+        labelButton(c.btn, inUse ? Craft.t('accessibility-audit', 'In use') : Craft.t('accessibility-audit', 'Use this'), c.name);
+      });
+    }
+
+    function use(text) {
+      setInput(text);
+      if (!opts.prefill) box.hidden = true;
+      input.focus();
+      if (opts.onUse) opts.onUse(text);
+    }
+
+    function render(data) {
+      const list = (data.variants && data.variants.length) ? data.variants : [{ key: '', alt: data.alt }];
+      choices = [];
+
+      options.replaceChildren(...list.map((v) => {
+        const li = document.createElement('li');
+        li.className = 'accessibility-audit-alt-editor__option';
+
+        const head = document.createElement('p');
+        head.className = 'smalltext';
+        const name = labels[v.key] || '';
+        if (name) {
+          const strong = document.createElement('strong');
+          strong.textContent = name;
+          head.append(strong, ' · ');
+        }
+        const count = document.createElement('span');
+        count.className = 'light';
+        count.textContent = lengthNote(v.alt, opts.guideline);
+        head.append(count);
+
+        const text = document.createElement('p');
+        text.className = 'accessibility-audit-alt-editor__option-text';
+        text.textContent = v.alt;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn small';
+        labelButton(btn, Craft.t('accessibility-audit', 'Use this'), name);
+        btn.addEventListener('click', () => use(v.alt));
+        choices.push({ btn: btn, name: name, alt: v.alt });
+
+        li.append(head, text, btn);
+        return li;
+      }));
+      markInUse();
+
+      if (reasons) {
+        const ul = reasons.querySelector('ul');
+        ul.replaceChildren(...(data.reviewReasons || []).map((r) => {
+          const li = document.createElement('li');
+          li.textContent = r.label;
+          return li;
+        }));
+        reasons.hidden = ul.children.length === 0;
+      }
+    }
+
+    input.addEventListener('input', markInUse);
+
+    // A stored draft has Discard draft beside it where the editor offers one,
+    // which already puts it away, so Dismiss is only shown for fresh results.
+    const showDismiss = (fromDraft) => {
+      if (dismiss) dismiss.hidden = fromDraft && !!root.querySelector('.accessibility-audit-alt-editor__discard');
+    };
+
+    if (opts.initial) {
+      render(opts.initial);
+      box.hidden = false;
+      showDismiss(true);
+
+      if (opts.prefill && input.value.trim() === '' && opts.initial.alt) {
+        prefilled = opts.initial.alt;
+        setInput(prefilled);
+      }
+    }
+
+    if (genBtn) genBtn.addEventListener('click', async () => {
+      genBtn.disabled = true;
+      genBtn.classList.add('loading');
+      if (status) status.textContent = Craft.t('accessibility-audit', 'Writing three versions. This takes a few seconds.');
+
+      try {
+        const fd = new FormData();
+        csrfAppend(fd);
+        fd.append('assetId', opts.assetId);
+        fd.append('variants', '1');
+        const res = await fetch(opts.url, {
+          method: 'POST',
+          body: fd,
+          headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          render(data);
+          box.hidden = false;
+          showDismiss(false);
+          box.focus();
+        } else if (Craft.cp) {
+          Craft.cp.displayError(data.error);
+        }
+      } catch (e) {
+        if (Craft.cp) Craft.cp.displayError(Craft.t('accessibility-audit', 'Network error. Check your connection and try again.'));
+      } finally {
+        genBtn.disabled = false;
+        genBtn.classList.remove('loading');
+        if (status) status.textContent = '';
+      }
+    });
+
+    if (dismiss) dismiss.addEventListener('click', () => {
+      box.hidden = true;
+      if (reasons) reasons.hidden = true;
+      (genBtn || input).focus();
+    });
+
+    return {
+      undoPrefill: () => {
+        if (prefilled !== null && input.value === prefilled) setInput('');
+        prefilled = null;
+      },
+    };
+  }
+
+  window.AccessibilityAuditAltSuggestions = { build: build, wire: wire };
+})();

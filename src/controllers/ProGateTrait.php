@@ -11,12 +11,14 @@ use johnhenry\accessibilityaudit\AccessibilityAudit;
 use yii\web\Response;
 
 /**
- * Shared Pro-edition gating for the plugin's JSON action controllers.
+ * Shared edition gating for the plugin's JSON action controllers.
  *
- * Every Pro-only mutation/JSON endpoint routes its refusal through this trait
- * so the shape (`success`, `error`, `proRequired`) and wording stay identical
- * across the five gated feature areas, and the client JS can key off
- * `proRequired` to tell "locked" apart from "failed".
+ * Every edition-gated mutation/JSON endpoint routes its refusal through this
+ * trait so the shape (`success`, `error`, `editionRequired`) and wording stay
+ * identical across the gated feature areas, and a client can key off
+ * `editionRequired` to tell "locked" apart from "failed". A refusal for a
+ * Pro-only feature also carries `proRequired`, which the CI endpoint's
+ * clients already read.
  *
  * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
@@ -25,6 +27,25 @@ trait ProGateTrait
 {
     // Protected Methods
     // =========================================================================
+
+    /**
+     * The message a refusal carries: which edition the feature needs.
+     *
+     * @param string $feature The human-readable feature name (e.g. "CI/CD
+     *                        integration").
+     * @param string $edition The edition handle the feature needs.
+     * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    protected function editionRequiredMessage(string $feature, string $edition): string
+    {
+        return Craft::t('accessibility-audit', '{feature} requires the {edition} edition.', [
+            'feature' => $feature,
+            'edition' => AccessibilityAudit::editionName($edition),
+        ]);
+    }
 
     /**
      * Returns a JSON refusal when the active edition is not Pro, or null when
@@ -43,10 +64,53 @@ trait ProGateTrait
             return null;
         }
 
-        return $this->asJson([
+        return $this->_editionRefusal($feature, AccessibilityAudit::EDITION_PRO);
+    }
+
+    /**
+     * Returns a JSON refusal on Lite, or null when the request may proceed.
+     *
+     * @param string $feature The human-readable feature name, used to build the
+     *                        refusal message (e.g. "Readability analysis").
+     * @return Response|null A refusal response, or null on Standard or Pro.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    protected function requireStandardJson(string $feature): ?Response
+    {
+        if (AccessibilityAudit::getInstance()->isStandard()) {
+            return null;
+        }
+
+        return $this->_editionRefusal($feature, AccessibilityAudit::EDITION_STANDARD);
+    }
+
+    // Private Methods
+    // =========================================================================
+
+    /**
+     * The JSON refusal for a feature the active edition lacks.
+     *
+     * @param string $feature The human-readable feature name.
+     * @param string $edition The edition handle the feature needs.
+     * @return Response
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _editionRefusal(string $feature, string $edition): Response
+    {
+        $body = [
             'success' => false,
-            'error' => Craft::t('accessibility-audit', '{feature} requires the Pro edition.', ['feature' => $feature]),
-            'proRequired' => true,
-        ]);
+            'error' => $this->editionRequiredMessage($feature, $edition),
+            'editionRequired' => $edition,
+        ];
+
+        if ($edition === AccessibilityAudit::EDITION_PRO) {
+            $body['proRequired'] = true;
+        }
+
+        return $this->asJson($body);
     }
 }

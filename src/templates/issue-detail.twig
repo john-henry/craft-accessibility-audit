@@ -1,6 +1,6 @@
 {% extends '_layouts/cp' %}
 
-{% set title = ruleId|replace({'-': ' ', '_': ' '})|capitalize %}
+{% set title = ruleTitle %}
 
 
 {% set isPotential = ruleId starts with 'potential:' %}
@@ -27,9 +27,14 @@
 {% import 'accessibility-audit/_macros' as macros %}
 
 {% block actionButton %}
-    {% if detail is not empty and detail.helpUrl and detail.helpUrl matches '/^https?:\\/\\//i' %}
-        <a href="{{ detail.helpUrl }}" target="_blank" rel="noopener" class="btn">{{ 'View WCAG guidance'|t('accessibility-audit') }}</a>
+<div class="flex gap-s">
+    {% if guidanceUrl %}
+        <a href="{{ guidanceUrl }}" target="_blank" rel="noopener" class="btn">{{ 'View WCAG guidance'|t('accessibility-audit') }}<span class="visually-hidden"> ({{ 'opens in new tab'|t('accessibility-audit') }})</span></a>
     {% endif %}
+    {% if craft.a11y.isStandard and detail is not empty and not isPotential %}
+        <a href="{{ actionUrl('accessibility-audit/fix-guide/rule', { ruleId: ruleId, siteId: siteId }) }}" class="btn" data-icon="download">{{ 'Download fix guide'|t('accessibility-audit') }}</a>
+    {% endif %}
+</div>
 {% endblock %}
 
 {% block content %}
@@ -45,6 +50,18 @@
         <span class="token">{{ meta.elementType|t('accessibility-audit') }}</span>
     {% endif %}
 </div>
+
+{% if pluginRule %}
+    <p class="notice has-icon">
+        <span class="icon" aria-hidden="true"></span>
+        <span class="visually-hidden">{{ 'Tip:'|t('app') }} </span>
+        <span>
+            {{ 'This is the axe-core version of this check. The plugin runs its own as well:'|t('accessibility-audit') }}
+            <a href="{{ url('accessibility-audit/issues/detail', {ruleId: pluginRule.ruleId, site: siteHandle}) }}">{{ pluginRule.title }}</a>
+            <span class="light code">{{ pluginRule.ruleId }}</span>
+        </span>
+    </p>
+{% endif %}
 
 {% if detail is empty %}
     <div class="readable">
@@ -63,12 +80,14 @@
                 {% if detail.wcagCriterion %}<span style="font-size:15px">{{ detail.wcagCriterion }}</span>{% endif %}
             </div>
         </div>
+        {% if not isPotential %}
         <div>
             <div class="light accessibility-audit-statlabel">{{ 'Points to gain'|t('accessibility-audit') }}</div>
             <div class="accessibility-audit-statfig accessibility-audit-statfig--pass">+{{ detail.pointsToGain|number_format(2) }}</div>
         </div>
+        {% endif %}
         <div>
-            <div class="light accessibility-audit-statlabel">{{ 'Count'|t('accessibility-audit') }}</div>
+            <div class="light accessibility-audit-statlabel">{{ 'Occurrences'|t('accessibility-audit') }}</div>
             <div class="accessibility-audit-statfig">{{ detail.occurrences }}</div>
         </div>
         <div>
@@ -80,24 +99,27 @@
             <div style="margin-top:8px">{{ macros.difficulty(meta.difficulty ?? null) }}</div>
         </div>
         <div>
-            <div class="light accessibility-audit-statlabel">{{ 'Responsibility'|t('accessibility-audit') }}</div>
+            <div class="light accessibility-audit-statlabel">{{ 'Owner'|t('accessibility-audit') }}</div>
             <div style="margin-top:8px">{{ macros.responsibility(meta.responsibility ?? null) }}</div>
         </div>
     </div>
 </div>
 
 
-{% if detail.message or (meta.description is defined) or (meta.abilities is defined and meta.abilities|length) or detail.helpUrl %}
+{% if ruleDescription or exampleFinding or (meta.abilities is defined and meta.abilities|length) %}
 <div class="pane">
     <h2>{{ 'About this rule'|t('accessibility-audit') }}</h2>
     <div class="accessibility-audit-about-grid">
-        {% set ruleDescription = meta.description is defined ? meta.description : null %}
-        {% if ruleDescription or detail.message %}
+        {% if ruleDescription or exampleFinding %}
             <div>
-                <div class="light accessibility-audit-statlabel">
-                    {{ ruleDescription ? 'Description'|t('accessibility-audit') : 'One of these findings'|t('accessibility-audit') }}
-                </div>
-                <p style="margin:6px 0 0 0;line-height:1.5;white-space:pre-line">{{ ruleDescription ?? detail.message }}</p>
+                {% if ruleDescription %}
+                    <div class="light accessibility-audit-statlabel">{{ 'What it checks'|t('accessibility-audit') }}</div>
+                    <p style="margin:6px 0 0 0;line-height:1.5;white-space:pre-line">{{ ruleDescription }}</p>
+                {% endif %}
+                {% if exampleFinding %}
+                    <div class="light accessibility-audit-statlabel"{% if ruleDescription %} style="margin-top:14px"{% endif %}>{{ 'What the scan found on one page'|t('accessibility-audit') }}</div>
+                    <p style="margin:6px 0 0 0;line-height:1.5;white-space:pre-line">{{ exampleFinding|raw }}</p>
+                {% endif %}
             </div>
         {% endif %}
         {% if meta.abilities is defined and meta.abilities|length %}
@@ -125,7 +147,18 @@
     </div>
 </div>
 {% endif %}
-    
+
+{% if ruleFix or fixGuideUrl %}
+<div class="pane">
+    <h2>{{ 'How to fix'|t('accessibility-audit') }}</h2>
+    {% if ruleFix %}
+        <p class="readable" style="margin:0">{{ ruleFix }}</p>
+    {% else %}
+        <p class="readable">{{ 'This rule comes from axe-core. Deque, who make it, publish a guide to fixing it with examples.'|t('accessibility-audit') }}</p>
+        <a href="{{ fixGuideUrl }}" target="_blank" rel="noopener" class="btn">{{ 'How to fix'|t('accessibility-audit') }}<span class="visually-hidden"> ({{ 'opens in new tab'|t('accessibility-audit') }})</span></a>
+    {% endif %}
+</div>
+{% endif %}
 
     <div style="display:flex;align-items:center;gap:10px">
         <h2> {{ pageCount == 1
@@ -151,9 +184,12 @@
 
         // cp.js delegates the re-scan click handler on document, so a button
         // rendered by VueAdminTable with these data hooks still fires it.
-        const rescanCell = (value) => value
-            ? '<button class="btn small accessibility-audit-rowbtn" data-icon="refresh" title="' + Craft.t('accessibility-audit', 'Re-scan') + '" data-accessibility-audit-scan-entry="' + value + '" data-site-id="' + siteId + '">'
-                + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'Re-scan') + '</span></button>'
+        // The page's name rides along unseen, so each row's button has its own
+        // accessible name.
+        const rescanCell = (v) => v && v.id
+            ? '<button class="btn small accessibility-audit-rowbtn" data-icon="refresh" title="' + Craft.t('accessibility-audit', 'Re-scan') + '" data-accessibility-audit-scan-entry="' + v.id + '" data-site-id="' + siteId + '">'
+                + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'Re-scan') + '</span>'
+                + '<span class="visually-hidden"> ' + Craft.escapeHtml(v.title) + '</span></button>'
             : '';
 
         // Page cell: the title links to the page's inspector (page-report) with
@@ -169,17 +205,30 @@
         // Navigation, so a link styled as a button (not a <button>), with the
         // 'view' glyph and label mirroring the Re-scan action button. Opens the
         // Page Report in a new tab, keeping the filtered list in place.
-        const reportCell = (v) => v
-            ? '<a class="btn small accessibility-audit-rowbtn" data-icon="view" href="' + v + '" target="_blank" rel="noopener" title="' + Craft.t('accessibility-audit', 'View report') + '">'
+        const reportCell = (v) => v && v.url
+            ? '<a class="btn small accessibility-audit-rowbtn" data-icon="view" href="' + Craft.escapeHtml(v.url) + '" target="_blank" rel="noopener" title="' + Craft.t('accessibility-audit', 'View report') + '">'
                 + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'View report') + '</span>'
-                + '<span class="visually-hidden"> (' + Craft.t('accessibility-audit', 'opens in new tab') + ')</span></a>'
+                + '<span class="visually-hidden"> ' + Craft.escapeHtml(v.title) + ' (' + Craft.t('accessibility-audit', 'opens in new tab') + ')</span></a>'
             : '';
 
 
+        // Craft's detail column: each row's toggle opens a row underneath
+        // holding that page's occurrences, sent with the row by the endpoint.
+        // The toggle is a button the endpoint supplies, so it keeps its
+        // expanded state in step here.
+        const container = document.getElementById('accessibility-audit-issue-pages-table').parentElement;
+        container.addEventListener('click', (e) => {
+            const toggle = e.target.closest('.accessibility-audit-occ-toggle');
+            if (toggle) {
+                toggle.setAttribute('aria-expanded', toggle.getAttribute('aria-expanded') === 'true' ? 'false' : 'true');
+            }
+        });
+
         const columns = [
+            { name: '__slot:detail', title: '', titleClass: 'thin' },
             { name: 'page', title: Craft.t('accessibility-audit', 'Page'), callback: pageCell, sortField: true },
             { name: 'score', title: Craft.t('accessibility-audit', 'Score'), callback: scoreCell, sortField: true },
-            { name: 'count', title: Craft.t('accessibility-audit', 'Count'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
+            { name: 'count', title: Craft.t('accessibility-audit', 'Occurrences'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
             { name: 'firstDetected', title: Craft.t('accessibility-audit', 'First detected'), sortField: true },
             { name: 'lastScanned', title: Craft.t('accessibility-audit', 'Last scanned'), sortField: true },
             { name: 'report', title: '', callback: reportCell },

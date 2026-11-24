@@ -23,7 +23,7 @@
 {% block actionButton %}
     <a href="{{ cpUrl('accessibility-audit/statement/preview', { site: siteHandle }) }}"
        target="_blank" rel="noopener" class="btn">
-        {{ 'Preview'|t('accessibility-audit') }}
+        {{ 'Preview'|t('accessibility-audit') }}<span class="visually-hidden"> ({{ 'opens in new tab'|t('accessibility-audit') }})</span>
     </a>
     <button type="submit" class="btn submit">{{ 'Save'|t('app') }}</button>
 {% endblock %}

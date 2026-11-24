@@ -15,12 +15,27 @@
  *       columns: [...],
  *       emptyMessage: '...',
  *       exportUrl: '...',
+ *       buttons: [{label: '...', icon: 'download', href: '...'}],
  *   });
  */
 (function () {
     'use strict';
 
     window.AccessibilityAuditTable = {
+        /**
+         * A rule's name for a table cell: its title, linked where a URL is
+         * given, with the rule ID after it in small code type so developers
+         * can still match it. The same markup as the ruleName Twig macro.
+         */
+        ruleName: function (title, ruleId, url) {
+            var name = Craft.escapeHtml(title || ruleId || '');
+            var label = url ? '<a href="' + Craft.escapeHtml(url) + '">' + name + '</a>' : '<span>' + name + '</span>';
+
+            return title && ruleId && title !== ruleId
+                ? label + ' <span class="light code smalltext">' + Craft.escapeHtml(ruleId) + '</span>'
+                : label;
+        },
+
         /**
          * Builds a VueAdminTable with this plugin's defaults and extras.
          */
@@ -82,14 +97,21 @@
                 }];
             }
 
-            // A plain anchor, which is all Craft's `buttons` are: it downloads
-            // the full CSV straight from the export action and needs no JS.
+            // Plain anchors, which is all Craft's `buttons` are: each downloads
+            // its file straight from an action and needs no JS. opts.buttons
+            // adds more beside Export CSV, each {label, icon, href}.
+            const buttons = (opts.buttons || []).slice();
+
             if (opts.exportUrl) {
-                settings.buttons = [{
+                buttons.unshift({
                     label: Craft.t('accessibility-audit', 'Export CSV'),
                     icon: 'download',
                     href: opts.exportUrl,
-                }];
+                });
+            }
+
+            if (buttons.length) {
+                settings.buttons = buttons;
             }
 
             return new Craft.VueAdminTable(settings);

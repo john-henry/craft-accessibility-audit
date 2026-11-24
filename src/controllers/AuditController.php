@@ -12,11 +12,14 @@ use craft\elements\Asset;
 use craft\errors\MissingComponentException;
 use craft\errors\SiteNotFoundException;
 use craft\helpers\Json;
+use craft\helpers\Queue as QueueHelper;
 use craft\web\Controller;
 use DateTime;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\helpers\Csv;
 use johnhenry\accessibilityaudit\jobs\AuditAssets;
+use johnhenry\accessibilityaudit\jobs\CheckPdf;
+use johnhenry\accessibilityaudit\jobs\CheckPdfs;
 use johnhenry\accessibilityaudit\jobs\ScanElements;
 use johnhenry\accessibilityaudit\services\AuditService;
 use johnhenry\accessibilityaudit\services\VerdictService;
@@ -91,14 +94,14 @@ class AuditController extends Controller
 
         $result = AccessibilityAudit::getInstance()->getAudit()->scanElement($entry, $withHeadless);
 
-        // Standard edition hit the distinct-page cap for a brand-new page.
-        // Surface it distinctly so the sidebar JS can show an upgrade message
-        // instead of a generic failure.
+        // Lite hit the distinct-page cap for a brand-new page. Surface it
+        // distinctly so the sidebar JS can show an upgrade message instead of
+        // a generic failure.
         if (!empty($result['limitReached'])) {
             return $this->asJson([
                 'success' => true,
                 'limitReached' => true,
-                'limit' => AuditService::STANDARD_SCAN_LIMIT,
+                'limit' => AccessibilityAudit::getInstance()->scanLimit(),
             ]);
         }
 
@@ -183,7 +186,7 @@ class AuditController extends Controller
             return $this->asJson([
                 'success' => true,
                 'limitReached' => true,
-                'limit' => AuditService::STANDARD_SCAN_LIMIT,
+                'limit' => AccessibilityAudit::getInstance()->scanLimit(),
             ]);
         }
 
@@ -216,7 +219,7 @@ class AuditController extends Controller
         $this->requirePostRequest();
         $this->requirePermission('accessibility-audit:run-scans');
 
-        // Multi-site is Pro: on Standard, a batch scan only ever covers the
+        // Multi-site is Pro: on Lite and Standard, a batch scan only ever covers the
         // primary site, whatever siteId is posted.
         $plugin = AccessibilityAudit::getInstance();
         $siteId = $plugin->resolveSiteId($this->request->getBodyParam('siteId'));
@@ -287,6 +290,100 @@ class AuditController extends Controller
             'accessibility-audit',
             'Asset scan queued: {n} images will be audited as the queue runs.',
             ['n' => $total]
+        ));
+
+        return $this->redirectToPostedUrl();
+    }
+
+    /**
+     * POST /accessibility-audit/audit/check-pdfs
+     * Queues a sweep of every PDF in the audited library (Pro).
+     *
+     * Files already checked as they are now are passed over, so a second
+     * sweep costs only what changed. Forcing it checks every file again.
+     *
+     * @return Response
+     * @throws ForbiddenHttpException
+     * @throws BadRequestHttpException
+     * @throws MethodNotAllowedHttpException
+     * @throws InvalidConfigException
+     * @throws MissingComponentException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function actionCheckPdfs(): Response
+    {
+        $this->requirePostRequest();
+        $this->requirePermission('accessibility-audit:run-scans');
+
+        $pdfAudit = AccessibilityAudit::getInstance()->getPdfAudit();
+
+        if (!$pdfAudit->isEnabled()) {
+            Craft::$app->getSession()->setError(Craft::t('accessibility-audit', 'PDF checks need the Standard edition, with Check PDF Files turned on.'));
+
+            return $this->redirectToPostedUrl();
+        }
+
+        QueueHelper::push(new CheckPdfs([
+            'force' => (bool)$this->request->getBodyParam('force', false),
+        ]), ttr: CheckPdf::ttr());
+
+        Craft::$app->getSession()->setNotice(Craft::t(
+            'accessibility-audit',
+            'PDF check queued: {n} PDFs will be checked as the queue runs.',
+            ['n' => (int)$pdfAudit->pdfQuery()->count()],
+        ));
+
+        return $this->redirectToPostedUrl();
+    }
+
+    /**
+     * POST /accessibility-audit/audit/check-pdf
+     * Queues a fresh check of one PDF, whether or not it has changed (Standard and Pro).
+     *
+     * @return Response
+     * @throws ForbiddenHttpException
+     * @throws BadRequestHttpException
+     * @throws MethodNotAllowedHttpException
+     * @throws InvalidConfigException
+     * @throws MissingComponentException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function actionCheckPdf(): Response
+    {
+        $this->requirePostRequest();
+        $this->requirePermission('accessibility-audit:run-scans');
+
+        $pdfAudit = AccessibilityAudit::getInstance()->getPdfAudit();
+
+        if (!$pdfAudit->isEnabled()) {
+            Craft::$app->getSession()->setError(Craft::t('accessibility-audit', 'PDF checks need the Standard edition, with Check PDF Files turned on.'));
+
+            return $this->redirectToPostedUrl();
+        }
+
+        $asset = Asset::find()
+            ->id((int)$this->request->getRequiredBodyParam('assetId'))
+            ->site('*')
+            ->one();
+
+        if (!$asset instanceof Asset || !$pdfAudit->covers($asset)) {
+            throw new BadRequestHttpException('Not a PDF the audit covers.');
+        }
+
+        if (!$asset->canView(Craft::$app->getUser()->getIdentity())) {
+            throw new ForbiddenHttpException('User is not authorized to view this asset.');
+        }
+
+        $pdfAudit->queueCheck($asset, true);
+
+        Craft::$app->getSession()->setNotice(Craft::t(
+            'accessibility-audit',
+            '{filename} will be checked again as the queue runs.',
+            ['filename' => $asset->filename],
         ));
 
         return $this->redirectToPostedUrl();
@@ -859,7 +956,7 @@ class AuditController extends Controller
     /**
      * Refuses a request aimed at a site the edition or the user cannot touch.
      *
-     * Standard is primary-site only whatever is posted. On Pro the site must be
+     * Lite and Standard are primary-site only whatever is posted. On Pro the site must be
      * one the user may edit: the `run-scans` permission is install-wide, so a
      * crafted siteId would otherwise reach sites outside their permissions, and
      * the per-site fence has to happen here.
@@ -876,7 +973,7 @@ class AuditController extends Controller
         $plugin = AccessibilityAudit::getInstance();
         $sites = Craft::$app->getSites();
 
-        // Standard is primary-site only, whatever siteId is posted.
+        // Lite and Standard are primary-site only, whatever siteId is posted.
         if (!$plugin->isPro() && $siteId !== $sites->getPrimarySite()->id) {
             return $this->asJson([
                 'success' => false,

@@ -20,7 +20,7 @@
     {{ forms.lightswitchField({
         label: 'Scan on Entry Save'|t('accessibility-audit'),
         instructions: 'Automatically queue an accessibility scan when a live entry is saved. Scans run via the Craft queue worker.'|t('accessibility-audit')
-            ~ ((isPro ?? false) ? ' <span class="info">' ~ 'On Pro, saving also records the entry\'s readability from its own text, so the Readability report stays current.'|t('accessibility-audit') ~ '</span>' : ''),
+            ~ ((isStandard ?? false) ? ' <span class="info">' ~ 'Saving also records the entry\'s readability from its own text, so the Readability report stays current.'|t('accessibility-audit') ~ '</span>' : ''),
         id: 'scanOnSave',
         name: 'settings[scanOnSave]',
         on: settings.scanOnSave,
@@ -59,10 +59,11 @@
 
     <h2>{{ 'Server-side Browser Scanning'|t('accessibility-audit') }}</h2>
 
-    {% if not (isPro ?? false) %}
+    {% if not (isStandard ?? false) %}
         {% include 'accessibility-audit/_includes/pro-upsell' with {
             feature: 'Server-side browser scanning'|t('accessibility-audit'),
-            text: 'Run the full axe-core browser checks (contrast, focus, touch targets) on every queued scan with headless Chrome, so the whole site gets browser coverage without an admin visiting each page. Available on the Pro edition.'|t('accessibility-audit'),
+            text: 'Run the full axe-core browser checks (contrast, focus, touch targets) on every queued scan with headless Chrome, so the whole site gets browser coverage without an admin visiting each page. Available on the Standard edition.'|t('accessibility-audit'),
+            edition: 'standard',
             headingLevel: 4,
         } only %}
     {% else %}
@@ -134,6 +135,48 @@
         errors: settings.getErrors('browserSettleMs'),
         warning: config.browserSettleMs is defined ? 'Overridden by config file.'|t('accessibility-audit'),
         disabled: config.browserSettleMs is defined,
+    }) }}
+    {% endif %}
+
+    <hr>
+
+    <h2>{{ 'PDF Checks'|t('accessibility-audit') }}</h2>
+
+    {% if not (isStandard ?? false) %}
+        {% include 'accessibility-audit/_includes/pro-upsell' with {
+            feature: 'PDF checks'|t('accessibility-audit'),
+            text: 'Check every PDF in the asset library for the failures a machine can settle: tags, language, title, alt text on figures, form fields, and more. Available on the Standard edition.'|t('accessibility-audit'),
+            edition: 'standard',
+            headingLevel: 4,
+        } only %}
+    {% else %}
+    {{ forms.lightswitchField({
+        label: 'Check PDF Files'|t('accessibility-audit'),
+        instructions: 'Check each PDF in the asset library when it is uploaded or replaced, and list what it fails on the Assets page.'|t('accessibility-audit')
+            ~ ' <span class="info">' ~ 'Every install gets the document checks from the queue. With headless Chrome set up above, the structure checks run as well: headings, tables, lists and links. PDF findings stay out of the site score.'|t('accessibility-audit') ~ '</span>',
+        id: 'pdfChecks',
+        name: 'settings[pdfChecks]',
+        on: settings.pdfChecks,
+        errors: settings.getErrors('pdfChecks'),
+        warning: config.pdfChecks is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.pdfChecks is defined,
+    }) }}
+
+    {{ forms.textField({
+        label: 'Largest PDF to Check (MB)'|t('accessibility-audit'),
+        instructions: 'Larger files aren’t read. They’re listed under Couldn’t be checked on the Assets page, with the reason.'|t('accessibility-audit')
+            ~ ' <span class="info">' ~ 'Memory and time go up with the size of the file. 20 MB covers nearly every PDF on the web; the limit runs from 1 to 50.'|t('accessibility-audit') ~ '</span>',
+        id: 'pdfMaxMegabytes',
+        name: 'settings[pdfMaxMegabytes]',
+        value: (settings.pdfMaxBytes / 1048576)|round(1),
+        type: 'number',
+        min: 1,
+        max: 50,
+        step: 1,
+        size: 4,
+        errors: settings.getErrors('pdfMaxBytes'),
+        warning: config.pdfMaxBytes is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.pdfMaxBytes is defined,
     }) }}
     {% endif %}
 
@@ -289,21 +332,18 @@
     
     <div class="readable">
         <blockquote class="note tip">
-            <p>{{ 'Full list of rule IDs:'|t('accessibility-audit') }}
-                <code>img-alt</code>, <code>img-alt-filename</code>, <code>block-in-paragraph</code>,
-                <code>unescaped-markup-in-code</code>,
-                <code>contrast-hover</code>, <code>contrast-focus</code>, <code>contrast-selection</code>,
-                <code>heading-order</code>,
-                <code>empty-heading</code>, <code>multiple-h1</code>, <code>link-name</code>,
-                <code>link-generic</code>, <code>link-new-window</code>, <code>button-name</code>,
-                <code>form-label</code>, <code>select-label</code>, <code>table-header</code>,
-                <code>html-lang</code>, <code>page-title</code>, <code>skip-link</code>,
-                <code>landmark-main</code>, <code>landmark-regions</code>, <code>iframe-title</code>,
-                <code>video-captions</code>, <code>autoplay</code>, <code>duplicate-id</code>,
-                <code>meta-description</code>, <code>aria-hidden-focus</code>, <code>list-structure</code>,
-                <code>input-type</code>, <code>potential:focus-outline-removed</code>,
-                <code>potential:focus-not-visible</code>, <code>potential:focus-obscured</code>
-            </p>
+            <p>{{ 'Full list of rule IDs:'|t('accessibility-audit') }}</p>
+            {% set ruleGroupLabels = {
+                page: 'Page checks'|t('accessibility-audit'),
+                browser: 'Contrast, from the browser pass'|t('accessibility-audit'),
+                review: 'Questions for review'|t('accessibility-audit'),
+            } %}
+            {% for group, ruleIds in ignorableRuleIds %}
+                <p><strong>{{ ruleGroupLabels[group] }}:</strong>
+                    {% for ruleId in ruleIds %}<code>{{ ruleId }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+                </p>
+            {% endfor %}
+            <p>{{ 'axe-core rules are named axe: and then axe’s own rule ID, as shown under the rule’s title on the Issues tab, for example axe:region.'|t('accessibility-audit') }}</p>
         </blockquote>
     </div>
 {% if readOnly %}</fieldset>{% endif %}

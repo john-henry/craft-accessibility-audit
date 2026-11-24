@@ -11,6 +11,7 @@
 </div>
 
 {% if summary.scannedCount > 0 %}
+{% if summary.errorCount > 0 or summary.warningCount > 0 %}
 <div class="accessibility-audit-counts accessibility-audit-justify-center mt-s">
     {% if summary.errorCount > 0 %}
         <span class="accessibility-audit-count accessibility-audit-count--error">{{ summary.errorCount }} {{ 'errors'|t('accessibility-audit') }}</span>
@@ -19,6 +20,7 @@
         <span class="accessibility-audit-count accessibility-audit-count--warning">{{ summary.warningCount }} {{ 'warnings'|t('accessibility-audit') }}</span>
     {% endif %}
 </div>
+{% endif %}
 <p class="light accessibility-audit-note accessibility-audit-widget-link accessibility-audit-cta-right">
     <a class="go" href="{{ cpUrl('accessibility-audit') }}">{{ 'View full report'|t('accessibility-audit') }}</a>
 </p>

@@ -17,17 +17,19 @@
     
     <h2>{{ 'Data Retention'|t('accessibility-audit') }}</h2>
     
+    {% set retentionCap = retentionCap ?? null %}
+    {% set retainDays = retentionCap is not null and (settings.retainDays <= 0 or settings.retainDays > retentionCap) ? retentionCap : settings.retainDays %}
     {{ forms.textField({
         label: 'Retain Scan Results (days)'|t('accessibility-audit'),
-        instructions: (isPro ?? false)
+        instructions: retentionCap is null
             ? 'Delete scan results older than this many days. Cleared out when Craft runs garbage collection, so nothing needs scheduling. Set to 0 to keep forever.'|t('accessibility-audit')
-            : 'Delete scan results older than this many days. Cleared out when Craft runs garbage collection, so nothing needs scheduling. The Standard edition keeps up to {n} days; upgrade to Pro for longer or unlimited retention.'|t('accessibility-audit', {n: retentionCap ?? 30}),
+            : 'Delete scan results older than this many days. Cleared out when Craft runs garbage collection, so nothing needs scheduling. The {edition} edition keeps up to {n} days; upgrade for longer retention, or to Pro to keep it for good.'|t('accessibility-audit', {edition: pluginEditionName ?? '', n: retentionCap}),
         id: 'retainDays',
         name: 'settings[retainDays]',
-        value: settings.retainDays,
+        value: retainDays,
         type: 'number',
-        min: (isPro ?? false) ? 0 : 1,
-        max: (isPro ?? false) ? null : (retentionCap ?? 30),
+        min: retentionCap is null ? 0 : 1,
+        max: retentionCap,
         size: 6,
         errors: settings.getErrors('retainDays'),
         warning: config.retainDays is defined ? 'Overridden by config file.'|t('accessibility-audit'),
@@ -61,11 +63,11 @@
     {% if not isProEdition %}
         <p class="light">
             {{ 'Keeping a permanent record of resolved issues is a Pro feature.'|t('accessibility-audit') }}
-            <a href="{{ cpUrl('plugin-store/accessibility-audit') }}" class="go">{{ 'Upgrade to Pro'|t('accessibility-audit') }}</a>
+            <a href="{{ cpUrl('plugin-store/accessibility-audit') }}" class="go">{{ 'Upgrade to {edition}'|t('accessibility-audit', { edition: craft.a11y.editionName('pro') }) }}</a>
         </p>
     {% endif %}
     
-    {% set pruneDays = settings.retainDays > 0 ? settings.retainDays : 90 %}
+    {% set pruneDays = retainDays > 0 ? retainDays : 90 %}
     <div class="readable">
         <blockquote class="note tip">
             <p>{{ 'You can prune results manually via CLI:'|t('accessibility-audit') }}</p>

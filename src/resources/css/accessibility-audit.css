@@ -23,11 +23,14 @@
   color: var(--aa-link-hover);
 }
 
+/* Craft's own small heading (h6): 11px, uppercase, its grey, no extra tracking. */
 .accessibility-audit-col-label {
-  font: var(--aa-text-column-label);
-  letter-spacing: 0.07em;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
   text-transform: uppercase;
-  color: var(--light-text-color);
+  color: var(--medium-text-color);
 }
 
 .accessibility-audit-meta {
@@ -70,32 +73,6 @@
    for anyone who asks for reduced motion, which matters doubly in an
    accessibility tool. */
 
-/* The glyph is a font character drawn by Craft's [data-icon]:before, which
-   carries vertical-align: middle — a baseline-relative shift that reads as
-   off-centre inside a flex/grid cell. Neutralise it and let the button's grid
-   do the centring. */
-.accessibility-audit-icon-btn [data-icon] {
-  display: grid;
-  place-items: center;
-  line-height: 1;
-}
-
-.accessibility-audit-icon-btn [data-icon]::before {
-  display: block;
-  vertical-align: unset;
-  line-height: 1;
-
-  /* Sized to read as a peer of the 16px SVG icons: the font glyph's inked area
-     runs smaller than an SVG at the same nominal size. */
-  font-size: 16px;
-}
-
-/* The SVG-set icons (cp-icon) centre as a flex box of their own. */
-.accessibility-audit-icon-btn .cp-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 
 /* A cp-icon leading a text label inside a .btn: the button is inline-flex,
    which discards the whitespace-only node between the icon and the text, so
@@ -105,43 +82,6 @@
   margin-inline-end: 6px;
 }
 
-/* Icon-only square button (Re-scan, the alt editor's AI-draft and cancel).
-   Any text label is kept in the DOM but visually hidden, so the button still
-   has an accessible name and any aria-live status swaps are announced; a title
-   gives sighted users a hover tooltip. Compounded with .btn so it out-specifies Craft's own .btn sizing
-   (which sets padding-inline + height at a single-class weight): equal
-   inline/block size for a true square, a touch larger than .btn's stock
-   2.125rem height, padding and gap zeroed so
-   the glyph, already centred by .btn's flex, sits dead-centre. */
-
-/* The alt editor's action row: one shared 28px height for all three buttons
-   (AI draft, Save, cancel), sized to the icon squares and clear of the WCAG
-   2.5.8 24px target-size floor — which Craft's own .btn.small (22px) misses,
-   a poor look in this plugin in particular. Save keeps its text at small-button
-   scale; the height does the matching. */
-.btn.accessibility-audit-save-btn {
-  height: 1.75rem;
-  min-height: 1.75rem;
-  font-size: 12px;
-  padding-inline: var(--s);
-}
-
-.btn.accessibility-audit-icon-btn {
-  width: 1.75rem;
-  height: 1.75rem;
-
-  /* Craft's base .btn carries min-height: 2.125rem, which would win over the
-     height above and leave the icon squares 34px beside the 28px Save. */
-  min-height: 1.75rem;
-  min-width: 0;
-  padding: 0;
-  gap: 0;
-
-  /* Grid, not .btn's flex: one cell, glyph centred on both axes with no
-     baseline arithmetic involved. */
-  display: inline-grid;
-  place-items: center;
-}
 
 @keyframes accessibility-audit-spin {
   to {
@@ -649,6 +589,20 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
   gap: var(--aa-gap-page);
 }
 
+/* The stack's gap is the only space between its sections. Craft's .pane and
+   the panel notes bring their own 14px margins, and flex items never collapse
+   them, so left in place they would add to the gap and stack up to 44px. */
+.accessibility-audit-stack > .pane,
+.accessibility-audit-stack > .accessibility-audit-panelnote {
+  margin-block: 0;
+}
+
+/* The EN 301 549 line is a caption for the score cards, so it sits closer to
+   them than the next section does. */
+.accessibility-audit-stack > .accessibility-audit-en-note {
+  margin-top: calc(var(--aa-gap-page) * -0.5);
+}
+
 .accessibility-audit-legend-row {
   display: flex;
   gap: 20px;
@@ -797,10 +751,24 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
   margin-top: 2px;
 }
 
+/* The three severity counts sit on one line while the card has room, and stack
+   one per line, in the bar's order, only when they would otherwise wrap
+   two-and-one. Measured on the card, since the sidebar sets its width. */
+.accessibility-audit-kpi__cell {
+  container: aa-kpi / inline-size;
+}
+
 .accessibility-audit-kpi__sub--counts {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
+  flex-wrap: nowrap;
+  gap: 4px 10px;
+}
+
+@container aa-kpi (width < 200px) {
+  .accessibility-audit-kpi__sub--counts {
+    flex-direction: column;
+    gap: 2px;
+  }
 }
 
 .accessibility-audit-kpi__sub--counts strong {
@@ -819,25 +787,12 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
   color: var(--aa-notice);
 }
 
-/* Target level: an amber ring and a soft badge, so the number that actually
-   matters is the one the eye lands on first. Uses box-shadow rather than a
-   border so the card doesn't shift by a pixel against its unhighlighted siblings. */
+/* Target level: a neutral ring, with "(target)" in the card's label, so the
+   number that actually matters is the one the eye lands on first. Uses
+   box-shadow rather than a border so the card doesn't shift by a pixel against
+   its unhighlighted siblings. */
 .accessibility-audit-kpi__cell--target {
   box-shadow: inset 0 0 0 2px var(--aa-target-marker);
-}
-
-.accessibility-audit-kpi__badge {
-  display: inline-block;
-  margin-inline-start: 6px;
-  padding: 1px 6px;
-  border-radius: 9px;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--aa-target);
-  background: var(--aa-target-bg);
-  vertical-align: 1px;
 }
 
 /* Filter btngroup pinned top-right of a position:relative pane heading (Overview). */
@@ -847,17 +802,62 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
   right: 24px;
 }
 
-/* On narrower screens the corner chips would ride over the pane's heading, so
-   they drop back into the flow, below the title and its subline, above the
-   table. Wrapping keeps them tidy at any width. */
-@media (width <= 1250px) {
+/* The grouped issue table measures the pane it sits in, not the window: the
+   CP sidebar, not the screen, is what squeezes it. */
+.accessibility-audit-grouped-pane {
+  container: aa-grouped / inline-size;
+}
+
+/* The select stands in for the buttons only when they would wrap. It sits in
+   its own wrapper, since Craft's .select sets a display of its own. */
+.accessibility-audit-filter-select {
+  display: none;
+  margin: 0 0 14px;
+}
+
+/* In a narrower pane the corner buttons would ride over the heading, so they
+   drop into the flow, below the title and its subline, above the table. */
+@container aa-grouped (width < 1100px) {
   .accessibility-audit-filter-corner {
     position: static;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 2px;
     margin: 0 0 14px;
   }
+}
+
+@container aa-grouped (width < 680px) {
+  .accessibility-audit-filter-chips {
+    display: none;
+  }
+
+  .accessibility-audit-filter-select {
+    display: block;
+  }
+}
+
+/* Narrow panes keep the columns that rank the rules: Issue, WCAG, Count and
+   Points. Difficulty and Owner go first, then SC; the rule's own page has them. */
+.accessibility-audit-grouped-pane .accessibility-audit-table-scroll > table {
+  min-width: 0;
+}
+
+@container aa-grouped (width < 760px) {
+  .accessibility-audit-grouped-table :is(th, td):nth-child(4),
+  .accessibility-audit-grouped-table :is(th, td):nth-child(5) {
+    display: none;
+  }
+}
+
+@container aa-grouped (width < 520px) {
+  .accessibility-audit-grouped-table :is(th, td):nth-child(3) {
+    display: none;
+  }
+}
+
+/* A rule name or category never breaks mid-word; the category moves under
+   the name instead, with the severity dot level with the name. */
+.accessibility-audit-grouped-table th .accessibility-audit-rowline > a,
+.accessibility-audit-grouped-table .token {
+  white-space: nowrap;
 }
 
 /* Readability stats strip: single pane, native font + ink, grade colour only. */
@@ -1262,20 +1262,13 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
   width: 8px;
   height: 8px;
   border-radius: 2px;
+  flex-shrink: 0;
 }
 
 /* Severity dot used inline before a rule link (macros.severityDot), where there
    is no flex gap to space it from the following text. */
 .accessibility-audit-sevdot {
   margin-right: 5px;
-}
-
-/* Assets page: light section header per issue-type band, replacing the heavy
-   coloured flag banner. Severity now reads from the leading dot. */
-.accessibility-audit-asset-band td {
-  background: var(--gray-050);
-  padding: 8px 16px;
-  border-top: 1px solid var(--aa-border-section);
 }
 
 /* Dashboard resolved-issues pane: green check marking each fixed rule. */
@@ -1361,6 +1354,7 @@ body.use-shapes .accessibility-audit-pr-dot--error {
   height: 7px;
   border-radius: 50%;
   background: #e4dcd2;
+  flex-shrink: 0;
 }
 
 .accessibility-audit-dot--amber {
@@ -1406,31 +1400,32 @@ body.use-shapes .accessibility-audit-pr-dot--error {
   margin: 0;
 }
 
-.accessibility-audit-asset-alt {
-  min-width: 0;
-}
-
-.accessibility-audit-alt-input {
-  width: 100%;
-}
-
-/* Action cell: buttons in a right-aligned row (resting = one button; editing =
-   ✨ Save ✕). */
 .accessibility-audit-asset-action {
   text-align: right;
   white-space: nowrap;
 }
 
-.accessibility-audit-asset-action .btn + .btn {
-  margin-inline-start: 6px;
+/* A draft on the Drafts to review list wraps, so the whole sentence can be
+   read down the list without opening each image. */
+.accessibility-audit-draft-cell {
+  min-width: 16em;
+  white-space: normal;
 }
 
-/* The cell is a plain td, so its buttons are inline boxes on the text
-   baseline — and an icon-only button (no text) baselines on its bottom edge
-   while Save baselines on its text, which no amount of height-matching fixes.
-   Aligning their middles puts all three on one line. */
-.accessibility-audit-asset-action .btn {
-  vertical-align: middle;
+.accessibility-audit-draft-text {
+  display: block;
+}
+
+.accessibility-audit-draft-cell .token {
+  margin-top: var(--xs);
+}
+
+/* Claude's notes on a draft, in the row itself so they can be read without a
+   pointer, one line each. */
+.accessibility-audit-draft-notes {
+  margin: var(--xs) 0 0;
+  padding-inline-start: var(--m);
+  list-style: disc;
 }
 
 /* ---- Re-homed page utilities (were in the unloaded cp-old.css) ---- */
@@ -2334,50 +2329,116 @@ body.use-shapes .accessibility-audit-pr-dot--error {
 }
 
 /* ---- Asset alt-text ---- */
-.accessibility-audit-asset-thumb {
-  width: 52px;
-  height: 52px;
-  border-radius: var(--aa-radius-small);
-  background: linear-gradient(135deg, #e7e1d8, #d9d2c9);
+/* Craft's chip keeps its label on one line; a long asset title would then set
+   the table's minimum width and push the inline alt editing off screen. */
+#accessibility-audit-assets-groups .chip .label-link,
+#accessibility-audit-assets-groups .chip .label-link span {
+  white-space: normal;
+}
+
+/* .tablepane pulls the table up over the pane's top padding, which only works when
+   it is the first thing in the pane; the notices and bulk bar sit above it. */
+:not([hidden]) ~ #accessibility-audit-assets-groups > .tablepane {
+  margin-block-start: 0;
+}
+
+/* The row header carries the document title; Craft's index renders its title as a
+   normal-weight chip link, so the th's bold is reset to match. */
+table.data th.accessibility-audit-pdf-doc {
+  font-weight: normal;
+}
+
+.token.accessibility-audit-problem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.accessibility-audit-alt-editor__preview {
   display: flex;
   align-items: center;
   justify-content: center;
+  margin: 0 0 var(--s);
+  padding: var(--s);
+  min-height: 160px;
+  background: var(--gray-050);
+  border-radius: var(--radius-md);
 }
 
-.accessibility-audit-no-alt {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--aa-error);
-  background: var(--aa-error-bg);
-  border-radius: var(--aa-radius-small);
-  padding: 4px 10px;
+.accessibility-audit-alt-editor__preview img {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  height: auto;
 }
 
-.accessibility-audit-filename-alt {
-  font:
-    500 12px/1.4 ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Consolas,
-    monospace;
-  color: var(--aa-warning-strong);
-  background: var(--aa-warning-bg);
-  border-radius: var(--aa-radius-small);
-  padding: 4px 10px;
+.accessibility-audit-alt-editor__meta {
+  margin: 0 0 var(--l);
 }
 
-.accessibility-audit-decorative-note {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--aa-pass);
+.accessibility-audit-alt-editor__count {
+  margin: calc(var(--s) * -1) 0 var(--m);
 }
 
-.accessibility-audit-asset-item--decorative .accessibility-audit-no-alt,
-.accessibility-audit-asset-item--decorative .accessibility-audit-filename-alt {
+.accessibility-audit-alt-editor__ai {
+  margin-bottom: var(--l);
+}
+
+.accessibility-audit-alt-editor__suggestion {
+  margin-top: var(--s);
+  padding: var(--s) var(--m);
+  background: var(--gray-050);
+  border-radius: var(--radius-md);
+}
+
+.accessibility-audit-alt-editor__reasons {
+  margin-bottom: var(--s);
+}
+
+.accessibility-audit-alt-editor__options {
+  margin: 0 0 var(--s);
+  padding: 0;
+  list-style: none;
+}
+
+.accessibility-audit-alt-editor__option {
+  padding: var(--s) 0;
+  border-bottom: 1px solid var(--hairline-color);
+}
+
+.accessibility-audit-alt-editor__option p {
+  margin: 0 0 var(--xs);
+}
+
+/* Craft's .flex sets display, which outranks the hidden attribute's own rule. */
+#accessibility-audit-bulk-bar[hidden] {
   display: none;
 }
 
-.accessibility-audit-asset-item--decorative .accessibility-audit-asset-thumb {
+
+#accessibility-audit-assets-groups .token.accessibility-audit-problem {
+  white-space: nowrap;
+}
+
+.accessibility-audit-alt-editor__reasons {
+  margin-top: var(--s);
+  padding: var(--s) var(--m);
+  border-radius: var(--radius-md);
+  background: var(--gray-050);
+}
+
+.accessibility-audit-alt-editor__reasons p {
+  margin: 0 0 var(--xs);
+}
+
+.accessibility-audit-alt-editor__reasons ul {
+  margin: 0;
+  padding-inline-start: var(--m);
+  list-style: disc;
+}
+
+
+.accessibility-audit-asset-item--decorative .chip {
   opacity: 0.55;
 }
 
@@ -2767,6 +2828,7 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   border-radius: 50%;
   background: var(--aa-border-section);
   border: 1px solid var(--aa-border-control);
+  flex-shrink: 0;
 }
 
 .accessibility-audit-difficulty--beginner .accessibility-audit-difficulty-dot.filled {
@@ -2989,20 +3051,6 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   gap: 10px;
 }
 
-/* An unsaved value (typed or AI-drafted) awaiting review. Blue, not green:
-   in the CP's own language green marks a pass/success verdict, while blue is
-   the modified/attention state (drafts, focus, selection), and this value
-   hasn't earned a verdict yet. Craft's blue tokens; focus hands over to the
-   native focus ring. */
-.accessibility-audit-alt-input--pending {
-  border-color: var(--blue-300);
-  box-shadow: 0 0 0 1px var(--blue-300);
-}
-
-.accessibility-audit-alt-input--pending:focus {
-  border-color: var(--blue-600);
-  box-shadow: var(--focus-ring);
-}
 
 /* ==========================================================================
    Restored dynamic modifiers — these severity/responsibility/ability variants
@@ -3264,8 +3312,6 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
    person or has not been scanned at all, green where there is nothing left to
    do, red where something is actually failing. */
 .accessibility-audit-panelnote {
-  --aa-panelnote-accent: var(--hairline-color, #d9d9d9);
-
   display: flex;
   align-items: flex-start;
   gap: 9px;
@@ -3276,31 +3322,14 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
      another note or a pane. */
   margin: 14px 0;
 
-  /* 17px on the left so the words start where they would on a note with no
-     accent: the stripe is drawn inside the box, not added to it. */
-  padding: 12px 14px 12px 17px;
+  padding: 12px 14px;
   border: var(--pane-border, none);
   border-radius: var(--pane-border-radius, var(--large-border-radius, 6px));
   background: var(--pane-bg, var(--white, #fff));
   color: var(--text-color);
 
-  /* Panes on this page take their edge from --pane-shadow, not a border. The
-     accent rides along as an inset stripe inside that same ring. */
-  box-shadow:
-    inset 3px 0 0 0 var(--aa-panelnote-accent),
-    var(--pane-shadow, 0 0 0 1px var(--gray-200, #cbd5e1));
-}
-
-.accessibility-audit-panelnote--waiting {
-  --aa-panelnote-accent: var(--warning-color, #cb6e17);
-}
-
-.accessibility-audit-panelnote--good {
-  --aa-panelnote-accent: var(--success-color, #1f7a44);
-}
-
-.accessibility-audit-panelnote--alert {
-  --aa-panelnote-accent: var(--error-color, #cf1124);
+  /* Panes on this page take their edge from --pane-shadow, not a border. */
+  box-shadow: var(--pane-shadow, 0 0 0 1px var(--gray-200, #cbd5e1));
 }
 
 .accessibility-audit-panelnote__tick {
@@ -3545,11 +3574,11 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   color: var(--aa-text-secondary);
 }
 
-/* EN 301 549 standing note, under the WCAG conformance scores. */
+/* EN 301 549 standing note, under the WCAG conformance scores. Body size, and
+   free to wrap at any width. */
 .accessibility-audit-en-note {
   margin: 10px 0 0;
-  font-size: 11px;
-  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 /* Ability tag icons. Craft's icon set, not emoji: these take currentColor and
@@ -3573,14 +3602,112 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
 
 /* VueAdminTable pages table: expand caret rotation keyed off the button class
    (its rows have no .accessibility-audit-page-row ancestor), and the injected tinted detail row. */
-.accessibility-audit-vt-expand .accessibility-audit-expand-icon {
+.accessibility-audit-vt-expand .accessibility-audit-expand-icon,
+.accessibility-audit-occ-toggle .accessibility-audit-expand-icon {
   transition: transform 0.15s;
   transform-origin: center;
   transform: rotate(-90deg);
 }
 
-.accessibility-audit-vt-expand[aria-expanded='true'] .accessibility-audit-expand-icon {
+.accessibility-audit-vt-expand[aria-expanded='true'] .accessibility-audit-expand-icon,
+.accessibility-audit-occ-toggle[aria-expanded='true'] .accessibility-audit-expand-icon {
   transform: rotate(0deg);
+}
+
+/* A rule's occurrences on one page, in the page listing's detail row. The
+   markup is a scanned page's, so long attribute values wrap rather than
+   widening the table. */
+tr:has(> td > div > div > .accessibility-audit-issues-detail),
+tr:has(> td .accessibility-audit-occurrences) {
+  background: var(--aa-surface-tint);
+}
+
+/* Craft's table.data collapses borders, which drops both the border and the
+   radius, so this table keeps its borders separate. */
+table.data.accessibility-audit-occurrences {
+  margin-bottom: 8px;
+  table-layout: fixed;
+  border: 1px solid var(--aa-border-control);
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 6px;
+}
+
+.accessibility-audit-occurrences thead th {
+  background: var(--aa-surface-tint);
+  color: var(--aa-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.accessibility-audit-occurrences thead th:nth-child(1) {
+  width: 34%;
+}
+
+.accessibility-audit-occurrences thead th:nth-child(3) {
+  width: 28%;
+}
+
+.accessibility-audit-occurrences th[scope='row'] {
+  font-weight: 400;
+  white-space: pre-line;
+}
+
+.accessibility-audit-occurrences code {
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.accessibility-audit-occ-markup {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--aa-surface-chrome);
+  color: var(--text-color);
+}
+
+.accessibility-audit-occurrences .accessibility-audit-occ-selector {
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-occ-ratio {
+  color: var(--aa-error);
+  font-weight: 700;
+}
+
+.accessibility-audit-occ-colours {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-top: 4px;
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-occ-colour {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  font-family: var(--code-font, ui-monospace, monospace);
+  font-size: 12px;
+}
+
+.accessibility-audit-occ-swatch {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border: 1px solid rgb(0 0 0 / 15%);
+  border-radius: 2px;
+}
+
+.accessibility-audit-occ-more {
+  margin: 4px 0 0;
+  font-size: 12px;
 }
 
 .accessibility-audit-vt-detail {
@@ -3992,4 +4119,138 @@ fieldset.accessibility-audit-readonly textarea {
 .accessibility-audit-score-history__key--a {
   border-top-style: dashed;
   border-top-color: var(--aa-series-a);
+}
+
+/* Craft's draft icon beside an image's chip: a draft is waiting for review. */
+.accessibility-audit-has-draft {
+  gap: var(--xs);
+  align-items: center;
+}
+
+/* A pane heading with its one link on the right, as on Resolved issues. */
+.accessibility-audit-pane-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.accessibility-audit-pane-head__action {
+  flex: none;
+  margin-left: auto;
+}
+
+/* The Overview's Assets pane: small stat tiles in the same language as the
+   score cards, grouped under Images and PDFs, each one a link to its list. */
+.accessibility-audit-assettiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+  margin-top: 16px;
+}
+
+.accessibility-audit-assettiles__group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.accessibility-audit-assettiles__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.accessibility-audit-assettile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 128px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--gray-050);
+  color: var(--text-color);
+  text-decoration: none;
+}
+
+.accessibility-audit-assettile:hover {
+  background: var(--gray-100);
+  color: var(--text-color);
+  text-decoration: none;
+}
+
+.accessibility-audit-assettile:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.accessibility-audit-assettile__num {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.accessibility-audit-assettile__label {
+  font-size: 12px;
+  color: var(--aa-text-secondary);
+}
+
+.accessibility-audit-assettile--warning .accessibility-audit-assettile__num {
+  color: var(--aa-warning-strong);
+}
+
+.accessibility-audit-assettile--notice .accessibility-audit-assettile__num {
+  color: var(--aa-notice);
+}
+
+.accessibility-audit-assettile--good .accessibility-audit-assettile__num {
+  color: var(--success-color);
+}
+
+/* The PDF report: a summary, then one section per failing check, each with
+   its fix on its own line. The file's facts sit in Craft's details sidebar. */
+.accessibility-audit-pdf-summary {
+  margin-bottom: var(--l);
+}
+
+.accessibility-audit-pdf-summary h2 {
+  margin: 0;
+}
+
+.accessibility-audit-pdf-summary p {
+  margin: 2px 0 0;
+}
+
+.accessibility-audit-pdf-check {
+  padding-block: var(--l);
+  border-top: 1px solid var(--hairline-color);
+}
+
+.accessibility-audit-pdf-check h3 {
+  margin: 0 0 4px;
+}
+
+.accessibility-audit-pdf-check p {
+  margin: 0 0 8px;
+}
+
+.accessibility-audit-pdf-check__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.accessibility-audit-pdf-check__fix {
+  padding: var(--s) var(--m);
+  border-radius: var(--radius-md);
+  background: var(--gray-050);
+}
+
+.accessibility-audit-pdf-check__fix strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.accessibility-audit-pdf-disclaimer {
+  margin: var(--m) 0 0;
 }

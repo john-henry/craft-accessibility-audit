@@ -10,6 +10,7 @@ use Craft;
 use craft\db\Query;
 use craft\elements\Asset;
 use craft\elements\db\AssetQuery;
+use craft\errors\SiteNotFoundException;
 use craft\helpers\Db;
 use craft\helpers\StringHelper;
 use DateTime;
@@ -59,47 +60,43 @@ class AssetScanner extends Component
     // =========================================================================
 
     /**
-     * Reads one asset for alt-text problems.
+     * An asset query that returns each asset once, in the current site where it
+     * exists there and in one of its own sites where it doesn't.
      *
-     * Assets are binary files, so nothing here parses markup: the questions are
-     * about the text describing the file, not about the file itself.
+     * A volume can let each asset choose its sites, so an asset may exist only
+     * in the site it was uploaded from, and queue jobs run in the primary site.
+     * A plain query would miss those assets entirely.
      *
-     * @param Asset $asset The asset to read.
-     * @return IssueModel[] The findings, empty where the asset passes.
+     * @return AssetQuery<int, Asset> The query, ready for further conditions.
+     * @throws SiteNotFoundException
      *
      * @author John Henry Donovan <info@johnhenry.ie>
-     * @since 1.0.0
+     * @since 2.0.0
      */
-    public function scanAsset(Asset $asset): array
+    public static function anySiteQuery(): AssetQuery
     {
-        $issues = [];
+        return Asset::find()
+            ->site('*')
+            ->preferSites([Craft::$app->getSites()->getCurrentSite()->id])
+            ->unique();
+    }
 
-        if (!in_array($asset->kind, [Asset::KIND_IMAGE, Asset::KIND_PDF], true)) {
-            return [];
-        }
+    /**
+     * Finds an asset by ID in whichever site it exists, preferring the current
+     * one; see {@see self::anySiteQuery()}.
+     *
+     * @param int $id The asset ID.
+     * @return Asset|null The asset, or null when there is none with that ID.
+     * @throws SiteNotFoundException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public static function findAsset(int $id): ?Asset
+    {
+        $asset = self::anySiteQuery()->id($id)->one();
 
-        // An excluded volume's images are left out of the audit entirely: raise
-        // nothing for them, so a save in an excluded volume stores no findings.
-        if ($this->_isExcludedVolume($asset)) {
-            return [];
-        }
-
-        if ($asset->kind === Asset::KIND_IMAGE) {
-            // Single asset, so a single indexed lookup: no loop to batch here.
-            $issues = array_merge($issues, $this->_checkImageAlt($asset, $this->isDecorative((int)$asset->id)));
-        }
-
-        if ($asset->kind === Asset::KIND_PDF) {
-            $issues[] = IssueModel::make(
-                'pdf-accessibility', 'notice',
-                'PDF files are often inaccessible. Ensure this PDF has been tagged for accessibility or provide an accessible HTML alternative.',
-                '1.1.1', 'A',
-                $asset->filename,
-                'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content'
-            );
-        }
-
-        return $issues;
+        return $asset instanceof Asset ? $asset : null;
     }
 
     /**
@@ -332,13 +329,14 @@ class AssetScanner extends Component
      * own before, and the count excluded nothing at all.
      *
      * @return AssetQuery<int, Asset> The query, ready for further conditions.
+     * @throws SiteNotFoundException
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.5.0
      */
     public function imageQuery(): AssetQuery
     {
-        $query = Asset::find()->kind(Asset::KIND_IMAGE);
+        $query = self::anySiteQuery()->kind(Asset::KIND_IMAGE);
 
         // Temporary uploads, which belong to no volume.
         $query->andWhere(['not', ['volumeId' => null]]);
@@ -351,6 +349,25 @@ class AssetScanner extends Component
         }
 
         return $query;
+    }
+
+    /**
+     * The image library a listing works from, with the excluded volumes and any
+     * volume or filename filter already applied; see {@see self::_imageQuery()}.
+     *
+     * @param string|null $volume A volume handle to restrict to, or null for
+     *        every volume.
+     * @param string|null $search A partial filename to filter by, or null for
+     *        no filename filter.
+     * @return AssetQuery<int, Asset> The query, ready for further conditions.
+     * @throws SiteNotFoundException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function listingQuery(?string $volume = null, ?string $search = null): AssetQuery
+    {
+        return $this->_imageQuery($volume, $search);
     }
 
     /**
@@ -527,6 +544,20 @@ class AssetScanner extends Component
     // =========================================================================
 
     /**
+     * An asset's alt text, from whichever field the settings point at.
+     *
+     * @param Asset $asset The asset to read.
+     * @return string|null The alt text, or null where there is none.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function altText(Asset $asset): ?string
+    {
+        return $this->_getAltText($asset);
+    }
+
+    /**
      * Whether one asset has been marked decorative. A decorative image
      * intentionally carries an empty alt, so its missing alt is not flagged.
      *
@@ -571,7 +602,8 @@ class AssetScanner extends Component
 
     /**
      * Marks one asset decorative, or unmarks it. Upserts the flag row so the
-     * unique assetId key holds, keeping one row per asset.
+     * unique assetId key holds, keeping one row per asset. A decorative image
+     * needs no alt text, so marking one also drops any draft waiting for it.
      *
      * @param int $assetId The asset's id.
      * @param bool $decorative Whether the asset is decorative.
@@ -593,6 +625,10 @@ class AssetScanner extends Component
             'isDecorative' => $decorative,
             'dateUpdated' => Db::prepareDateForDb(new DateTime()),
         ])->execute();
+
+        if ($decorative) {
+            AccessibilityAudit::getInstance()->getAltDrafts()->discard($assetId);
+        }
 
         // The memo is brought into step with the write rather than dropped.
         // Marking images in bulk sets them one at a time, and the audit sync
@@ -712,8 +748,9 @@ class AssetScanner extends Component
     }
 
     /**
-     * Removes every stored audit row for one asset. Called when an image is
-     * hard-deleted, so its findings don't linger as orphans.
+     * Removes every stored audit row for one asset, its PDF check included.
+     * Called when an asset is hard-deleted, so its findings don't linger as
+     * orphans.
      *
      * @param int $assetId The deleted asset's id.
      * @throws Exception
@@ -723,16 +760,19 @@ class AssetScanner extends Component
      */
     public function clearStoredIssues(int $assetId): void
     {
-        Craft::$app->getDb()->createCommand()
-            ->delete('{{%accessibilityaudit_asset_issues}}', ['assetId' => $assetId])
-            ->execute();
+        $db = Craft::$app->getDb();
+        $db->createCommand()->delete('{{%accessibilityaudit_asset_issues}}', ['assetId' => $assetId])->execute();
+        $db->createCommand()->delete(PdfAuditService::TABLE, ['assetId' => $assetId])->execute();
     }
 
     /**
-     * Clears the whole stored asset audit: every image issue and the cached
+     * Clears the whole stored image audit: every image issue and the cached
      * summary counts. Used when the Alt Text Field setting changes, since the
      * stored findings were computed against the previous field and no longer
      * describe the current one. The next asset sweep repopulates both.
+     *
+     * PDF findings share the table and are left alone: the alt text field has
+     * nothing to do with them.
      *
      * @throws Exception
      *
@@ -742,7 +782,12 @@ class AssetScanner extends Component
     public function clearAssetAudit(): void
     {
         $db = Craft::$app->getDb();
-        $db->createCommand()->delete('{{%accessibilityaudit_asset_issues}}')->execute();
+        $imageAssets = (new Query())
+            ->select(['id'])
+            ->from('{{%assets}}')
+            ->where(['kind' => Asset::KIND_IMAGE]);
+
+        $db->createCommand()->delete('{{%accessibilityaudit_asset_issues}}', ['assetId' => $imageAssets])->execute();
         $db->createCommand()->delete('{{%accessibilityaudit_asset_stats}}')->execute();
     }
 
@@ -750,7 +795,8 @@ class AssetScanner extends Component
      * Clears the stored asset findings for the images in the given volumes.
      * Called when volumes are newly excluded on save, so the Assets page and
      * the dashboard's Asset alt text panel shed those images from their counts
-     * right away rather than waiting for the next sweep.
+     * right away rather than waiting for the next sweep. PDFs in those volumes
+     * lose their findings and their check rows along with them.
      *
      * The stored rows key on assetId, so the affected image ids are resolved
      * through a subquery on the assets table (never a loaded id list), keeping
@@ -777,10 +823,12 @@ class AssetScanner extends Component
         Craft::$app->getDb()->createCommand()
             ->delete('{{%accessibilityaudit_asset_issues}}', ['assetId' => $assetIds])
             ->execute();
+
+        AccessibilityAudit::getInstance()->getPdfAudit()->clearForVolumes($volumeIds);
     }
 
     /**
-     * Deletes stored audit rows whose asset element no longer exists at all
+     * Deletes stored audit rows whose asset is no longer an image or PDF at all
      * (hard-deleted, or bulk-removed in a way that skipped the delete event).
      * A subquery, not a loaded id list, so it scales to a large library.
      *
@@ -798,17 +846,19 @@ class AssetScanner extends Component
      */
     public function pruneOrphanedAssetIssues(): int
     {
-        // Anything whose id is not an image in the assets table: a hard-deleted
-        // asset (the row goes with it) or a row pointing at a non-asset element
-        // entirely. A trashed asset keeps its assets row, so its history is
-        // preserved here and simply left out of the counts.
-        $imageAssets = (new Query())
+        // Anything whose id is not an image or a PDF in the assets table: a
+        // hard-deleted asset (the row goes with it) or a row pointing at a
+        // non-asset element entirely. A trashed asset keeps its assets row, so
+        // its history is preserved here and simply left out of the counts. PDF
+        // rows stay; the image counts already filter on kind, so keeping them
+        // here moves no image figure.
+        $auditedAssets = (new Query())
             ->select('a.id')
             ->from(['a' => '{{%assets}}'])
-            ->where(['a.kind' => Asset::KIND_IMAGE]);
+            ->where(['a.kind' => [Asset::KIND_IMAGE, Asset::KIND_PDF]]);
 
         return Craft::$app->getDb()->createCommand()
-            ->delete('{{%accessibilityaudit_asset_issues}}', ['not', ['assetId' => $imageAssets]])
+            ->delete('{{%accessibilityaudit_asset_issues}}', ['not', ['assetId' => $auditedAssets]])
             ->execute();
     }
 

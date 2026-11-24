@@ -33,7 +33,7 @@ trait ConsoleSiteTrait
 
     /**
      * @var string|null The handle of the site to act on. Pro only; the
-     *                  Standard edition always acts on the primary site.
+     *                  Lite and Standard always act on the primary site.
      */
     public ?string $site = null;
 
@@ -53,11 +53,13 @@ trait ConsoleSiteTrait
     private function _resolveSiteId(): ?int
     {
         // Multi-site is a Pro feature: --site is only honoured on Pro, so
-        // Standard always operates on the primary site.
+        // Lite and Standard always operate on the primary site.
         if ($this->site) {
-            if (!AccessibilityAudit::getInstance()->isPro()) {
+            $plugin = AccessibilityAudit::getInstance();
+
+            if (!$plugin->isPro()) {
                 $this->stderr(
-                    "Multi-site is a Pro feature; --site is ignored on the Standard edition.\n",
+                    'Multi-site is a Pro feature; --site is ignored on the ' . AccessibilityAudit::editionName($plugin->edition) . " edition.\n",
                     Console::FG_YELLOW
                 );
             } else {

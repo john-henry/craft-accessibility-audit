@@ -65,6 +65,16 @@
 {%- endmacro %}
 
 
+{% macro ruleName(title, ruleId, url = null) -%}
+    {%- if url -%}
+        <a href="{{ url }}">{{ title ?: ruleId }}</a>
+    {%- else -%}
+        <span>{{ title ?: ruleId }}</span>
+    {%- endif -%}
+    {%- if title and title != ruleId %} <span class="light code smalltext">{{ ruleId }}</span>{% endif -%}
+{%- endmacro %}
+
+
 {% macro responsibility(responsibility) -%}
     {%- if responsibility is not null -%}
         {%- set badges = craft.a11y.responsibilities() -%}
