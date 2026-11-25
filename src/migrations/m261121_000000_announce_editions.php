@@ -11,7 +11,7 @@ use craft\db\Migration;
 use craft\i18n\Translation;
 
 /**
- * Tells admins about the three editions and PDF checks under What's New.
+ * Tells admins about the three editions, PDF checks and reports under What's New.
  *
  * The heading and body are prepared for lazy translation, so each admin reads
  * them in their own control panel language. A fresh install never runs this,
@@ -44,10 +44,10 @@ class m261121_000000_announce_editions extends Migration
     public function safeUp(): bool
     {
         Craft::$app->getAnnouncements()->push(
-            heading: Translation::prep('accessibility-audit', 'Three editions and PDF checks'),
+            heading: Translation::prep('accessibility-audit', 'Editions, PDF checks and reports'),
             body: Translation::prep(
                 'accessibility-audit',
-                'Accessibility Audit now comes in Lite, Standard and Pro, and this site keeps the edition it is on. Standard and Pro can check the PDFs in your asset library too. [Read the release notes]({url}).',
+                'Accessibility Audit now comes in Lite, Standard and Pro, and this site keeps the edition it is on. Standard and Pro check the PDFs in your asset library, draft alt text for images missing it, and give you fix guides to hand to a developer. Pro adds a Reports screen, with a directors summary you can email every week or month. [Read the release notes]({url}).',
                 ['url' => self::RELEASE_NOTES_URL],
             ),
             pluginHandle: 'accessibility-audit',

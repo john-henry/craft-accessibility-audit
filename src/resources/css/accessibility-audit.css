@@ -3234,10 +3234,13 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
 
 /* Bulk dismissal: the selection bar above the queue, and a pick box on the
    top-right corner of each card. */
+/* Wraps, so the second button drops to its own line in a narrow sidebar
+   rather than running off its edge. */
 .accessibility-audit-pr-bulk {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px 10px;
   margin-bottom: 10px;
 }
 
@@ -3246,6 +3249,7 @@ table.accessibility-audit-table thead:first-child tr:first-child th:last-child {
   align-items: center;
   gap: 6px;
   font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
 }
 

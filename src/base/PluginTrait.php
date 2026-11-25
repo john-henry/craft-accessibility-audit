@@ -177,6 +177,7 @@ trait PluginTrait
         'Re-analyse',
         'Re-analyse selected',
         'Re-scan',
+        'No issues found.',
         'Re-scan selected',
         'Remove scan data',
         'Dismiss selected on every page',

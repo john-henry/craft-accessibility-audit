@@ -411,7 +411,9 @@
 
     renderPageIssuesTable(issues, meta) {
       if (!issues.length) {
-        return '<p class="light" style="padding:10px 0">No issues found.</p>';
+        return '<p class="light accessibility-audit-emptyok" style="padding:10px 0">'
+          + '<span class="accessibility-audit-resolved-check" data-icon="check" aria-hidden="true"></span>'
+          + Craft.t('accessibility-audit', 'No issues found.') + '</p>';
       }
 
       const cfg     = window.AccessibilityAudit || {};

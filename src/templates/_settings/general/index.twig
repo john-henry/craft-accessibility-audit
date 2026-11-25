@@ -161,7 +161,7 @@
         {{ forms.autosuggestField({
             label: 'VPAT Export Template'|t('accessibility-audit'),
             instructions: 'Path to a site template that renders the VPAT export in place of the built-in document, e.g. `_vpat/export`.'|t('accessibility-audit')
-                ~ ' <span class="info">' ~ 'It receives the same `report` variable the built-in export gets and is responsible for the whole page, so it can carry your own branding and layout. Leave it empty for the built-in print-ready document. If the template cannot be found, the built-in one is used rather than nothing.'|t('accessibility-audit') ~ '</span>',
+                ~ ' <span class="info">' ~ 'It receives the same `report` variable the built-in export gets and is responsible for the whole page, so it can carry your own branding and layout. Leave it empty for the built-in print-ready document. If the template cannot be found, the built-in one is used instead.'|t('accessibility-audit') ~ '</span>',
             id: 'vpatExportTemplate',
             name: 'settings[vpatExportTemplate]',
             suggestions: craft.cp.getTemplateSuggestions(),

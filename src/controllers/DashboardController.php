@@ -118,8 +118,11 @@ class DashboardController extends Controller
         $siteHandle = $plugin->requestedSite()->handle;
         $sites = $plugin->allowedSites();
 
-        $plugin->getSnapshots()->recordIfMissing($siteId);
-        $plugin->getScheduledReports()->queueDue();
+        // Checked once a day, on the visit that records the day's snapshot, so
+        // a failing mailer is retried daily rather than on every page load.
+        if ($plugin->getSnapshots()->recordIfMissing($siteId)) {
+            $plugin->getScheduledReports()->queueDue();
+        }
 
         $summary = $plugin->getAudit()->getSiteSummary($siteId);
 

@@ -26,6 +26,12 @@ class SendScheduledReport extends BaseJob
      */
     public int $siteId = 0;
 
+    /**
+     * @var string|null The site's last send date before this send claimed the
+     * period, given back if nothing is delivered.
+     */
+    public ?string $previousSent = null;
+
     // Public Methods
     // =========================================================================
 
@@ -34,7 +40,7 @@ class SendScheduledReport extends BaseJob
      */
     public function execute($queue): void
     {
-        AccessibilityAudit::getInstance()->getScheduledReports()->send($this->siteId);
+        AccessibilityAudit::getInstance()->getScheduledReports()->sendClaimed($this->siteId, $this->previousSent);
     }
 
     // Protected Methods

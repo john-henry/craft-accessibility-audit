@@ -82,7 +82,7 @@
                     {% endfor %}
                 </div>
             {% else %}
-                <p class="accessibility-audit-panel__empty light"><span aria-hidden="true">✓</span> {{ 'No issues found.'|t('accessibility-audit') }}</p>
+                <p class="accessibility-audit-panel__empty light accessibility-audit-emptyok"><span class="accessibility-audit-resolved-check" data-icon="check" aria-hidden="true"></span> {{ 'No issues found.'|t('accessibility-audit') }}</p>
             {% endif %}
         {% else %}
             <p class="accessibility-audit-panel__empty light">{{ 'This entry has not been scanned yet.'|t('accessibility-audit') }}</p>

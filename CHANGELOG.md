@@ -1,6 +1,6 @@
 # Release Notes for Accessibility Audit
 
-## 2.0.0 - 2026-11-04
+## 2.0.0 - 2026-11-25
 
 > [!IMPORTANT]
 > Things to check when you update:
@@ -32,7 +32,7 @@
 - The Issues tab can be sorted by occurrences and points, and searched by title or rule ID.
 - Download fix guide, on Standard and Pro, gives you a Markdown to-do list for the site, a rule or a page, with an AI prompt for each developer fix.
 - Tools for Craft's MCP server, on Standard and Pro with Craft 5.12 or later: an AI assistant can read the accessibility summary, the open rules and how to fix them, and a page's issues, and can re-scan a page.
-- After updating, admins get a note under What's New in the control panel about the editions and PDF checks.
+- After updating, admins get a note under What's New in the control panel about the editions, PDF checks and reports.
 - Remove scan data, in the Actions menu on the page tables, deletes the selected pages' scores, issues and scan history.
 - Not an issue on every page, on a review question in the page report, answers the same element on every page of the site at once, including pages scanned later.
 - Each site's average score and issue counts are saved once a day and kept after old scans are pruned, on every edition.
@@ -82,6 +82,8 @@
 - Generate all alt text and Save all drafts on the Assets page. Draft alt text and Drafts to review do the job across the whole library now.
 
 ### Fixed
+- The VPAT editor's remarks box and Draft with AI button are now labelled for screen readers in the control panel's language.
+- The empty Issues list on a page now shows its message in the control panel's language.
 - The frontend overlay's grey text (the score label, each issue's details and the scan time) now meets the 4.5:1 contrast minimum.
 - Severity and difficulty markers no longer get squashed when a rule's title wraps onto two lines.
 - Server-side browser scans wait for web fonts and skip animations to their end before checking, so text caught halfway through a fade-in is no longer reported for colour contrast, and the same page gives the same results from one scan to the next.

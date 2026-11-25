@@ -74,7 +74,7 @@
         <fieldset>
             <legend class="h6">{{ 'Writing remarks'|t('accessibility-audit') }}</legend>
         <div class="meta accessibility-audit-ref">
-        <p class="accessibility-audit-ref__intro">{{ 'Say what you tested, what you found, and what the plan is for any gap. Scale matters more than adjectives.'|t('accessibility-audit') }}</p>
+        <p class="accessibility-audit-ref__intro">{{ 'Say what you tested, what you found, and what the plan is for any gap. Say how many and where, instead of leaning on adjectives.'|t('accessibility-audit') }}</p>
         <p class="accessibility-audit-ref__intro"><strong>{{ 'Weak:'|t('accessibility-audit') }}</strong> {{ '"The site is accessible."'|t('accessibility-audit') }}</p>
         <p class="accessibility-audit-ref__intro"><strong>{{ 'Better:'|t('accessibility-audit') }}</strong> {{ '"Most images carry text alternatives. Four decorative images in the blog archive are missing alt attributes; a fix is scheduled for the next release."'|t('accessibility-audit') }}</p>
         <p class="accessibility-audit-ref__intro"><strong>{{ 'For Not Applicable:'|t('accessibility-audit') }}</strong> {{ '"The site contains no prerecorded audio or video content."'|t('accessibility-audit') }}</p>
@@ -527,8 +527,8 @@
                             <td class="accessibility-audit-vpat-remarks-cell">
                                 <textarea class="text fullwidth accessibility-audit-vpat-remarks" rows="3"
                                           data-criterion="{{ num }}"
-                                          aria-label="Remarks for {{ row.name }}"
-                                          placeholder="Add remarks or explain the conformance level…">{{ row.overrideRemarks }}</textarea>
+                                          aria-label="{{ 'Remarks for {name}'|t('accessibility-audit', { name: row.name }) }}"
+                                          placeholder="{{ 'Add remarks or explain the conformance level…'|t('accessibility-audit') }}">{{ row.overrideRemarks }}</textarea>
                                 <div class="accessibility-audit-vpat-remarks-foot">
                                     {% if canDraftRemarks ?? false %}
                                         <button type="button" class="accessibility-audit-vpat-draft-btn btn small"
@@ -538,7 +538,7 @@
                                                     : (row.evidence.checks and row.evidence.pages > 0
                                                         ? 'Draft what the scans covered and what is left for you, or tidy notes you have typed'|t('accessibility-audit')
                                                         : 'Tidy your rough notes into VPAT wording'|t('accessibility-audit')) }}"
-                                                aria-label="Draft remarks for {{ row.name }} with AI">
+                                                aria-label="{{ 'Draft remarks for {name} with AI'|t('accessibility-audit', { name: row.name }) }}">
                                             {{ 'Draft with AI'|t('accessibility-audit') }}
                                         </button>
                                         <span class="accessibility-audit-vpat-draft-mode">

@@ -41,7 +41,7 @@
 {% set potentialEmpty = (activeTab == 'issues' and potentialRules|length == 0)
     or (activeTab == 'pages' and pages.total == 0) %}
 {% if activeTab != 'dismissed' and not potentialEmpty %}
-    <p class="light readable mb-l">{{ 'Potential issues cannot be automatically confirmed as failures: they require human review. Each check is phrased as a question to guide your decision. These don\'t count against your accessibility score until you confirm them.'|t('accessibility-audit') }}</p>
+    <p class="light readable mb-l">{{ 'A scanner can\'t confirm a potential issue as a failure by itself, so each one needs a person to review it. Every check is put as a question for you to answer. They don\'t count against your accessibility score until you confirm them.'|t('accessibility-audit') }}</p>
 {% endif %}
 
 {% if activeTab == 'issues' %}

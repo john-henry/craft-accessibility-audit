@@ -157,7 +157,7 @@
             </button>
             <div class="accessibility-audit-pr-acc-body" id="accessibility-audit-pr-acc-issues">
                 {% if issues|length == 0 %}
-                    <p class="accessibility-audit-pr-empty">✓ {{ 'No issues found'|t('accessibility-audit') }}</p>
+                    <p class="accessibility-audit-pr-empty accessibility-audit-emptyok"><span class="accessibility-audit-resolved-check" data-icon="check" aria-hidden="true"></span> {{ 'No issues found.'|t('accessibility-audit') }}</p>
                 {% else %}
                     {% for issue in issues %}
                     {% set issueJson = {
@@ -583,7 +583,7 @@
 {% else %}
 <div class="readable mt-s">
     <blockquote class="note">
-        <p>{{ 'This page has no public URL, showing issue data only.'|t('accessibility-audit') }}</p>
+        <p>{{ 'This page has no public URL, so only its issue data is shown.'|t('accessibility-audit') }}</p>
     </blockquote>
 </div>
 
@@ -591,7 +591,7 @@
 <div class="accessibility-audit-card mt-l">
     <div class="accessibility-audit-card-header">{{ 'Issues'|t('accessibility-audit') }} <span class="accessibility-audit-card-subhead">{{ issues|length }}</span></div>
     {% if issues|length == 0 %}
-        <p class="accessibility-audit-clean mt-s">✓ {{ 'No issues found.'|t('accessibility-audit') }}</p>
+        <p class="light accessibility-audit-emptyok mt-s"><span class="accessibility-audit-resolved-check" data-icon="check" aria-hidden="true"></span> {{ 'No issues found.'|t('accessibility-audit') }}</p>
     {% else %}
     <div class="accessibility-audit-table-scroll">
     <table class="accessibility-audit-table accessibility-audit-rule-table data fullwidth">

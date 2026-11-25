@@ -266,17 +266,18 @@ class NotificationService extends Component
      * @param string $contextLine Muted footer line (site name and environment), or empty to omit.
      * @param string|null $actionUrl A URL rendered as a link button under the message, or null for none.
      * @param string|null $actionLabel The button's label, or null for "Open page report".
+     * @return bool Whether Slack accepted the message.
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function notifySlack(string $subject, string $body, ?string $color = null, string $contextLine = '', ?string $actionUrl = null, ?string $actionLabel = null): void
+    public function notifySlack(string $subject, string $body, ?string $color = null, string $contextLine = '', ?string $actionUrl = null, ?string $actionLabel = null): bool
     {
         $settings = AccessibilityAudit::getInstance()->getSettings();
         $webhookUrl = trim((string)App::parseEnv($settings->notifySlackWebhookUrl));
 
         if ($webhookUrl === '') {
-            return;
+            return false;
         }
 
         // Held to the same guard as every other address this plugin fetches.
@@ -292,7 +293,7 @@ class NotificationService extends Component
                 'accessibility-audit',
             );
 
-            return;
+            return false;
         }
 
         $blocks = [
@@ -355,7 +356,11 @@ class NotificationService extends Component
                 'Failed to post accessibility notification to Slack: ' . $e->getMessage(),
                 'accessibility-audit'
             );
+
+            return false;
         }
+
+        return true;
     }
 
     /**

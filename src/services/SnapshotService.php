@@ -97,21 +97,24 @@ class SnapshotService extends Component
      * missed snapshot costs one point on a trend, a thrown one costs the page.
      *
      * @param int $siteId The site to record.
-     * @return void
+     * @return bool Whether this call wrote the day's row, which makes it the
+     * first visit of the day.
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 2.0.0
      */
-    public function recordIfMissing(int $siteId): void
+    public function recordIfMissing(int $siteId): bool
     {
         try {
             if ($this->hasRow($siteId, $this->today())) {
-                return;
+                return false;
             }
 
-            $this->record($siteId);
+            return $this->record($siteId);
         } catch (Throwable $e) {
             Craft::warning("A11y: could not record the daily snapshot for site {$siteId}: " . $e->getMessage(), 'accessibility-audit');
+
+            return false;
         }
     }
 

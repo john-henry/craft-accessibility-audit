@@ -34,9 +34,10 @@ use yii\base\Component;
  * summary can go out late; cron is the reliable route.
  *
  * A site's send date is claimed before the job is queued, so two requests
- * checking at once queue it once. A send that then fails is logged and not
- * retried until the next period: a missed summary is better than a stream
- * of duplicates.
+ * checking at once queue it once. A send that reaches no destination at all
+ * gives the claim back, so the next check tries again. The checks run at most
+ * once a day from page loads (they ride on the daily snapshot), so a broken
+ * mailer costs one failed attempt a day, not one per request.
  *
  * @author John Henry Donovan <info@johnhenry.ie>
  * @since 2.0.0
@@ -163,8 +164,13 @@ class ScheduledReportService extends Component
             }
 
             foreach ($this->_scannedSiteIds() as $siteId) {
-                if ($this->_claim($siteId)) {
-                    Craft::$app->getQueue()->push(new SendScheduledReport(['siteId' => $siteId]));
+                $claim = $this->_claim($siteId);
+
+                if ($claim['claimed']) {
+                    Craft::$app->getQueue()->push(new SendScheduledReport([
+                        'siteId' => $siteId,
+                        'previousSent' => $claim['previous'],
+                    ]));
                     $queued++;
                 }
             }
@@ -196,17 +202,51 @@ class ScheduledReportService extends Component
 
         foreach ($this->_scannedSiteIds() as $siteId) {
             if ($force) {
+                $previous = $this->lastSent($siteId);
                 $this->_markSent($siteId);
-            } elseif (!$this->_claim($siteId)) {
-                continue;
+            } else {
+                $claim = $this->_claim($siteId);
+
+                if (!$claim['claimed']) {
+                    continue;
+                }
+
+                $previous = $claim['previous'];
             }
 
-            if ($this->send($siteId)) {
+            if ($this->sendClaimed($siteId, $previous)) {
                 $sent++;
             }
         }
 
         return $sent;
+    }
+
+    /**
+     * Sends a summary whose send date has already been claimed, and gives the
+     * claim back when it reaches no destination, so the next check retries.
+     *
+     * @param int $siteId The site.
+     * @param string|null $previous The last send date before the claim, or
+     * null when it had never been sent.
+     * @return bool Whether it reached at least one destination.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function sendClaimed(int $siteId, ?string $previous): bool
+    {
+        if ($this->send($siteId)) {
+            return true;
+        }
+
+        try {
+            $this->_release($siteId, $previous);
+        } catch (Throwable $e) {
+            Craft::error("A11y: could not give back the scheduled summary claim for site {$siteId}: " . $e->getMessage(), 'accessibility-audit');
+        }
+
+        return false;
     }
 
     /**
@@ -292,7 +332,7 @@ class ScheduledReportService extends Component
         }
 
         if ($this->_slackOn()) {
-            $plugin->getNotifications()->notifySlack(
+            $posted = $plugin->getNotifications()->notifySlack(
                 $subject,
                 $this->slackBody($data),
                 null,
@@ -300,7 +340,7 @@ class ScheduledReportService extends Component
                 $reportUrl,
                 Craft::t('accessibility-audit', 'Open the report'),
             );
-            $delivered = true;
+            $delivered = $delivered || $posted;
         }
 
         return $delivered;
@@ -457,32 +497,58 @@ class ScheduledReportService extends Component
      * checks at once can't both take it.
      *
      * @param int $siteId The site.
-     * @return bool Whether this call took the send.
+     * @return array{claimed: bool, previous: string|null} Whether this call
+     * took the send, and the send date it replaced, for giving it back.
      * @throws \Exception
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 2.0.0
      */
-    private function _claim(int $siteId): bool
+    private function _claim(int $siteId): array
     {
         $mutex = Craft::$app->getMutex();
         $lock = 'accessibility-audit:report-send:' . $siteId;
 
         if (!$mutex->acquire($lock)) {
-            return false;
+            return ['claimed' => false, 'previous' => null];
         }
 
         try {
             if (!$this->isDue($siteId)) {
-                return false;
+                return ['claimed' => false, 'previous' => null];
             }
 
+            $previous = $this->lastSent($siteId);
             $this->_markSent($siteId);
 
-            return true;
+            return ['claimed' => true, 'previous' => $previous];
         } finally {
             $mutex->release($lock);
         }
+    }
+
+    /**
+     * Puts a site's send date back to what it was before a claim.
+     *
+     * @param int $siteId The site.
+     * @param string|null $previous The date to restore, or null to clear it.
+     * @return void
+     * @throws \yii\db\Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _release(int $siteId, ?string $previous): void
+    {
+        if ($previous === null) {
+            Craft::$app->getDb()->createCommand()->delete(self::TABLE, ['siteId' => $siteId])->execute();
+
+            return;
+        }
+
+        $values = ['lastSent' => $previous];
+
+        Db::upsert(self::TABLE, ['siteId' => $siteId] + $values, $values);
     }
 
     /**
