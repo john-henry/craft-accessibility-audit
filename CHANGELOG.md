@@ -86,6 +86,11 @@
 - Re-scan, Re-analyse and View report buttons in the page tables now tell screen readers which page they're for.
 - Show on page in the page report now finds the table behind a data or layout table question, and links and headings whose text was cut short or spaced differently.
 - An ignored axe-core or contrast rule no longer counts against page scores and error counts, or shows on the page report and entry sidebar.
+- Links, buttons, images and form fields hidden from screen readers with `aria-hidden` or `hidden` are no longer reported for a missing name, label, alt text or new-tab warning.
+- A button whose only content is hidden from screen readers is now reported as having no name.
+- A link marked `aria-hidden` that can still be reached with the Tab key is now reported, and one taken out of the tab order with `tabindex="-1"` no longer is.
+- The page report now names the template an element came from, instead of the last partial rendered above it.
+- Content written in an entry template's blocks is now traced back to that template in the page report.
 
 ## 1.6.0 - 2026-10-08
 

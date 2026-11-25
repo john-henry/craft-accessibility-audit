@@ -186,11 +186,8 @@ class LinkContext
      * the DOM, with CSS deciding which exists for a reader. Two links that can
      * never be reached at the same time are not a duplicate anyone experiences.
      *
-     * Only the attribute-level cases are visible from here: `hidden`,
-     * `aria-hidden`, and an inline display:none or visibility:hidden. Hiding by
-     * class, which is what
-     * a utility framework does, needs the browser pass to see, so a pair hidden
-     * that way is still reported. Worth knowing when reading a finding.
+     * Only the attribute-level cases are visible from here, so a pair hidden by
+     * a utility class is still reported. See `AccessibleName::isHidden()`.
      *
      * @param DOMElement $link The link to test.
      * @return bool
@@ -200,26 +197,7 @@ class LinkContext
      */
     public static function isHidden(DOMElement $link): bool
     {
-        for ($node = $link; $node instanceof DOMElement; $node = $node->parentNode) {
-            if ($node->hasAttribute('hidden')) {
-                return true;
-            }
-
-            if (strtolower($node->getAttribute('aria-hidden')) === 'true') {
-                return true;
-            }
-
-            $style = strtolower(preg_replace('/\s+/', '', $node->getAttribute('style')) ?? '');
-
-            // opacity:0 is deliberately not here: it leaves the link in the
-            // accessibility tree and reachable by keyboard, so it is still a
-            // link a reader meets.
-            if (str_contains($style, 'display:none') || str_contains($style, 'visibility:hidden')) {
-                return true;
-            }
-        }
-
-        return false;
+        return AccessibleName::isHidden($link);
     }
 
     /**

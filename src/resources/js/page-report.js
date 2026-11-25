@@ -1455,6 +1455,7 @@
     function enrichOccurrencesWithTemplateInfo(occurrences) {
         var doc = iframeDoc();
         if (!doc) return;
+        var markers = _templateMarkers(doc);
         occurrences.forEach(function (occ) {
             if (occ.template !== undefined) return; /* already enriched */
             /* The whole stored context, so a contrast occurrence's selector
@@ -1463,7 +1464,7 @@
             if (!occ.context) return;
             var el = findElementByContext(doc, occ.context);
             if (!el) return;
-            occ.template = _findTemplate(el, doc);
+            occ.template = _findTemplate(el, markers);
             occ.selector = _cssPath(el, doc);
             occ.markup = elementSummary(el);
         });
@@ -1937,26 +1938,41 @@
             .concat(AccessibilityAuditShared.collectStateContrastFailures(doc, opts));
     }
 
-    /* Walk the DOM to find the innermost <!-- accessibility-audit-tpl:filename.twig --> comment
-       that wraps the element. These comments are injected at compile time by
-       A11yTemplateNodeVisitor when devMode is true. Returns template path or null. */
-    function _findTemplate(el, doc) {
-        var cur = el;
-        while (cur && cur !== doc.documentElement) {
-            /* Scan previous siblings at this level for an opening accessibility-audit-tpl comment */
-            var sib = cur.previousSibling;
-            while (sib) {
-                if (sib.nodeType === 8) { /* COMMENT_NODE */
-                    var txt = sib.nodeValue ? sib.nodeValue.trim() : '';
-                    if (txt.indexOf('accessibility-audit-tpl:') === 0) {
-                        return txt.substring('accessibility-audit-tpl:'.length).trim();
-                    }
-                }
-                sib = sib.previousSibling;
+    /* The template marker comments A11yTemplateNodeVisitor injects in devMode,
+       in document order. Opening markers carry the template name; closing
+       markers are anonymous, so only a stack can say which frame is open. */
+    function _templateMarkers(doc) {
+        var markers = [];
+        var walker = doc.createTreeWalker(doc, 128 /* NodeFilter.SHOW_COMMENT */, null);
+        var node;
+        while ((node = walker.nextNode())) {
+            var txt = node.nodeValue ? node.nodeValue.trim() : '';
+            if (txt.indexOf('accessibility-audit-tpl:') === 0) {
+                markers.push({ node: node, name: txt.substring('accessibility-audit-tpl:'.length).trim() });
+            } else if (txt === '/accessibility-audit-tpl') {
+                markers.push({ node: node, name: null });
             }
-            cur = cur.parentNode;
         }
-        return null;
+        return markers;
+    }
+
+    /* The innermost template still open where the element starts. Every
+       marker before the element is replayed onto a stack, so a partial that
+       opened and closed earlier on the page has already been popped. Markers
+       are walked in document order rather than by DOM position because a
+       template's open and close need not share a parent. Returns null outside
+       every frame. */
+    function _findTemplate(el, markers) {
+        var stack = [];
+        for (var i = 0; i < markers.length; i++) {
+            if (!(el.compareDocumentPosition(markers[i].node) & 2 /* DOCUMENT_POSITION_PRECEDING */)) break;
+            if (markers[i].name !== null) {
+                stack.push(markers[i].name);
+            } else if (stack.length) {
+                stack.pop();
+            }
+        }
+        return stack.length ? stack[stack.length - 1] : null;
     }
 
     /* Build a short CSS selector path for the element location label (up to 3 levels) */

@@ -213,6 +213,41 @@ class ContentScanner extends Component
         return $issues;
     }
 
+    // Accessibility Tree
+    // =========================================================================
+
+    /**
+     * The elements a query matches, less those hidden from assistive
+     * technology.
+     *
+     * Every rule that judges what a screen reader announces about an element
+     * queries through here. An element outside the accessibility tree exposes
+     * nothing for a name, label or warning to be missing from; that it may
+     * still take focus is reported by `aria-hidden-focus`, which queries the
+     * full document. Hidden elements are filtered rather than removed from
+     * the DOM because an `aria-labelledby` may point at one, and the name
+     * computation still has to read it.
+     *
+     * @param DOMXPath $xpath A query handle on the parsed page.
+     * @param string $query The XPath expression to run.
+     * @return DOMElement[] The matching elements that are exposed.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _exposed(DOMXPath $xpath, string $query): array
+    {
+        $exposed = [];
+
+        foreach ($xpath->query($query) ?: [] as $node) {
+            if ($node instanceof DOMElement && !AccessibleName::isHidden($node)) {
+                $exposed[] = $node;
+            }
+        }
+
+        return $exposed;
+    }
+
     // Markup Shown as Text
     // =========================================================================
 
@@ -441,7 +476,7 @@ class ContentScanner extends Component
     {
         $issues = [];
         /** @var DOMElement $img */
-        foreach ($xpath->query('//img') as $img) {
+        foreach ($this->_exposed($xpath, '//img') as $img) {
             if (!$img->hasAttribute('alt')) {
                 $issues[] = IssueModel::make(
                     'img-alt', 'error',
@@ -469,8 +504,7 @@ class ContentScanner extends Component
     private function _checkImgAltFilename(DOMXPath $xpath): array
     {
         $issues = [];
-        foreach ($xpath->query('//img[@alt]') as $img) {
-            /** @var DOMElement $img */
+        foreach ($this->_exposed($xpath, '//img[@alt]') as $img) {
             $alt = trim($img->getAttribute('alt'));
             if ($alt === '') {
                 continue;
@@ -592,6 +626,9 @@ class ContentScanner extends Component
      *
      * Reports `link-name` against WCAG 4.1.2, 2.4.4 (A).
      *
+     * Whether a hidden link can still take focus is `aria-hidden-focus`'s
+     * question, not this one's.
+     *
      * @param DOMXPath $xpath A query handle on the parsed page.
      * @return IssueModel[] The findings, empty where the page passes.
      *
@@ -601,8 +638,7 @@ class ContentScanner extends Component
     private function _checkLinkName(DOMXPath $xpath): array
     {
         $issues = [];
-        foreach ($xpath->query('//a[@href]') as $a) {
-            /** @var DOMElement $a */
+        foreach ($this->_exposed($xpath, '//a[@href]') as $a) {
             if (AccessibleName::for($a, $xpath) === '') {
                 $issues[] = IssueModel::make(
                     'link-name', 'error',
@@ -630,8 +666,7 @@ class ContentScanner extends Component
     private function _checkLinkGeneric(DOMXPath $xpath): array
     {
         $issues = [];
-        foreach ($xpath->query('//a[@href]') as $a) {
-            /** @var DOMElement $a */
+        foreach ($this->_exposed($xpath, '//a[@href]') as $a) {
             // The announced name, not the visible text, with the new-tab
             // notice stripped so it cannot make a vague label look specific.
             $text = $this->_linkPurposeText(AccessibleName::for($a, $xpath));
@@ -674,14 +709,7 @@ class ContentScanner extends Component
         $issues = [];
         $pattern = '/^[' . self::MEANING_BY_SHAPE . '\s\x{00A0}]+$/u';
 
-        foreach ($xpath->query('//td | //th | //button | //a[@href]') as $node) {
-            /** @var DOMElement $node */
-            // Out of the accessibility tree altogether: what gets announced in
-            // its place is another element's business.
-            if (strtolower($node->getAttribute('aria-hidden')) === 'true') {
-                continue;
-            }
-
+        foreach ($this->_exposed($xpath, '//td | //th | //button | //a[@href]') as $node) {
             $name = trim(AccessibleName::for($node, $xpath));
 
             // An empty cell is a different question, and not this one.
@@ -726,8 +754,7 @@ class ContentScanner extends Component
     private function _checkLinkNewWindow(DOMXPath $xpath): array
     {
         $issues = [];
-        foreach ($xpath->query('//a[@target="_blank"]') as $a) {
-            /** @var DOMElement $a */
+        foreach ($this->_exposed($xpath, '//a[@target="_blank"]') as $a) {
             // The announced name, so a warning carried in visually hidden text
             // inside the link counts. An aria-label replaces that text, so when
             // one is set it is the label that has to carry the warning.
@@ -754,6 +781,9 @@ class ContentScanner extends Component
      *
      * Reports `button-name` against WCAG 4.1.2 (A).
      *
+     * Judged on the announced name, so a glyph wrapped in `aria-hidden` does
+     * not count as one.
+     *
      * @param DOMXPath $xpath A query handle on the parsed page.
      * @return IssueModel[] The findings, empty where the page passes.
      *
@@ -763,28 +793,15 @@ class ContentScanner extends Component
     private function _checkButtonName(DOMXPath $xpath): array
     {
         $issues = [];
-        foreach ($xpath->query('//button') as $btn) {
-            /** @var DOMElement $btn */
-            $text = trim($btn->textContent);
-            $ariaLabel = trim($btn->getAttribute('aria-label'));
-            $ariaLabelledBy = $btn->getAttribute('aria-labelledby');
-            $title = trim($btn->getAttribute('title'));
-
-            if ($text === '' && $ariaLabel === '' && $title === '' && $ariaLabelledBy === '') {
-                $imgAlt = '';
-                foreach ($xpath->query('.//img[@alt]', $btn) as $img) {
-                    /** @var DOMElement $img */
-                    $imgAlt = trim($img->getAttribute('alt'));
-                }
-                if ($imgAlt === '') {
-                    $issues[] = IssueModel::make(
-                        'button-name', 'error',
-                        'Button has no discernible name.',
-                        '4.1.2', 'A',
-                        $this->_outerHtml($btn),
-                        self::WCAG_HELP_BASE . 'name-role-value'
-                    );
-                }
+        foreach ($this->_exposed($xpath, '//button') as $btn) {
+            if (AccessibleName::for($btn, $xpath) === '') {
+                $issues[] = IssueModel::make(
+                    'button-name', 'error',
+                    'Button has no discernible name.',
+                    '4.1.2', 'A',
+                    $this->_outerHtml($btn),
+                    self::WCAG_HELP_BASE . 'name-role-value'
+                );
             }
         }
         return $issues;
@@ -809,8 +826,7 @@ class ContentScanner extends Component
         $issues = [];
         $skipTypes = ['hidden', 'submit', 'button', 'reset', 'image'];
 
-        foreach ($xpath->query('//input[not(@type) or (@type!="hidden" and @type!="submit" and @type!="button" and @type!="reset" and @type!="image")]') as $input) {
-            /** @var DOMElement $input */
+        foreach ($this->_exposed($xpath, '//input[not(@type) or (@type!="hidden" and @type!="submit" and @type!="button" and @type!="reset" and @type!="image")]') as $input) {
             $type = strtolower($input->getAttribute('type') ?: 'text');
             if (in_array($type, $skipTypes, true)) {
                 continue;
@@ -865,8 +881,7 @@ class ContentScanner extends Component
     private function _checkSelectLabels(DOMXPath $xpath): array
     {
         $issues = [];
-        foreach ($xpath->query('//select') as $select) {
-            /** @var DOMElement $select */
+        foreach ($this->_exposed($xpath, '//select') as $select) {
             $id = $select->getAttribute('id');
             $ariaLabel = trim($select->getAttribute('aria-label'));
             $ariaLabelledBy = $select->getAttribute('aria-labelledby');
@@ -1226,6 +1241,11 @@ class ContentScanner extends Component
      *
      * Reports `aria-hidden-focus` against WCAG 4.1.2 (A).
      *
+     * The hidden element itself counts as well as its descendants, since
+     * `<a href aria-hidden="true">` is the commonest way to get this wrong.
+     * One finding per outermost hidden subtree, so nested `aria-hidden` does
+     * not report the same control twice.
+     *
      * @param DOMXPath $xpath A query handle on the parsed page.
      * @return IssueModel[] The findings, empty where the page passes.
      *
@@ -1235,11 +1255,21 @@ class ContentScanner extends Component
     private function _checkAriaHiddenFocus(DOMXPath $xpath): array
     {
         $issues = [];
-        $focusable = 'a[@href] | button | input | select | textarea | *[@tabindex]';
         foreach ($xpath->query('//*[@aria-hidden="true"]') as $hidden) {
             /** @var DOMElement $hidden */
-            $focusableChildren = $xpath->query('.//' . $focusable, $hidden);
-            if ($focusableChildren->length > 0) {
+            if ($xpath->query('ancestor::*[@aria-hidden="true"]', $hidden)->length > 0) {
+                continue;
+            }
+
+            $reachable = false;
+            foreach ($xpath->query('descendant-or-self::*', $hidden) as $node) {
+                if ($node instanceof DOMElement && $this->_isFocusable($node)) {
+                    $reachable = true;
+                    break;
+                }
+            }
+
+            if ($reachable) {
                 $issues[] = IssueModel::make(
                     'aria-hidden-focus', 'error',
                     'Focusable element found inside aria-hidden="true". Hidden content must not receive focus.',
@@ -1250,6 +1280,42 @@ class ContentScanner extends Component
             }
         }
         return $issues;
+    }
+
+    /**
+     * Whether an element can take keyboard focus by tabbing.
+     *
+     * A negative tabindex takes an element out of the tab order, which is the
+     * fix for a focusable element inside `aria-hidden`, so it does not count.
+     * A disabled form control cannot take focus whatever its tabindex.
+     *
+     * @param DOMElement $el The element to test.
+     * @return bool True when tabbing can reach the element.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _isFocusable(DOMElement $el): bool
+    {
+        $tag = strtolower($el->nodeName);
+        $isControl = in_array($tag, ['button', 'input', 'select', 'textarea'], true);
+
+        if ($isControl && $el->hasAttribute('disabled')) {
+            return false;
+        }
+
+        $tabindex = trim($el->getAttribute('tabindex'));
+
+        if (preg_match('/^-?\d+$/', $tabindex) === 1) {
+            return (int)$tabindex >= 0;
+        }
+
+        return match ($tag) {
+            'a', 'area' => $el->hasAttribute('href'),
+            'input' => strtolower($el->getAttribute('type')) !== 'hidden',
+            'button', 'select', 'textarea' => true,
+            default => false,
+        };
     }
 
     // Meta

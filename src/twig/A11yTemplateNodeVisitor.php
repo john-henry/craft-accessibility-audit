@@ -7,6 +7,7 @@
 namespace johnhenry\accessibilityaudit\twig;
 
 use Twig\Environment;
+use Twig\Node\BlockNode;
 use Twig\Node\ModuleNode;
 use Twig\Node\Node;
 use Twig\Node\Nodes;
@@ -116,21 +117,19 @@ class A11yTemplateNodeVisitor implements NodeVisitorInterface
         //
         // And one that extends a layout. Its own body is empty and its output
         // is really the parent's document, so a marker wrapped around it sits
-        // outside the whole page rather than around anything in it.
-        if ($node->hasNode('parent')
-            || !$this->_writesMarkup($body)
-            || $this->_opensDocument($body)
-        ) {
+        // outside the whole page rather than around anything in it. Its blocks
+        // are marked instead, since that is where its markup is written.
+        if ($node->hasNode('parent')) {
+            $this->_markBlocks($node, $name);
+
             return $node;
         }
 
-        $line = $node->getTemplateLine();
-        $open = new TextNode('<!-- accessibility-audit-tpl:' . $name . ' -->', $line);
-        $close = new TextNode('<!-- /accessibility-audit-tpl -->', $line);
+        if (!$this->_writesMarkup($body) || $this->_opensDocument($body)) {
+            return $node;
+        }
 
-        // Twig\Node\Nodes is the concrete node collection; instantiating the base
-        // Twig\Node\Node directly is deprecated (3.15) and becomes a fatal in 4.0.
-        $node->setNode('body', new Nodes([$open, $body, $close], $line));
+        $node->setNode('body', $this->_wrap($body, $name, $node->getTemplateLine()));
 
         return $node;
     }
@@ -146,6 +145,68 @@ class A11yTemplateNodeVisitor implements NodeVisitorInterface
     public function getPriority(): int
     {
         return 0;
+    }
+
+    // Private Methods
+    // =========================================================================
+
+    /**
+     * Wraps the body of each block an extending template defines, where the
+     * block's output is plainly element content.
+     *
+     * A block is held to a stricter test than a whole template: its first
+     * output has to be literal markup. A block can render inside `<title>`,
+     * where a comment shows as text, or inside an attribute value or a script,
+     * where it breaks the page, and a block opening with a variable or a tag
+     * gives no sign of which it is. Those are left unmarked and fall to the
+     * enclosing frame.
+     *
+     * @param ModuleNode $module The extending template.
+     * @param string $name The template name to write into the markers.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _markBlocks(ModuleNode $module, string $name): void
+    {
+        foreach ($module->getNode('blocks') as $wrapper) {
+            foreach ($wrapper as $block) {
+                if (!$block instanceof BlockNode) {
+                    continue;
+                }
+
+                $body = $block->getNode('body');
+                $text = $this->_leadingText(new Nodes([$body], $block->getTemplateLine()));
+
+                if ($text === null || !str_starts_with($text, '<') || str_starts_with(strtolower($text), '<!doctype')) {
+                    continue;
+                }
+
+                $block->setNode('body', $this->_wrap($body, $name, $block->getTemplateLine()));
+            }
+        }
+    }
+
+    /**
+     * A node writing the opening marker, the given body, then the closing one.
+     *
+     * @param Node $body The output to wrap.
+     * @param string $name The template name to write into the opening marker.
+     * @param int $line The source line to attribute the markers to.
+     * @return Nodes
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _wrap(Node $body, string $name, int $line): Nodes
+    {
+        // Twig\Node\Nodes is the concrete node collection; instantiating the base
+        // Twig\Node\Node directly is deprecated (3.15) and becomes a fatal in 4.0.
+        return new Nodes([
+            new TextNode('<!-- accessibility-audit-tpl:' . $name . ' -->', $line),
+            $body,
+            new TextNode('<!-- /accessibility-audit-tpl -->', $line),
+        ], $line);
     }
 
     /**
