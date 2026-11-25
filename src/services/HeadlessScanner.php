@@ -90,8 +90,8 @@ class HeadlessScanner extends Component
      * @var int The Chrome round trips one viewport pass waits on, each bounded
      * by PAGE_TIMEOUT_MS. Counted from {@see self::_runViewportPass()}: the
      * viewport, the user agent, the navigation, reading the landed URL, and
-     * the four evaluates that steady the page, inject axe, probe the viewport
-     * and run the rules.
+     * the four evaluates that steady the page, inject axe, load the viewport
+     * and pseudo-element probes, and run the rules.
      */
     private const AWAITS_PER_VIEWPORT = 8;
 
@@ -757,7 +757,7 @@ class HeadlessScanner extends Component
 
             $page->evaluate($this->_steadyPageScript())->getReturnValue(self::PAGE_TIMEOUT_MS);
             $page->evaluate($axeSource)->waitForResponse(self::PAGE_TIMEOUT_MS);
-            $page->evaluate(self::IN_VIEW_PROBE_JS)->waitForResponse(self::PAGE_TIMEOUT_MS);
+            $page->evaluate(self::IN_VIEW_PROBE_JS . "\n" . self::PSEUDO_REMEASURE_JS)->waitForResponse(self::PAGE_TIMEOUT_MS);
 
             $result = $page->evaluate($this->_axeRunScript())->getReturnValue(self::PAGE_TIMEOUT_MS);
             $decoded = is_string($result) ? Json::decodeIfJson($result) : null;
@@ -996,6 +996,209 @@ class HeadlessScanner extends Component
         JS;
 
     /**
+     * @var string A function that measures again the text axe gave up on
+     *      because an ancestor has a `::before` or `::after`.
+     *
+     *      axe stops at any ancestor pseudo-element with a background, wherever
+     *      that pseudo-element sits, because it cannot read the pseudo-element's
+     *      box. A one-pixel rule along the top of a fixed header puts every nav
+     *      link in the review queue. This works the box out from the computed
+     *      style instead, and where no pseudo-element on any of those ancestors
+     *      overlaps the text, it removes them and runs the contrast rule again
+     *      on just those elements. An absolutely positioned pseudo-element
+     *      takes no part in layout and does not cover the text, so the colour
+     *      behind the text is the same with it gone, and the second answer is a
+     *      measurement: a pass leaves the queue and a failure becomes a
+     *      violation.
+     *
+     *      Anything it cannot place exactly stays as axe left it: a
+     *      pseudo-element in normal flow or positioned against some other
+     *      ancestor, one that is transformed, clipped, masked, filtered or
+     *      shadowed, an ancestor that is transformed or split across lines, and
+     *      a target inside a shadow root or a frame.
+     *
+     *      Kept as a constant so the browser pass and its test run the same
+     *      source.
+     */
+    public const PSEUDO_REMEASURE_JS = <<<'JS'
+        window.__aaRemeasurePseudo = function (results, exclude) {
+          var ATTR = 'data-aa-pseudo-off';
+          var TOLERANCE = 1;
+
+          var px = function (value) {
+            var n = parseFloat(value);
+            return /px$/.test(value) && isFinite(n) ? n : null;
+          };
+
+          // The border box of an absolutely positioned pseudo-element, in
+          // viewport coordinates, or null where it cannot be worked out.
+          var pseudoBox = function (host, s) {
+            if (s.position !== 'absolute') return null;
+            if (s.transform !== 'none' || s.clipPath !== 'none' || s.filter !== 'none') return null;
+            if ((s.maskImage || s.webkitMaskImage || 'none') !== 'none') return null;
+            if (s.boxShadow !== 'none' || s.outlineStyle !== 'none') return null;
+
+            var hs = getComputedStyle(host);
+            if (hs.position === 'static' || hs.transform !== 'none') return null;
+
+            var rects = host.getClientRects();
+            if (rects.length !== 1) return null;
+
+            var cbLeft = rects[0].left + host.clientLeft;
+            var cbTop = rects[0].top + host.clientTop;
+            var cbRight = cbLeft + host.clientWidth;
+            var cbBottom = cbTop + host.clientHeight;
+
+            var w = px(s.width);
+            var h = px(s.height);
+            if (w === null || h === null) return null;
+
+            if (s.boxSizing !== 'border-box') {
+              w += (px(s.paddingLeft) || 0) + (px(s.paddingRight) || 0)
+                + (px(s.borderLeftWidth) || 0) + (px(s.borderRightWidth) || 0);
+              h += (px(s.paddingTop) || 0) + (px(s.paddingBottom) || 0)
+                + (px(s.borderTopWidth) || 0) + (px(s.borderBottomWidth) || 0);
+            }
+
+            var left = px(s.left);
+            var right = px(s.right);
+            var top = px(s.top);
+            var bottom = px(s.bottom);
+            var x;
+            var y;
+
+            if (left !== null) {
+              x = cbLeft + left + (px(s.marginLeft) || 0);
+            } else if (right !== null) {
+              x = cbRight - right - (px(s.marginRight) || 0) - w;
+            } else {
+              return null;
+            }
+
+            if (top !== null) {
+              y = cbTop + top + (px(s.marginTop) || 0);
+            } else if (bottom !== null) {
+              y = cbBottom - bottom - (px(s.marginBottom) || 0) - h;
+            } else {
+              return null;
+            }
+
+            return { left: x, top: y, right: x + w, bottom: y + h };
+          };
+
+          var overlaps = function (a, b) {
+            return a.left < b.right - TOLERANCE && b.left < a.right - TOLERANCE
+              && a.top < b.bottom - TOLERANCE && b.top < a.bottom - TOLERANCE;
+          };
+
+          // Whether every pseudo-element on the host can be placed and none of
+          // them reaches the text.
+          var clearOf = function (host, textRects) {
+            var pseudos = ['::before', '::after'];
+
+            for (var i = 0; i < pseudos.length; i++) {
+              var s = getComputedStyle(host, pseudos[i]);
+
+              if (s.content === 'none' || s.content === 'normal' || s.display === 'none') continue;
+
+              var box = pseudoBox(host, s);
+              if (!box) return false;
+
+              for (var j = 0; j < textRects.length; j++) {
+                if (overlaps(box, textRects[j])) return false;
+              }
+            }
+
+            return true;
+          };
+
+          var one = function (target) {
+            if (!Array.isArray(target) || target.length !== 1 || typeof target[0] !== 'string') return null;
+            try { return document.querySelector(target[0]); } catch (e) { return null; }
+          };
+
+          var contrast = (results.incomplete || []).filter(function (v) { return v.id === 'color-contrast'; })[0];
+          if (!contrast) return Promise.resolve(results);
+
+          var candidates = [];
+          var hosts = [];
+
+          contrast.nodes.forEach(function (node) {
+            var check = node.any && node.any[0];
+            if (!check || !check.data || check.data.messageKey !== 'pseudoContent') return;
+
+            var el = one(node.target);
+            var related = (check.relatedNodes || []).map(function (r) { return one(r.target); });
+            if (!el || !related.length || related.indexOf(null) !== -1) return;
+
+            var textRects = Array.prototype.slice.call(el.getClientRects());
+            if (!textRects.length) return;
+
+            for (var i = 0; i < related.length; i++) {
+              if (!clearOf(related[i], textRects)) return;
+            }
+
+            candidates.push({ node: node, el: el });
+            related.forEach(function (host) { if (hosts.indexOf(host) === -1) hosts.push(host); });
+          });
+
+          if (!candidates.length) return Promise.resolve(results);
+
+          var style = document.createElement('style');
+          style.textContent = '[' + ATTR + ']::before, [' + ATTR + ']::after { content: none !important; }';
+          (document.head || document.documentElement).appendChild(style);
+          hosts.forEach(function (host) { host.setAttribute(ATTR, ''); });
+
+          var restore = function () {
+            hosts.forEach(function (host) { host.removeAttribute(ATTR); });
+            style.remove();
+          };
+
+          var context = {
+            include: candidates.map(function (c) { return [c.node.target[0]]; }),
+            exclude: exclude || [],
+          };
+
+          return axe.run(context, {
+            runOnly: { type: 'rule', values: ['color-contrast'] },
+            resultTypes: ['violations', 'incomplete'],
+          }).then(function (again) {
+            restore();
+
+            var els = candidates.map(function (c) { return c.el; });
+            var ours = function (n) { return els.indexOf(one(n.target)) !== -1; };
+            var pick = function (list) {
+              var hit = (list || []).filter(function (v) { return v.id === 'color-contrast'; })[0];
+              return hit ? { rule: hit, nodes: hit.nodes.filter(ours) } : null;
+            };
+
+            contrast.nodes = contrast.nodes.filter(function (n) {
+              return candidates.every(function (c) { return c.node !== n; });
+            });
+
+            var stillUnsure = pick(again.incomplete);
+            if (stillUnsure) contrast.nodes = contrast.nodes.concat(stillUnsure.nodes);
+
+            var failing = pick(again.violations);
+            if (failing && failing.nodes.length) {
+              var existing = results.violations.filter(function (v) { return v.id === 'color-contrast'; })[0];
+              if (existing) {
+                existing.nodes = existing.nodes.concat(failing.nodes);
+              } else {
+                failing.rule.nodes = failing.nodes;
+                results.violations.push(failing.rule);
+              }
+            }
+
+            return results;
+          }, function () {
+            restore();
+            return results;
+          });
+        };
+        JS;
+
+    /**
      * The in-page script that holds the page still before axe measures it.
      *
      * Contrast is read off computed colours and glyph sizes, so text still
@@ -1070,6 +1273,10 @@ class HeadlessScanner extends Component
             axe.run({ exclude: {$excludeJson} }, {
                 runOnly: { type: 'tag', values: {$tagsJson} },
                 resultTypes: ['violations', 'incomplete'],
+            }).then(function(r) {
+                return window.__aaRemeasurePseudo
+                    ? window.__aaRemeasurePseudo(r, {$excludeJson})
+                    : r;
             }).then(function(r) {
                 var slim = function(v) {
                     return {

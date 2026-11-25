@@ -95,6 +95,7 @@
 - The Overview's average score bar is now green, amber or red to match the score, instead of always orange.
 - The Overview's With alt text count no longer includes decorative images, and the Assets pane says so when every image is covered.
 - Show on page now finds the right element for a contrast question about a plain tag such as `<dt>` that appears more than once on the page. Re-scan a page to pick this up.
+- Text under an element with a `::before` or `::after` that doesn't reach it, such as a thin line along a fixed header, is now measured for contrast instead of being sent for review.
 
 ## 1.6.0 - 2026-10-08
 
