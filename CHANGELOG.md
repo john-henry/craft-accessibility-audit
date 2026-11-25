@@ -91,6 +91,7 @@
 - A link marked `aria-hidden` that can still be reached with the Tab key is now reported, and one taken out of the tab order with `tabindex="-1"` no longer is.
 - The page report now names the template an element came from, instead of the last partial rendered above it.
 - Content written in an entry template's blocks is now traced back to that template in the page report.
+- Show on page now finds the right element for a contrast question about a plain tag such as `<dt>` that appears more than once on the page. Re-scan a page to pick this up.
 
 ## 1.6.0 - 2026-10-08
 

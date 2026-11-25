@@ -3396,6 +3396,7 @@ class AuditService extends Component
                 'severity' => $row['severity'],
                 'message' => $row['message'],
                 'context' => $row['context'],
+                'selector' => $row['selector'] ?? null,
                 'helpUrl' => $row['helpUrl'],
                 'source' => $row['source'],
                 'viewport' => $row['viewport'],
@@ -3452,6 +3453,7 @@ class AuditService extends Component
             'severity' => $issue->severity,
             'message' => $this->_scrubUtf8($issue->message),
             'context' => $this->_scrubUtf8($issue->context),
+            'selector' => $issue->selector,
             'helpUrl' => $issue->helpUrl,
             'source' => $issue->source,
             'origin' => $issue->origin,
@@ -3550,7 +3552,7 @@ class AuditService extends Component
      * occurrences would ask one question and apply the answer to several.
      *
      * @param int $scanId The scan.
-     * @return array<array-key, array{id: int, ruleId: string, message: string, context: string|null, wcagCriterion: string|null, wcagLevel: string|null, viewport: string|null}>
+     * @return array<array-key, array{id: int, ruleId: string, message: string, context: string|null, selector: string|null, wcagCriterion: string|null, wcagLevel: string|null, viewport: string|null}>
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
@@ -3558,7 +3560,7 @@ class AuditService extends Component
     public function getPendingPotentialForScan(int $scanId): array
     {
         return (new Query())
-            ->select(['id', 'ruleId', 'message', 'context', 'wcagCriterion', 'wcagLevel', 'viewport'])
+            ->select(['id', 'ruleId', 'message', 'context', 'selector', 'wcagCriterion', 'wcagLevel', 'viewport'])
             ->from('{{%accessibilityaudit_issues}}')
             ->where(['scanId' => $scanId, 'isResolved' => false])
             ->andWhere($this->pendingPotentialCondition())
@@ -4799,6 +4801,7 @@ class AuditService extends Component
                 // ran. See openingTagOf().
                 $html = self::openingTagOf(mb_substr($node['html'] ?? '', 0, 300));
                 $data = $node['any'][0]['data'] ?? [];
+                $target = $node['target'][0] ?? null;
 
                 // "Element is hidden" is axe saying there was nothing on
                 // screen to measure. Contrast is about what a person can see,
@@ -4825,6 +4828,11 @@ class AuditService extends Component
                     helpUrl: $result['helpUrl'] ?? null,
                     source: 'axe',
                     viewport: $viewport,
+                    // A bare opening tag such as <dt> is shared by every
+                    // element of its kind, so the report needs axe's own
+                    // selector to find this one. A target inside a shadow root
+                    // or frame comes as an array and is left out.
+                    selector: is_string($target) ? $target : null,
                 ), null, $verdicts->lookup($verdictMap, self::RULE_POTENTIAL_CONTRAST, $html));
             }
         }

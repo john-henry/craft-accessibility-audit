@@ -80,6 +80,14 @@ class IssueModel extends Model
      */
     public ?string $viewport = null;
 
+    /**
+     * @var string|null The browser engine's CSS selector for the element, for
+     * finding it in the page report when the context is a bare tag several
+     * elements share. Null for PHP findings, which have no rendered page to
+     * select from.
+     */
+    public ?string $selector = null;
+
     // Protected Methods
     // =========================================================================
 
@@ -113,6 +121,7 @@ class IssueModel extends Model
      * @param string|null $helpUrl A URL to documentation about the issue.
      * @param string $source The scanner that produced the issue.
      * @param string|null $viewport The viewport bucket (desktop, mobile), or null when viewport-independent.
+     * @param string|null $selector The browser engine's selector for the element, where there is one.
      * @return self
      *
      * @author John Henry Donovan <info@johnhenry.ie>
@@ -128,6 +137,7 @@ class IssueModel extends Model
         ?string $helpUrl = null,
         string $source = 'php',
         ?string $viewport = null,
+        ?string $selector = null,
     ): self {
         $model = new self();
         $model->ruleId = $ruleId;
@@ -139,6 +149,7 @@ class IssueModel extends Model
         $model->helpUrl = self::safeHelpUrl($helpUrl);
         $model->source = $source;
         $model->viewport = $viewport;
+        $model->selector = $selector !== null && trim($selector) !== '' ? mb_substr(trim($selector), 0, 300) : null;
         return $model;
     }
 

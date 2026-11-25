@@ -119,6 +119,9 @@ class Install extends Migration
                 'severity' => $this->enum('severity', ['error', 'warning', 'notice'])->notNull()->defaultValue('warning'),
                 'message' => $this->text()->notNull(),
                 'context' => $this->text()->null(),
+                // The browser engine's own selector for the element, where the
+                // context alone cannot single it out. Not part of the ruling key.
+                'selector' => $this->string(300)->null(),
                 'helpUrl' => $this->string(255)->null(),
                 'source' => $this->enum('source', ['php', 'axe', 'contrast'])->notNull()->defaultValue('php'),
                 'origin' => $this->string(50)->null(),

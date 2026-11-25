@@ -1340,7 +1340,22 @@
         return identity(a) === identity(b);
     }
 
-    function highlightPotential(ruleId, context, append) {
+    /* The element the browser engine's own selector names, when it still
+       matches the stored opening tag. A bare tag like <dt> is shared by every
+       element of its kind, so the selector is the only thing that can single
+       one out. One that now lands on a different tag means the page changed,
+       and the stored markup is left to do what it can. */
+    function elementBySelector(doc, engineSelector, markup) {
+        if (!engineSelector) return null;
+        var el;
+        try { el = doc.querySelector(engineSelector); } catch (_) { return null; }
+        if (!el) return null;
+        var tag = /^<\s*([a-z][a-z0-9-]*)/i.exec(markup || '');
+        if (tag && tag[1].toLowerCase() !== el.tagName.toLowerCase()) return null;
+        return el;
+    }
+
+    function highlightPotential(ruleId, context, append, engineSelector) {
         var doc = iframeDoc();
         var selector = selectorFor(ruleId);
         if (!doc || !selector) return;
@@ -1348,8 +1363,11 @@
         var ctx = (context || '').trim();
         var markup = (_occContextHtml({ context: ctx }) || '').trim();
         var found = [];
+        var exact = elementBySelector(doc, (engineSelector || '').trim(), markup);
 
-        if (markup.charAt(0) === '<') {
+        if (exact) {
+            found.push(exact);
+        } else if (markup.charAt(0) === '<') {
             var el = findElementByContext(doc, ctx);
             if (el) {
                 found.push(el);
@@ -2676,11 +2694,13 @@
                 if (!cluster) { return; }
 
                 var contexts;
+                var selectors;
                 try { contexts = JSON.parse(cluster.dataset.contexts || '[]'); } catch (_) { return; }
+                try { selectors = JSON.parse(cluster.dataset.selectors || '[]'); } catch (_) { selectors = []; }
 
                 contexts.forEach(function (context, i) {
                     /* The first clears what was framed before; the rest add to it. */
-                    highlightPotential(cluster.dataset.ruleId, context || '', i > 0);
+                    highlightPotential(cluster.dataset.ruleId, context || '', i > 0, selectors[i] || '');
                 });
 
                 /* Numbered once the whole cluster is marked, so the badges
@@ -2701,7 +2721,7 @@
             var viaButton = e.target.closest('[data-highlight]');
             if (!viaButton && e.target.closest('button, label, input')) { return; }
 
-            highlightPotential(card.dataset.ruleId, card.dataset.context || '');
+            highlightPotential(card.dataset.ruleId, card.dataset.context || '', false, card.dataset.selector || '');
         });
 
         wrap.addEventListener('click', function (e) {

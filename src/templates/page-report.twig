@@ -245,7 +245,8 @@
                                     {% set sharedVp = cluster.occurrences|filter(o => (o.viewportLabel ?? '') != clusterVp)|length == 0 %}
                                     <div class="accessibility-audit-pr-cluster" data-accessibility-audit-cluster
                                          data-rule-id="{{ group.ruleId }}"
-                                         data-contexts="{{ cluster.occurrences|map(o => o.context|default(''))|json_encode }}">
+                                         data-contexts="{{ cluster.occurrences|map(o => o.context|default(''))|json_encode }}"
+                                         data-selectors="{{ cluster.occurrences|map(o => o.selector|default(''))|json_encode }}">
                                         <div class="accessibility-audit-pr-review accessibility-audit-pr-cluster__head">
                                             {% if canRunScans and potentialCount > 1 %}
                                                 <label class="accessibility-audit-pr-review__pick">
@@ -277,7 +278,8 @@
                                             {% for row in cluster.occurrences %}
                                 <div class="accessibility-audit-pr-review accessibility-audit-pr-cluster__row" data-accessibility-audit-review="pending"
                                      data-rule-id="{{ row.ruleId }}"
-                                     data-context="{{ row.context|default('') }}">
+                                     data-context="{{ row.context|default('') }}"
+                                     data-selector="{{ row.selector|default('') }}">
                                     {% if canRunScans and potentialCount > 1 %}
                                         <label class="accessibility-audit-pr-review__pick">
                                             <input type="checkbox" class="checkbox" data-bulk-pick
@@ -309,7 +311,8 @@
                                     {% set row = cluster.occurrences|first %}
                                 <div class="accessibility-audit-pr-review" data-accessibility-audit-review="pending"
                                      data-rule-id="{{ row.ruleId }}"
-                                     data-context="{{ row.context|default('') }}">
+                                     data-context="{{ row.context|default('') }}"
+                                     data-selector="{{ row.selector|default('') }}">
                                     {% if canRunScans and potentialCount > 1 %}
                                         <label class="accessibility-audit-pr-review__pick">
                                             <input type="checkbox" class="checkbox" data-bulk-pick
