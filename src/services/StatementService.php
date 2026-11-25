@@ -234,9 +234,13 @@ class StatementService extends Component
      *     canClaimFull: bool,
      *     hasScanData: bool,
      *     failingCriteria: string[],
+     *     failingFromVpat: array<int, array{number: string, name: string}>,
      *     unconfirmedCriteria: string[],
      *     applicableCount: int,
      * }
+     *     failingFromVpat lists the failing criteria whose level is an answer
+     *     given on the VPAT rather than one a scan gave. A new scan does not
+     *     change those, so the screen sends the reader to the VPAT for them.
      * @throws Exception
      * @throws \Exception
      *
@@ -255,6 +259,7 @@ class StatementService extends Component
         $attested = (bool) ($this->getRecord($siteId)['meta']['manualReviewConfirmed'] ?? false);
 
         $failing = [];
+        $failingFromVpat = [];
         $unconfirmed = [];
 
         foreach ($rows as $number => $row) {
@@ -262,6 +267,11 @@ class StatementService extends Component
 
             if ($effective !== '' && $effective !== self::LEVEL_SUPPORTS) {
                 $failing[] = (string) $number;
+
+                if (($row['overrideLevel'] ?? null) !== null) {
+                    $failingFromVpat[] = ['number' => (string) $number, 'name' => (string) $row['name']];
+                }
+
                 continue;
             }
 
@@ -296,6 +306,7 @@ class StatementService extends Component
             'canClaimFull' => $canClaimFull,
             'hasScanData' => $hasScanData,
             'failingCriteria' => $failing,
+            'failingFromVpat' => $failingFromVpat,
             'unconfirmedCriteria' => $unconfirmed,
             'applicableCount' => $applicable,
         ];

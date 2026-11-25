@@ -366,6 +366,8 @@ return [
     'First detected' => 'First detected',
     'Fix and re-scan. Anything you clear moves to Resolved so you can show the progress.' => 'Fix and re-scan. Anything you clear moves to Resolved so you can show the progress.',
     'Fix in Issues' => 'Fix in Issues',
+    'Change on the VPAT' => 'Change on the VPAT',
+    '{n, plural, =1{{list} is failing because of the answer given on the VPAT, not a scan. A new scan will not change it: if it has been fixed, change the answer on the VPAT.} other{{list} are failing because of the answers given on the VPAT, not a scan. A new scan will not change them: if they have been fixed, change the answers on the VPAT.}}' => '{n, plural, =1{{list} is failing because of the answer given on the VPAT, not a scan. A new scan will not change it: if it has been fixed, change the answer on the VPAT.} other{{list} are failing because of the answers given on the VPAT, not a scan. A new scan will not change them: if they have been fixed, change the answers on the VPAT.}}',
     'Fix once, fix everywhere' => 'Fix once, fix everywhere',
     'Fix these {n} rules to improve your score' => 'Fix these {n} rules to improve your score',
     'Fix this rule to improve your score' => 'Fix this rule to improve your score',

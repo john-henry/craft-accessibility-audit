@@ -359,6 +359,8 @@ return [
     'First detected' => 'Détecté pour la première fois',
     'Fix and re-scan. Anything you clear moves to Resolved so you can show the progress.' => 'Corrigez et réanalysez. Tout ce que vous réglez passe en « Résolu » pour montrer la progression.',
     'Fix in Issues' => 'Corriger dans Problèmes',
+    'Change on the VPAT' => 'Modifier dans le VPAT',
+    '{n, plural, =1{{list} is failing because of the answer given on the VPAT, not a scan. A new scan will not change it: if it has been fixed, change the answer on the VPAT.} other{{list} are failing because of the answers given on the VPAT, not a scan. A new scan will not change them: if they have been fixed, change the answers on the VPAT.}}' => '{n, plural, =1{{list} est en échec à cause de la réponse donnée dans le VPAT, pas d’une analyse. Une nouvelle analyse ne le changera pas : si c’est corrigé, modifiez la réponse dans le VPAT.} other{{list} sont en échec à cause des réponses données dans le VPAT, pas d’une analyse. Une nouvelle analyse ne les changera pas : si c’est corrigé, modifiez les réponses dans le VPAT.}}',
     'Fix once, fix everywhere' => 'Corriger une fois, corriger partout',
     'Fix these {n} rules to improve your score' => 'Corrigez ces {n} règles pour améliorer votre score',
     'Fix this rule to improve your score' => 'Corrigez cette règle pour améliorer votre score',

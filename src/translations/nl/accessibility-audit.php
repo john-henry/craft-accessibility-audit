@@ -359,6 +359,8 @@ return [
     'First detected' => 'Eerst gedetecteerd',
     'Fix and re-scan. Anything you clear moves to Resolved so you can show the progress.' => 'Oplossen en opnieuw analyseren. Alles wat je oplost gaat naar Opgelost, zodat je de voortgang kunt tonen.',
     'Fix in Issues' => 'Oplossen in Problemen',
+    'Change on the VPAT' => 'Wijzigen in de VPAT',
+    '{n, plural, =1{{list} is failing because of the answer given on the VPAT, not a scan. A new scan will not change it: if it has been fixed, change the answer on the VPAT.} other{{list} are failing because of the answers given on the VPAT, not a scan. A new scan will not change them: if they have been fixed, change the answers on the VPAT.}}' => '{n, plural, =1{{list} faalt door het antwoord in de VPAT, niet door een scan. Een nieuwe scan verandert dat niet: als het is opgelost, wijzig dan het antwoord in de VPAT.} other{{list} falen door de antwoorden in de VPAT, niet door een scan. Een nieuwe scan verandert dat niet: als ze zijn opgelost, wijzig dan de antwoorden in de VPAT.}}',
     'Fix once, fix everywhere' => 'Eén keer oplossen, overal opgelost',
     'Fix these {n} rules to improve your score' => 'Los deze {n} regels op om je score te verbeteren',
     'Fix this rule to improve your score' => 'Los deze regel op om je score te verbeteren',

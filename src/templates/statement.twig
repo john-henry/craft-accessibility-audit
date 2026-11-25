@@ -90,8 +90,12 @@
             <div>
                 <div class="light accessibility-audit-statlabel">{{ 'Failing criteria'|t('accessibility-audit') }}</div>
                 <div class="accessibility-audit-statfig">{{ derivation.failingCriteria|length }}</div>
-                {% if derivation.failingCriteria|length %}
+                {% set fromVpat = derivation.failingFromVpat ?? [] %}
+                {% if derivation.failingCriteria|length > fromVpat|length %}
                     <a class="go" href="{{ cpUrl('accessibility-audit/issues', { site: siteHandle }) }}">{{ 'Fix in Issues'|t('accessibility-audit') }}</a>
+                {% endif %}
+                {% if fromVpat|length and canUseVpat %}
+                    <a class="go" href="{{ cpUrl('accessibility-audit/vpat', { site: siteHandle }) }}">{{ 'Change on the VPAT'|t('accessibility-audit') }}</a>
                 {% endif %}
             </div>
             <div>
@@ -112,6 +116,20 @@
             }) }}
             <a class="go" href="{{ cpUrl('accessibility-audit', { site: siteHandle }) }}">{{ 'Scan again'|t('accessibility-audit') }}</a>
         </p>
+    {% endif %}
+
+    {% if (derivation.failingFromVpat ?? [])|length %}
+        <blockquote class="note">
+            <p>
+                {{ '{n, plural, =1{{list} is failing because of the answer given on the VPAT, not a scan. A new scan will not change it: if it has been fixed, change the answer on the VPAT.} other{{list} are failing because of the answers given on the VPAT, not a scan. A new scan will not change them: if they have been fixed, change the answers on the VPAT.}}'|t('accessibility-audit', {
+                    n: derivation.failingFromVpat|length,
+                    list: derivation.failingFromVpat|map(c => c.number ~ ' ' ~ c.name)|join(', '),
+                }) }}
+                {% if canUseVpat %}
+                    <a href="{{ cpUrl('accessibility-audit/vpat', { site: siteHandle }) }}">{{ 'Open the VPAT'|t('accessibility-audit') }} →</a>
+                {% endif %}
+            </p>
+        </blockquote>
     {% endif %}
 
     {% if not derivation.hasScanData %}
