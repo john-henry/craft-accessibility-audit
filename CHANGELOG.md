@@ -109,6 +109,7 @@
 - Show on page now finds the right element for a contrast question about a plain tag such as `<dt>` that appears more than once on the page. Re-scan a page to pick this up.
 - The Pages with Issues tab no longer says no pages have been scanned on a site where every scanned page is clean.
 - A review question's own page now counts and lists only the occurrences still waiting for an answer, so its totals match the Potential issues list.
+- Text in something drawn over a background it isn't inside, such as a code block's copy button, is no longer reported as failing contrast against the page behind it.
 - Text near a decorative line drawn in CSS, such as the nav links under a thin border on a fixed header, is now measured for contrast instead of being sent for review.
 
 ## 1.6.0 - 2026-10-08
