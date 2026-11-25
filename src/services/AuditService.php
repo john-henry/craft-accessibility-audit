@@ -14,6 +14,7 @@ use craft\db\Table;
 use craft\helpers\Db;
 use craft\helpers\ElementHelper;
 use craft\helpers\Json;
+use craft\helpers\Queue as QueueHelper;
 use craft\helpers\StringHelper;
 use craft\helpers\UrlHelper;
 use DateTime;
@@ -601,6 +602,8 @@ class AuditService extends Component
      * @param string $url The URL to scan, absolute or site-relative.
      * @param int $siteId The site the URL belongs to.
      * @param bool $withHeadless Whether to queue the server-side browser pass.
+     * @param bool $manual Whether someone asked for this page by hand, which
+     * queues its browser pass ahead of a sweep's.
      * @return array{scanId: int, score: int, url: string, error?: string, limitReached?: bool}
      * @throws \Exception
      * @throws Throwable
@@ -608,7 +611,7 @@ class AuditService extends Component
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
-    public function scanUrl(string $url, int $siteId, bool $withHeadless = true): array
+    public function scanUrl(string $url, int $siteId, bool $withHeadless = true, bool $manual = false): array
     {
         $url = $this->absoluteUrl($url, $siteId);
 
@@ -663,13 +666,7 @@ class AuditService extends Component
         $score = $this->_calculateScore($definiteIssues);
 
         if ($withHeadless && $scanId > 0 && $plugin->getHeadless()->isAvailable()) {
-            Craft::$app->getQueue()->push(new HeadlessScanJob([
-                'scanId' => $scanId,
-                'url' => $url,
-                'description' => Craft::t('accessibility-audit', 'Browser accessibility checks: {page}', [
-                    'page' => $url,
-                ]),
-            ]));
+            $this->_queueBrowserChecks($scanId, $url, $url, $manual);
         }
 
         return ['scanId' => $scanId, 'score' => $score, 'url' => $url];
@@ -789,6 +786,37 @@ class AuditService extends Component
     }
 
     /**
+     * Queues the server-side browser pass for one scan.
+     *
+     * A page someone asked for by hand goes ahead of the queue: during a sweep
+     * the queue already holds a browser job for every page on the site, and the
+     * person who pressed Re-scan is waiting on this one. Sweeps and saves keep
+     * Craft's default priority, so a sweep still runs in the order it was
+     * queued.
+     *
+     * @param int $scanId The scan to store the findings on.
+     * @param string $url The absolute URL to render.
+     * @param string $pageLabel The page's name for the queue listing.
+     * @param bool $manual Whether someone asked for this page by hand.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _queueBrowserChecks(int $scanId, string $url, string $pageLabel, bool $manual): void
+    {
+        QueueHelper::push(
+            new HeadlessScanJob([
+                'scanId' => $scanId,
+                'url' => $url,
+                'description' => Craft::t('accessibility-audit', 'Browser accessibility checks: {page}', [
+                    'page' => $pageLabel,
+                ]),
+            ]),
+            $manual ? HeadlessScanJob::PRIORITY_MANUAL : null,
+        );
+    }
+
+    /**
      * The page's own title, for a scan that has no element to borrow one from.
      *
      * @param string $html The fetched page.
@@ -816,13 +844,15 @@ class AuditService extends Component
      * (when available). The Inspect page passes false: its preview runs the
      * browser checks itself, and two browser writers racing on one scan is
      * exactly what makes results flip-flop.
+     * @param bool $manual Whether someone asked for this page by hand, which
+     * queues its browser pass ahead of a sweep's.
      * @return array{scanId: int, score: int, issues: IssueModel[], excluded?: bool, limitReached?: bool, error?: string}
      * @throws Throwable
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function scanElement(ElementInterface $element, bool $withHeadless = true): array
+    public function scanElement(ElementInterface $element, bool $withHeadless = true, bool $manual = false): array
     {
         assert($element instanceof Element);
 
@@ -883,13 +913,7 @@ class AuditService extends Component
             // checks" rows tells nobody what is actually being worked through.
             $pageLabel = ElementLabel::for($element, $element->id, $url);
 
-            Craft::$app->getQueue()->push(new HeadlessScanJob([
-                'scanId' => (int) $result['scanId'],
-                'url' => $url,
-                'description' => Craft::t('accessibility-audit', 'Browser accessibility checks: {page}', [
-                    'page' => $pageLabel,
-                ]),
-            ]));
+            $this->_queueBrowserChecks((int) $result['scanId'], $url, $pageLabel, $manual);
         }
 
         return $result;

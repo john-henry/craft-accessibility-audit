@@ -92,7 +92,7 @@ class AuditController extends Controller
         // where two engines overwrite each other's findings on one scan.
         $withHeadless = !$this->request->getBodyParam('skipHeadless', false);
 
-        $result = AccessibilityAudit::getInstance()->getAudit()->scanElement($entry, $withHeadless);
+        $result = AccessibilityAudit::getInstance()->getAudit()->scanElement($entry, $withHeadless, manual: true);
 
         // Lite hit the distinct-page cap for a brand-new page. Surface it
         // distinctly so the sidebar JS can show an upgrade message instead of
@@ -180,7 +180,7 @@ class AuditController extends Controller
         // overwriting each other on the one scan.
         $withHeadless = !$this->request->getBodyParam('skipHeadless', false);
 
-        $result = $audit->scanUrl($url, $siteId, $withHeadless);
+        $result = $audit->scanUrl($url, $siteId, $withHeadless, manual: true);
 
         if (!empty($result['limitReached'])) {
             return $this->asJson([
@@ -785,7 +785,7 @@ class AuditController extends Controller
             if ($element === null || !$elements->canView($element)) {
                 continue;
             }
-            AccessibilityAudit::getInstance()->getAudit()->scanElement($element);
+            AccessibilityAudit::getInstance()->getAudit()->scanElement($element, manual: true);
             $scanned++;
         }
 

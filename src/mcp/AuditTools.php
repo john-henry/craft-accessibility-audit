@@ -705,7 +705,7 @@ class AuditTools
             throw new ToolCallException("Element {$element->id} is an unpublished draft. Only live pages can be scanned.");
         }
 
-        return self::_scanned($audit->scanElement($element), "Element {$element->id} has no URL on the {$site->handle} site, so there is no page to scan.");
+        return self::_scanned($audit->scanElement($element, manual: true), "Element {$element->id} has no URL on the {$site->handle} site, so there is no page to scan.");
     }
 
     /**
@@ -730,7 +730,7 @@ class AuditTools
             throw new ToolCallException('That URL is not one this site scans. Only pages with an element, URLs listed under Settings > Scanning, and URLs already scanned for this site can be re-scanned.');
         }
 
-        return self::_scanned($audit->scanUrl($url, (int)$site->id), 'The page could not be scanned.');
+        return self::_scanned($audit->scanUrl($url, (int)$site->id, manual: true), 'The page could not be scanned.');
     }
 
     /**

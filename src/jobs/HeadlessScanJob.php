@@ -34,6 +34,16 @@ use yii\queue\RetryableJobInterface;
  */
 class HeadlessScanJob extends BaseJob implements RetryableJobInterface
 {
+    // Const Properties
+    // =========================================================================
+
+    /**
+     * @var int The queue priority for a page someone asked for by hand.
+     *      Craft runs lower numbers first and queues at 1024 by default, so
+     *      this goes ahead of every job a sweep has already queued.
+     */
+    public const PRIORITY_MANUAL = 512;
+
     // Public Properties
     // =========================================================================
 
@@ -113,6 +123,13 @@ class HeadlessScanJob extends BaseJob implements RetryableJobInterface
             return;
         }
 
+        // A newer scan of the page carries its own pass, or was measured in
+        // the page report's preview. Rendering this one would spend Chrome on
+        // a scan the reports no longer show.
+        if ($this->isSuperseded()) {
+            return;
+        }
+
         // One pass per viewport bucket on a single shared browser (launching
         // Chrome per viewport doubles the cost of large scans), each pass
         // replacing only its own bucket. A failed pass (null, already logged)
@@ -144,6 +161,40 @@ class HeadlessScanJob extends BaseJob implements RetryableJobInterface
 
             Craft::info("Headless axe scan ({$viewport}) stored for scan {$this->scanId}", 'accessibility-audit');
         }
+    }
+
+    /**
+     * Whether the page has been scanned again since this job was queued.
+     *
+     * A page is the element on its site, or for a page with no element, its
+     * URL on its site. Only a later scan of that same page counts.
+     *
+     * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function isSuperseded(): bool
+    {
+        $scan = (new Query())
+            ->select(['elementId', 'url', 'siteId'])
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where(['id' => $this->scanId])
+            ->one();
+
+        if ($scan === null) {
+            return false;
+        }
+
+        $page = $scan['elementId'] !== null
+            ? ['elementId' => (int)$scan['elementId']]
+            : ['elementId' => null, 'url' => $scan['url']];
+
+        return (new Query())
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where($page + ['siteId' => (int)$scan['siteId']])
+            ->andWhere(['>', 'id', $this->scanId])
+            ->exists();
     }
 
     // Protected Methods

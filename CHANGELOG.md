@@ -61,6 +61,8 @@
 - Columns that said Count now say Occurrences, and the Potential issues Pages tab says Question types and Needs review, matching the page report.
 - About this rule now says what the rule checks, and an axe-core rule's page links to the plugin's own rule of the same name where there is one.
 - The Ignored Rule IDs setting lists every rule the plugin's own checks can report, grouped by kind, and says how to name an axe-core rule.
+- Browser checks for a page you re-scan yourself now run ahead of a site-wide scan already in the queue.
+- Queued browser checks are skipped for a page that has been scanned again since they were queued.
 
 ### Removed
 - `getAssets()->scanAsset()`. PDF results come from `getPdfAudit()` now, and image alt text issues from the Assets listing methods.

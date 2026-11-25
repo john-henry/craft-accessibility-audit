@@ -262,7 +262,7 @@ class AuditController extends Controller
         $label = class_basename(get_class($element)) . ': ' . ElementLabel::for($element);
         $this->stdout("Scanning \"{$label}\"...\n");
 
-        $result = AccessibilityAudit::getInstance()->getAudit()->scanElement($element);
+        $result = AccessibilityAudit::getInstance()->getAudit()->scanElement($element, manual: true);
 
         // A scan that never ran still comes back with a score, because the
         // caller is expected to read why it stopped. Printing the number on its
@@ -335,7 +335,7 @@ class AuditController extends Controller
         }
         $this->stdout("Scanning {$this->url}...\n");
 
-        $result = AccessibilityAudit::getInstance()->getAudit()->scanUrl($this->url, $siteId);
+        $result = AccessibilityAudit::getInstance()->getAudit()->scanUrl($this->url, $siteId, manual: true);
 
         if (!empty($result['error'])) {
             $this->stderr($result['error'] . "\n", Console::FG_RED);
