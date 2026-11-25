@@ -2324,6 +2324,7 @@ class AuditService extends Component
             ])
             ->from(['i' => '{{%accessibilityaudit_issues}}'])
             ->where(['i.scanId' => $latestIds, 'i.ruleId' => $ruleId, 'i.isResolved' => false])
+            ->andWhere($this->_waitingOnly($ruleId, 'i'))
             ->one();
 
         if (!$row || !(int)$row['occurrences']) {
@@ -2384,7 +2385,8 @@ class AuditService extends Component
             ->select(['COUNT(DISTINCT i.scanId)'])
             ->from(['i' => '{{%accessibilityaudit_issues}}'])
             ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], 's.id = i.scanId')
-            ->where(['i.scanId' => $latestIds, 'i.ruleId' => $ruleId, 'i.isResolved' => false]);
+            ->where(['i.scanId' => $latestIds, 'i.ruleId' => $ruleId, 'i.isResolved' => false])
+            ->andWhere($this->_waitingOnly($ruleId, 'i'));
         $applyTitle($totalQuery);
         $total = (int)$totalQuery->scalar();
 
@@ -2412,6 +2414,7 @@ class AuditService extends Component
             ->from(['i' => '{{%accessibilityaudit_issues}}'])
             ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], 's.id = i.scanId')
             ->where(['i.scanId' => $latestIds, 'i.ruleId' => $ruleId, 'i.isResolved' => false])
+            ->andWhere($this->_waitingOnly($ruleId, 'i'))
             ->groupBy($groupBy)
             ->orderBy([$orderColumn => $orderDir])
             ->offset(($page - 1) * $perPage)
@@ -2476,7 +2479,8 @@ class AuditService extends Component
                 'rn' => new Expression('ROW_NUMBER() OVER (PARTITION BY [[scanId]] ORDER BY [[id]])'),
             ])
             ->from('{{%accessibilityaudit_issues}}')
-            ->where(['scanId' => $scanIds, 'ruleId' => $ruleId, 'isResolved' => false]);
+            ->where(['scanId' => $scanIds, 'ruleId' => $ruleId, 'isResolved' => false])
+            ->andWhere($this->_waitingOnly($ruleId));
 
         $rows = (new Query())
             ->select(['scanId', 'message', 'context'])
@@ -2537,6 +2541,7 @@ class AuditService extends Component
                 ['and', '[[es.elementId]] = [[i.elementId]]', ['es.siteId' => $siteId]],
             )
             ->where(['i.scanId' => $latestIds, 'i.ruleId' => $ruleId, 'i.isResolved' => false])
+            ->andWhere($this->_waitingOnly($ruleId, 'i'))
             ->groupBy(['i.elementId', 'es.title', 'es.uri', 's.score', 's.dateScanned'])
             ->orderBy(['occurrences' => SORT_DESC])
             ->all();
@@ -3826,6 +3831,32 @@ class AuditService extends Component
             ['not like', $rule, 'potential:%', false],
             [$verdict => VerdictService::VERDICT_CONFIRMED],
         ];
+    }
+
+    /**
+     * Keeps a review question's rows to those still waiting for an answer.
+     *
+     * A review question's page is titled with the question, so it counts and
+     * lists what is still to be answered, as the Potential issues list does.
+     * Answered rows are shown where they now belong: dismissals on the
+     * Dismissed tab, confirmed failures with the definite issues. Any other
+     * rule has no answers, and gets no condition.
+     *
+     * @param string $ruleId The rule being listed.
+     * @param string $alias The issues table's alias in the query, if any.
+     * @return array<int|string, mixed> A condition for andWhere(), empty for
+     *         a rule that is not a review question.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _waitingOnly(string $ruleId, string $alias = ''): array
+    {
+        if (!str_starts_with($ruleId, 'potential:')) {
+            return [];
+        }
+
+        return [($alias !== '' ? "$alias." : '') . 'verdict' => null];
     }
 
     /**

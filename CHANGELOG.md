@@ -107,6 +107,8 @@
 - With devMode on, a layout that sets variables before its doctype no longer renders in quirks mode.
 - The Overview's average score bar is now green, amber or red to match the score, instead of always orange.
 - Show on page now finds the right element for a contrast question about a plain tag such as `<dt>` that appears more than once on the page. Re-scan a page to pick this up.
+- The Pages with Issues tab no longer says no pages have been scanned on a site where every scanned page is clean.
+- A review question's own page now counts and lists only the occurrences still waiting for an answer, so its totals match the Potential issues list.
 - Text near a decorative line drawn in CSS, such as the nav links under a thin border on a fixed header, is now measured for contrast instead of being sent for review.
 
 ## 1.6.0 - 2026-10-08

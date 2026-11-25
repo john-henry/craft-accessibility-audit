@@ -561,6 +561,7 @@ return [
     'No pages with potential issues found.' => 'Nessuna pagina con problemi potenziali trovata.',
     'No resolved issues yet. Fixed issues appear here after the next scan.' => 'Nessun problema risolto ancora. I problemi corretti compariranno qui dopo la prossima analisi.',
     'No scan found.' => 'Nessuna analisi trovata.',
+    'No pages with issues to show.' => 'Nessuna pagina con problemi da mostrare.',
     'No scanned pages yet.' => 'Nessuna pagina analizzata ancora.',
     'No scanner can tell {what}.' => 'Nessun analizzatore può stabilire {what}.',
     'No scans yet' => 'Nessuna analisi ancora',

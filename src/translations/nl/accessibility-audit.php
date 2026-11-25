@@ -561,6 +561,7 @@ return [
     'No pages with potential issues found.' => 'Geen pagina’s met mogelijke problemen gevonden.',
     'No resolved issues yet. Fixed issues appear here after the next scan.' => 'Nog geen opgeloste problemen. Opgeloste problemen verschijnen hier na de volgende analyse.',
     'No scan found.' => 'Geen analyse gevonden.',
+    'No pages with issues to show.' => 'Geen pagina\'s met problemen om te tonen.',
     'No scanned pages yet.' => 'Nog geen geanalyseerde pagina’s.',
     'No scanner can tell {what}.' => 'Geen enkele scanner kan {what} vaststellen.',
     'No scans yet' => 'Nog geen analyses',

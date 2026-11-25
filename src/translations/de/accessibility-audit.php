@@ -561,6 +561,7 @@ return [
     'No pages with potential issues found.' => 'Keine Seiten mit möglichen Problemen gefunden.',
     'No resolved issues yet. Fixed issues appear here after the next scan.' => 'Noch keine behobenen Probleme. Behobene Probleme erscheinen hier nach dem nächsten Scan.',
     'No scan found.' => 'Kein Scan gefunden.',
+    'No pages with issues to show.' => 'Keine Seiten mit Problemen anzuzeigen.',
     'No scanned pages yet.' => 'Noch keine gescannten Seiten.',
     'No scanner can tell {what}.' => 'Kein Scanner kann {what} feststellen.',
     'No scans yet' => 'Noch keine Scans',

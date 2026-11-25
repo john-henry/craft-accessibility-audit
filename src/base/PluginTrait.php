@@ -159,6 +159,7 @@ trait PluginTrait
         'No pages found.',
         'No pages with potential issues found.',
         'No resolved issues yet. Fixed issues appear here after the next scan.',
+        'No pages with issues to show.',
         'No scanned pages yet.',
         'Nothing has been dismissed yet.',
         'Occurrences',

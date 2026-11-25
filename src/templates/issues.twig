@@ -260,7 +260,10 @@
             endpoint: 'accessibility-audit/dashboard/scanned-pages-table',
             siteId: siteId,
             columns: columns,
-            emptyMessage: Craft.t('accessibility-audit', 'No scanned pages yet.'),
+            // A clean site and an unscanned one both leave this list empty.
+            emptyMessage: {{ scannedCount ? 'true' : 'false' }}
+                ? Craft.t('accessibility-audit', 'No pages with issues to show.')
+                : Craft.t('accessibility-audit', 'No scanned pages yet.'),
             onLoaded: purgeDetailRows,
             exportUrl: '{{ actionUrl('accessibility-audit/dashboard/scanned-pages-export', {siteId: siteId}) }}',
         });

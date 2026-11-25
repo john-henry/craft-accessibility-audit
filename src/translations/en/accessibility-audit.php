@@ -568,6 +568,7 @@ return [
     'No pages with potential issues found.' => 'No pages with potential issues found.',
     'No resolved issues yet. Fixed issues appear here after the next scan.' => 'No resolved issues yet. Fixed issues appear here after the next scan.',
     'No scan found.' => 'No scan found.',
+    'No pages with issues to show.' => 'No pages with issues to show.',
     'No scanned pages yet.' => 'No scanned pages yet.',
     'No scanner can tell {what}.' => 'No scanner can tell {what}.',
     'No scans yet' => 'No scans yet',
