@@ -9,6 +9,7 @@ namespace johnhenry\accessibilityaudit\models;
 use Craft;
 use craft\base\Model;
 use craft\helpers\App;
+use Dompdf\Adapter\CPDF;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\helpers\ScannableElementTypes;
 use johnhenry\accessibilityaudit\services\HeadlessScanner;
@@ -45,6 +46,21 @@ class SettingsModel extends Model
      * Resolved-issue retention: never pruned, kept as a permanent record.
      */
     public const RESOLVED_RETENTION_FOREVER = 'forever';
+
+    /**
+     * Scheduled summary: not sent.
+     */
+    public const REPORT_SCHEDULE_OFF = 'off';
+
+    /**
+     * Scheduled summary: sent once a week, covering the last 7 days.
+     */
+    public const REPORT_SCHEDULE_WEEKLY = 'weekly';
+
+    /**
+     * Scheduled summary: sent once a month, covering the month before.
+     */
+    public const REPORT_SCHEDULE_MONTHLY = 'monthly';
 
     /**
      * New uploads' alt text drafts: every one waits under Drafts to review.
@@ -389,6 +405,40 @@ class SettingsModel extends Model
     public int $notifyScoreDropThreshold = 10;
 
     /**
+     * @var string How often the directors summary is sent: one of the
+     * REPORT_SCHEDULE_* constants. Pro only.
+     */
+    public string $reportSchedule = self::REPORT_SCHEDULE_OFF;
+
+    /**
+     * @var string Comma- or newline-separated addresses the scheduled summary
+     * goes to. Empty uses the notification recipients.
+     */
+    public string $reportScheduleRecipients = '';
+
+    /**
+     * @var bool Whether the scheduled summary is also posted to the Slack webhook.
+     */
+    public bool $reportScheduleSlack = false;
+
+    /**
+     * @var bool Whether the emailed summary carries a PDF of itself.
+     */
+    public bool $reportScheduleAttachPdf = true;
+
+    /**
+     * @var string The paper size of the emailed summary PDF: any size dompdf
+     * knows, such as 'a4', 'letter' or 'legal'. Set from the config file.
+     */
+    public string $pdfPaperSize = 'a4';
+
+    /**
+     * @var string The orientation of the emailed summary PDF: 'portrait' or
+     * 'landscape'. Set from the config file.
+     */
+    public string $pdfPaperOrientation = 'portrait';
+
+    /**
      * @var ?string A token used to authenticate CI/CD webhook requests, or null.
      */
     public ?string $ciApiToken = null;
@@ -675,6 +725,11 @@ class SettingsModel extends Model
             [['readabilityTarget'], 'in', 'range' => array_keys(ReadabilityService::TARGETS)],
             [['scanOnSave', 'frontendAxe', 'overlayCollapseWhenIdle', 'autoGenerateAlt', 'en301549', 'chromeNoSandbox', 'decoupledOverlay', 'readabilityPreviewTarget'], 'boolean'],
             [['resolvedRetention'], 'in', 'range' => [self::RESOLVED_RETENTION_WITH_SCANS, self::RESOLVED_RETENTION_KEEP_DAYS, self::RESOLVED_RETENTION_FOREVER]],
+            [['reportSchedule'], 'in', 'range' => [self::REPORT_SCHEDULE_OFF, self::REPORT_SCHEDULE_WEEKLY, self::REPORT_SCHEDULE_MONTHLY]],
+            [['reportScheduleRecipients'], 'string'],
+            [['reportScheduleSlack', 'reportScheduleAttachPdf'], 'boolean'],
+            [['pdfPaperSize'], 'in', 'range' => array_keys(CPDF::$PAPER_SIZES)],
+            [['pdfPaperOrientation'], 'in', 'range' => ['portrait', 'landscape']],
             [['overlayPosition'], 'in', 'range' => ['bottom-right', 'bottom-left', 'top-right', 'top-left']],
             [['newAssetAltMode'], 'in', 'range' => [self::NEW_ASSET_ALT_REVIEW, self::NEW_ASSET_ALT_SAVE]],
             [['overlayIdleSeconds'], 'integer', 'min' => 3, 'max' => 600],

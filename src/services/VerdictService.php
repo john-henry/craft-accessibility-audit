@@ -85,6 +85,146 @@ class VerdictService extends Component
     }
 
     /**
+     * The target an every-page ruling is filed under.
+     *
+     * Stored in the same table and under the same unique index as a page's
+     * rulings, with the site's own id in its siteId column, so one question
+     * answered for the whole site can only be answered once.
+     *
+     * @return string A 40-character hash.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function siteTargetHash(): string
+    {
+        return sha1('site');
+    }
+
+    /**
+     * What identifies an occurrence across every page, or null when nothing
+     * does.
+     *
+     * The markup is used when it says something of its own: a class, an
+     * attribute, some text. A bare tag says nothing, since `<dt>` matches
+     * every `<dt>` on the site, so there the browser's selector is used, and
+     * only when it names a class or an id. A selector of tag names alone
+     * ("dl > dt") is as unspecific as the bare tag. With neither, there is no
+     * telling this element from others like it, and no every-page ruling is
+     * offered.
+     *
+     * @param string|null $context The occurrence's context snippet.
+     * @param string|null $selector The browser's selector for the element.
+     * @return string|null A 40-character hash, or null.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function siteKey(?string $context, ?string $selector): ?string
+    {
+        if ($this->_isDistinctive($context)) {
+            return 'c' . substr($this->stableContextHash($context), 1);
+        }
+
+        $selector = trim((string)$selector);
+
+        if ($selector !== '' && preg_match('/[.#]/', $selector) === 1) {
+            return 's' . substr(sha1('selector:' . $selector), 1);
+        }
+
+        return null;
+    }
+
+    /**
+     * Records (or clears) a "not an issue" ruling on every page of a site, and
+     * brings the stored issue rows into line.
+     *
+     * A page's own ruling always wins: the rows of a page where this occurrence
+     * was confirmed, or dismissed on its own, are left as they are. Clearing
+     * puts back only the rows this ruling had answered.
+     *
+     * @param int $siteId The site.
+     * @param string $ruleId The potential rule.
+     * @param string|null $context The occurrence's context snippet.
+     * @param string|null $selector The browser's selector for the element.
+     * @param string|null $verdict self::VERDICT_DISMISSED, or null to clear.
+     * @param bool $deferScoring Skip the score recalculation and hand back the
+     *                           scans that need one.
+     * @return array{key: string|null, pages: int, scanIds: int[]} The key the
+     *         ruling was filed under (null when the occurrence has nothing to
+     *         identify it), how many pages it changed, and the scans whose
+     *         scores are now out of date.
+     * @throws Exception
+     * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function setSiteVerdict(
+        int $siteId,
+        string $ruleId,
+        ?string $context,
+        ?string $selector,
+        ?string $verdict,
+        bool $deferScoring = false,
+    ): array {
+        $key = $this->siteKey($context, $selector);
+
+        if ($key === null || ($verdict !== null && $verdict !== self::VERDICT_DISMISSED)) {
+            return ['key' => null, 'pages' => 0, 'scanIds' => []];
+        }
+
+        $db = Craft::$app->getDb();
+        $now = Db::prepareDateForDb(new DateTime());
+        $match = [
+            'siteId' => $siteId,
+            'targetHash' => $this->siteTargetHash(),
+            'ruleId' => $ruleId,
+            'contextHash' => $key,
+        ];
+
+        $result = $db->transaction(function() use ($db, $match, $verdict, $now, $siteId, $ruleId, $key): array {
+            if ($verdict === null) {
+                $db->createCommand()->delete('{{%accessibilityaudit_verdicts}}', $match)->execute();
+            } else {
+                $existing = (new Query())
+                    ->select(['id'])
+                    ->from('{{%accessibilityaudit_verdicts}}')
+                    ->where($match)
+                    ->scalar();
+
+                if ($existing) {
+                    $db->createCommand()->update('{{%accessibilityaudit_verdicts}}', [
+                        'verdict' => $verdict,
+                        'userId' => Craft::$app->getUser()->getId(),
+                        'dateUpdated' => $now,
+                    ], ['id' => $existing])->execute();
+                } else {
+                    $db->createCommand()->insert('{{%accessibilityaudit_verdicts}}', $match + [
+                        'elementId' => null,
+                        'url' => null,
+                        'verdict' => $verdict,
+                        'userId' => Craft::$app->getUser()->getId(),
+                        'dateCreated' => $now,
+                        'dateUpdated' => $now,
+                        'uid' => StringHelper::UUID(),
+                    ])->execute();
+                }
+            }
+
+            return $this->_applySiteVerdict($siteId, $ruleId, $key, $verdict);
+        });
+
+        if (!$deferScoring) {
+            foreach ($result['scanIds'] as $scanId) {
+                AccessibilityAudit::getInstance()->getAudit()->recalculateScoreForScan($scanId);
+            }
+        }
+
+        return ['key' => $key] + $result;
+    }
+
+    /**
      * @var string[] Attributes holding an element id, or a reference to one.
      *
      *      Some form builders mint a fresh token into every id on the page at
@@ -281,7 +421,7 @@ class VerdictService extends Component
         }
 
         $rows = (new Query())
-            ->select(['i.elementId', 'i.ruleId', 'i.context', 's.url'])
+            ->select(['i.elementId', 'i.ruleId', 'i.context', 'i.selector', 's.url'])
             ->from(['i' => '{{%accessibilityaudit_issues}}'])
             ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], '[[s.id]] = [[i.scanId]]')
             ->where([
@@ -293,8 +433,33 @@ class VerdictService extends Component
             ->all();
 
         $needScoring = [];
+        $clearedSite = [];
 
         foreach ($rows as $row) {
+            $elementId = $row['elementId'] !== null ? (int)$row['elementId'] : null;
+            $url = $row['url'] !== null ? (string)$row['url'] : null;
+            $context = $row['context'] !== null ? (string)$row['context'] : null;
+
+            // A row answered by an every-page ruling, with nothing recorded on
+            // its own page, is put back by taking that ruling back: clearing
+            // only this page would last until its next scan stamped it again.
+            if (!$this->_hasPageVerdict($siteId, $elementId, $url, (string)$row['ruleId'], $context)) {
+                $key = $this->siteKey($context, $row['selector'] ?? null);
+
+                if ($key !== null && $this->_hasSiteVerdict($siteId, (string)$row['ruleId'], $key)) {
+                    if (!isset($clearedSite[$row['ruleId'] . '|' . $key])) {
+                        $clearedSite[$row['ruleId'] . '|' . $key] = true;
+                        $result = $this->setSiteVerdict($siteId, (string)$row['ruleId'], $context, $row['selector'] ?? null, null, true);
+
+                        foreach ($result['scanIds'] as $scanId) {
+                            $needScoring[$scanId] = true;
+                        }
+                    }
+
+                    continue;
+                }
+            }
+
             $scanIds = $this->setVerdict(
                 $siteId,
                 $row['elementId'] !== null ? (int)$row['elementId'] : null,
@@ -418,15 +583,20 @@ class VerdictService extends Component
      */
     public function mapForElement(?int $elementId, int $siteId, ?string $url = null): array
     {
+        $siteTarget = $this->siteTargetHash();
         $rows = (new Query())
-            ->select(['ruleId', 'contextHash', 'verdict'])
+            ->select(['targetHash', 'ruleId', 'contextHash', 'verdict'])
             ->from('{{%accessibilityaudit_verdicts}}')
-            ->where(['targetHash' => $this->targetHash($elementId, $url), 'siteId' => $siteId])
+            ->where(['targetHash' => [$this->targetHash($elementId, $url), $siteTarget], 'siteId' => $siteId])
             ->all();
 
+        // Every-page rulings travel in the same map under their own prefix, so
+        // each caller that stamps a scan picks them up without knowing they
+        // exist.
         $map = [];
         foreach ($rows as $row) {
-            $map[$row['ruleId'] . '|' . $row['contextHash']] = $row['verdict'];
+            $prefix = $row['targetHash'] === $siteTarget ? 'site|' : '';
+            $map[$prefix . $row['ruleId'] . '|' . $row['contextHash']] = $row['verdict'];
         }
 
         return $map;
@@ -459,7 +629,7 @@ class VerdictService extends Component
         $rows = (new Query())
             ->select(['targetHash', 'ruleId', 'contextHash', 'userId', 'dateUpdated'])
             ->from('{{%accessibilityaudit_verdicts}}')
-            ->where(['targetHash' => $targetHashes, 'siteId' => $siteId])
+            ->where(['targetHash' => array_merge($targetHashes, [$this->siteTargetHash()]), 'siteId' => $siteId])
             ->all();
 
         $map = [];
@@ -482,37 +652,48 @@ class VerdictService extends Component
      * @param string $targetHash The page, from {@see self::targetHash()}.
      * @param string $ruleId The rule.
      * @param string|null $context The occurrence's context snippet.
-     * @return array{userId: int|null, date: string|null}|null Null when nothing was recorded.
+     * @param string|null $selector The browser's selector for the element.
+     * @return array{userId: int|null, date: string|null, everyPage: bool}|null
+     *         Null when nothing was recorded. everyPage is true when the
+     *         ruling came from one made for every page.
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function lookupMeta(array $map, string $targetHash, string $ruleId, ?string $context): ?array
+    public function lookupMeta(array $map, string $targetHash, string $ruleId, ?string $context, ?string $selector = null): ?array
     {
         foreach ($this->_candidateHashes($context) as $hash) {
             $meta = $map[$targetHash . '|' . $ruleId . '|' . $hash] ?? null;
 
             if ($meta !== null) {
-                return $meta;
+                return $meta + ['everyPage' => false];
             }
         }
 
-        return null;
+        $key = $this->siteKey($context, $selector);
+        $meta = $key !== null ? ($map[$this->siteTargetHash() . '|' . $ruleId . '|' . $key] ?? null) : null;
+
+        return $meta !== null ? $meta + ['everyPage' => true] : null;
     }
 
     /**
      * The ruling for one occurrence, from a map built by
      * {@see self::mapForElement()}.
      *
+     * The page's own ruling is read first, so a page where the occurrence was
+     * confirmed stays confirmed whatever was ruled for every page.
+     *
      * @param array<string, string> $map The element's rulings.
      * @param string $ruleId The rule.
      * @param string|null $context The occurrence's context snippet.
+     * @param string|null $selector The browser's selector for the element,
+     *                              where the scan recorded one.
      * @return string|null The ruling, or null if unreviewed.
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function lookup(array $map, string $ruleId, ?string $context): ?string
+    public function lookup(array $map, string $ruleId, ?string $context, ?string $selector = null): ?string
     {
         foreach ($this->_candidateHashes($context) as $hash) {
             $verdict = $map[$ruleId . '|' . $hash] ?? null;
@@ -522,11 +703,172 @@ class VerdictService extends Component
             }
         }
 
-        return null;
+        $key = $this->siteKey($context, $selector);
+
+        return $key !== null ? ($map['site|' . $ruleId . '|' . $key] ?? null) : null;
     }
 
     // Private Methods
     // =========================================================================
+
+    /**
+     * Stamps an every-page ruling onto the stored issue rows it applies to.
+     *
+     * Rows a page has its own ruling for are skipped both ways: dismissing
+     * leaves a confirmed row confirmed, and clearing leaves a row dismissed on
+     * its own page dismissed.
+     *
+     * @param int $siteId The site.
+     * @param string $ruleId The potential rule.
+     * @param string $key The every-page key, from self::siteKey().
+     * @param string|null $verdict self::VERDICT_DISMISSED, or null to clear.
+     * @return array{pages: int, scanIds: int[]}
+     * @throws Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _applySiteVerdict(int $siteId, string $ruleId, string $key, ?string $verdict): array
+    {
+        $rows = (new Query())
+            ->select(['i.id', 'i.context', 'i.selector', 'i.scanId', 'i.elementId', 'i.verdict', 's.url'])
+            ->from(['i' => '{{%accessibilityaudit_issues}}'])
+            ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], '[[s.id]] = [[i.scanId]]')
+            ->where(['i.siteId' => $siteId, 'i.ruleId' => $ruleId])
+            ->all();
+
+        // The pages' own rulings for this rule, loaded once rather than per row.
+        $own = [];
+        $ownRows = (new Query())
+            ->select(['targetHash', 'contextHash'])
+            ->from('{{%accessibilityaudit_verdicts}}')
+            ->where(['siteId' => $siteId, 'ruleId' => $ruleId])
+            ->andWhere(['not', ['targetHash' => $this->siteTargetHash()]])
+            ->all();
+
+        foreach ($ownRows as $ownRow) {
+            $own[$ownRow['targetHash'] . '|' . $ownRow['contextHash']] = true;
+        }
+
+        $ids = [];
+        $scanIds = [];
+        $pages = [];
+
+        foreach ($rows as $row) {
+            if ($this->siteKey($row['context'], $row['selector']) !== $key) {
+                continue;
+            }
+
+            if ($verdict !== null ? $row['verdict'] !== null : $row['verdict'] !== self::VERDICT_DISMISSED) {
+                continue;
+            }
+
+            $target = $this->targetHash(
+                $row['elementId'] !== null ? (int)$row['elementId'] : null,
+                $row['url'] !== null ? (string)$row['url'] : null,
+            );
+
+            foreach ($this->_candidateHashes($row['context']) as $hash) {
+                if (isset($own[$target . '|' . $hash])) {
+                    continue 2;
+                }
+            }
+
+            $ids[] = (int)$row['id'];
+            $scanIds[(int)$row['scanId']] = true;
+            $pages[$target] = true;
+        }
+
+        if ($ids !== []) {
+            Craft::$app->getDb()->createCommand()->update('{{%accessibilityaudit_issues}}', [
+                'verdict' => $verdict,
+                'dateUpdated' => Db::prepareDateForDb(new DateTime()),
+            ], ['id' => $ids])->execute();
+        }
+
+        return ['pages' => count($pages), 'scanIds' => array_map('intval', array_keys($scanIds))];
+    }
+
+    /**
+     * Whether a page has its own ruling on an occurrence.
+     *
+     * @param int $siteId The site.
+     * @param int|null $elementId The element, or null for a URL page.
+     * @param string|null $url The scanned URL, when there is no element.
+     * @param string $ruleId The rule.
+     * @param string|null $context The occurrence's context snippet.
+     * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _hasPageVerdict(int $siteId, ?int $elementId, ?string $url, string $ruleId, ?string $context): bool
+    {
+        return (new Query())
+            ->from('{{%accessibilityaudit_verdicts}}')
+            ->where([
+                'siteId' => $siteId,
+                'targetHash' => $this->targetHash($elementId, $url),
+                'ruleId' => $ruleId,
+                'contextHash' => $this->_candidateHashes($context),
+            ])
+            ->exists();
+    }
+
+    /**
+     * Whether an every-page ruling is on record.
+     *
+     * @param int $siteId The site.
+     * @param string $ruleId The rule.
+     * @param string $key The every-page key, from self::siteKey().
+     * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _hasSiteVerdict(int $siteId, string $ruleId, string $key): bool
+    {
+        return (new Query())
+            ->from('{{%accessibilityaudit_verdicts}}')
+            ->where([
+                'siteId' => $siteId,
+                'targetHash' => $this->siteTargetHash(),
+                'ruleId' => $ruleId,
+                'contextHash' => $key,
+            ])
+            ->exists();
+    }
+
+    /**
+     * Whether an occurrence's markup tells it apart from other elements of
+     * the same kind.
+     *
+     * A bare opening tag with no attributes and no text does not: it is every
+     * element of that type on the site.
+     *
+     * @param string|null $context The occurrence's context snippet.
+     * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _isDistinctive(?string $context): bool
+    {
+        $context = trim((string)$context);
+        $decoded = json_decode($context, true);
+
+        if (is_array($decoded) && array_key_exists('html', $decoded)) {
+            $context = trim((string)$decoded['html']);
+        }
+
+        $context = trim($this->_stripIdReferences($context));
+
+        if ($context === '' || $context === '…') {
+            return false;
+        }
+
+        return preg_match('/^<[a-z][a-z0-9-]*\s*\/?>\s*(?:…)?$/iu', $context) !== 1;
+    }
 
     /**
      * Every hash a ruling on this occurrence could have been stored under,

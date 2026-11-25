@@ -224,6 +224,9 @@
                                 <button type="button" class="btn small" id="accessibility-audit-pr-bulk-dismiss" disabled>
                                     {{ 'Dismiss selected'|t('accessibility-audit') }}
                                 </button>
+                                <button type="button" class="btn small" id="accessibility-audit-pr-bulk-everywhere" disabled>
+                                    {{ 'Dismiss selected on every page'|t('accessibility-audit') }}
+                                </button>
                                 <span class="accessibility-audit-pr-review__status" id="accessibility-audit-pr-bulk-status" role="status" aria-live="polite"></span>
                             </div>
                         {% endif %}
@@ -264,6 +267,9 @@
                                                 <button type="button" class="btn small" data-highlight-cluster>{{ 'Show all on page'|t('accessibility-audit') }}</button>
                                                 {% if canRunScans %}
                                                     <button type="button" class="btn small" data-cluster-verdict="dismissed">{{ 'Not an issue'|t('accessibility-audit') }}</button>
+                                                    {% if (cluster.occurrences|first).everyPage ?? false %}
+                                                        <button type="button" class="btn small" data-cluster-everywhere>{{ 'Not an issue on every page'|t('accessibility-audit') }}</button>
+                                                    {% endif %}
                                                     <button type="button" class="btn small accessibility-audit-pr-review__confirm" data-cluster-verdict="confirmed">{{ 'Confirm as failure'|t('accessibility-audit') }}</button>
                                                     <span class="accessibility-audit-pr-review__status" role="status" aria-live="polite"></span>
                                                 {% endif %}
@@ -279,7 +285,8 @@
                                 <div class="accessibility-audit-pr-review accessibility-audit-pr-cluster__row" data-accessibility-audit-review="pending"
                                      data-rule-id="{{ row.ruleId }}"
                                      data-context="{{ row.context|default('') }}"
-                                     data-selector="{{ row.selector|default('') }}">
+                                     data-selector="{{ row.selector|default('') }}"
+                                     data-every-page="{{ (row.everyPage ?? false) ? '1' : '0' }}">
                                     {% if canRunScans and potentialCount > 1 %}
                                         <label class="accessibility-audit-pr-review__pick">
                                             <input type="checkbox" class="checkbox" data-bulk-pick
@@ -299,6 +306,9 @@
                                         <button type="button" class="btn small" data-highlight>{{ 'Show on page'|t('accessibility-audit') }}</button>
                                         {% if canRunScans %}
                                             <button type="button" class="btn small" data-verdict="dismissed">{{ 'Not an issue'|t('accessibility-audit') }}</button>
+                                            {% if row.everyPage ?? false %}
+                                                <button type="button" class="btn small" data-verdict-everywhere>{{ 'Not an issue on every page'|t('accessibility-audit') }}</button>
+                                            {% endif %}
                                             <button type="button" class="btn small accessibility-audit-pr-review__confirm" data-verdict="confirmed">{{ 'Confirm as failure'|t('accessibility-audit') }}</button>
                                             <span class="accessibility-audit-pr-review__status" role="status" aria-live="polite"></span>
                                         {% endif %}
@@ -312,7 +322,8 @@
                                 <div class="accessibility-audit-pr-review" data-accessibility-audit-review="pending"
                                      data-rule-id="{{ row.ruleId }}"
                                      data-context="{{ row.context|default('') }}"
-                                     data-selector="{{ row.selector|default('') }}">
+                                     data-selector="{{ row.selector|default('') }}"
+                                     data-every-page="{{ (row.everyPage ?? false) ? '1' : '0' }}">
                                     {% if canRunScans and potentialCount > 1 %}
                                         <label class="accessibility-audit-pr-review__pick">
                                             <input type="checkbox" class="checkbox" data-bulk-pick
@@ -332,6 +343,9 @@
                                         <button type="button" class="btn small" data-highlight>{{ 'Show on page'|t('accessibility-audit') }}</button>
                                         {% if canRunScans %}
                                             <button type="button" class="btn small" data-verdict="dismissed">{{ 'Not an issue'|t('accessibility-audit') }}</button>
+                                            {% if row.everyPage ?? false %}
+                                                <button type="button" class="btn small" data-verdict-everywhere>{{ 'Not an issue on every page'|t('accessibility-audit') }}</button>
+                                            {% endif %}
                                             <button type="button" class="btn small accessibility-audit-pr-review__confirm" data-verdict="confirmed">{{ 'Confirm as failure'|t('accessibility-audit') }}</button>
                                             <span class="accessibility-audit-pr-review__status" role="status" aria-live="polite"></span>
                                         {% endif %}

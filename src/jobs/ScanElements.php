@@ -140,8 +140,9 @@ class ScanElements extends BaseBatchedJob
      * @inheritdoc
      *
      * Records the day's snapshot once the flag is down, so the row holds the
-     * finished sweep's figures and is not marked as taken mid-sweep. A failed
-     * snapshot is logged and the sweep still counts as done.
+     * finished sweep's figures and is not marked as taken mid-sweep, then
+     * queues any scheduled summary that is due. A failed snapshot is logged
+     * and the sweep still counts as done.
      */
     protected function after(): void
     {
@@ -152,6 +153,8 @@ class ScanElements extends BaseBatchedJob
         } catch (Throwable $e) {
             Craft::warning("A11y: could not record the snapshot after the sweep of site {$this->siteId}: " . $e->getMessage(), 'accessibility-audit');
         }
+
+        AccessibilityAudit::getInstance()->getScheduledReports()->queueDue();
     }
 
     /**

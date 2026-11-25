@@ -70,6 +70,8 @@ class Install extends Migration
         $this->dropTableIfExists('{{%accessibilityaudit_pdf_checks}}');
         $this->dropTableIfExists('{{%accessibilityaudit_alt_drafts}}');
         $this->dropTableIfExists('{{%accessibilityaudit_snapshots}}');
+        $this->dropTableIfExists('{{%accessibilityaudit_report_notes}}');
+        $this->dropTableIfExists('{{%accessibilityaudit_report_sends}}');
         return true;
     }
 
@@ -352,6 +354,33 @@ class Install extends Migration
             ]);
         }
 
+        if (!$this->db->tableExists('{{%accessibilityaudit_report_sends}}')) {
+            // One row per site: the day its scheduled summary last went out.
+            $this->createTable('{{%accessibilityaudit_report_sends}}', [
+                'id' => $this->primaryKey(),
+                'siteId' => $this->integer()->notNull(),
+                'lastSent' => $this->date()->notNull(),
+                'dateCreated' => $this->dateTime()->notNull(),
+                'dateUpdated' => $this->dateTime()->notNull(),
+                'uid' => $this->uid(),
+            ]);
+        }
+
+        if (!$this->db->tableExists('{{%accessibilityaudit_report_notes}}')) {
+            // One row per site: the team's note for the directors summary,
+            // kept apart from the organisation details the VPAT and statement
+            // editors save as a whole.
+            $this->createTable('{{%accessibilityaudit_report_notes}}', [
+                'id' => $this->primaryKey(),
+                'siteId' => $this->integer()->notNull(),
+                'note' => $this->text(),
+                'userId' => $this->integer()->null(),
+                'dateCreated' => $this->dateTime()->notNull(),
+                'dateUpdated' => $this->dateTime()->notNull(),
+                'uid' => $this->uid(),
+            ]);
+        }
+
         return true;
     }
 
@@ -394,6 +423,8 @@ class Install extends Migration
         $this->createIndex(null, '{{%accessibilityaudit_verdicts}}', ['elementId', 'siteId']);
         $this->createIndex(null, '{{%accessibilityaudit_vpat_revisions}}', ['siteId', 'dateCreated']);
         $this->createIndex(null, '{{%accessibilityaudit_snapshots}}', ['siteId', 'date'], true);
+        $this->createIndex(null, '{{%accessibilityaudit_report_notes}}', ['siteId'], true);
+        $this->createIndex(null, '{{%accessibilityaudit_report_sends}}', ['siteId'], true);
     }
 
     /**
@@ -501,6 +532,24 @@ class Install extends Migration
             '{{%accessibilityaudit_snapshots}}', 'siteId',
             '{{%sites}}', 'id',
             'CASCADE', 'CASCADE'
+        );
+        $this->addForeignKey(
+            null,
+            '{{%accessibilityaudit_report_notes}}', 'siteId',
+            '{{%sites}}', 'id',
+            'CASCADE', 'CASCADE'
+        );
+        $this->addForeignKey(
+            null,
+            '{{%accessibilityaudit_report_sends}}', 'siteId',
+            '{{%sites}}', 'id',
+            'CASCADE', 'CASCADE'
+        );
+        $this->addForeignKey(
+            null,
+            '{{%accessibilityaudit_report_notes}}', 'userId',
+            '{{%users}}', 'id',
+            'SET NULL', 'CASCADE'
         );
         // Keep the ruling if the author who made it is deleted: the judgement
         // still stands, we just lose the attribution.

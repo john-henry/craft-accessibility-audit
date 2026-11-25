@@ -1,0 +1,132 @@
+{% extends '_layouts/cp' %}
+{% import '_includes/forms.twig' as forms %}
+{% import 'accessibility-audit/_macros' as macros %}
+
+{% set title = report.name() %}
+{% set selectedSubnavItem = 'reports' %}
+{% set siteParams = sites|length > 1 ? { site: siteHandle } : {} %}
+{% set crumbs = [
+    { label: 'Accessibility Audit'|t('accessibility-audit'), url: cpUrl('accessibility-audit') },
+    { label: 'Reports'|t('accessibility-audit'), url: url('accessibility-audit/reports', siteParams|merge({ category: report.category() })) },
+    { label: title },
+] %}
+{% set docTitle = title ~ ': Accessibility Audit' %}
+
+{% if sites|length > 1 %}
+    {% set crumbs = [{
+        id: 'site-crumb',
+        icon: 'world',
+        label: requestedSite.name|t('site'),
+        menu: { items: siteMenuItems(sites, requestedSite), label: 'Select site'|t('app') },
+    }]|merge(crumbs ?? []) %}
+{% endif %}
+
+{% set takes = report.filters() %}
+{% set formId = 'a11y-report-filters' %}
+
+{% block actionButton %}
+    {% if isPro %}
+        {% if report.hasCsv() %}
+            <button type="submit" form="{{ formId }}" class="btn" formaction="{{ url('accessibility-audit/reports/' ~ report.handle() ~ '/csv') }}" formtarget="_self">{{ 'Download CSV'|t('accessibility-audit') }}</button>
+        {% endif %}
+        <button type="submit" form="{{ formId }}" class="btn submit" formaction="{{ url('accessibility-audit/reports/' ~ report.handle() ~ '/view') }}" formtarget="_blank">{{ 'View report'|t('accessibility-audit') }}{{ macros.newTabNote() }}</button>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+    {% if not isPro %}
+        {% include 'accessibility-audit/_includes/pro-upsell' with {
+            feature: 'Reports'|t('accessibility-audit'),
+            text: 'Reports are part of the Pro edition.'|t('accessibility-audit'),
+            edition: 'pro',
+        } only %}
+    {% else %}
+        <p class="mb-l">{{ report.description() }}</p>
+
+        {% if sweeping %}
+            <p class="notice with-icon mb-l" role="status">{{ 'A full scan is running, so some pages are still showing older results. The report will say so.'|t('accessibility-audit') }}</p>
+        {% endif %}
+
+        {% if report.handle() == 'pages-below-target' and targetScore <= 0 %}
+            <p class="warning with-icon mb-l">
+                {{ 'There is no target score set, so no page counts as below it.'|t('accessibility-audit') }}
+                {% if currentUser.admin %}
+                    <a href="{{ url('accessibility-audit/settings/general') }}">{{ 'Set a target score'|t('accessibility-audit') }}</a>
+                {% endif %}
+            </p>
+        {% endif %}
+
+        <form id="{{ formId }}" method="get" action="{{ url('accessibility-audit/reports/' ~ report.handle() ~ '/view') }}" target="_blank" class="pane">
+            {% if sites|length > 1 %}
+                <input type="hidden" name="site" value="{{ siteHandle }}">
+            {% endif %}
+
+            {% if 'period' in takes %}
+                {{ forms.selectField({
+                    label: 'Period'|t('accessibility-audit'),
+                    id: 'a11y-report-period',
+                    name: 'period',
+                    options: periodOptions,
+                    value: filters.period,
+                }) }}
+
+                <div class="flex flex-nowrap" style="gap: var(--m)">
+                    {{ forms.textField({
+                        label: 'From'|t('accessibility-audit'),
+                        instructions: 'Used with Custom dates.'|t('accessibility-audit'),
+                        id: 'a11y-report-from',
+                        name: 'from',
+                        type: 'date',
+                        value: filters.from,
+                    }) }}
+                    {{ forms.textField({
+                        label: 'To'|t('accessibility-audit'),
+                        instructions: 'Used with Custom dates.'|t('accessibility-audit'),
+                        id: 'a11y-report-to',
+                        name: 'to',
+                        type: 'date',
+                        value: filters.to,
+                    }) }}
+                </div>
+            {% endif %}
+
+            {% if 'section' in takes %}
+                {{ forms.selectField({
+                    label: 'Section'|t('accessibility-audit'),
+                    id: 'a11y-report-section',
+                    name: 'sectionId',
+                    options: sectionOptions,
+                    value: filters.sectionId,
+                }) }}
+            {% endif %}
+
+            {% if takes is empty %}
+                <p class="light">{{ 'This report covers the whole site as it stands now.'|t('accessibility-audit') }}</p>
+            {% endif %}
+        </form>
+
+        {% if note is not null %}
+            <form method="post" accept-charset="UTF-8" class="pane">
+                {{ csrfInput() }}
+                {{ actionInput('accessibility-audit/reports/save-note') }}
+                {{ redirectInput(url('accessibility-audit/reports/' ~ report.handle(), siteParams)) }}
+                {{ hiddenInput('siteId', filters.siteId) }}
+
+                {{ forms.textareaField({
+                    label: 'What we’re doing about it'|t('accessibility-audit'),
+                    instructions: 'A few lines from the team for the summary: what’s being fixed and when. It’s kept for next time, so you only need to change what has moved on.'|t('accessibility-audit'),
+                    id: 'a11y-report-note',
+                    name: 'note',
+                    value: note,
+                    rows: 5,
+                    maxlength: constant('johnhenry\\accessibilityaudit\\services\\ReportService::NOTE_MAX_LENGTH'),
+                    disabled: not canEditNote,
+                }) }}
+
+                {% if canEditNote %}
+                    <button type="submit" class="btn">{{ 'Save note'|t('accessibility-audit') }}</button>
+                {% endif %}
+            </form>
+        {% endif %}
+    {% endif %}
+{% endblock %}

@@ -788,7 +788,7 @@ class AuditService extends Component
                 $this->_insertIssue(
                     $scanId, null, null, $siteId, $issue,
                     $this->_resolveFirstDetectedForUrl($url, $siteId, $issue->ruleId),
-                    $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context),
+                    $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context, $issue->selector),
                 );
             }
 
@@ -1845,6 +1845,24 @@ class AuditService extends Component
             ->count();
 
         return ['pagesBelowTarget' => $belowTarget, 'pendingReview' => $pending];
+    }
+
+    /**
+     * The ids of each page's latest scan on a site, as a subquery.
+     *
+     * The same set the Overview and every listing read from, with trashed,
+     * disabled and archived elements already left out, for report queries
+     * built outside this service.
+     *
+     * @param int $siteId The site to read.
+     * @return Query<int, mixed> The subquery, for use as a value in a condition.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function latestScanIdsQuery(int $siteId): Query
+    {
+        return $this->_latestScanIdsQuery($siteId);
     }
 
     // Issues by Rule / Impact
@@ -3436,14 +3454,14 @@ class AuditService extends Component
             foreach ($issues as $issue) {
                 $firstDetected = $this->_resolveFirstDetected($elementId, $siteId, $issue->ruleId);
                 $this->_insertIssue($scanId, $elementId, $elementType, $siteId, $issue, $firstDetected,
-                    $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context));
+                    $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context, $issue->selector));
                 $currentRules[] = $issue->ruleId;
             }
 
             foreach ($potentialIssues as $issue) {
                 $firstDetected = $this->_resolveFirstDetected($elementId, $siteId, $issue->ruleId);
                 $this->_insertIssue($scanId, $elementId, $elementType, $siteId, $issue, $firstDetected,
-                    $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context));
+                    $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context, $issue->selector));
                 $currentRules[] = $issue->ruleId;
             }
 
@@ -3729,7 +3747,7 @@ class AuditService extends Component
 
         $query = (new Query())
             ->select([
-                'i.id', 'i.scanId', 'i.ruleId', 'i.message', 'i.context',
+                'i.id', 'i.scanId', 'i.ruleId', 'i.message', 'i.context', 'i.selector',
                 'i.elementId', 'i.elementType', 's.url', 's.title',
             ])
             ->from(['i' => '{{%accessibilityaudit_issues}}'])
@@ -4948,7 +4966,7 @@ class AuditService extends Component
                     // selector to find this one. A target inside a shadow root
                     // or frame comes as an array and is left out.
                     selector: is_string($target) ? $target : null,
-                ), null, $verdicts->lookup($verdictMap, self::RULE_POTENTIAL_CONTRAST, $html));
+                ), null, $verdicts->lookup($verdictMap, self::RULE_POTENTIAL_CONTRAST, $html, is_string($target) ? $target : null));
             }
         }
     }
@@ -5203,7 +5221,7 @@ class AuditService extends Component
                 (int)$scan['siteId'],
                 $issue,
                 null,
-                $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context),
+                $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context, $issue->selector),
             );
         }
 

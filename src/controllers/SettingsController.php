@@ -613,6 +613,14 @@ class SettingsController extends Controller
         $settings->notifyOnNewError = (bool)   $this->request->getBodyParam('settings[notifyOnNewError]',      $settings->notifyOnNewError);
         $settings->notifyOnScoreDrop = (bool)   $this->request->getBodyParam('settings[notifyOnScoreDrop]',     $settings->notifyOnScoreDrop);
         $settings->notifyScoreDropThreshold = (int)    $this->request->getBodyParam('settings[notifyScoreDropThreshold]', $settings->notifyScoreDropThreshold);
+        // Scheduled summaries are Pro and their fields aren't rendered below
+        // Pro, so the stored values stand there.
+        if ($plugin->isPro()) {
+            $settings->reportSchedule = (string)$this->request->getBodyParam('settings[reportSchedule]', $settings->reportSchedule);
+            $settings->reportScheduleRecipients = (string)$this->request->getBodyParam('settings[reportScheduleRecipients]', $settings->reportScheduleRecipients);
+            $settings->reportScheduleSlack = (bool)$this->request->getBodyParam('settings[reportScheduleSlack]', $settings->reportScheduleSlack);
+            $settings->reportScheduleAttachPdf = (bool)$this->request->getBodyParam('settings[reportScheduleAttachPdf]', $settings->reportScheduleAttachPdf);
+        }
 
         // Ignored rules, excluded URI patterns and additional URLs are only on
         // the Scanning tab, and every tab saves through here, so a field missing

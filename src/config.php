@@ -195,4 +195,26 @@ return [
 
     // Points a score must drop before a notification fires (1-100).
     // 'notifyScoreDropThreshold' => 10,
+
+    // Scheduled summary (Pro)
+    // ---------------------------------------------------------------------
+    // How often the directors summary is emailed: 'off', 'weekly' or 'monthly'.
+    // 'reportSchedule' => 'off',
+
+    // Comma- or newline-separated recipients for the summary. Empty uses
+    // notifyEmailRecipients.
+    // 'reportScheduleRecipients' => '',
+
+    // Post the short version of the summary to the Slack webhook as well.
+    // 'reportScheduleSlack' => false,
+
+    // Attach the summary to its email as a PDF.
+    // 'reportScheduleAttachPdf' => true,
+
+    // Paper size of the summary PDF: any size dompdf knows, such as 'a4',
+    // 'letter' or 'legal'.
+    // 'pdfPaperSize' => 'a4',
+
+    // Orientation of the summary PDF: 'portrait' or 'landscape'.
+    // 'pdfPaperOrientation' => 'portrait',
 ];

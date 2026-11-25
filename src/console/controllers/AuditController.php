@@ -37,6 +37,7 @@ use yii\helpers\Console;
  *   php craft accessibility-audit/audit/prune-excluded
  *   php craft accessibility-audit/audit/report
  *   php craft accessibility-audit/audit/snapshot
+ *   php craft accessibility-audit/audit/send-reports --force
  *
  * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
@@ -83,7 +84,7 @@ class AuditController extends Controller
     public ?string $url = null;
 
     /**
-     * @var bool Check every PDF again, including those unchanged since their last check.
+     * @var bool check-pdfs: check every PDF again, including unchanged ones. send-reports: send every summary now, due or not.
      */
     public bool $force = false;
 
@@ -100,7 +101,7 @@ class AuditController extends Controller
             'scan-element' => ['elementId', 'site'],
             'scan-url' => ['url', 'site'],
             'prune' => ['days'],
-            'check-pdfs' => ['force'],
+            'check-pdfs', 'send-reports' => ['force'],
             default => [],
         });
     }
@@ -579,6 +580,38 @@ class AuditController extends Controller
         $recorded = AccessibilityAudit::getInstance()->getSnapshots()->recordAll();
 
         $this->stdout("Recorded today's snapshot for {$recorded} site(s).\n", Console::FG_GREEN);
+
+        return ExitCode::OK;
+    }
+
+    /**
+     * Send the scheduled directors summary for every site that is due one, for a daily cron job.
+     *
+     * @return int
+     * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function actionSendReports(): int
+    {
+        $plugin = AccessibilityAudit::getInstance();
+        $reports = $plugin->getScheduledReports();
+
+        if (!$plugin->isPro()) {
+            $this->stderr("Scheduled summaries need the Pro edition.\n", Console::FG_RED);
+
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        if (!$reports->isEnabled()) {
+            $this->stdout("Scheduled summaries are off, or have no email recipients or Slack webhook. Set them under Settings, Notifications.\n", Console::FG_YELLOW);
+
+            return ExitCode::OK;
+        }
+
+        $sent = $reports->sendDue($this->force);
+        $this->stdout("Sent the summary for {$sent} site(s).\n", Console::FG_GREEN);
 
         return ExitCode::OK;
     }

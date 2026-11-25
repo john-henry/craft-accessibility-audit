@@ -1,0 +1,149 @@
+{% extends '_layouts/cp' %}
+{% import 'accessibility-audit/_macros' as macros %}
+
+{% set title = 'Reports'|t('accessibility-audit') %}
+{% set selectedSubnavItem = 'reports' %}
+{% set crumbs = [
+    { label: 'Accessibility Audit'|t('accessibility-audit'), url: cpUrl('accessibility-audit') },
+    { label: title },
+] %}
+{% set docTitle = title ~ ': Accessibility Audit' %}
+
+{% if sites|length > 1 %}
+    {% set crumbs = [{
+        id: 'site-crumb',
+        icon: 'world',
+        label: requestedSite.name|t('site'),
+        menu: { items: siteMenuItems(sites, requestedSite), label: 'Select site'|t('app') },
+    }]|merge(crumbs ?? []) %}
+{% endif %}
+
+{% set siteParams = sites|length > 1 ? { site: siteHandle } : {} %}
+
+{% block sidebar %}
+    {% if isPro %}
+        <nav aria-label="{{ 'Report categories'|t('accessibility-audit') }}">
+            <ul>
+                {% for handle, label in categories %}
+                    <li>
+                        <a href="{{ url('accessibility-audit/reports', siteParams|merge({ category: handle })) }}"{% if handle == category %} class="sel" aria-current="page"{% endif %}>
+                            <span class="label">{{ label }}</span>
+                        </a>
+                    </li>
+                {% endfor %}
+            </ul>
+        </nav>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+    {% if not isPro %}
+        {% include 'accessibility-audit/_includes/pro-upsell' with {
+            feature: 'Reports'|t('accessibility-audit'),
+            headline: 'Reports you can send on'|t('accessibility-audit'),
+            description: 'Pro adds a Reports section: a one-page summary for leadership, what was fixed and what turned up new over a period, and the pages under your target, each ready to print, save as PDF or download as a CSV. Plus everything else in Pro:'|t('accessibility-audit'),
+            edition: 'pro',
+            checklist: [
+                'Reports'|t('accessibility-audit'),
+                'VPAT export'|t('accessibility-audit'),
+                'Multi-site scanning'|t('accessibility-audit'),
+                'CI/CD Integration'|t('accessibility-audit'),
+            ],
+        } only %}
+    {% elseif category == 'downloads' %}
+        {% set siteId = requestedSite.id %}
+        {% set downloads = [
+            {
+                name: 'Issues'|t('accessibility-audit'),
+                description: 'Every open issue on every page, one row each.'|t('accessibility-audit'),
+                format: 'CSV',
+                url: actionUrl('accessibility-audit/audit/export', { siteId: siteId }),
+            },
+            {
+                name: 'Scanned pages'|t('accessibility-audit'),
+                description: 'Every scanned page with its score and issue counts.'|t('accessibility-audit'),
+                format: 'CSV',
+                url: actionUrl('accessibility-audit/dashboard/scanned-pages-export', { siteId: siteId }),
+            },
+            {
+                name: 'Pages needing review'|t('accessibility-audit'),
+                description: 'Pages with potential issues still waiting for someone to look at them.'|t('accessibility-audit'),
+                format: 'CSV',
+                url: actionUrl('accessibility-audit/dashboard/potential-pages-export', { siteId: siteId }),
+            },
+            {
+                name: 'Fix guide for the site'|t('accessibility-audit'),
+                description: 'A to-do list for developers, with an AI prompt for each fix.'|t('accessibility-audit'),
+                format: 'Markdown',
+                url: actionUrl('accessibility-audit/fix-guide/site', { siteId: siteId }),
+            },
+            {
+                name: 'VPAT'|t('accessibility-audit'),
+                description: 'The conformance report, ready to print or save as PDF.'|t('accessibility-audit'),
+                format: 'HTML',
+                url: cpUrl('accessibility-audit/vpat/export', { site: siteHandle }),
+                newTab: true,
+            },
+            {
+                name: 'VPAT in OpenACR'|t('accessibility-audit'),
+                description: 'The same report in the machine-readable OpenACR format.'|t('accessibility-audit'),
+                format: 'YAML',
+                url: cpUrl('accessibility-audit/vpat/export-openacr', { site: siteHandle }),
+            },
+            {
+                name: 'Accessibility statement'|t('accessibility-audit'),
+                description: 'The statement as it reads on the site.'|t('accessibility-audit'),
+                format: 'HTML',
+                url: cpUrl('accessibility-audit/statement/preview', { site: siteHandle }),
+                newTab: true,
+            },
+        ] %}
+        <table class="data fullwidth">
+            <caption class="visually-hidden">{{ 'Other downloads'|t('accessibility-audit') }}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">{{ 'Download'|t('accessibility-audit') }}</th>
+                    <th scope="col">{{ 'What it holds'|t('accessibility-audit') }}</th>
+                    <th scope="col">{{ 'Format'|t('accessibility-audit') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for download in downloads %}
+                    <tr>
+                        <th scope="row">
+                            <a href="{{ download.url }}"{% if download.newTab ?? false %} target="_blank" rel="noopener"{% endif %}>{{ download.name }}{% if download.newTab ?? false %}{{ macros.newTabNote() }}{% endif %}</a>
+                        </th>
+                        <td>{{ download.description }}</td>
+                        <td>{{ download.format }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% elseif reports is empty %}
+        <div class="zilch">
+            <p>{{ 'No reports in this category yet.'|t('accessibility-audit') }}</p>
+        </div>
+    {% else %}
+        <table class="data fullwidth">
+            <caption class="visually-hidden">{{ categories[category] }}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">{{ 'Report'|t('accessibility-audit') }}</th>
+                    <th scope="col">{{ 'What it shows'|t('accessibility-audit') }}</th>
+                    <th scope="col">{{ 'Formats'|t('accessibility-audit') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for report in reports %}
+                    <tr>
+                        <th scope="row">
+                            <a href="{{ url('accessibility-audit/reports/' ~ report.handle(), siteParams) }}">{{ report.name() }}</a>
+                        </th>
+                        <td>{{ report.description() }}</td>
+                        <td>{{ report.hasCsv() ? 'Printable page, CSV'|t('accessibility-audit') : 'Printable page'|t('accessibility-audit') }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+{% endblock %}

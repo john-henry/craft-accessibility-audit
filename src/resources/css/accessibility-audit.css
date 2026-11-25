@@ -4057,6 +4057,17 @@ table.data.accessibility-audit-occurrences tbody tr + tr > * {
   content: 'trash' / '';
 }
 
+/* Marks a dismissal on the Dismissed tab that was made for every page. */
+.accessibility-audit-every-page {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--aa-surface-chrome);
+  color: var(--aa-text-secondary);
+  font-size: 11px;
+}
+
 /* ── Read-only settings (allowAdminChanges off) ─────────────────────────────
    One fieldset[disabled] around each page natively disables every control;
    these rules strip the fieldset's own chrome and make the JS-driven

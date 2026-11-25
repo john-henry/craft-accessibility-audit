@@ -1,0 +1,84 @@
+{% set font = "-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" %}
+{% set accent = '#3b82f6' %}
+{% set p = 'margin:0 0 12px 0;font-family:' ~ font ~ ';font-size:14px;line-height:1.6;color:#374151;' %}
+{% set h2 = 'margin:24px 0 8px 0;font-family:' ~ font ~ ';font-size:15px;line-height:1.4;color:#111827;' %}
+<!DOCTYPE html>
+<html lang="{{ language }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ subject }}</title>
+</head>
+<body style="margin:0;padding:0;background:#f3f4f6;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f3f4f6;padding:32px 16px;">
+    <tr>
+        <td align="center">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="560" style="max-width:560px;width:100%;background:#ffffff;border-radius:8px;border-top:4px solid {{ accent }};">
+                <tr>
+                    <td style="padding:28px 32px 32px 32px;">
+                        <h1 style="margin:0 0 4px 0;font-family:{{ font }};font-size:18px;line-height:1.4;color:#111827;">{{ subject }}</h1>
+                        <p style="margin:0 0 20px 0;font-family:{{ font }};font-size:13px;color:#6b7280;">{{ organisationName is not empty ? organisationName ~ ', ' : '' }}{{ siteName }}</p>
+
+                        {% if data.score is null %}
+                            <p style="{{ p }}">{{ 'No pages have been scanned yet, so there is nothing to summarise.'|t('accessibility-audit') }}</p>
+                        {% else %}
+                            {% set change = data.scoreAtStart is not null ? data.score - data.scoreAtStart : null %}
+                            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 8px 0;">
+                                <tr>
+                                    <td style="padding:12px;border:1px solid #e5e7eb;border-radius:6px;font-family:{{ font }};">
+                                        <span style="display:block;font-size:24px;font-weight:700;color:#111827;">{{ data.score }}/100</span>
+                                        <span style="display:block;font-size:13px;color:#6b7280;">{{ 'average page score'|t('accessibility-audit') }}</span>
+                                    </td>
+                                    {% if change is not null %}
+                                        <td width="12"></td>
+                                        <td style="padding:12px;border:1px solid #e5e7eb;border-radius:6px;font-family:{{ font }};">
+                                            <span style="display:block;font-size:24px;font-weight:700;color:#111827;">{{ change > 0 ? '+' ~ change : change }}</span>
+                                            <span style="display:block;font-size:13px;color:#6b7280;">{{ 'change since {date}'|t('accessibility-audit', { date: data.startDate }) }}</span>
+                                        </td>
+                                    {% endif %}
+                                </tr>
+                            </table>
+
+                            <p style="{{ p }}">
+                                {{ '{fixed, plural, =1{# problem was} other{# problems were}} fixed, and {new, plural, =1{# new one turned up that is} other{# new ones turned up that are}} still open.'|t('accessibility-audit', { fixed: data.fixed, new: data.new }) }}
+                                {{ '{n, plural, =1{# page has} other{# pages have}} at least one error.'|t('accessibility-audit', { n: data.criticalPages }) }}
+                            </p>
+
+                            {% if data.risks is not empty %}
+                                <h2 style="{{ h2 }}">{{ 'The biggest risks'|t('accessibility-audit') }}</h2>
+                                <ul style="margin:0 0 12px 0;padding-left:20px;font-family:{{ font }};font-size:14px;line-height:1.6;color:#374151;">
+                                    {% for risk in data.risks %}
+                                        <li>{{ '{title}: on {n, plural, =1{# page} other{# pages}}'|t('accessibility-audit', { title: risk.title, n: risk.pages }) }}</li>
+                                    {% endfor %}
+                                </ul>
+                            {% endif %}
+                        {% endif %}
+
+                        {% if data.note is not empty %}
+                            <h2 style="{{ h2 }}">{{ 'What we’re doing about it'|t('accessibility-audit') }}</h2>
+                            <p style="{{ p }}white-space:pre-line;">{{ data.note }}</p>
+                        {% endif %}
+
+                        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 4px 0;">
+                            <tr>
+                                <td style="border-radius:6px;background:{{ accent }};">
+                                    <a href="{{ reportUrl }}" style="display:inline-block;padding:11px 20px;font-family:{{ font }};font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:6px;">{{ 'Open the report'|t('accessibility-audit') }}</a>
+                                </td>
+                            </tr>
+                        </table>
+                        <p style="margin:8px 0 0 0;font-family:{{ font }};font-size:12px;color:#6b7280;">{{ 'The full report is in the control panel, so the link needs a login.'|t('accessibility-audit') }}</p>
+                        {% if attached ?? false %}
+                            <p style="margin:8px 0 0 0;font-family:{{ font }};font-size:12px;color:#6b7280;">{{ 'The summary is also attached as a PDF, ready to forward on.'|t('accessibility-audit') }}</p>
+                        {% endif %}
+
+                        {% if contextLine is not empty %}
+                            <p style="margin:24px 0 0 0;padding-top:16px;border-top:1px solid #e5e7eb;font-family:{{ font }};font-size:12px;line-height:1.5;color:#6b7280;">{{ contextLine }}</p>
+                        {% endif %}
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+</body>
+</html>

@@ -179,6 +179,9 @@ trait PluginTrait
         'Re-scan',
         'Re-scan selected',
         'Remove scan data',
+        'Dismiss selected on every page',
+        'Mark this as not an issue on every page of the site? Every element with the same markup is answered, now and on future scans. You can take it back from the Dismissed tab.',
+        'Every page',
         '{n, plural, =1{Remove the scan data for this page?} other{Remove the scan data for these # pages?}}',
         'Remove the scan data for the selected pages?',
         'Their scores, issues and scan history are deleted and cannot be brought back. A page that can still be scanned comes back on its next scan, so exclude it under Settings → Scanning first if it should stay out.',
@@ -363,6 +366,7 @@ trait PluginTrait
             $subnav['readability'] = ['label' => Craft::t('accessibility-audit', 'Readability'), 'url' => 'accessibility-audit/readability' . $suffix];
             $subnav['vpat'] = ['label' => Craft::t('accessibility-audit', 'VPAT'),        'url' => 'accessibility-audit/vpat' . $suffix];
             $subnav['statement'] = ['label' => Craft::t('accessibility-audit', 'Statement'), 'url' => 'accessibility-audit/statement' . $suffix];
+            $subnav['reports'] = ['label' => Craft::t('accessibility-audit', 'Reports'), 'url' => 'accessibility-audit/reports' . $suffix];
             $subnav['color-tools'] = ['label' => Craft::t('accessibility-audit', 'Colour Tools'), 'url' => 'accessibility-audit/colour-tools' . $suffix];
         }
         // Admins keep the link even when admin changes are disabled: the
@@ -622,6 +626,10 @@ trait PluginTrait
                     'accessibility-audit/statement/save-meta' => 'accessibility-audit/statement/save-meta',
                     'accessibility-audit/statement/suggestions' => 'accessibility-audit/statement/suggestions',
                     'accessibility-audit/statement/preview' => 'accessibility-audit/statement/preview',
+                    'accessibility-audit/reports' => 'accessibility-audit/reports/index',
+                    'accessibility-audit/reports/<handle:[a-z0-9-]+>' => 'accessibility-audit/reports/report',
+                    'accessibility-audit/reports/<handle:[a-z0-9-]+>/view' => 'accessibility-audit/reports/view',
+                    'accessibility-audit/reports/<handle:[a-z0-9-]+>/csv' => 'accessibility-audit/reports/csv',
                 ], $e->rules);
             }
         );
@@ -871,6 +879,7 @@ trait PluginTrait
                         'storeContrastUrl' => UrlHelper::actionUrl('accessibility-audit/audit/store-contrast-results'),
                         'setVerdictUrl' => UrlHelper::actionUrl('accessibility-audit/audit/set-verdict'),
                         'setVerdictsBulkUrl' => UrlHelper::actionUrl('accessibility-audit/audit/set-verdicts-bulk'),
+                        'setVerdictEverywhereUrl' => UrlHelper::actionUrl('accessibility-audit/audit/set-verdict-everywhere'),
                         'issueDetailUrl' => UrlHelper::cpUrl('accessibility-audit/issues/detail'),
                         'readabilityAnalyseUrl' => UrlHelper::actionUrl('accessibility-audit/readability/analyse'),
                         'readabilityAnalyseEntryUrl' => UrlHelper::actionUrl('accessibility-audit/readability/analyse-entry'),

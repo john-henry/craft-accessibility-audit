@@ -1,0 +1,43 @@
+{% extends 'accessibility-audit/reports/_print/layout' %}
+
+{% block filterLine %}
+    {% if data.sectionName %}{{ 'Section: {name}.'|t('accessibility-audit', { name: data.sectionName }) }}{% endif %}
+{% endblock %}
+
+{% block body %}
+    {% if data.target <= 0 %}
+        <p class="report-notice">{{ 'No target score is set, so no page counts as below it. Set one under Settings, General.'|t('accessibility-audit') }}</p>
+    {% elseif data.total == 0 %}
+        <p>{{ 'Every scanned page meets the target of {target}.'|t('accessibility-audit', { target: data.target }) }}</p>
+    {% else %}
+        <p>{{ '{n, plural, =1{# page scores} other{# pages score}} under the target of {target}, worst first.'|t('accessibility-audit', { n: data.total, target: data.target }) }}</p>
+        {% if data.total > data.rows|length %}
+            <p>{{ 'The first {shown} are listed here. The CSV has the lot.'|t('accessibility-audit', { shown: data.rows|length }) }}</p>
+        {% endif %}
+        <table>
+            <caption class="visually-hidden">{{ report.name() }}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">{{ 'Page'|t('accessibility-audit') }}</th>
+                    <th scope="col">{{ 'Section'|t('accessibility-audit') }}</th>
+                    <th scope="col" class="num">{{ 'Score'|t('accessibility-audit') }}</th>
+                    <th scope="col" class="num">{{ 'Errors'|t('accessibility-audit') }}</th>
+                    <th scope="col">{{ 'Last scanned'|t('accessibility-audit') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in data.rows %}
+                    <tr>
+                        <th scope="row">
+                            {% if row.url %}<a href="{{ row.url }}">{{ row.title }}</a>{% else %}{{ row.title }}{% endif %}
+                        </th>
+                        <td>{{ row.section }}</td>
+                        <td class="num">{{ row.score }}</td>
+                        <td class="num">{{ row.errors }}</td>
+                        <td>{{ row.lastScanned }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+{% endblock %}

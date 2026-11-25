@@ -1,0 +1,145 @@
+{% extends 'accessibility-audit/reports/_print/layout' %}
+
+{% block filterLine %}
+    {{ 'Period: {from} to {to}.'|t('accessibility-audit', { from: data.range[0], to: data.range[1] }) }}
+{% endblock %}
+
+{% block body %}
+    {% if data.score is null %}
+        <p class="report-notice">{{ 'No pages have been scanned yet, so there is nothing to summarise.'|t('accessibility-audit') }}</p>
+    {% else %}
+        {% set change = data.scoreAtStart is not null ? data.score - data.scoreAtStart : null %}
+
+        <h2>{{ 'Where things stand'|t('accessibility-audit') }}</h2>
+        <ul class="report-figures">
+            <li>
+                <span class="report-figure__value">{{ data.score }}/100</span>
+                <span class="report-figure__label">{{ 'average page score'|t('accessibility-audit') }}</span>
+            </li>
+            {% if change is not null %}
+                <li>
+                    <span class="report-figure__value">{{ change > 0 ? '+' ~ change : change }}</span>
+                    <span class="report-figure__label">{{ 'change since {date}'|t('accessibility-audit', { date: data.startDate }) }}</span>
+                </li>
+            {% endif %}
+            <li>
+                <span class="report-figure__value">{{ data.failingCriteriaAA }}</span>
+                <span class="report-figure__label">{{ 'WCAG AA requirements failing somewhere'|t('accessibility-audit') }}</span>
+            </li>
+            <li>
+                <span class="report-figure__value">{{ data.criticalPages|number }}</span>
+                <span class="report-figure__label">{{ 'pages with at least one error'|t('accessibility-audit') }}</span>
+            </li>
+            {% if data.pagesBelowTarget is not null %}
+                <li>
+                    <span class="report-figure__value">{{ data.pagesBelowTarget|number }}</span>
+                    <span class="report-figure__label">{{ 'pages under the target of {target}'|t('accessibility-audit', { target: data.target }) }}</span>
+                </li>
+            {% endif %}
+        </ul>
+
+        <h2>{{ 'How the score has moved'|t('accessibility-audit') }}</h2>
+        {% if data.chart is not empty %}
+            {% set first = data.trend|first %}
+            {% set last = data.trend|last %}
+            {% set chartLabel = 'Average page score from {from} to {to}: {start} at the start, {end} at the end.'|t('accessibility-audit', {
+                from: first.date, to: last.date, start: first.avgScore, end: last.avgScore,
+            }) %}
+            <svg class="report-chart" viewBox="-4 -4 {{ constant('johnhenry\\accessibilityaudit\\reports\\DirectorsSummary::CHART_WIDTH') + 8 }} {{ constant('johnhenry\\accessibilityaudit\\reports\\DirectorsSummary::CHART_HEIGHT') + 8 }}" role="img" aria-label="{{ chartLabel }}" preserveAspectRatio="none">
+                <title>{{ chartLabel }}</title>
+                <line x1="0" y1="{{ constant('johnhenry\\accessibilityaudit\\reports\\DirectorsSummary::CHART_HEIGHT') }}" x2="{{ constant('johnhenry\\accessibilityaudit\\reports\\DirectorsSummary::CHART_WIDTH') }}" y2="{{ constant('johnhenry\\accessibilityaudit\\reports\\DirectorsSummary::CHART_HEIGHT') }}" stroke="#9aa5b1" stroke-width="1" vector-effect="non-scaling-stroke"/>
+                <polyline points="{{ data.chart }}" fill="none" stroke="#0b5cad" stroke-width="2.5" vector-effect="non-scaling-stroke"/>
+            </svg>
+            <table>
+                <caption class="visually-hidden">{{ 'Average page score at the start and end of the period'|t('accessibility-audit') }}</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">{{ 'Day'|t('accessibility-audit') }}</th>
+                        <th scope="col" class="num">{{ 'Average score'|t('accessibility-audit') }}</th>
+                        <th scope="col" class="num">{{ 'Pages scanned'|t('accessibility-audit') }}</th>
+                        <th scope="col" class="num">{{ 'Pages with errors'|t('accessibility-audit') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in [first, last] %}
+                        <tr>
+                            <th scope="row">{{ row.date }}</th>
+                            <td class="num">{{ row.avgScore }}</td>
+                            <td class="num">{{ row.scannedCount|number }}</td>
+                            <td class="num">{{ row.criticalPages|number }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% elseif data.trend is not empty %}
+            <p>{{ 'The score has only been recorded on one day in this period ({date}), so there is no trend to show yet.'|t('accessibility-audit', { date: (data.trend|first).date }) }}</p>
+        {% else %}
+            <p>{{ 'The score was not recorded in this period, so there is no trend to show yet. It is recorded once a day from now on.'|t('accessibility-audit') }}</p>
+        {% endif %}
+
+        <h2>{{ 'The biggest risks'|t('accessibility-audit') }}</h2>
+        {% if data.risks is empty %}
+            <p>{{ 'The automated checks found no open problems.'|t('accessibility-audit') }}</p>
+        {% else %}
+            <table>
+                <caption class="visually-hidden">{{ 'The problems with the most impact'|t('accessibility-audit') }}</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">{{ 'Problem'|t('accessibility-audit') }}</th>
+                        <th scope="col" class="num">{{ 'Pages'|t('accessibility-audit') }}</th>
+                        <th scope="col" class="num">{{ 'Times found'|t('accessibility-audit') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for risk in data.risks %}
+                        <tr>
+                            <th scope="row">{{ risk.title }}{% if risk.wcagCriterion %} <span class="report-meta">(WCAG {{ risk.wcagCriterion }})</span>{% endif %}</th>
+                            <td class="num">{{ risk.pages|number }}</td>
+                            <td class="num">{{ risk.occurrences|number }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+
+        {% if data.shared is not empty %}
+            <h2>{{ 'Problems that repeat across pages'|t('accessibility-audit') }}</h2>
+            <p>{{ 'These turn up on many pages at once, which usually means a shared part of the site such as a menu, footer or template. Fixing one in its shared part fixes it everywhere.'|t('accessibility-audit') }}</p>
+            <ul>
+                {% for item in data.shared %}
+                    <li>{{ '{title}: on {n, plural, =1{# page} other{# pages}}'|t('accessibility-audit', { title: item.title, n: item.pages }) }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+
+        <h2>{{ 'Fixed and new in this period'|t('accessibility-audit') }}</h2>
+        <p>{{ '{fixed, plural, =1{# problem was} other{# problems were}} fixed, and {new, plural, =1{# new one turned up that is} other{# new ones turned up that are}} still open.'|t('accessibility-audit', { fixed: data.fixed, new: data.new }) }}</p>
+        {% if data.outrunsRetention %}
+            <p class="report-notice">{{ 'This period starts before the oldest scans the plugin still keeps, so the fixed count for the early part of it may be short.'|t('accessibility-audit') }}</p>
+        {% endif %}
+        {% if data.pendingReview > 0 %}
+            <p>{{ '{n, plural, =1{# possible problem is} other{# possible problems are}} waiting for someone to check by hand.'|t('accessibility-audit', { n: data.pendingReview }) }}</p>
+        {% endif %}
+
+        <h2>{{ 'Conformance paperwork'|t('accessibility-audit') }}</h2>
+        <ul>
+            <li>
+                {% if data.vpatRecorded %}
+                    {{ 'The VPAT conformance report was last recorded on {date}.'|t('accessibility-audit', { date: data.vpatRecorded|date('Y-m-d') }) }}
+                {% else %}
+                    {{ 'No revision of the VPAT conformance report has been recorded yet.'|t('accessibility-audit') }}
+                {% endif %}
+            </li>
+            <li>
+                {{ data.statementStale
+                    ? 'The accessibility statement needs updating to match the latest scans.'|t('accessibility-audit')
+                    : 'The accessibility statement matches the latest scans.'|t('accessibility-audit') }}
+            </li>
+        </ul>
+    {% endif %}
+
+    {% if data.note is not empty %}
+        <h2>{{ 'What we’re doing about it'|t('accessibility-audit') }}</h2>
+        <p class="report-note">{{ data.note }}</p>
+    {% endif %}
+{% endblock %}

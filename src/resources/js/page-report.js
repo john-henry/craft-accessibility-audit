@@ -2674,6 +2674,7 @@
         if (!endpoint) { return; }
 
         var bulkEndpoint = (window.AccessibilityAudit || {}).setVerdictsBulkUrl;
+        var everywhereEndpoint = (window.AccessibilityAudit || {}).setVerdictEverywhereUrl;
 
         function csrf() {
             var name = (window.Craft && Craft.csrfTokenName) || window.csrfTokenName || 'CRAFT_CSRF_TOKEN';
@@ -2774,6 +2775,84 @@
                 });
         });
 
+        /* One answer for every page of the site: the element a shared template
+           puts on every page is the same question each time. Asked first,
+           since it reaches pages the reader is not looking at, then the
+           server's own count of pages answered is shown before the reload. */
+        function answerEverywhere(items, buttons, status) {
+            if (!everywhereEndpoint || !items.length) { return; }
+
+            var question = Craft.t('accessibility-audit', 'Mark this as not an issue on every page of the site? Every element with the same markup is answered, now and on future scans. You can take it back from the Dismissed tab.');
+            if (!window.confirm(question)) { return; }
+
+            buttons.forEach(function (b) { b.disabled = true; });
+            if (status) { status.textContent = Craft.t('accessibility-audit', 'Saving…'); }
+
+            var token = csrf();
+            var body = new FormData();
+            body.append(token.name, token.value);
+            body.append('siteId', CFG.siteId);
+            body.append('verdict', 'dismissed');
+            body.append('items', JSON.stringify(items));
+
+            fetch(everywhereEndpoint, {
+                method: 'POST',
+                body: body,
+                headers: { 'Accept': 'application/json' },
+                credentials: 'same-origin',
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data || !data.success) {
+                        throw new Error((data && data.error) || 'failed');
+                    }
+                    if (data.message && window.Craft && Craft.cp) {
+                        Craft.cp.displayNotice(data.message);
+                    }
+                    window.location.reload();
+                })
+                .catch(function () {
+                    buttons.forEach(function (b) { b.disabled = false; });
+                    if (status) { status.textContent = ''; }
+                    if (window.Craft && Craft.cp) {
+                        Craft.cp.displayError(Craft.t('accessibility-audit', 'Could not save that. Try again.'));
+                    }
+                });
+        }
+
+        wrap.addEventListener('click', function (e) {
+            var btn = e.target.closest('[data-verdict-everywhere]');
+            if (btn) {
+                var row = btn.closest('[data-accessibility-audit-review]');
+                if (!row) { return; }
+                answerEverywhere(
+                    [{ ruleId: row.dataset.ruleId || '', context: row.dataset.context || '', selector: row.dataset.selector || '' }],
+                    Array.prototype.slice.call(row.querySelectorAll('button[data-verdict], [data-verdict-everywhere]')),
+                    row.querySelector('.accessibility-audit-pr-review__status'),
+                );
+                return;
+            }
+
+            var clusterBtn = e.target.closest('[data-cluster-everywhere]');
+            if (!clusterBtn) { return; }
+
+            var cluster = clusterBtn.closest('[data-accessibility-audit-cluster]');
+            if (!cluster) { return; }
+
+            var contexts;
+            var selectors;
+            try { contexts = JSON.parse(cluster.dataset.contexts || '[]'); } catch (_) { return; }
+            try { selectors = JSON.parse(cluster.dataset.selectors || '[]'); } catch (_) { selectors = []; }
+
+            answerEverywhere(
+                contexts.map(function (context, i) {
+                    return { ruleId: cluster.dataset.ruleId || '', context: context || '', selector: selectors[i] || '' };
+                }),
+                Array.prototype.slice.call(cluster.querySelectorAll('[data-cluster-verdict], [data-cluster-everywhere]')),
+                cluster.querySelector('.accessibility-audit-pr-review__status'),
+            );
+        });
+
         /* Answering a cluster answers its members. The verdict is still
            recorded against each occurrence's own context, so this is the
            same as working through them one at a time, only without the
@@ -2836,10 +2915,20 @@
         if (bulkBar && bulkEndpoint) {
             var bulkAll = document.getElementById('accessibility-audit-pr-bulk-all');
             var bulkBtn = document.getElementById('accessibility-audit-pr-bulk-dismiss');
+            var bulkEverywhere = document.getElementById('accessibility-audit-pr-bulk-everywhere');
             var bulkStatus = document.getElementById('accessibility-audit-pr-bulk-status');
 
             function bulkPicks() {
                 return Array.prototype.slice.call(wrap.querySelectorAll('[data-bulk-pick]:checked'));
+            }
+
+            /* Only the cards that can be answered for every page count towards
+               it: a bare tag with no selector names no one element. */
+            function everywherePicks() {
+                return bulkPicks().filter(function (box) {
+                    var card = box.closest('[data-accessibility-audit-review]');
+                    return card && card.dataset.everyPage === '1';
+                });
             }
 
             function refreshBulk() {
@@ -2848,6 +2937,24 @@
                 bulkBtn.textContent = count > 0
                     ? Craft.t('accessibility-audit', 'Dismiss selected') + ' (' + count + ')'
                     : Craft.t('accessibility-audit', 'Dismiss selected');
+
+                if (bulkEverywhere) {
+                    var everywhere = everywherePicks().length;
+                    bulkEverywhere.disabled = everywhere === 0 || !everywhereEndpoint;
+                    bulkEverywhere.textContent = everywhere > 0
+                        ? Craft.t('accessibility-audit', 'Dismiss selected on every page') + ' (' + everywhere + ')'
+                        : Craft.t('accessibility-audit', 'Dismiss selected on every page');
+                }
+            }
+
+            if (bulkEverywhere) {
+                bulkEverywhere.addEventListener('click', function () {
+                    var items = everywherePicks().map(function (box) {
+                        var card = box.closest('[data-accessibility-audit-review]');
+                        return { ruleId: card.dataset.ruleId || '', context: card.dataset.context || '', selector: card.dataset.selector || '' };
+                    });
+                    answerEverywhere(items, [bulkBtn, bulkEverywhere], bulkStatus);
+                });
             }
 
             wrap.addEventListener('change', function (e) {

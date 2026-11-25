@@ -714,6 +714,109 @@ class AuditController extends Controller
     }
 
     /**
+     * Answers review questions as "not an issue" on every page of the site, or
+     * takes such an answer back.
+     *
+     * For the element a shared template puts on every page, which would
+     * otherwise be the same question answered once per page. Takes rule,
+     * context and selector triples, since those are what identify an
+     * occurrence across pages; one that nothing identifies is skipped and
+     * counted, never guessed at.
+     *
+     * Same gates as a single ruling: run-scans, an allowed site, potential
+     * rules only. Dismissal is the only ruling it records: confirming is a
+     * judgement about one page.
+     *
+     * @return Response
+     * @throws BadRequestHttpException
+     * @throws ForbiddenHttpException
+     * @throws MethodNotAllowedHttpException
+     * @throws SiteNotFoundException
+     * @throws Exception
+     * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function actionSetVerdictEverywhere(): Response
+    {
+        $this->requirePostRequest();
+        $this->requirePermission('accessibility-audit:run-scans');
+
+        $siteId = (int) ($this->request->getBodyParam('siteId') ?: Craft::$app->getSites()->getPrimarySite()->id);
+
+        if (($refusal = $this->_requireAllowedSite($siteId)) !== null) {
+            return $refusal;
+        }
+
+        $verdict = trim((string) $this->request->getBodyParam('verdict', ''));
+
+        if ($verdict !== '' && $verdict !== VerdictService::VERDICT_DISMISSED) {
+            return $this->asJson([
+                'success' => false,
+                'error' => Craft::t('accessibility-audit', 'Unknown verdict.'),
+            ]);
+        }
+
+        $plugin = AccessibilityAudit::getInstance();
+        $verdicts = $plugin->getVerdicts();
+        $needScoring = [];
+        $pages = 0;
+        $skipped = 0;
+
+        foreach ($this->_arrayBodyParam('items') as $item) {
+            $ruleId = trim((string) ($item['ruleId'] ?? ''));
+
+            if (!str_starts_with($ruleId, 'potential:')) {
+                continue;
+            }
+
+            $context = $item['context'] ?? null;
+            $selector = $item['selector'] ?? null;
+            $result = $verdicts->setSiteVerdict(
+                $siteId,
+                $ruleId,
+                is_string($context) ? $context : null,
+                is_string($selector) ? $selector : null,
+                $verdict !== '' ? $verdict : null,
+                true,
+            );
+
+            if ($result['key'] === null) {
+                $skipped++;
+                continue;
+            }
+
+            $pages = max($pages, $result['pages']);
+
+            foreach ($result['scanIds'] as $scanId) {
+                $needScoring[$scanId] = true;
+            }
+        }
+
+        foreach (array_keys($needScoring) as $scanId) {
+            $plugin->getAudit()->recalculateScoreForScan((int) $scanId);
+        }
+
+        $message = Craft::t('accessibility-audit', '{n, plural, =1{Answered on # page.} other{Answered on # pages.}}', ['n' => $pages]);
+
+        if ($skipped > 0) {
+            $message .= ' ' . Craft::t(
+                'accessibility-audit',
+                '{n, plural, =1{# could not be answered on every page because nothing tells it apart from other elements.} other{# could not be answered on every page because nothing tells them apart from other elements.}}',
+                ['n' => $skipped],
+            );
+        }
+
+        return $this->asJson([
+            'success' => true,
+            'pages' => $pages,
+            'skipped' => $skipped,
+            'message' => $message,
+        ]);
+    }
+
+    /**
      * GET /accessibility-audit/export
      * Downloads CSV report.
      *

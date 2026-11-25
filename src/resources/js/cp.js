@@ -611,12 +611,48 @@
         const btn = e.target.closest('[data-accessibility-audit-restore]');
         if (!btn) return;
 
-        const endpoint = (window.AccessibilityAudit || {}).setVerdictUrl;
+        const everyPage = btn.dataset.everyPage === '1';
+        const endpoint = everyPage
+          ? (window.AccessibilityAudit || {}).setVerdictEverywhereUrl
+          : (window.AccessibilityAudit || {}).setVerdictUrl;
         if (!endpoint) return;
 
         btn.disabled = true;
         const original = btn.textContent;
         btn.textContent = Craft.t('accessibility-audit', 'Saving…');
+
+        /* Dismissed for every page, so restoring it puts the question back on
+           every page, and the table is reloaded to drop all of its rows. */
+        if (everyPage) {
+          try {
+            const fd = new FormData();
+            csrfAppend(fd);
+            fd.append('siteId', btn.dataset.siteId);
+            fd.append('verdict', '');
+            fd.append('items', JSON.stringify([{
+              ruleId: btn.dataset.ruleId,
+              context: btn.dataset.context || '',
+              selector: btn.dataset.selector || '',
+            }]));
+
+            const res = await fetch(endpoint, { method: 'POST', body: fd, headers: { Accept: 'application/json' } });
+            const data = await res.json();
+
+            if (data.success) {
+              window.location.reload();
+              return;
+            }
+
+            throw new Error(data.error || 'failed');
+          } catch (err) {
+            btn.disabled = false;
+            btn.textContent = original;
+            if (window.Craft && Craft.cp) {
+              Craft.cp.displayError(Craft.t('accessibility-audit', 'Could not save that. Try again.'));
+            }
+            return;
+          }
+        }
 
         try {
           const fd = new FormData();

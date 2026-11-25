@@ -34,8 +34,16 @@
 - Tools for Craft's MCP server, on Standard and Pro with Craft 5.12 or later: an AI assistant can read the accessibility summary, the open rules and how to fix them, and a page's issues, and can re-scan a page.
 - After updating, admins get a note under What's New in the control panel about the editions and PDF checks.
 - Remove scan data, in the Actions menu on the page tables, deletes the selected pages' scores, issues and scan history.
+- Not an issue on every page, on a review question in the page report, answers the same element on every page of the site at once, including pages scanned later.
 - Each site's average score and issue counts are saved once a day and kept after old scans are pruned, on every edition.
 - The `accessibility-audit/audit/snapshot` console command saves today's figures for every site, for running from cron.
+- A Reports screen, on Pro, with a directors summary, a fixed and new report for any period, and a list of pages below your target score, each ready to print, save as PDF or download as a CSV.
+- The directors summary keeps a note from the team on what's being done, ready for the next time you run it.
+- Modules can add their own reports through `ReportService::EVENT_REGISTER_REPORTS`.
+- The directors summary can be emailed every week or month, on Pro, with the short version posted to Slack if you want it. Set it up under Settings → Notifications.
+- The emailed summary comes with a PDF of it attached, ready to forward to people without a login. You can turn the attachment off.
+- The `pdfPaperSize` and `pdfPaperOrientation` config settings set the summary PDF's paper, A4 portrait by default.
+- The `accessibility-audit/audit/send-reports` console command sends any scheduled summary that's due, for running from cron.
 
 ### Changed
 - Findings on a rule's page, in the page report and in the entry sidebar are easier to scan, with the contrast ratio picked out and the colours on their own line, each with a swatch.

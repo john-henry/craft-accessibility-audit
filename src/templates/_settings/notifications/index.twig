@@ -124,6 +124,71 @@
 
     <hr>
     
+    <h2>{{ 'Scheduled summary'|t('accessibility-audit') }}</h2>
+
+    {% if not (isPro ?? false) %}
+        {% include 'accessibility-audit/_includes/pro-upsell' with {
+            feature: 'Scheduled summaries'|t('accessibility-audit'),
+            text: 'Pro emails the directors summary to whoever needs it, every week or month, and can post the short version to Slack.'|t('accessibility-audit'),
+            edition: 'pro',
+            inline: true,
+        } only %}
+    {% else %}
+        <p class="light">{{ 'Sends the directors summary from Reports on a schedule. It goes out when a full scan finishes or someone opens the Overview, so on a quiet site it can be a day or two late. For a fixed day, run the send-reports console command from cron.'|t('accessibility-audit') }}</p>
+
+        {{ forms.selectField({
+            label: 'Send the directors summary'|t('accessibility-audit'),
+            instructions: 'Weekly covers the last 7 days. Monthly covers the month before and goes out early in the month.'|t('accessibility-audit'),
+            id: 'reportSchedule',
+            name: 'settings[reportSchedule]',
+            options: [
+                { value: 'off', label: 'Never'|t('accessibility-audit') },
+                { value: 'weekly', label: 'Weekly'|t('accessibility-audit') },
+                { value: 'monthly', label: 'Monthly'|t('accessibility-audit') },
+            ],
+            value: settings.reportSchedule,
+            errors: settings.getErrors('reportSchedule'),
+        }) }}
+
+        {{ forms.textareaField({
+            label: 'Summary recipients'|t('accessibility-audit'),
+            instructions: 'One address per line, or separated by commas. Leave it empty to use the email recipients above.'|t('accessibility-audit'),
+            id: 'reportScheduleRecipients',
+            name: 'settings[reportScheduleRecipients]',
+            value: settings.reportScheduleRecipients,
+            rows: 3,
+            placeholder: 'director@example.com',
+            errors: settings.getErrors('reportScheduleRecipients'),
+        }) }}
+
+        {{ forms.lightswitchField({
+            label: 'Post the summary to Slack'|t('accessibility-audit'),
+            instructions: 'Posts the short version to the Slack webhook above.'|t('accessibility-audit'),
+            id: 'reportScheduleSlack',
+            name: 'settings[reportScheduleSlack]',
+            on: settings.reportScheduleSlack,
+            errors: settings.getErrors('reportScheduleSlack'),
+        }) }}
+
+        {{ forms.lightswitchField({
+            label: 'Attach a PDF of the summary'|t('accessibility-audit'),
+            instructions: 'Adds the summary to the email as a PDF to forward on. Turn it off where attachments are blocked or not wanted.'|t('accessibility-audit'),
+            id: 'reportScheduleAttachPdf',
+            name: 'settings[reportScheduleAttachPdf]',
+            on: settings.reportScheduleAttachPdf,
+            errors: settings.getErrors('reportScheduleAttachPdf'),
+        }) }}
+
+        <div class="readable">
+            <blockquote class="note tip">
+                <p>{{ 'To send any summary that is due on a fixed day, run this from cron every morning:'|t('accessibility-audit') }}</p>
+                <pre><code>php craft accessibility-audit/audit/send-reports</code></pre>
+            </blockquote>
+        </div>
+    {% endif %}
+
+    <hr>
+
     {{ forms.selectField({
         label: 'Test'|t('accessibility-audit'),
         instructions: 'The connection check confirms delivery works.'|t('accessibility-audit')

@@ -8,6 +8,7 @@ namespace johnhenry\accessibilityaudit\controllers;
 
 use Craft;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use yii\web\ForbiddenHttpException;
 use yii\web\Response;
 
 /**
@@ -65,6 +66,28 @@ trait ProGateTrait
         }
 
         return $this->_editionRefusal($feature, AccessibilityAudit::EDITION_PRO);
+    }
+
+    /**
+     * Refuses a page or download request when the active edition is not Pro.
+     *
+     * For plain GET requests such as file downloads, where a JSON refusal
+     * would land in the browser as a file of its own.
+     *
+     * @param string $feature The human-readable feature name.
+     * @return void
+     * @throws ForbiddenHttpException Below Pro.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    protected function requirePro(string $feature): void
+    {
+        if (AccessibilityAudit::getInstance()->isPro()) {
+            return;
+        }
+
+        throw new ForbiddenHttpException($this->editionRequiredMessage($feature, AccessibilityAudit::EDITION_PRO));
     }
 
     /**

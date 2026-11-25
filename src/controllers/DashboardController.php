@@ -119,6 +119,7 @@ class DashboardController extends Controller
         $sites = $plugin->allowedSites();
 
         $plugin->getSnapshots()->recordIfMissing($siteId);
+        $plugin->getScheduledReports()->queueDue();
 
         $summary = $plugin->getAudit()->getSiteSummary($siteId);
 
@@ -344,6 +345,11 @@ class DashboardController extends Controller
                 }
 
                 $row['markup'] = AuditService::contextMarkup($row['context'] ?? null);
+                // Whether this occurrence can be answered for every page at once.
+                $row['everyPage'] = AccessibilityAudit::getInstance()->getVerdicts()->siteKey(
+                    $row['context'] ?? null,
+                    $row['selector'] ?? null,
+                ) !== null;
                 $row['viewports'] = [(string)($row['viewport'] ?? '')];
                 $row['viewportLabel'] = $this->_viewportLabel($row['viewports']);
                 $seen[$ruleId][$key] = count($potential[$ruleId]['occurrences']);
@@ -1410,7 +1416,7 @@ class DashboardController extends Controller
             $element = $elementId !== 0
                 ? Craft::$app->getElements()->getElementById($elementId, null, $siteId)
                 : null;
-            $ruling = $verdicts->lookupMeta($meta, $targetHashes[$index], (string)$row['ruleId'], $row['context'] ?? null);
+            $ruling = $verdicts->lookupMeta($meta, $targetHashes[$index], (string)$row['ruleId'], $row['context'] ?? null, $row['selector'] ?? null);
             $author = $ruling !== null && $ruling['userId'] !== null
                 ? Craft::$app->getUsers()->getUserById($ruling['userId'])
                 : null;
@@ -1450,12 +1456,15 @@ class DashboardController extends Controller
                     'date' => $ruling !== null && $ruling['date'] !== null
                         ? $formatter->asDate($ruling['date'], 'short')
                         : '',
+                    'everyPage' => $ruling['everyPage'] ?? false,
                 ],
                 'restore' => [
                     'elementId' => $elementId,
                     'url' => (string)($row['url'] ?? ''),
                     'ruleId' => (string)$row['ruleId'],
                     'context' => (string)($row['context'] ?? ''),
+                    'selector' => (string)($row['selector'] ?? ''),
+                    'everyPage' => $ruling['everyPage'] ?? false,
                     'siteId' => $siteId,
                 ],
             ];

@@ -265,11 +265,12 @@ class NotificationService extends Component
      * @param string|null $color The attachment bar colour (a COLOR_* constant), or null for informational blue.
      * @param string $contextLine Muted footer line (site name and environment), or empty to omit.
      * @param string|null $actionUrl A URL rendered as a link button under the message, or null for none.
+     * @param string|null $actionLabel The button's label, or null for "Open page report".
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function notifySlack(string $subject, string $body, ?string $color = null, string $contextLine = '', ?string $actionUrl = null): void
+    public function notifySlack(string $subject, string $body, ?string $color = null, string $contextLine = '', ?string $actionUrl = null, ?string $actionLabel = null): void
     {
         $settings = AccessibilityAudit::getInstance()->getSettings();
         $webhookUrl = trim((string)App::parseEnv($settings->notifySlackWebhookUrl));
@@ -312,7 +313,7 @@ class NotificationService extends Component
                         'type' => 'button',
                         'text' => [
                             'type' => 'plain_text',
-                            'text' => Craft::t('accessibility-audit', 'Open page report'),
+                            'text' => $actionLabel ?? Craft::t('accessibility-audit', 'Open page report'),
                         ],
                         'url' => $actionUrl,
                     ],
@@ -355,6 +356,34 @@ class NotificationService extends Component
                 'accessibility-audit'
             );
         }
+    }
+
+    /**
+     * The addresses in a comma- or newline-separated list, blanks dropped.
+     *
+     * @param string $raw The list as typed into the settings.
+     * @return string[]
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function parseRecipients(string $raw): array
+    {
+        return $this->_parseRecipients($raw);
+    }
+
+    /**
+     * The muted footer line every notification ends with: the plugin, the
+     * system name and the environment.
+     *
+     * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function contextLine(): string
+    {
+        return $this->_contextLine();
     }
 
     // Private Methods

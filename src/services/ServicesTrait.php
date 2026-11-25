@@ -33,6 +33,7 @@ use yii\base\InvalidConfigException;
  * @property AltDrafts $altDrafts
  * @property FixGuideService $fixGuides
  * @property SnapshotService $snapshots
+ * @property ScheduledReportService $scheduledReports
  *
  * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
@@ -72,6 +73,7 @@ trait ServicesTrait
                 'altDrafts' => AltDrafts::class,
                 'fixGuides' => FixGuideService::class,
                 'snapshots' => SnapshotService::class,
+                'scheduledReports' => ScheduledReportService::class,
             ],
         ];
     }
@@ -361,6 +363,22 @@ trait ServicesTrait
     {
         $component = $this->get('snapshots');
         assert($component instanceof SnapshotService);
+        return $component;
+    }
+
+    /**
+     * The ScheduledReportService component.
+     *
+     * @return ScheduledReportService The service.
+     * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function getScheduledReports(): ScheduledReportService
+    {
+        $component = $this->get('scheduledReports');
+        assert($component instanceof ScheduledReportService);
         return $component;
     }
 }

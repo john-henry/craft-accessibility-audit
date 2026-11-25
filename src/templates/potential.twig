@@ -198,6 +198,8 @@
                 + ' data-url="' + Craft.escapeHtml(v.url || '') + '"'
                 + ' data-rule-id="' + Craft.escapeHtml(v.ruleId) + '"'
                 + ' data-context="' + Craft.escapeHtml(v.context) + '"'
+                + ' data-selector="' + Craft.escapeHtml(v.selector || '') + '"'
+                + ' data-every-page="' + (v.everyPage ? '1' : '0') + '"'
                 + ' data-site-id="' + v.siteId + '">'
                 + Craft.t('accessibility-audit', 'Restore') + '</button>';
         };
@@ -208,7 +210,10 @@
             const date = v.date
                 ? '<div class="light" style="font-size:11px">' + Craft.escapeHtml(v.date) + '</div>'
                 : '';
-            return Craft.escapeHtml(v.name) + date;
+            const everyPage = v.everyPage
+                ? '<div><span class="accessibility-audit-every-page">' + Craft.t('accessibility-audit', 'Every page') + '</span></div>'
+                : '';
+            return Craft.escapeHtml(v.name) + date + everyPage;
         };
 
         const columns = [
