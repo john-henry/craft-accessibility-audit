@@ -18,7 +18,11 @@
 
 
 {% macro severityDot(severity) -%}
-    {%- set label = severity|capitalize -%}
+    {%- set label = {
+        error: 'Error'|t('accessibility-audit'),
+        warning: 'Warning'|t('accessibility-audit'),
+        notice: 'Notice'|t('accessibility-audit'),
+    }[severity] ?? severity|capitalize -%}
     <span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--{{ severity }} accessibility-audit-sevdot" aria-hidden="true" title="{{ label }}"></span>
     <span class="visually-hidden">{{ label }}:</span>
 {%- endmacro %}

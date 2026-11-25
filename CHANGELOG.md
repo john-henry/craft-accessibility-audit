@@ -32,7 +32,6 @@
 - The Issues tab can be sorted by occurrences and points, and searched by title or rule ID.
 - Download fix guide, on Standard and Pro, gives you a Markdown to-do list for the site, a rule or a page, with an AI prompt for each developer fix.
 - Tools for Craft's MCP server, on Standard and Pro with Craft 5.12 or later: an AI assistant can read the accessibility summary, the open rules and how to fix them, and a page's issues, and can re-scan a page.
-- After updating, admins get a note under What's New in the control panel about the editions, PDF checks and reports.
 - Remove scan data, in the Actions menu on the page tables, deletes the selected pages' scores, issues and scan history.
 - Not an issue on every page, on a review question in the page report, answers the same element on every page of the site at once, including pages scanned later.
 - Each site's average score and issue counts are saved once a day and kept after old scans are pruned, on every edition.
@@ -58,7 +57,7 @@
 - Add alt and Rewrite on the Assets page open the image in a side panel, with a large preview and Save and next to move down the list, instead of editing in the row.
 - Generate with AI, in that panel and on an asset's own edit screen, now offers three versions to pick from (Short, Standard and Detailed) with notes on anything to check before saving, instead of writing straight into the field.
 - Mark decorative and Clear decorative for selected images now sit in the footer under the list, as Craft's own actions do, and selected rows are highlighted.
-- The Overview's assets panel now covers images and PDFs, counts drafts waiting for review, links each number to its list, and offers the next step.
+- The Overview's assets panel now covers images and PDFs, counts drafts waiting for review, links each number to its list, offers the next step, and says when everything is sorted.
 - The All filter on the Assets page is now the All issues source, and lists the images and PDFs with something to fix.
 - AI alt text aims for one short sentence ending with a full stop, follows set rules for people, logos, charts and text in images, takes account of the entry an image is used in, names well-known artworks and landmarks for you to confirm, and no longer calls artworks decorative.
 - An AI draft that runs past 150 characters is flagged for you to shorten instead of being cut off part way through.
@@ -74,7 +73,6 @@
 - The Ignored Rule IDs setting lists every rule the plugin's own checks can report, grouped by kind, and says how to name an axe-core rule.
 - Browser checks for a page you re-scan yourself now run ahead of a site-wide scan already in the queue.
 - Queued browser checks are skipped for a page that has been scanned again since they were queued.
-- The occurrences under a page on a rule's page no longer repeat the question in the page title, and leave out the Selector column when no occurrence has one.
 
 ### Removed
 - `getAssets()->scanAsset()`. PDF results come from `getPdfAudit()` now, and image alt text issues from the Assets listing methods.
@@ -85,7 +83,6 @@
 - The VPAT editor's remarks box and Draft with AI button are now labelled for screen readers in the control panel's language.
 - The empty Issues list on a page now shows its message in the control panel's language.
 - The frontend overlay's grey text (the score label, each issue's details and the scan time) now meets the 4.5:1 contrast minimum.
-- Severity and difficulty markers no longer get squashed when a rule's title wraps onto two lines.
 - Server-side browser scans wait for web fonts and skip animations to their end before checking, so text caught halfway through a fade-in is no longer reported for colour contrast, and the same page gives the same results from one scan to the next.
 - Occurrences in the page report can now be picked with the keyboard, not only the mouse.
 - Screen readers now announce the upgrade button by the words it shows, and the locked-feature notices have an upgrade link for admins.
@@ -95,7 +92,7 @@
 - The dashboard widget no longer shows an empty row when there are no errors or warnings.
 - Links that open in a new tab now say so to screen readers.
 - Status messages, labels and criteria counts on the VPAT, page report and Colour Tools screens now show in the control panel's language.
-- On multi-site installs, assets that exist in only some sites are now listed, scanned, checked and given AI alt text. From Craft 5.12, a volume set to let each asset choose its sites saves a new upload to the site it was uploaded from only.
+- On multi-site installs, images that exist in only some sites are now listed, scanned and given AI alt text.
 - New uploads in a volume left out of the audit no longer get AI alt text.
 - The EN 301 549 note on the Overview is now at normal text size.
 - Severity dots in the issue tables are now read out to screen readers in the control panel's language.
@@ -109,9 +106,8 @@
 - Content written in an entry template's blocks is now traced back to that template in the page report.
 - With devMode on, a layout that sets variables before its doctype no longer renders in quirks mode.
 - The Overview's average score bar is now green, amber or red to match the score, instead of always orange.
-- The Overview's With alt text count no longer includes decorative images, and the Assets pane says so when every image is covered.
 - Show on page now finds the right element for a contrast question about a plain tag such as `<dt>` that appears more than once on the page. Re-scan a page to pick this up.
-- Text under an element with a `::before` or `::after` that doesn't reach it, such as a thin line along a fixed header, is now measured for contrast instead of being sent for review.
+- Text near a decorative line drawn in CSS, such as the nav links under a thin border on a fixed header, is now measured for contrast instead of being sent for review.
 
 ## 1.6.0 - 2026-10-08
 
@@ -270,7 +266,7 @@
 ## 1.4.0 - 2026-09-15
 
 ### Added
-- Export the VPAT as an OpenACR YAML file beside the HTML export. It needs a contact email set. See https://johnhenry.ie/plugins/accessibility-audit/docs/reporting-compliance/vpat-report
+- Export the VPAT as an OpenACR YAML file beside the HTML export. It needs a contact email set. See [VPAT Report](https://johnhenry.ie/plugins/accessibility-audit/docs/reporting-compliance/vpat-report)
 
 ### Changed
 - The Support tab now says plainly that the checks are run by axe-core, with the plugin's own checks added on top.
