@@ -91,6 +91,7 @@
 - A link marked `aria-hidden` that can still be reached with the Tab key is now reported, and one taken out of the tab order with `tabindex="-1"` no longer is.
 - The page report now names the template an element came from, instead of the last partial rendered above it.
 - Content written in an entry template's blocks is now traced back to that template in the page report.
+- With devMode on, a layout that sets variables before its doctype no longer renders in quirks mode.
 - The Overview's average score bar is now green, amber or red to match the score, instead of always orange.
 - The Overview's With alt text count no longer includes decorative images, and the Assets pane says so when every image is covered.
 - Show on page now finds the right element for a contrast question about a plain tag such as `<dt>` that appears more than once on the page. Re-scan a page to pick this up.

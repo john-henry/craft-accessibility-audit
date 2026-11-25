@@ -6,11 +6,19 @@
 
 namespace johnhenry\accessibilityaudit\twig;
 
+use craft\web\twig\nodes\RegisterResourceNode;
 use Twig\Environment;
 use Twig\Node\BlockNode;
+use Twig\Node\DoNode;
+use Twig\Node\Expression\AbstractExpression;
+use Twig\Node\ForNode;
+use Twig\Node\IfNode;
+use Twig\Node\ImportNode;
 use Twig\Node\ModuleNode;
 use Twig\Node\Node;
+use Twig\Node\NodeOutputInterface;
 use Twig\Node\Nodes;
+use Twig\Node\SetNode;
 use Twig\Node\TextNode;
 use Twig\NodeVisitor\NodeVisitorInterface;
 
@@ -259,7 +267,8 @@ class A11yTemplateNodeVisitor implements NodeVisitorInterface
      *
      * Null when the first thing written is not literal text: a variable, a tag
      * or a block. Whitespace-only text is passed over rather than counted as
-     * the start of the output.
+     * the start of the output, and so are tags that write nothing, such as the
+     * `{% set %}` run that usually opens a block.
      *
      * @param Node $body The module's body node.
      * @return string|null
@@ -280,6 +289,10 @@ class A11yTemplateNodeVisitor implements NodeVisitorInterface
                 return $text;
             }
 
+            if ($this->_isSilent($child)) {
+                continue;
+            }
+
             if (iterator_count($child) > 0) {
                 return $this->_leadingText($child);
             }
@@ -288,5 +301,57 @@ class A11yTemplateNodeVisitor implements NodeVisitorInterface
         }
 
         return null;
+    }
+
+    /**
+     * Whether a node writes nothing to the output.
+     *
+     * Assignments, imports, `{% do %}` and the resource tags (`{% css %}`,
+     * `{% js %}`, `{% html %}`, which register rather than print) are silent,
+     * as is a loop or conditional built only from silent nodes. Any other tag
+     * with a body is taken as writing something, since its output cannot be
+     * known here.
+     *
+     * @param Node $node The node to test.
+     * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _isSilent(Node $node): bool
+    {
+        if ($node instanceof TextNode) {
+            return trim((string)$node->getAttribute('data')) === '';
+        }
+
+        if ($node instanceof NodeOutputInterface) {
+            return false;
+        }
+
+        if (
+            $node instanceof SetNode
+            || $node instanceof ImportNode
+            || $node instanceof DoNode
+            || $node instanceof RegisterResourceNode
+            || $node instanceof AbstractExpression
+        ) {
+            return true;
+        }
+
+        if (iterator_count($node) === 0) {
+            return true;
+        }
+
+        if (!$node instanceof Nodes && !$node instanceof ForNode && !$node instanceof IfNode) {
+            return false;
+        }
+
+        foreach ($node as $child) {
+            if (!$this->_isSilent($child)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
