@@ -34,6 +34,8 @@
 - Tools for Craft's MCP server, on Standard and Pro with Craft 5.12 or later: an AI assistant can read the accessibility summary, the open rules and how to fix them, and a page's issues, and can re-scan a page.
 - After updating, admins get a note under What's New in the control panel about the editions and PDF checks.
 - Remove scan data, in the Actions menu on the page tables, deletes the selected pages' scores, issues and scan history.
+- Each site's average score and issue counts are saved once a day and kept after old scans are pruned, on every edition.
+- The `accessibility-audit/audit/snapshot` console command saves today's figures for every site, for running from cron.
 
 ### Changed
 - Findings on a rule's page, in the page report and in the entry sidebar are easier to scan, with the contrast ratio picked out and the colours on their own line, each with a swatch.

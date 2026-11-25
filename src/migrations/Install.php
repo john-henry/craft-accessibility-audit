@@ -69,6 +69,7 @@ class Install extends Migration
         $this->dropTableIfExists('{{%accessibilityaudit_asset_flags}}');
         $this->dropTableIfExists('{{%accessibilityaudit_pdf_checks}}');
         $this->dropTableIfExists('{{%accessibilityaudit_alt_drafts}}');
+        $this->dropTableIfExists('{{%accessibilityaudit_snapshots}}');
         return true;
     }
 
@@ -323,6 +324,34 @@ class Install extends Migration
             ]);
         }
 
+        if (!$this->db->tableExists('{{%accessibilityaudit_snapshots}}')) {
+            // One row per site per day: the headline figures as they stood,
+            // kept after the scans behind them are pruned.
+            $this->createTable('{{%accessibilityaudit_snapshots}}', [
+                'id' => $this->primaryKey(),
+                'siteId' => $this->integer()->notNull(),
+                'date' => $this->date()->notNull(),
+                'avgScore' => $this->smallInteger()->unsigned()->notNull(),
+                'avgScoreA' => $this->smallInteger()->unsigned()->notNull(),
+                'avgScoreAA' => $this->smallInteger()->unsigned()->notNull(),
+                'avgScoreAAA' => $this->smallInteger()->unsigned()->notNull(),
+                'scannedCount' => $this->integer()->unsigned()->notNull(),
+                'scannableCount' => $this->integer()->unsigned()->notNull(),
+                'errorCount' => $this->integer()->unsigned()->notNull(),
+                'warningCount' => $this->integer()->unsigned()->notNull(),
+                'noticeCount' => $this->integer()->unsigned()->notNull(),
+                'criticalPages' => $this->integer()->unsigned()->notNull(),
+                'failingCriteriaAA' => $this->smallInteger()->unsigned()->notNull(),
+                'targetScore' => $this->smallInteger()->unsigned()->notNull(),
+                'pagesBelowTarget' => $this->integer()->unsigned()->null(),
+                'pendingReview' => $this->integer()->unsigned()->notNull(),
+                'sweepRunning' => $this->boolean()->notNull()->defaultValue(false),
+                'dateCreated' => $this->dateTime()->notNull(),
+                'dateUpdated' => $this->dateTime()->notNull(),
+                'uid' => $this->uid(),
+            ]);
+        }
+
         return true;
     }
 
@@ -364,6 +393,7 @@ class Install extends Migration
         $this->createIndex(null, '{{%accessibilityaudit_verdicts}}', ['siteId', 'targetHash']);
         $this->createIndex(null, '{{%accessibilityaudit_verdicts}}', ['elementId', 'siteId']);
         $this->createIndex(null, '{{%accessibilityaudit_vpat_revisions}}', ['siteId', 'dateCreated']);
+        $this->createIndex(null, '{{%accessibilityaudit_snapshots}}', ['siteId', 'date'], true);
     }
 
     /**
@@ -463,6 +493,12 @@ class Install extends Migration
         $this->addForeignKey(
             null,
             '{{%accessibilityaudit_verdicts}}', 'siteId',
+            '{{%sites}}', 'id',
+            'CASCADE', 'CASCADE'
+        );
+        $this->addForeignKey(
+            null,
+            '{{%accessibilityaudit_snapshots}}', 'siteId',
             '{{%sites}}', 'id',
             'CASCADE', 'CASCADE'
         );

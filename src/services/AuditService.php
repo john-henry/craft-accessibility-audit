@@ -1809,6 +1809,44 @@ class AuditService extends Component
         ];
     }
 
+    /**
+     * The two counts a daily snapshot needs beyond the site summary, over the
+     * same latest-scan-per-page set.
+     *
+     * @param int $siteId The site to count.
+     * @param int $targetScore The target score; 0 means no target is set.
+     * @return array{pagesBelowTarget: int|null, pendingReview: int} Pages under
+     *         the target (null with no target), and potential issues still
+     *         waiting on a human answer.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function getSnapshotCounts(int $siteId, int $targetScore): array
+    {
+        if (!$this->_hasScans($siteId)) {
+            return ['pagesBelowTarget' => $targetScore > 0 ? 0 : null, 'pendingReview' => 0];
+        }
+
+        $belowTarget = null;
+
+        if ($targetScore > 0) {
+            $belowTarget = (int)(new Query())
+                ->from('{{%accessibilityaudit_scans}}')
+                ->where(['id' => $this->_latestScanIdsQuery($siteId)])
+                ->andWhere(['<', 'score', $targetScore])
+                ->count();
+        }
+
+        $pending = (int)(new Query())
+            ->from('{{%accessibilityaudit_issues}}')
+            ->where(['scanId' => $this->_latestScanIdsQuery($siteId)])
+            ->andWhere($this->pendingPotentialCondition())
+            ->count();
+
+        return ['pagesBelowTarget' => $belowTarget, 'pendingReview' => $pending];
+    }
+
     // Issues by Rule / Impact
     // =========================================================================
 

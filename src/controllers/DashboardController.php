@@ -118,6 +118,8 @@ class DashboardController extends Controller
         $siteHandle = $plugin->requestedSite()->handle;
         $sites = $plugin->allowedSites();
 
+        $plugin->getSnapshots()->recordIfMissing($siteId);
+
         $summary = $plugin->getAudit()->getSiteSummary($siteId);
 
         // Compute totals from the whole site, not the top-10 slice, so the

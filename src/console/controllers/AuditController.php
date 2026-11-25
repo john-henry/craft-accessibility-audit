@@ -36,6 +36,7 @@ use yii\helpers\Console;
  *   php craft accessibility-audit/audit/prune --days=90
  *   php craft accessibility-audit/audit/prune-excluded
  *   php craft accessibility-audit/audit/report
+ *   php craft accessibility-audit/audit/snapshot
  *
  * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
@@ -559,6 +560,25 @@ class AuditController extends Controller
                 $this->stdout("  {$row['occurrences']}× [{$row['severity']}] {$row['ruleId']}{$wcag}\n");
             }
         }
+
+        return ExitCode::OK;
+    }
+
+    /**
+     * Record today's score snapshot for every site, for a daily cron job.
+     *
+     * @return int
+     * @throws \yii\db\Exception
+     * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function actionSnapshot(): int
+    {
+        $recorded = AccessibilityAudit::getInstance()->getSnapshots()->recordAll();
+
+        $this->stdout("Recorded today's snapshot for {$recorded} site(s).\n", Console::FG_GREEN);
 
         return ExitCode::OK;
     }

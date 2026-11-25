@@ -32,6 +32,7 @@ use yii\base\InvalidConfigException;
  * @property PdfAuditService $pdfAudit
  * @property AltDrafts $altDrafts
  * @property FixGuideService $fixGuides
+ * @property SnapshotService $snapshots
  *
  * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
@@ -70,6 +71,7 @@ trait ServicesTrait
                 'pdfAudit' => PdfAuditService::class,
                 'altDrafts' => AltDrafts::class,
                 'fixGuides' => FixGuideService::class,
+                'snapshots' => SnapshotService::class,
             ],
         ];
     }
@@ -343,6 +345,22 @@ trait ServicesTrait
     {
         $component = $this->get('fixGuides');
         assert($component instanceof FixGuideService);
+        return $component;
+    }
+
+    /**
+     * The SnapshotService component.
+     *
+     * @return SnapshotService The service.
+     * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function getSnapshots(): SnapshotService
+    {
+        $component = $this->get('snapshots');
+        assert($component instanceof SnapshotService);
         return $component;
     }
 }
