@@ -279,6 +279,7 @@
                     </div>
                 {% endif %}
     {% endset %}
+    {% set pdfsDone = pdfsClear and pdfTiles is not empty %}
     {% if assetStats %}
         {% set missingCount = assetStats.byRule['asset-alt-missing'] ?? 0 %}
         {% set filenameCount = assetStats.byRule['asset-alt-filename'] ?? 0 %}
@@ -325,9 +326,6 @@
                         <a href="{{ cpUrl(assetsUrl) }}" class="go">{{ 'Fix alt text'|t('accessibility-audit') }}</a>
                     {% elseif not pdfsClear %}
                         <a href="{{ cpUrl(assetsUrl, {filter: 'pdf', status: pdfStats.withIssues > 0 ? 'needs-fixing' : 'not-checked'}) }}" class="go">{{ 'Fix PDFs'|t('accessibility-audit') }}</a>
-                    {% elseif assetStats.total > 0 %}
-                        <span class="accessibility-audit-assets-pane__clear">{{ 'Every image has alt text or is marked decorative.'|t('accessibility-audit') }}</span>
-                        <a href="{{ cpUrl(assetsUrl) }}" class="go">{{ 'Open the Assets page'|t('accessibility-audit') }}</a>
                     {% else %}
                         <a href="{{ cpUrl(assetsUrl) }}" class="go">{{ 'Open the Assets page'|t('accessibility-audit') }}</a>
                     {% endif %}
@@ -348,6 +346,19 @@
                 </div>
                 {{ pdfGroup }}
             </div>
+            {% set imagesDone = imagesClear and assetStats.total > 0 %}
+            {% if imagesDone or pdfsDone %}
+                <p class="light accessibility-audit-emptyok accessibility-audit-assets-pane__clear">
+                    <span class="accessibility-audit-resolved-check" data-icon="check" aria-hidden="true"></span>
+                    {% if imagesDone and pdfsDone %}
+                        {{ 'Every image has alt text or is marked decorative, and every PDF passed its checks.'|t('accessibility-audit') }}
+                    {% elseif imagesDone %}
+                        {{ 'Every image has alt text or is marked decorative.'|t('accessibility-audit') }}
+                    {% else %}
+                        {{ 'Every PDF passed its checks.'|t('accessibility-audit') }}
+                    {% endif %}
+                </p>
+            {% endif %}
         </div>
     {% else %}
         <div class="accessibility-audit-panelnote accessibility-audit-panelnote--waiting">
@@ -380,6 +391,12 @@
                 <div class="accessibility-audit-assettiles">
                     {{ pdfGroup }}
                 </div>
+                {% if pdfsDone %}
+                    <p class="light accessibility-audit-emptyok accessibility-audit-assets-pane__clear">
+                        <span class="accessibility-audit-resolved-check" data-icon="check" aria-hidden="true"></span>
+                        {{ 'Every PDF passed its checks.'|t('accessibility-audit') }}
+                    </p>
+                {% endif %}
             </div>
         {% endif %}
     {% endif %}

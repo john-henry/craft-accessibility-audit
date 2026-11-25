@@ -4153,9 +4153,7 @@ fieldset.accessibility-audit-readonly textarea {
 }
 
 .accessibility-audit-assets-pane__clear {
-  display: block;
-  margin-bottom: 2px;
-  color: var(--aa-pass);
+  margin: 14px 0 0;
 }
 
 /* The Overview's Assets pane: small stat tiles in the same language as the

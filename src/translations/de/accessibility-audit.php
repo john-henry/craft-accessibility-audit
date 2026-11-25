@@ -1350,6 +1350,8 @@ return [
     'With alt text' => 'Mit Alt-Text',
     'Open the Assets page' => 'Assets-Seite öffnen',
     'Every image has alt text or is marked decorative.' => 'Jedes Bild hat einen Alternativtext oder ist als dekorativ markiert.',
+    'Every image has alt text or is marked decorative, and every PDF passed its checks.' => 'Jedes Bild hat einen Alternativtext oder ist als dekorativ markiert, und jedes PDF hat die Prüfungen bestanden.',
+    'Every PDF passed its checks.' => 'Jedes PDF hat die Prüfungen bestanden.',
     'They don’t affect the score until you answer them.' => 'Sie wirken sich erst auf die Bewertung aus, wenn Sie sie beantworten.',
     'All issues' => 'Alle Probleme',
     'Made with' => 'Erstellt mit',
