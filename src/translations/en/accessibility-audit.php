@@ -1356,6 +1356,7 @@ return [
     'Alt text and PDF checks across the asset library' => 'Alt text and PDF checks across the asset library',
     'With alt text' => 'With alt text',
     'Open the Assets page' => 'Open the Assets page',
+    'Every image has alt text or is marked decorative.' => 'Every image has alt text or is marked decorative.',
     'They don’t affect the score until you answer them.' => 'They don’t affect the score until you answer them.',
     'All issues' => 'All issues',
     'Made with' => 'Made with',

@@ -1349,6 +1349,7 @@ return [
     'Alt text and PDF checks across the asset library' => 'Alt-Texte und PDF-Prüfungen in der Asset-Bibliothek',
     'With alt text' => 'Mit Alt-Text',
     'Open the Assets page' => 'Assets-Seite öffnen',
+    'Every image has alt text or is marked decorative.' => 'Jedes Bild hat einen Alternativtext oder ist als dekorativ markiert.',
     'They don’t affect the score until you answer them.' => 'Sie wirken sich erst auf die Bewertung aus, wenn Sie sie beantworten.',
     'All issues' => 'Alle Probleme',
     'Made with' => 'Erstellt mit',

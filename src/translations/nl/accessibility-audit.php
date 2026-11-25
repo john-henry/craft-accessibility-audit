@@ -1349,6 +1349,7 @@ return [
     'Alt text and PDF checks across the asset library' => 'Alt-teksten en PDF-controles in de assetbibliotheek',
     'With alt text' => 'Met alt-tekst',
     'Open the Assets page' => 'De assetpagina openen',
+    'Every image has alt text or is marked decorative.' => 'Elke afbeelding heeft alt-tekst of is als decoratief gemarkeerd.',
     'They don’t affect the score until you answer them.' => 'Ze tellen pas mee voor de score als je ze beantwoordt.',
     'All issues' => 'Alle problemen',
     'Made with' => 'Gemaakt met',

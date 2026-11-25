@@ -289,7 +289,7 @@
 
         {% set imageTiles = [] %}
         {% if imagesClear %}
-            {% set imageTiles = imageTiles|merge([{ n: assetStats.total, label: 'With alt text'|t('accessibility-audit'), tone: 'good', filter: null }]) %}
+            {% set imageTiles = imageTiles|merge([{ n: max(assetStats.total - decorativeCount, 0), label: 'With alt text'|t('accessibility-audit'), tone: 'good', filter: null }]) %}
         {% endif %}
         {% if missingCount > 0 %}
             {% set imageTiles = imageTiles|merge([{ n: missingCount, label: 'Missing alt'|t('accessibility-audit'), tone: 'warning', filter: 'asset-alt-missing' }]) %}
@@ -325,6 +325,9 @@
                         <a href="{{ cpUrl(assetsUrl) }}" class="go">{{ 'Fix alt text'|t('accessibility-audit') }}</a>
                     {% elseif not pdfsClear %}
                         <a href="{{ cpUrl(assetsUrl, {filter: 'pdf', status: pdfStats.withIssues > 0 ? 'needs-fixing' : 'not-checked'}) }}" class="go">{{ 'Fix PDFs'|t('accessibility-audit') }}</a>
+                    {% elseif assetStats.total > 0 %}
+                        <span class="accessibility-audit-assets-pane__clear">{{ 'Every image has alt text or is marked decorative.'|t('accessibility-audit') }}</span>
+                        <a href="{{ cpUrl(assetsUrl) }}" class="go">{{ 'Open the Assets page'|t('accessibility-audit') }}</a>
                     {% else %}
                         <a href="{{ cpUrl(assetsUrl) }}" class="go">{{ 'Open the Assets page'|t('accessibility-audit') }}</a>
                     {% endif %}

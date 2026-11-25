@@ -1218,6 +1218,19 @@ a.accessibility-audit-usage-badge:focus-visible .accessibility-audit-usage-badge
   background: #c9c1b7;
 }
 
+/* A score bar takes the same band colour as the figure above it. */
+.accessibility-audit-progress__fill--pass {
+  background: var(--aa-pass);
+}
+
+.accessibility-audit-progress__fill--warn {
+  background: var(--aa-warning-marker);
+}
+
+.accessibility-audit-progress__fill--error {
+  background: var(--aa-error);
+}
+
 /* ---- Distribution bar + legend ---- */
 .accessibility-audit-dist {
   display: flex;
@@ -4137,6 +4150,12 @@ fieldset.accessibility-audit-readonly textarea {
 .accessibility-audit-pane-head__action {
   flex: none;
   margin-left: auto;
+}
+
+.accessibility-audit-assets-pane__clear {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--aa-pass);
 }
 
 /* The Overview's Assets pane: small stat tiles in the same language as the
