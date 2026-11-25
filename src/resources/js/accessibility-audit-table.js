@@ -117,13 +117,13 @@
                         // Object, not a string: the component spreads this into
                         // Vue's class binding, and a string would spread to one
                         // class per character.
-                        ...(a.destructive ? { separator: true } : {}),
+                        // Craft's own option for a menu item that deletes: it draws
+                        // the item red, as Craft's own Delete actions are.
+                        ...(a.destructive ? { separator: true, error: true } : {}),
                         ...(a.icon || a.destructive ? {
                             class: {
                                 'accessibility-audit-menu-icon': !!a.icon,
                                 ['accessibility-audit-menu-icon--' + a.icon]: !!a.icon,
-                                // Craft's own red for a menu item that deletes.
-                                'error': !!a.destructive,
                                 'accessibility-audit-confirm-remove': !!a.destructive,
                             },
                         } : {}),

@@ -2018,28 +2018,47 @@ class DashboardController extends Controller
             return ['handle' => '', 'content' => ''];
         }
 
+        // Most rules store no selector, and a column of dashes takes room the
+        // markup needs, so the column is only drawn when a row has one.
+        $hasSelector = array_filter($occurrences, static fn(array $o): bool => $o['selector'] !== '') !== [];
         $rows = '';
 
         foreach ($occurrences as $occurrence) {
-            $rows .= Html::tag('tr', implode('', [
-                Html::tag('th', FindingHtml::format($occurrence['message']), ['scope' => 'row']),
+            $cells = [
+                Html::tag('th', FindingHtml::format(self::_withoutLeadQuestion($occurrence['message'])), ['scope' => 'row']),
                 Html::tag('td', $occurrence['markup'] !== ''
                     ? Html::tag('code', Html::encode($occurrence['markup']), ['class' => 'accessibility-audit-occ-markup'])
                     : Html::tag('span', '—', ['class' => 'light'])),
-                Html::tag('td', $occurrence['selector'] !== ''
+            ];
+
+            if ($hasSelector) {
+                $cells[] = Html::tag('td', $occurrence['selector'] !== ''
                     ? Html::tag('code', Html::encode($occurrence['selector']), ['class' => 'accessibility-audit-occ-selector'])
-                    : Html::tag('span', '—', ['class' => 'light'])),
-            ]));
+                    : Html::tag('span', '—', ['class' => 'light']));
+            }
+
+            $rows .= Html::tag('tr', implode('', $cells));
         }
 
-        $head = Html::tag('thead', Html::tag('tr', implode('', [
+        $headings = [
             Html::tag('th', Html::encode(Craft::t('accessibility-audit', 'Finding')), ['scope' => 'col']),
             Html::tag('th', Html::encode(Craft::t('accessibility-audit', 'Markup')), ['scope' => 'col']),
-            Html::tag('th', Html::encode(Craft::t('accessibility-audit', 'Selector')), ['scope' => 'col']),
-        ])));
+        ];
+
+        if ($hasSelector) {
+            $headings[] = Html::tag('th', Html::encode(Craft::t('accessibility-audit', 'Selector')), ['scope' => 'col']);
+        }
+
+        $head = Html::tag('thead', Html::tag('tr', implode('', $headings)));
 
         $content = Html::tag('table', $head . Html::tag('tbody', $rows), [
-            'class' => ['data', 'fullwidth', 'accessibility-audit-page-issues-table', 'accessibility-audit-occurrences'],
+            'class' => array_filter([
+                'data',
+                'fullwidth',
+                'accessibility-audit-page-issues-table',
+                'accessibility-audit-occurrences',
+                $hasSelector ? null : 'accessibility-audit-occurrences--no-selector',
+            ]),
         ]);
         $more = $total - count($occurrences);
 
@@ -2075,6 +2094,29 @@ class DashboardController extends Controller
             ),
             'content' => Html::tag('div', $content, ['class' => 'accessibility-audit-issues-detail']),
         ];
+    }
+
+    /**
+     * A finding's message without the question it opens with.
+     *
+     * A review question's message starts by asking it ("Is this image alt text
+     * too long?"), and these rows sit under a heading that already asks the
+     * same thing, so on every row the part that differs comes second. Only a
+     * leading question with more text after it is dropped.
+     *
+     * @param string $message The finding's message, as stored.
+     * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private static function _withoutLeadQuestion(string $message): string
+    {
+        if (preg_match('/^[^?.!\n]{3,}\?\s+(?=\S)/u', $message, $m) !== 1) {
+            return $message;
+        }
+
+        return mb_substr($message, mb_strlen($m[0]));
     }
 
     /**

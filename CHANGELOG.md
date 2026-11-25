@@ -64,6 +64,7 @@
 - The Ignored Rule IDs setting lists every rule the plugin's own checks can report, grouped by kind, and says how to name an axe-core rule.
 - Browser checks for a page you re-scan yourself now run ahead of a site-wide scan already in the queue.
 - Queued browser checks are skipped for a page that has been scanned again since they were queued.
+- The occurrences under a page on a rule's page no longer repeat the question in the page title, and leave out the Selector column when no occurrence has one.
 
 ### Removed
 - `getAssets()->scanAsset()`. PDF results come from `getPdfAudit()` now, and image alt text issues from the Assets listing methods.

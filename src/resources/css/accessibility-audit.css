@@ -3663,6 +3663,21 @@ table.data.accessibility-audit-occurrences {
   width: 28%;
 }
 
+.accessibility-audit-occurrences--no-selector thead th:nth-child(1) {
+  width: 46%;
+}
+
+/* Top-aligned, so the markup sits beside the first line of a long finding
+   rather than halfway down it, and ruled, so dense findings read as rows. */
+.accessibility-audit-occurrences tbody th,
+.accessibility-audit-occurrences tbody td {
+  vertical-align: top;
+}
+
+table.data.accessibility-audit-occurrences tbody tr + tr > * {
+  border-top: 1px solid var(--aa-border-row);
+}
+
 .accessibility-audit-occurrences th[scope='row'] {
   font-weight: 400;
   white-space: pre-line;
