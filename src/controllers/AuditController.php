@@ -795,6 +795,60 @@ class AuditController extends Controller
         ]);
     }
 
+    /**
+     * Removes the scan data for every selected page, for Craft's VueAdminTable
+     * bulk action.
+     *
+     * Same gates as the bulk re-scan: run-scans, an allowed site, and only the
+     * elements this user can view. A page that can still be scanned comes back
+     * on its next scan, which the confirmation in the table says before this
+     * is ever posted.
+     *
+     * @return Response
+     * @throws BadRequestHttpException
+     * @throws ForbiddenHttpException
+     * @throws SiteNotFoundException
+     * @throws Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function actionRemoveScans(): Response
+    {
+        $this->requirePostRequest();
+        $this->requirePermission('accessibility-audit:run-scans');
+
+        $siteId = (int) ($this->request->getParam('siteId') ?: Craft::$app->getSites()->getPrimarySite()->id);
+
+        if (($refusal = $this->_requireAllowedSite($siteId)) !== null) {
+            return $refusal;
+        }
+
+        $ids = $this->request->getBodyParam('ids');
+        $ids = is_array($ids) ? $ids : [];
+
+        $elements = Craft::$app->getElements();
+        $allowed = [];
+
+        foreach ($ids as $id) {
+            $element = $elements->getElementById((int) $id, null, $siteId);
+
+            if ($element !== null && $elements->canView($element)) {
+                $allowed[] = (int) $element->id;
+            }
+        }
+
+        $removed = AccessibilityAudit::getInstance()->getAudit()->deletePageScans($allowed, $siteId);
+
+        return $this->asJson([
+            'success' => true,
+            'removed' => $removed['pages'],
+            'message' => Craft::t('accessibility-audit', '{n, plural, =1{Removed the scan data for # page.} other{Removed the scan data for # pages.}}', [
+                'n' => $removed['pages'],
+            ]),
+        ]);
+    }
+
     // Private Methods
     // =========================================================================
 

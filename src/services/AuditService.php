@@ -583,6 +583,59 @@ class AuditService extends Component
             ->execute();
     }
 
+    /**
+     * Removes every scan record for the given elements on one site, with the
+     * issues that cascade from them.
+     *
+     * For a page that has no public page of its own, or that was scanned by
+     * mistake, so its scores and issues stop counting in the reports. Saved
+     * answers to review questions are kept: they are keyed to the element, not
+     * the scan, so a page that comes back is not asked the same questions
+     * again.
+     *
+     * @param int[] $elementIds The elements whose scans to remove.
+     * @param int $siteId The site to remove them from.
+     * @return array{pages: int, issues: int} What was removed.
+     * @throws Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function deletePageScans(array $elementIds, int $siteId): array
+    {
+        $elementIds = array_values(array_unique(array_filter(array_map('intval', $elementIds), static fn(int $id): bool => $id > 0)));
+
+        if ($elementIds === []) {
+            return ['pages' => 0, 'issues' => 0];
+        }
+
+        $scans = (new Query())
+            ->select(['id', 'elementId'])
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where(['elementId' => $elementIds, 'siteId' => $siteId])
+            ->all();
+
+        if ($scans === []) {
+            return ['pages' => 0, 'issues' => 0];
+        }
+
+        $scanIds = array_map(static fn(array $row): int => (int)$row['id'], $scans);
+        $pages = count(array_unique(array_map(static fn(array $row): int => (int)$row['elementId'], $scans)));
+
+        $issueCount = (int)(new Query())
+            ->from('{{%accessibilityaudit_issues}}')
+            ->where(['scanId' => $scanIds])
+            ->count();
+
+        // issues.scanId is ON DELETE CASCADE, so deleting the scans clears their
+        // issues in the same step.
+        Craft::$app->getDb()->createCommand()
+            ->delete('{{%accessibilityaudit_scans}}', ['id' => $scanIds])
+            ->execute();
+
+        return ['pages' => $pages, 'issues' => $issueCount];
+    }
+
     // Scan Element (Any Type)
     // =========================================================================
 

@@ -4038,6 +4038,10 @@ table.data.accessibility-audit-occurrences {
   content: 'refresh' / '';
 }
 
+.menu ul.padded li a.accessibility-audit-menu-icon--trash::before {
+  content: 'trash' / '';
+}
+
 /* ── Read-only settings (allowAdminChanges off) ─────────────────────────────
    One fieldset[disabled] around each page natively disables every control;
    these rules strip the fieldset's own chrome and make the JS-driven

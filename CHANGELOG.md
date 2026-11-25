@@ -33,6 +33,7 @@
 - Download fix guide, on Standard and Pro, gives you a Markdown to-do list for the site, a rule or a page, with an AI prompt for each developer fix.
 - Tools for Craft's MCP server, on Standard and Pro with Craft 5.12 or later: an AI assistant can read the accessibility summary, the open rules and how to fix them, and a page's issues, and can re-scan a page.
 - After updating, admins get a note under What's New in the control panel about the editions and PDF checks.
+- Remove scan data, in the Actions menu on the page tables, deletes the selected pages' scores, issues and scan history.
 
 ### Changed
 - Findings on a rule's page, in the page report and in the entry sidebar are easier to scan, with the contrast ratio picked out and the colours on their own line, each with a swatch.

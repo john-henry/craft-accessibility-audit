@@ -21,6 +21,31 @@
 (function () {
     'use strict';
 
+    /* Craft's table posts a menu action as soon as it is clicked and offers no
+       confirmation for one, so a destructive action is asked about here first.
+       Listening in the capture phase puts this ahead of the table's own click
+       handler, and stopping the event there means a cancelled click never
+       reaches it. */
+    document.addEventListener('click', function (e) {
+        var item = e.target && e.target.closest ? e.target.closest('.accessibility-audit-confirm-remove') : null;
+
+        if (!item) {
+            return;
+        }
+
+        var scope = item.closest('.vue-admin-table') || document;
+        var n = scope.querySelectorAll('tbody .checkbox.checked, tbody input[type="checkbox"]:checked').length;
+        var question = n > 0
+            ? Craft.t('accessibility-audit', '{n, plural, =1{Remove the scan data for this page?} other{Remove the scan data for these # pages?}}', { n: n })
+            : Craft.t('accessibility-audit', 'Remove the scan data for the selected pages?');
+        var warning = Craft.t('accessibility-audit', 'Their scores, issues and scan history are deleted and cannot be brought back. A page that can still be scanned comes back on its next scan, so exclude it under Settings → Scanning first if it should stay out.');
+
+        if (!window.confirm(question + '\n\n' + warning)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+    }, true);
+
     window.AccessibilityAuditTable = {
         /**
          * A rule's name for a table cell: its title, linked where a URL is
@@ -73,6 +98,11 @@
                 label: Craft.t('accessibility-audit', 'Re-scan selected'),
                 action: 'accessibility-audit/audit/scan-entries',
                 icon: 'refresh',
+            }, {
+                label: Craft.t('accessibility-audit', 'Remove scan data'),
+                action: 'accessibility-audit/audit/remove-scans',
+                icon: 'trash',
+                destructive: true,
             }] : []);
 
             if (bulkActions.length) {
@@ -87,10 +117,14 @@
                         // Object, not a string: the component spreads this into
                         // Vue's class binding, and a string would spread to one
                         // class per character.
-                        ...(a.icon ? {
+                        ...(a.destructive ? { separator: true } : {}),
+                        ...(a.icon || a.destructive ? {
                             class: {
-                                'accessibility-audit-menu-icon': true,
-                                ['accessibility-audit-menu-icon--' + a.icon]: true,
+                                'accessibility-audit-menu-icon': !!a.icon,
+                                ['accessibility-audit-menu-icon--' + a.icon]: !!a.icon,
+                                // Craft's own red for a menu item that deletes.
+                                'error': !!a.destructive,
+                                'accessibility-audit-confirm-remove': !!a.destructive,
                             },
                         } : {}),
                     })),
