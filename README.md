@@ -11,7 +11,7 @@ When a client, a procurement team or a regulator asks whether the site meets WCA
 
 There are three editions, and the full split is on the [Editions](https://johnhenry.ie/plugins/accessibility-audit/docs/getting-started/editions) page.
 
-- **Lite** is free: up to 25 pages, the primary site, and 7 days of scan history.
+- **Lite** is free: up to 25 pages, the primary site, and 30 days of scan history.
 - **Standard** takes the page cap off and keeps 90 days of history.
 - **Pro** adds multi-site and keeps history for as long as you want it.
 

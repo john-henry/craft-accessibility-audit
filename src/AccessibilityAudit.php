@@ -71,7 +71,7 @@ class AccessibilityAudit extends BasePlugin
     /**
      * @var int The longest scan-history retention, in days, on Lite.
      */
-    public const LITE_RETENTION_DAYS = 7;
+    public const LITE_RETENTION_DAYS = 30;
 
     /**
      * @var int The longest scan-history retention, in days, on Standard.
