@@ -10,6 +10,7 @@ use Craft;
 use craft\db\Query;
 use craft\queue\BaseJob;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\helpers\FreshRender;
 use johnhenry\accessibilityaudit\services\AuditService;
 use johnhenry\accessibilityaudit\services\HeadlessScanner;
 use yii\db\Exception;
@@ -56,6 +57,11 @@ class HeadlessScanJob extends BaseJob implements RetryableJobInterface
      * @var string The absolute URL of the page to scan.
      */
     public string $url = '';
+
+    /**
+     * @var bool Whether to ask for the page past any full-page cache.
+     */
+    public bool $freshRender = false;
 
     // Public Methods
     // =========================================================================
@@ -136,7 +142,8 @@ class HeadlessScanJob extends BaseJob implements RetryableJobInterface
         // skips just that viewport: the PHP scan results and the other
         // viewport's findings stand on their own, and carried-forward overlay
         // data is untouched.
-        $results = $plugin->getHeadless()->scanUrlViewports($this->url, array_keys(HeadlessScanner::VIEWPORTS));
+        $url = $this->freshRender ? FreshRender::url($this->url) : $this->url;
+        $results = $plugin->getHeadless()->scanUrlViewports($url, array_keys(HeadlessScanner::VIEWPORTS));
 
         foreach ($results as $viewport => $findings) {
             if ($findings === null) {

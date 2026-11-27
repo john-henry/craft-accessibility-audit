@@ -29,6 +29,7 @@ There are three editions, and the full split is on the [Editions](https://johnhe
 - **Scan on save and in the background**, through the queue, with console commands for scheduled sweeps.
 - **Colour tools**: a contrast analyser, a colour-blindness simulator and a grid for a whole palette.
 - **The accessibility statement** the EU and UK require, built to your jurisdiction's model, with the compliance claim held to what your evidence supports.
+- **The control panel in six languages**: English, German, French, Spanish, Italian and Dutch.
 
 ## Plus adds
 
@@ -57,7 +58,9 @@ Full documentation is at [johnhenry.ie/plugins/accessibility-audit/docs](https:/
 ## Requirements
 
 - Craft CMS 5.0 or later (5.12 or later for the AI assistant tools)
-- PHP 8.2 or later
+- PHP 8.2 or later, with the `sockets` extension (Composer won't install the plugin without it, on Lite as well)
+- A running queue worker, since scans and asset checks run through Craft's queue
+- For server-side browser scanning on Plus and Pro: Chrome or Chromium on the server, or a remote Chrome endpoint
 
 ## Accessibility
 

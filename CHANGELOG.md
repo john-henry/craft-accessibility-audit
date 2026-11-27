@@ -46,6 +46,8 @@
 
 ### Changed
 - Findings on a rule's page, in the page report and in the entry sidebar are easier to scan, with the contrast ratio picked out and the colours on their own line, each with a swatch.
+- The titles and fix advice of the plugin's own checks now show in the control panel's language. Rules from axe-core are still in English.
+- The scan that runs after you save an entry now asks for the page past any full-page cache, so it no longer flags issues the save just fixed.
 - Lite, the new free edition, scans up to 25 pages on the primary site and keeps 30 days of history. It has scoring, EN 301 549, issues by rule and page, potential issues, page reports and Inspect, template and resolved issues, the admin and frontend overlays, colour tools, the accessibility statement, scan on save and the console commands.
 - Plus has everything in Lite, scans any number of pages, keeps 90 days of history, and adds server-side browser scanning, AI alt text, PDF checks, email and Slack notifications, and readability.
 - Pro has everything in Plus, keeps history for as long as you like, and adds multi-site scanning and reporting, VPAT conformance reporting, the CI/CD endpoint, the decoupled frontend overlay and a permanent record of resolved issues.
@@ -112,6 +114,7 @@
 - A review question's own page now counts and lists only the occurrences still waiting for an answer, so its totals match the Potential issues list.
 - Text in something drawn over a background it isn't inside, such as a code block's copy button, is no longer reported as failing contrast against the page behind it.
 - Text near a decorative line drawn in CSS, such as the nav links under a thin border on a fixed header, is now measured for contrast instead of being sent for review.
+- `scan-all` now lists pages it skipped because of the Lite page limit or the excluded list as skipped, and no longer counts them as scanned or prints a score for them.
 
 ## 1.6.0 - 2026-10-08
 

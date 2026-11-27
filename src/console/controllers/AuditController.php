@@ -177,10 +177,12 @@ class AuditController extends Controller
 
                 $result = $audit->scanElement($element);
 
-                // A page that could not be read has no score, and printing one
-                // for it reads as a verdict on a page nobody opened.
-                if (($result['error'] ?? null) !== null) {
-                    $this->stdout('skipped: ' . $result['error'] . PHP_EOL, Console::FG_YELLOW);
+                // A page that was never scanned has no score, and printing the
+                // placeholder one reads as a verdict on a page nobody opened.
+                $skipReason = $this->_skipReason($result);
+
+                if ($skipReason !== null) {
+                    $this->stdout('skipped: ' . $skipReason . PHP_EOL, Console::FG_YELLOW);
                     continue;
                 }
 
@@ -208,8 +210,10 @@ class AuditController extends Controller
                 try {
                     $result = $audit->scanUrl($customUrl, $siteId);
 
-                    if ($result['scanId'] === 0) {
-                        $this->stdout('SKIPPED: ' . ($result['error'] ?? 'scan limit reached') . "\n", Console::FG_YELLOW);
+                    $skipReason = $this->_skipReason($result);
+
+                    if ($skipReason !== null) {
+                        $this->stdout('skipped: ' . $skipReason . PHP_EOL, Console::FG_YELLOW);
                         continue;
                     }
 
@@ -618,6 +622,39 @@ class AuditController extends Controller
 
     // Private Methods
     // =========================================================================
+
+    /**
+     * Why a scan result stored nothing, or null when the page was scanned.
+     *
+     * A result with no scan behind it still carries a score (0 for a capped
+     * page, 100 for an excluded one) so callers have to read why it stopped.
+     *
+     * @param array<string, mixed> $result A result from scanElement() or scanUrl().
+     * @return string|null The reason the page was skipped.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _skipReason(array $result): ?string
+    {
+        if (!empty($result['error'])) {
+            return (string)$result['error'];
+        }
+
+        if (!empty($result['limitReached'])) {
+            return 'scan limit reached for this edition';
+        }
+
+        if (!empty($result['excluded'])) {
+            return 'on the excluded list';
+        }
+
+        if ((int)($result['scanId'] ?? 0) === 0) {
+            return 'no page to scan';
+        }
+
+        return null;
+    }
 
     /**
      * How many pages of each element type the sweep covers, for the summary

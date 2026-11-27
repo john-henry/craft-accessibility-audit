@@ -47,6 +47,7 @@ use johnhenry\accessibilityaudit\assets\AccessibilityAuditAsset;
 use johnhenry\accessibilityaudit\assets\FrontendAxeAsset;
 use johnhenry\accessibilityaudit\assets\FrontendOverlayLoaderAsset;
 use johnhenry\accessibilityaudit\helpers\FindingHtml;
+use johnhenry\accessibilityaudit\helpers\FreshRender;
 use johnhenry\accessibilityaudit\helpers\ScannableElementTypes;
 use johnhenry\accessibilityaudit\jobs\GenerateAltTextJob;
 use johnhenry\accessibilityaudit\jobs\RecordReadability;
@@ -1155,6 +1156,31 @@ trait PluginTrait
     }
 
     /**
+     * Keeps a render asked for with the fresh-render parameter out of every
+     * shared cache.
+     *
+     * The parameter's value is new on every scan, so a cache that stored these
+     * renders would keep one copy per save that nobody else ever asks for.
+     * Applied when the page template renders, by which point Blitz is loaded
+     * whatever order the plugins started in.
+     *
+     * @return void
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _registerFreshRenderGuard(): void
+    {
+        if (!FreshRender::isRequested()) {
+            return;
+        }
+
+        Event::on(View::class, View::EVENT_BEFORE_RENDER_PAGE_TEMPLATE, static function() {
+            self::$plugin->getOverlay()->preventFullPageCaching();
+        });
+    }
+
+    /**
      * Puts the front-end axe overlay on site pages, where the setting asks for
      * it.
      *
@@ -1381,7 +1407,10 @@ trait PluginTrait
                         return;
                     }
 
-                    self::$plugin->getAudit()->queueScan($element);
+                    // The save also queues the full-page cache's refresh, and
+                    // this scan can run before it. Asking past the cache keeps
+                    // a stale copy from showing issues the save fixed.
+                    self::$plugin->getAudit()->queueScan($element, freshRender: true);
 
                     // Queued rather than run here: this event fires inside the
                     // save's transaction, and the job covers every site the

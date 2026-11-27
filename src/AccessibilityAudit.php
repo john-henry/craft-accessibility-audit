@@ -268,6 +268,7 @@ class AccessibilityAudit extends BasePlugin
 
         if (Craft::$app->getRequest()->getIsSiteRequest()) {
             $this->_registerSiteUrlRules();
+            $this->_registerFreshRenderGuard();
             $this->_maybeInjectFrontendAxe();
             $this->_maybeRegisterTemplateDebug();
         }

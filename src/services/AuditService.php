@@ -21,6 +21,7 @@ use DateTime;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\exceptions\UnsafeUrlException;
 use johnhenry\accessibilityaudit\helpers\ElementLabel;
+use johnhenry\accessibilityaudit\helpers\FreshRender;
 use johnhenry\accessibilityaudit\helpers\QueuedJobs;
 use johnhenry\accessibilityaudit\helpers\UrlSafety;
 use johnhenry\accessibilityaudit\jobs\HeadlessScanJob;
@@ -200,17 +201,20 @@ class AuditService extends Component
      * Queues a background scan of one element.
      *
      * @param Element $element The element to scan.
+     * @param bool $freshRender Whether to ask for the page past any
+     * full-page cache, as the scan after a save does.
      * @return void
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function queueScan(Element $element): void
+    public function queueScan(Element $element, bool $freshRender = false): void
     {
         Craft::$app->getQueue()->push(new ScanElementJob([
             'elementId' => $element->id,
             'elementType' => get_class($element),
             'siteId' => $element->siteId,
+            'freshRender' => $freshRender,
         ]));
     }
 
@@ -851,16 +855,25 @@ class AuditService extends Component
      * @param string $url The absolute URL to render.
      * @param string $pageLabel The page's name for the queue listing.
      * @param bool $manual Whether someone asked for this page by hand.
+     * @param bool $freshRender Whether the browser asks for the page past any
+     * full-page cache.
+     * @return void
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 2.0.0
      */
-    private function _queueBrowserChecks(int $scanId, string $url, string $pageLabel, bool $manual): void
-    {
+    private function _queueBrowserChecks(
+        int $scanId,
+        string $url,
+        string $pageLabel,
+        bool $manual,
+        bool $freshRender = false,
+    ): void {
         QueueHelper::push(
             new HeadlessScanJob([
                 'scanId' => $scanId,
                 'url' => $url,
+                'freshRender' => $freshRender,
                 'description' => Craft::t('accessibility-audit', 'Browser accessibility checks: {page}', [
                     'page' => $pageLabel,
                 ]),
@@ -899,14 +912,20 @@ class AuditService extends Component
      * exactly what makes results flip-flop.
      * @param bool $manual Whether someone asked for this page by hand, which
      * queues its browser pass ahead of a sweep's.
+     * @param bool $freshRender Whether both passes ask for the page past any
+     * full-page cache.
      * @return array{scanId: int, score: int, issues: IssueModel[], excluded?: bool, limitReached?: bool, error?: string}
      * @throws Throwable
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function scanElement(ElementInterface $element, bool $withHeadless = true, bool $manual = false): array
-    {
+    public function scanElement(
+        ElementInterface $element,
+        bool $withHeadless = true,
+        bool $manual = false,
+        bool $freshRender = false,
+    ): array {
         assert($element instanceof Element);
 
         // A draft or revision never gets a scan of its own, the same rule
@@ -929,7 +948,7 @@ class AuditService extends Component
             return ['scanId' => 0, 'score' => 0, 'issues' => [], 'limitReached' => true];
         }
 
-        $page = $this->_fetchPage($url);
+        $page = $this->_fetchPage($url, $freshRender);
 
         // Nothing was read, so there is nothing to score. A number here would
         // read as a verdict on the page rather than as the absence of one.
@@ -966,7 +985,7 @@ class AuditService extends Component
             // checks" rows tells nobody what is actually being worked through.
             $pageLabel = ElementLabel::for($element, $element->id, $url);
 
-            $this->_queueBrowserChecks((int) $result['scanId'], $url, $pageLabel, $manual);
+            $this->_queueBrowserChecks((int) $result['scanId'], $url, $pageLabel, $manual, $freshRender);
         }
 
         return $result;
@@ -4208,6 +4227,9 @@ class AuditService extends Component
      * ephemeral environments (DDEV self-signed certs); production verifies certs.
      *
      * @param string $url The address to fetch.
+     * @param bool $freshRender Whether to ask for the page past any full-page
+     *        cache. The address handed back is the page's own, without the
+     *        fresh-render parameter.
      * @return array{html: string|null, url: string, error: string|null} The
      *         body, the address it actually came from after any redirects, and
      *         a reason when there is no body.
@@ -4215,7 +4237,7 @@ class AuditService extends Component
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
-    private function _fetchPage(string $url): array
+    private function _fetchPage(string $url, bool $freshRender = false): array
     {
         $miss = static fn(string $reason): array => ['html' => null, 'url' => $url, 'error' => $reason];
 
@@ -4237,14 +4259,19 @@ class AuditService extends Component
             // the token by default, or the admin's own override if set.
             $clientConfig['headers'] = [
                 'User-Agent' => AccessibilityAudit::getInstance()->getSettings()->getFetchUserAgent(),
-            ];
+            ] + ($freshRender ? FreshRender::HEADERS : []);
 
             // Fetched through the guard, which connects only to the addresses
             // it validated rather than letting the client resolve the name a
             // second time.
-            $landed = $url;
-            $response = UrlSafety::fetch($url, $clientConfig, $landed);
+            $requested = $freshRender ? FreshRender::url($url) : $url;
+            $landed = $requested;
+            $response = UrlSafety::fetch($requested, $clientConfig, $landed);
             $status = $response->getStatusCode();
+
+            if ($freshRender) {
+                $landed = FreshRender::strip($landed);
+            }
 
             // A redirect that leaves the site leaves the remit with it. What
             // is at the other end is somebody else's page: auditing it says
