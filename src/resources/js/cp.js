@@ -900,10 +900,15 @@ window.AccessibilityAuditInjectAltBtn = (function () {
     // the long-alt check reports on: there is no cap to run out of, and the
     // useful number is how far past it the description sits.
     const guideline = Number(cfg.altGuideline) || 0;
+    // Tied to the field rather than live: a live count is read out after
+    // every keystroke. Described by, it is read whenever the field has focus.
     const count = document.createElement('span');
     count.className = 'light accessibility-audit-alt-count';
-    count.setAttribute('role', 'status');
-    count.setAttribute('aria-live', 'polite');
+    count.id = 'accessibility-audit-alt-count-' + Math.random().toString(36).slice(2);
+    textarea.setAttribute(
+      'aria-describedby',
+      ((textarea.getAttribute('aria-describedby') || '') + ' ' + count.id).trim()
+    );
 
     const renderCount = () => {
       if (!guideline) return;
@@ -1196,6 +1201,9 @@ window.AccessibilityAuditInjectAltBtn = (function () {
     }
 
     if (genBtn) genBtn.addEventListener('click', async () => {
+      // Disabling the focused button drops focus to the page, so it is handed
+      // back if nothing else has taken it by the time the request settles.
+      const hadFocus = document.activeElement === genBtn;
       genBtn.disabled = true;
       genBtn.classList.add('loading');
       if (status) status.textContent = Craft.t('accessibility-audit', 'Writing three versions. This takes a few seconds.');
@@ -1226,6 +1234,9 @@ window.AccessibilityAuditInjectAltBtn = (function () {
         genBtn.disabled = false;
         genBtn.classList.remove('loading');
         if (status) status.textContent = '';
+        if (hadFocus && (!document.activeElement || document.activeElement === document.body)) {
+          genBtn.focus();
+        }
       }
     });
 

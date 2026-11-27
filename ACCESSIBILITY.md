@@ -4,11 +4,11 @@ Accessibility Audit is a plugin for Craft CMS 5. This statement sets out how acc
 
 ## What this covers
 
-This statement covers Accessibility Audit 1.5.0:
+This statement covers Accessibility Audit 2.0.0:
 
-- the control panel screens: the dashboard, issues, issue details, page reports, assets and alt text, readability, the accessibility statement builder and the VPAT/ACR builder
+- the control panel screens: the dashboard, issues, issue details, potential issues, page reports, readability, assets and the alt text panel, PDF details, reports and their print views, colour tools, the accessibility statement builder and the VPAT/ACR builder
 - the settings pages and the Accessibility Score dashboard widget
-- the accessibility panel in the entry sidebar
+- the accessibility panel in the entry sidebar, and the alt text suggestions on an asset's own edit screen
 - the scan overlay shown on the front end of your site to people running audits
 - the public accessibility statement template and the VPAT/ACR export
 
@@ -24,14 +24,23 @@ WCAG 2.2 level AA. Accessibility Audit adds to the Craft control panel, which is
 
 ## How far it meets it
 
-I believe it meets WCAG 2.2 AA. The review found three issues, and this version fixes all of them. It hasn't been tested with assistive technology yet, though, so I'm not claiming full conformance until it has.
+I believe the parts listed above meet WCAG 2.2 AA. The review for 2.0.0 found three problems in the new alt text tools, and 2.0.0 fixes all of them:
+
+- the character count under the alt text field was read out by screen readers after every keystroke
+- keyboard focus was lost when Generate with AI failed
+- keyboard focus was lost when Discard draft failed
+
+It hasn't been tested with assistive technology yet, though, so I'm not claiming full conformance until it has.
 
 ## How it was checked
 
-Last checked in September 2026:
+Last checked in November 2026, for 2.0.0:
 
-- A review of every control panel template, script and stylesheet against WCAG 2.2 AA, including the WAI-ARIA Authoring Practices for any custom widgets, and contrast ratios worked out from the actual colours in the CSS.
-- The main control panel scripts were read in full. `cp.js`, `utilities.js`, `vpat.js`, `statement.js` and some settings screens were only sampled.
+- An automated pass with the same axe-core the plugin scans sites with, against the WCAG 2.0, 2.1 and 2.2 A and AA rules, over 28 control panel screens and states. That includes the Reports screens and their print view, the page report with everything opened, and the entry sidebar panel. It found nothing.
+- A read through the templates and scripts of the alt text panel and its suggestions, the PDF detail page and the Reports screens, for what an automated check can't see: where keyboard focus goes, what gets announced, and heading and table structure.
+- The rest of what changed in 2.0.0, such as the rebuilt Assets list and the edition badge, was covered by the automated pass only.
+- The alt text panel and the PDF detail page were reviewed by reading their templates and scripts but not run through the automated pass, because the test site has no images or PDFs to open them with.
+- The screens that didn't change in 2.0.0 still rest on the full review done for 1.5.0 in September 2026, which went through every template, script and stylesheet against WCAG 2.2 AA, including the WAI-ARIA Authoring Practices for custom widgets and contrast ratios worked out from the actual colours in the CSS.
 - Not done yet: testing with screen readers (NVDA, JAWS and VoiceOver), zoom and reflow at 400%, or speech input. This statement will be updated once that's done.
 
 ## Known issues
@@ -48,4 +57,4 @@ If something in Accessibility Audit is hard or impossible for you to use, open a
 
 ## Last reviewed
 
-27 September 2026, for version 1.5.0.
+27 November 2026, for version 2.0.0.

@@ -618,6 +618,7 @@
       discardBtn.classList.remove('loading');
       if (!data.success) {
         discardBtn.disabled = false;
+        discardBtn.focus();
         if (window.Craft && Craft.cp) Craft.cp.displayError(data.error);
         return;
       }
