@@ -37,6 +37,11 @@ class m261127_000000_rename_standard_edition extends Migration
      */
     public const SCHEMA_VERSION = '2.0.2';
 
+    /**
+     * @var int The most history, in days, the Standard edition kept.
+     */
+    public const OLD_RETENTION_CAP = 30;
+
     // Public Methods
     // =========================================================================
 
@@ -62,6 +67,28 @@ class m261127_000000_rename_standard_edition extends Migration
     }
 
     /**
+     * The history setting a site moved to Plus should get, or null to leave it.
+     *
+     * Standard capped history at 30 days and saved anything longer as 30, so a
+     * stored 30 is that cap rather than a choice, and moves up to the Plus cap.
+     * A shorter setting was picked on purpose and stays.
+     *
+     * @param mixed $retainDays The stored history setting, in days.
+     * @return int|null
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public static function retainDaysToSet(mixed $retainDays): ?int
+    {
+        if (!is_numeric($retainDays) || (int)$retainDays !== self::OLD_RETENTION_CAP) {
+            return null;
+        }
+
+        return AccessibilityAudit::PLUS_RETENTION_DAYS;
+    }
+
+    /**
      * @inheritdoc
      *
      * @return bool Always true.
@@ -79,8 +106,16 @@ class m261127_000000_rename_standard_edition extends Migration
             $projectConfig->get($path . '.schemaVersion', true),
         );
 
-        if ($edition !== null) {
-            $projectConfig->set($path . '.edition', $edition, 'Rename the Accessibility Audit Standard edition to Plus');
+        if ($edition === null) {
+            return true;
+        }
+
+        $projectConfig->set($path . '.edition', $edition, 'Rename the Accessibility Audit Standard edition to Plus');
+
+        $retainDays = self::retainDaysToSet($projectConfig->get($path . '.settings.retainDays'));
+
+        if ($retainDays !== null) {
+            $projectConfig->set($path . '.settings.retainDays', $retainDays, 'Raise the Accessibility Audit history to the Plus limit');
         }
 
         return true;

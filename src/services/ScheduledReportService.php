@@ -226,6 +226,9 @@ class ScheduledReportService extends Component
      * Sends a summary whose send date has already been claimed, and gives the
      * claim back when it reaches no destination, so the next check retries.
      *
+     * The schedule is checked again here, since a queued send can run after
+     * it was switched off.
+     *
      * @param int $siteId The site.
      * @param string|null $previous The last send date before the claim, or
      * null when it had never been sent.
@@ -236,7 +239,7 @@ class ScheduledReportService extends Component
      */
     public function sendClaimed(int $siteId, ?string $previous): bool
     {
-        if ($this->send($siteId)) {
+        if ($this->isEnabled() && $this->send($siteId)) {
             return true;
         }
 
@@ -570,7 +573,8 @@ class ScheduledReportService extends Component
 
     /**
      * The sites with at least one scan, which are the only ones with
-     * anything to summarise.
+     * anything to summarise. A deleted site's scans can outlast it, so only
+     * sites that still exist are returned.
      *
      * @return int[]
      *
@@ -579,11 +583,13 @@ class ScheduledReportService extends Component
      */
     private function _scannedSiteIds(): array
     {
-        return array_map('intval', (new Query())
+        $scanned = array_map('intval', (new Query())
             ->select(['siteId'])
             ->distinct()
             ->from('{{%accessibilityaudit_scans}}')
             ->column());
+
+        return array_values(array_intersect($scanned, Craft::$app->getSites()->getAllSiteIds()));
     }
 
     /**

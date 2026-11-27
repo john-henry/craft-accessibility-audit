@@ -57,6 +57,12 @@ class VerdictService extends Component
      */
     public const VERDICTS = [self::VERDICT_DISMISSED, self::VERDICT_CONFIRMED];
 
+    /**
+     * @var int How many issue rows an every-page ruling reads or updates at a
+     * time.
+     */
+    private const SITE_VERDICT_BATCH = 1000;
+
     // Public Methods
     // =========================================================================
 
@@ -150,10 +156,14 @@ class VerdictService extends Component
      * @param string|null $verdict self::VERDICT_DISMISSED, or null to clear.
      * @param bool $deferScoring Skip the score recalculation and hand back the
      *                           scans that need one.
-     * @return array{key: string|null, pages: int, scanIds: int[]} The key the
-     *         ruling was filed under (null when the occurrence has nothing to
-     *         identify it), how many pages it changed, and the scans whose
-     *         scores are now out of date.
+     * @param callable|null $canApply Given the ids of the elements whose rows
+     *                                the ruling would change, returns whether
+     *                                it may go ahead. Nothing is recorded when
+     *                                it returns false.
+     * @return array{key: string|null, pages: int, scanIds: int[], refused: bool}
+     *         The key the ruling was filed under (null when the occurrence has
+     *         nothing to identify it), how many pages it changed, the scans
+     *         whose scores are now out of date, and whether $canApply refused.
      * @throws Exception
      * @throws \Exception
      *
@@ -167,11 +177,18 @@ class VerdictService extends Component
         ?string $selector,
         ?string $verdict,
         bool $deferScoring = false,
+        ?callable $canApply = null,
     ): array {
         $key = $this->siteKey($context, $selector);
 
         if ($key === null || ($verdict !== null && $verdict !== self::VERDICT_DISMISSED)) {
-            return ['key' => null, 'pages' => 0, 'scanIds' => []];
+            return ['key' => null, 'pages' => 0, 'scanIds' => [], 'refused' => false];
+        }
+
+        $matches = $this->_matchSiteVerdict($siteId, $ruleId, $key, $verdict);
+
+        if ($canApply !== null && !$canApply($matches['elementIds'])) {
+            return ['key' => $key, 'pages' => 0, 'scanIds' => [], 'refused' => true];
         }
 
         $db = Craft::$app->getDb();
@@ -183,7 +200,7 @@ class VerdictService extends Component
             'contextHash' => $key,
         ];
 
-        $result = $db->transaction(function() use ($db, $match, $verdict, $now, $siteId, $ruleId, $key): array {
+        $db->transaction(function() use ($db, $match, $verdict, $now, $matches): void {
             if ($verdict === null) {
                 $db->createCommand()->delete('{{%accessibilityaudit_verdicts}}', $match)->execute();
             } else {
@@ -212,16 +229,30 @@ class VerdictService extends Component
                 }
             }
 
-            return $this->_applySiteVerdict($siteId, $ruleId, $key, $verdict);
+            foreach (array_chunk($matches['ids'], self::SITE_VERDICT_BATCH) as $ids) {
+                $db->createCommand()->update('{{%accessibilityaudit_issues}}', [
+                    'verdict' => $verdict,
+                    'dateUpdated' => $now,
+                ], [
+                    'id' => $ids,
+                    // A row a page ruled on since it was read keeps that ruling.
+                    'verdict' => $verdict !== null ? null : self::VERDICT_DISMISSED,
+                ])->execute();
+            }
         });
 
         if (!$deferScoring) {
-            foreach ($result['scanIds'] as $scanId) {
+            foreach ($matches['scanIds'] as $scanId) {
                 AccessibilityAudit::getInstance()->getAudit()->recalculateScoreForScan($scanId);
             }
         }
 
-        return ['key' => $key] + $result;
+        return [
+            'key' => $key,
+            'pages' => $matches['pages'],
+            'scanIds' => $matches['scanIds'],
+            'refused' => false,
+        ];
     }
 
     /**
@@ -712,31 +743,25 @@ class VerdictService extends Component
     // =========================================================================
 
     /**
-     * Stamps an every-page ruling onto the stored issue rows it applies to.
+     * Finds the stored issue rows an every-page ruling applies to.
      *
      * Rows a page has its own ruling for are skipped both ways: dismissing
      * leaves a confirmed row confirmed, and clearing leaves a row dismissed on
-     * its own page dismissed.
+     * its own page dismissed. The rows are read in id order a batch at a time,
+     * since a common element on a large site has a row on every page of every
+     * retained scan.
      *
      * @param int $siteId The site.
      * @param string $ruleId The potential rule.
      * @param string $key The every-page key, from self::siteKey().
      * @param string|null $verdict self::VERDICT_DISMISSED, or null to clear.
-     * @return array{pages: int, scanIds: int[]}
-     * @throws Exception
+     * @return array{ids: int[], pages: int, scanIds: int[], elementIds: int[]}
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 2.0.0
      */
-    private function _applySiteVerdict(int $siteId, string $ruleId, string $key, ?string $verdict): array
+    private function _matchSiteVerdict(int $siteId, string $ruleId, string $key, ?string $verdict): array
     {
-        $rows = (new Query())
-            ->select(['i.id', 'i.context', 'i.selector', 'i.scanId', 'i.elementId', 'i.verdict', 's.url'])
-            ->from(['i' => '{{%accessibilityaudit_issues}}'])
-            ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], '[[s.id]] = [[i.scanId]]')
-            ->where(['i.siteId' => $siteId, 'i.ruleId' => $ruleId])
-            ->all();
-
         // The pages' own rulings for this rule, loaded once rather than per row.
         $own = [];
         $ownRows = (new Query())
@@ -753,40 +778,62 @@ class VerdictService extends Component
         $ids = [];
         $scanIds = [];
         $pages = [];
+        $elementIds = [];
+        $keys = [];
+        $lastId = 0;
 
-        foreach ($rows as $row) {
-            if ($this->siteKey($row['context'], $row['selector']) !== $key) {
-                continue;
-            }
+        do {
+            $rows = (new Query())
+                ->select(['i.id', 'i.context', 'i.selector', 'i.scanId', 'i.elementId', 'i.verdict', 's.url'])
+                ->from(['i' => '{{%accessibilityaudit_issues}}'])
+                ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], '[[s.id]] = [[i.scanId]]')
+                ->where([
+                    'i.siteId' => $siteId,
+                    'i.ruleId' => $ruleId,
+                    // Dismissing touches unanswered rows, clearing dismissed ones.
+                    'i.verdict' => $verdict !== null ? null : self::VERDICT_DISMISSED,
+                ])
+                ->andWhere(['>', 'i.id', $lastId])
+                ->orderBy(['i.id' => SORT_ASC])
+                ->limit(self::SITE_VERDICT_BATCH)
+                ->all();
 
-            if ($verdict !== null ? $row['verdict'] !== null : $row['verdict'] !== self::VERDICT_DISMISSED) {
-                continue;
-            }
+            foreach ($rows as $row) {
+                $lastId = (int)$row['id'];
 
-            $target = $this->targetHash(
-                $row['elementId'] !== null ? (int)$row['elementId'] : null,
-                $row['url'] !== null ? (string)$row['url'] : null,
-            );
+                // The same markup repeats on every page, so its key is worked
+                // out once.
+                $rowKey = $keys[$row['context'] . "\0" . $row['selector']] ??= $this->siteKey($row['context'], $row['selector']);
 
-            foreach ($this->_candidateHashes($row['context']) as $hash) {
-                if (isset($own[$target . '|' . $hash])) {
-                    continue 2;
+                if ($rowKey !== $key) {
+                    continue;
+                }
+
+                $elementId = $row['elementId'] !== null ? (int)$row['elementId'] : null;
+                $target = $this->targetHash($elementId, $row['url'] !== null ? (string)$row['url'] : null);
+
+                foreach ($this->_candidateHashes($row['context']) as $hash) {
+                    if (isset($own[$target . '|' . $hash])) {
+                        continue 2;
+                    }
+                }
+
+                $ids[] = $lastId;
+                $scanIds[(int)$row['scanId']] = true;
+                $pages[$target] = true;
+
+                if ($elementId !== null) {
+                    $elementIds[$elementId] = true;
                 }
             }
+        } while (count($rows) === self::SITE_VERDICT_BATCH);
 
-            $ids[] = (int)$row['id'];
-            $scanIds[(int)$row['scanId']] = true;
-            $pages[$target] = true;
-        }
-
-        if ($ids !== []) {
-            Craft::$app->getDb()->createCommand()->update('{{%accessibilityaudit_issues}}', [
-                'verdict' => $verdict,
-                'dateUpdated' => Db::prepareDateForDb(new DateTime()),
-            ], ['id' => $ids])->execute();
-        }
-
-        return ['pages' => count($pages), 'scanIds' => array_map('intval', array_keys($scanIds))];
+        return [
+            'ids' => $ids,
+            'pages' => count($pages),
+            'scanIds' => array_map('intval', array_keys($scanIds)),
+            'elementIds' => array_map('intval', array_keys($elementIds)),
+        ];
     }
 
     /**

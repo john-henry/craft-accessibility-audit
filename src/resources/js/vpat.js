@@ -24,6 +24,12 @@
         }
     }
 
+    // Below Pro the page shows the upgrade prompt in place of the form, so
+    // there is nothing here to wire up.
+    if (!document.getElementById('vpat-save-meta')) {
+        return;
+    }
+
     // ── Product info save ───────────────────────────────────────────────────
 
     document.getElementById('vpat-save-meta').addEventListener('click', async () => {

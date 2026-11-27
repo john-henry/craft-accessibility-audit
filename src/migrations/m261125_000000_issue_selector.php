@@ -40,7 +40,7 @@ class m261125_000000_issue_selector extends Migration
             return true;
         }
 
-        $this->addColumn($table, 'selector', $this->string(300)->null()->after('context'));
+        $this->addColumn($table, 'selector', $this->string(300)->null());
 
         return true;
     }

@@ -720,6 +720,7 @@ return [
     'Every page' => 'Alle Seiten',
     '{n, plural, =1{Answered on # page.} other{Answered on # pages.}}' => '{n, plural, =1{Auf # Seite beantwortet.} other{Auf # Seiten beantwortet.}}',
     '{n, plural, =1{# could not be answered on every page because nothing tells it apart from other elements.} other{# could not be answered on every page because nothing tells them apart from other elements.}}' => '{n, plural, =1{# konnte nicht auf allen Seiten beantwortet werden, weil es nichts von anderen Elementen unterscheidet.} other{# konnten nicht auf allen Seiten beantwortet werden, weil sie nichts von anderen Elementen unterscheidet.}}',
+    '{n, plural, =1{# was left alone because it is also on pages you do not have access to.} other{# were left alone because they are also on pages you do not have access to.}}' => '{n, plural, =1{# wurde nicht geändert, weil es auch auf Seiten vorkommt, auf die Sie keinen Zugriff haben.} other{# wurden nicht geändert, weil sie auch auf Seiten vorkommen, auf die Sie keinen Zugriff haben.}}',
     'Remove scan data' => 'Scandaten entfernen',
     '{n, plural, =1{Remove the scan data for this page?} other{Remove the scan data for these # pages?}}' => '{n, plural, =1{Die Scandaten dieser Seite entfernen?} other{Die Scandaten dieser # Seiten entfernen?}}',
     'Remove the scan data for the selected pages?' => 'Die Scandaten der ausgewählten Seiten entfernen?',

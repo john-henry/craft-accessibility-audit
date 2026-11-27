@@ -763,6 +763,25 @@ class AuditController extends Controller
         $needScoring = [];
         $pages = 0;
         $skipped = 0;
+        $refused = 0;
+
+        // run-scans is install-wide, so a ruling that would reach a page the
+        // user cannot view is refused whole rather than applied in part: a
+        // partial every-page ruling would still be on record for those pages.
+        $user = Craft::$app->getUser()->getIdentity();
+        $canApply = $user !== null && $user->admin ? null : function(array $elementIds) use ($siteId): bool {
+            $elements = Craft::$app->getElements();
+
+            foreach ($elementIds as $elementId) {
+                $element = $elements->getElementById($elementId, null, $siteId);
+
+                if ($element !== null && !$elements->canView($element)) {
+                    return false;
+                }
+            }
+
+            return true;
+        };
 
         foreach ($this->_arrayBodyParam('items') as $item) {
             $ruleId = trim((string) ($item['ruleId'] ?? ''));
@@ -780,10 +799,16 @@ class AuditController extends Controller
                 is_string($selector) ? $selector : null,
                 $verdict !== '' ? $verdict : null,
                 true,
+                $canApply,
             );
 
             if ($result['key'] === null) {
                 $skipped++;
+                continue;
+            }
+
+            if ($result['refused']) {
+                $refused++;
                 continue;
             }
 
@@ -808,10 +833,19 @@ class AuditController extends Controller
             );
         }
 
+        if ($refused > 0) {
+            $message .= ' ' . Craft::t(
+                'accessibility-audit',
+                '{n, plural, =1{# was left alone because it is also on pages you do not have access to.} other{# were left alone because they are also on pages you do not have access to.}}',
+                ['n' => $refused],
+            );
+        }
+
         return $this->asJson([
             'success' => true,
             'pages' => $pages,
             'skipped' => $skipped,
+            'refused' => $refused,
             'message' => $message,
         ]);
     }

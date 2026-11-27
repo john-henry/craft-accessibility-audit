@@ -727,6 +727,7 @@ return [
     'Every page' => 'Every page',
     '{n, plural, =1{Answered on # page.} other{Answered on # pages.}}' => '{n, plural, =1{Answered on # page.} other{Answered on # pages.}}',
     '{n, plural, =1{# could not be answered on every page because nothing tells it apart from other elements.} other{# could not be answered on every page because nothing tells them apart from other elements.}}' => '{n, plural, =1{# could not be answered on every page because nothing tells it apart from other elements.} other{# could not be answered on every page because nothing tells them apart from other elements.}}',
+    '{n, plural, =1{# was left alone because it is also on pages you do not have access to.} other{# were left alone because they are also on pages you do not have access to.}}' => '{n, plural, =1{# was left alone because it is also on pages you do not have access to.} other{# were left alone because they are also on pages you do not have access to.}}',
     'Remove scan data' => 'Remove scan data',
     '{n, plural, =1{Remove the scan data for this page?} other{Remove the scan data for these # pages?}}' => '{n, plural, =1{Remove the scan data for this page?} other{Remove the scan data for these # pages?}}',
     'Remove the scan data for the selected pages?' => 'Remove the scan data for the selected pages?',
