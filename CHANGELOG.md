@@ -48,7 +48,7 @@
 - Findings on a rule's page, in the page report and in the entry sidebar are easier to scan, with the contrast ratio picked out and the colours on their own line, each with a swatch.
 - The titles and fix advice of the plugin's own checks now show in the control panel's language. Rules from axe-core are still in English.
 - The scan that runs after you save an entry now asks for the page past any full-page cache, so it no longer flags issues the save just fixed.
-- Lite, the new free edition, scans up to 25 pages on the primary site and keeps 30 days of history. It has scoring, EN 301 549, issues by rule and page, potential issues, page reports and Inspect, template and resolved issues, the admin and frontend overlays, colour tools, the accessibility statement, scan on save and the console commands.
+- Lite, the new free edition, scans up to 25 pages on the primary site and keeps 30 days of history. It has scoring, EN 301 549, issues by rule and page, potential issues, page reports, template and resolved issues, the admin and frontend overlays, colour tools, the accessibility statement, scan on save and the console commands.
 - Plus has everything in Lite, scans any number of pages, keeps 90 days of history, and adds server-side browser scanning, AI alt text, PDF checks, email and Slack notifications, and readability.
 - Pro has everything in Plus, keeps history for as long as you like, and adds multi-site scanning and reporting, VPAT conformance reporting, the CI/CD endpoint, the decoupled frontend overlay and a permanent record of resolved issues.
 - Sites on Standard move to Plus, which is the same edition under its new name, and get server-side browser scanning, PDF checks, notifications and readability, lose the 100-page cap, and keep 90 days of history instead of 30.
@@ -76,6 +76,7 @@
 - The Statement screen names any failing criteria that come from an answer on the VPAT, and links to the VPAT for those instead of to Issues, since a new scan won't change them.
 - Browser checks for a page you re-scan yourself now run ahead of a site-wide scan already in the queue.
 - Queued browser checks are skipped for a page that has been scanned again since they were queued.
+- The Excluded Elements help and the VPAT's remarks on browser checks now say Page Report preview instead of Inspect preview.
 
 ### Removed
 - `getAssets()->scanAsset()`. PDF results come from `getPdfAudit()` now, and image alt text issues from the Assets listing methods.
@@ -83,6 +84,9 @@
 - Generate all alt text and Save all drafts on the Assets page. Draft alt text and Drafts to review do the job across the whole library now.
 
 ### Fixed
+- The VPAT console commands now need the Pro edition, like the VPAT in the control panel, and exit with 69 on Lite and Plus.
+- The accessibility statement no longer counts VPAT answers of Not Applicable or Not Evaluated as failures. Not Applicable counts as signed off, and Not Evaluated keeps the full claim closed until it's answered.
+- Every settings field a config file sets now shows read-only with the "Overridden by config file" note. Notifications, alt text, Site Target Score and Ignored Rule IDs used to stay editable even though what was typed wasn't saved.
 - The VPAT editor's remarks box and Draft with AI button are now labelled for screen readers in the control panel's language.
 - The empty Issues list on a page now shows its message in the control panel's language.
 - The frontend overlay's grey text (the score label, each issue's details and the scan time) now meets the 4.5:1 contrast minimum.

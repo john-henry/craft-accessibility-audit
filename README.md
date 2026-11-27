@@ -18,12 +18,12 @@ There are three editions, and the full split is on the [Editions](https://johnhe
 ## In every edition
 
 - **28 checks in PHP** on every scan: images, links, forms, headings, tables, structure and more, with nothing to install.
-- **axe-core in the browser**, on the live site for admins and in the page report. It catches the contrast, focus visibility and target size problems that only show once a page renders, at desktop and phone width.
+- **axe-core in the browser**, on the live site for admins and in the Page Report. It catches the contrast, focus visibility and target size problems that only show once a page renders, at desktop and phone width.
 - **Hover, focus and selection contrast.** A page is always at rest while it's scanned, so these colours never turn up in an ordinary check. The plugin reads them out of your stylesheet instead and measures them against the background the element sits on.
 - **Twelve questions for a person**, for what no scanner can settle, like whether alt text describes its image or whether text over a photo can be read. Answer once and the answer stays through re-scans.
 - **Scores against WCAG 2.2 A, AA or AAA**, with EN 301 549 alongside, and a history so a drop shows up the week it happens.
 - **A page for every rule**, with a plain title, what to change, and every page it turned up on, so you can tell a template fix from a content fix.
-- **The page report**, with every occurrence highlighted in a live preview and in the source, plus colour-blindness and low-vision filters.
+- **The Page Report**, with every occurrence highlighted in a live preview and in the source, plus colour-blindness and low-vision filters.
 - **A panel on every element**, with its score, its issues and a re-scan button, where the editing happens.
 - **Any element type**: entries, categories, Craft Commerce products and any custom element with a public URL, plus pages with no element behind them.
 - **Scan on save and in the background**, through the queue, with console commands for scheduled sweeps.

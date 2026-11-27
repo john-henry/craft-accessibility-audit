@@ -50,6 +50,8 @@
         instructions: 'The score the site is aiming for (0 to 100). The Overview tracks progress against it and the CI endpoint fails a build that falls below it. 90 is a sensible bar for most sites. Set it to 0 to turn the target off.'|t('accessibility-audit'),
         id: 'targetScore',
         name: 'settings[targetScore]',
+        warning: config.targetScore is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.targetScore is defined,
         value: settings.targetScore,
         type: 'number',
         min: 0,

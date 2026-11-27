@@ -83,6 +83,10 @@ class VpatController extends Controller
      */
     public function actionRevisions(): int
     {
+        if (($refused = $this->_refuseBelowPro()) !== null) {
+            return $refused;
+        }
+
         $siteId = $this->_resolveSiteId();
 
         if ($siteId === null) {
@@ -129,6 +133,10 @@ class VpatController extends Controller
      */
     public function actionDeleteRevision(): int
     {
+        if (($refused = $this->_refuseBelowPro()) !== null) {
+            return $refused;
+        }
+
         if ($this->revisionId === null) {
             $this->stderr("Pass the revision to remove with --revision-id. Run `revisions` to list them.\n", Console::FG_RED);
 
@@ -192,6 +200,10 @@ class VpatController extends Controller
      */
     public function actionClearRevisions(): int
     {
+        if (($refused = $this->_refuseBelowPro()) !== null) {
+            return $refused;
+        }
+
         $siteId = $this->_resolveSiteId();
 
         if ($siteId === null) {
@@ -223,6 +235,30 @@ class VpatController extends Controller
 
     // Private Methods
     // =========================================================================
+
+    /**
+     * The exit code to stop with when the edition is below Pro, or null to carry on.
+     *
+     * The VPAT is a Pro feature and the control panel gates it the same way.
+     * This is a check in each action rather than in beforeAction(), because a
+     * console action that beforeAction() refuses exits 0, which a cron job or
+     * CI step reads as success.
+     *
+     * @return int|null
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _refuseBelowPro(): ?int
+    {
+        if (AccessibilityAudit::getInstance()->isPro()) {
+            return null;
+        }
+
+        $this->stderr("The VPAT needs the Pro edition.\n", Console::FG_RED);
+
+        return ExitCode::UNAVAILABLE;
+    }
 
     /**
      * A stored date as it reads on screen, falling back to the raw value.

@@ -233,14 +233,14 @@ class SettingsModel extends Model
     /**
      * @var bool Whether elements the scanner covers get a Readability view in
      * their Preview menu, showing the text being written with its long
-     * sentences marked. Pro only.
+     * sentences marked. Plus and Pro only.
      */
     public bool $readabilityPreviewTarget = true;
 
     /**
      * @var string The reading target the Readability preview marks sentences
      * against for everyone who hasn't picked their own: 'accessible', 'default'
-     * or 'technical'. Pro only.
+     * or 'technical'. Plus and Pro only.
      */
     public string $readabilityTarget = ReadabilityService::DEFAULT_TARGET;
 
@@ -617,7 +617,7 @@ class SettingsModel extends Model
     /**
      * The CSS selectors every scan surface excludes: the built-in
      * consent-platform defaults plus the admin's own lines. All four engines
-     * (headless axe, the Inspect preview pass, the frontend overlay, and the
+     * (headless axe, the Page Report preview pass, the frontend overlay, and the
      * PHP scanner) read from here so an exclusion holds everywhere at once.
      *
      * @return string[]

@@ -5,10 +5,10 @@
  *
  * Copy this file to config/accessibility-audit.php in your project to pin any
  * plugin setting from code. Values set here take precedence over the control
- * panel settings screen, where the matching field is shown read-only with an
- * "Overridden by config file" note. Uncomment only the keys you want to fix;
- * anything left commented keeps its default (shown below) and stays editable
- * in the CP.
+ * panel settings screen, where the matching field is shown read-only with
+ * an "Overridden by config file" note. Uncomment only the keys you want to
+ * fix; anything left commented keeps its default (shown below) and stays
+ * editable in the CP.
  */
 
 return [
@@ -20,11 +20,13 @@ return [
     // Include EN 301 549 (the European standard) rules alongside WCAG.
     // 'en301549' => false,
 
-    // Add a Readability view to the Preview menu of entries the scanner covers (Pro).
+    // Add a Readability view to the Preview menu of entries the scanner covers
+    // (Plus and Pro).
     // 'readabilityPreviewTarget' => true,
 
     // The reading target the Readability preview marks sentences against unless
-    // someone picks their own: 'accessible', 'default' or 'technical' (Pro).
+    // someone picks their own: 'accessible', 'default' or 'technical'
+    // (Plus and Pro).
     // 'readabilityTarget' => 'default',
 
     // The score the site is aiming for (0-100), tracked on the dashboard and
@@ -85,15 +87,16 @@ return [
     // files that aren't public content needing alt text.
     // 'excludedVolumes' => [],
 
-    // Path to a Chrome/Chromium binary for server-side axe scans (Pro).
+    // Path to a Chrome/Chromium binary for server-side axe scans (Plus and Pro).
     // When set, every queued scan also runs a full browser pass, so contrast,
     // focus, and target-size findings cover the whole site without an admin
     // visiting each page. Empty disables it. Prefer an env var reference.
     // 'chromePath' => '$CHROME_PATH',
 
     // WebSocket URI of an already-running Chrome to connect to instead of
-    // launching a local binary (Pro). Point it at a browserless container, a
-    // Chrome sidecar, or any endpoint speaking the DevTools protocol. This is
+    // launching a local binary (Plus and Pro). Point it at a browserless
+    // container, a Chrome sidecar, or any endpoint speaking the DevTools
+    // protocol. This is
     // the only option on hosts that can't install a binary, such as Craft
     // Cloud. Takes precedence over chromePath. If the URI carries a token,
     // keep it in an env var rather than here.
@@ -128,7 +131,7 @@ return [
     // 'overlayIdleSeconds' => 30,
 
     // Extra CSS selectors excluded from every scan surface (PHP scan, browser
-    // pass, Inspect preview, overlay), one per line. The common
+    // pass, Page Report preview, overlay), one per line. The common
     // consent-management banners are always excluded; add page furniture you
     // don't control, such as a chat widget.
     // 'excludedSelectors' => "#live-chat-widget\n.ab-test-overlay",

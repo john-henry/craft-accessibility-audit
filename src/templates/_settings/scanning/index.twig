@@ -228,7 +228,7 @@
         instructions: 'Elements matching these selectors are skipped by every scan. One selector per line, e.g. {example}.'|t('accessibility-audit', {
             example: '<code>#live-chat-widget</code>',
         })
-            ~ ' <span class="info">' ~ 'That means the PHP scan, the browser pass, the Inspect preview and the overlay, so no surface reports what another one skips. The common consent banners, OneTrust, Cookiebot, Ketch and the rest, are always excluded. Add anything else on the page you do not control, a chat widget for instance.'|t('accessibility-audit') ~ '</span>',
+            ~ ' <span class="info">' ~ 'That means the PHP scan, the browser pass, the Page Report preview and the overlay, so no surface reports what another one skips. The common consent banners, OneTrust, Cookiebot, Ketch and the rest, are always excluded. Add anything else on the page you do not control, a chat widget for instance.'|t('accessibility-audit') ~ '</span>',
         id: 'excludedSelectors',
         name: 'settings[excludedSelectors]',
         value: settings.excludedSelectors,
@@ -325,6 +325,8 @@
         instructions: 'One rule ID per line. Matching issues will be excluded from all scans. Example rule IDs: img-alt, skip-link, meta-description'|t('accessibility-audit'),
         id: 'ignoreRules',
         name: 'settings[ignoreRules]',
+        warning: config.ignoreRules is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.ignoreRules is defined,
         value: settings.ignoreRules|join('\n'),
         rows: 6,
         errors: settings.getErrors('ignoreRules'),

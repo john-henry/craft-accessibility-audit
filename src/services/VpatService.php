@@ -676,21 +676,21 @@ class VpatService extends Component
     /**
      * @var array<string, array{checks: string, cannot: string}> Evidence that
      *      comes from a browser, worded for a site with no server-side browser
-     *      pass. axe then runs only where someone views a page in the Inspect
+     *      pass. axe then runs only where someone views a page in the Page Report
      *      preview or with the front-end overlay, so the claim covers those
      *      pages and no others.
      */
     private const VIEWED_PAGES_EVIDENCE = [
         '1.4.3' => [
-            'checks' => 'the computed text and background colour of every element, including hover, focus and selection states, on the pages someone has viewed in the Inspect preview or with the front-end overlay',
+            'checks' => 'the computed text and background colour of every element, including hover, focus and selection states, on the pages someone has viewed in the Page Report preview or with the front-end overlay',
             'cannot' => 'pages nobody has viewed that way, or text baked into an image',
         ],
         '1.4.11' => [
-            'checks' => 'the contrast of interface components and graphics in a real browser, on the pages someone has viewed in the Inspect preview or with the front-end overlay',
+            'checks' => 'the contrast of interface components and graphics in a real browser, on the pages someone has viewed in the Page Report preview or with the front-end overlay',
             'cannot' => 'pages nobody has viewed that way, or components that only appear part way through an interaction',
         ],
         '2.5.8' => [
-            'checks' => 'the size and spacing of touch targets in a real browser, on the pages someone has viewed in the Inspect preview or with the front-end overlay',
+            'checks' => 'the size and spacing of touch targets in a real browser, on the pages someone has viewed in the Page Report preview or with the front-end overlay',
             'cannot' => 'pages nobody has viewed that way, or targets that only appear part way through an interaction',
         ],
     ];
