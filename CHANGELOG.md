@@ -1,6 +1,6 @@
 # Release Notes for Accessibility Audit
 
-## 2.0.0 - 2026-11-28
+## 2.0.0 - 2026-11-27
 
 > [!IMPORTANT]
 > Things to check when you update:
