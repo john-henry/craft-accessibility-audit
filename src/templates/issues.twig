@@ -51,10 +51,128 @@
             {% endif %}
         </div>
     {% else %}
-  
-    <div class="mt-m">
-        {% include 'accessibility-audit/_includes/grouped-issues' with { rows: byRule, siteHandle: siteHandle } only %}
+
+    {% do view.registerAssetBundle('craft\\web\\assets\\admintable\\AdminTableAsset') %}
+
+    {% set categories = byRule|map(r => r.elementType ?? '')|filter(c => c != '')|unique|sort %}
+    <div class="mt-m accessibility-audit-grouped-pane">
+        {% if categories|length > 1 %}
+            <div class="btngroup accessibility-audit-filter-chips" id="accessibility-audit-open-chips" role="group" aria-label="{{ 'Filter by element type'|t('accessibility-audit') }}" style="margin-bottom:14px">
+                <button type="button" class="btn active" data-filter="all" aria-pressed="true">{{ 'All'|t('accessibility-audit') }}</button>
+                {% for cat in categories %}
+                    <button type="button" class="btn" data-filter="{{ cat }}" aria-pressed="false">{{ cat|t('accessibility-audit') }}</button>
+                {% endfor %}
+            </div>
+            <div class="accessibility-audit-filter-select">
+                <div class="select">
+                    <select id="accessibility-audit-open-select" aria-label="{{ 'Filter by element type'|t('accessibility-audit') }}">
+                        <option value="all">{{ 'All'|t('accessibility-audit') }}</option>
+                        {% for cat in categories %}
+                            <option value="{{ cat }}">{{ cat|t('accessibility-audit') }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        {% endif %}
+
+        <div class="accessibility-audit-table-inflow" id="accessibility-audit-open-wrap"></div>
+        {{ macros.conformanceLegend() }}
     </div>
+
+    {% js %}
+    (() => {
+        const siteId = {{ siteId }};
+        const RESP = {{ craft.a11y.responsibilities()|json_encode|raw }};
+        const SEVERITY = {{ {
+            error: 'Error'|t('accessibility-audit'),
+            warning: 'Warning'|t('accessibility-audit'),
+            notice: 'Notice'|t('accessibility-audit'),
+        }|json_encode|raw }};
+        const RANK = { beginner: 1, intermediate: 2, advanced: 3 };
+        const BUTTONS = {{ (craft.a11y.isPlus ? [{
+            label: 'Download fix guide'|t('accessibility-audit'),
+            icon: 'download',
+            href: actionUrl('accessibility-audit/fix-guide/site', { siteId: siteId }),
+        }] : [])|json_encode|raw }};
+
+        const ruleCell = (r) => {
+            if (!r) { return ''; }
+            const label = SEVERITY[r.severity] || r.severity || '';
+            const dot = '<span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--' + Craft.escapeHtml(r.severity || '') + '" role="img" aria-label="' + Craft.escapeHtml(label) + '"></span>';
+            const name = '<span>' + AccessibilityAuditTable.ruleName(r.title, r.ruleId, r.detailUrl) + '</span>';
+            const type = r.elementType ? ' <span class="token">' + Craft.escapeHtml(Craft.t('accessibility-audit', r.elementType)) + '</span>' : '';
+            return '<span class="accessibility-audit-rowline" style="gap:8px">' + dot + name + type + '</span>';
+        };
+
+        // The same markup as the difficulty macro on the rule's own page.
+        const difficultyCell = (v) => {
+            if (!RANK[v]) { return '<span class="light">—</span>'; }
+            const dots = [1, 2, 3].map((n) => '<span class="accessibility-audit-difficulty-dot' + (n <= RANK[v] ? ' filled' : '') + '"></span>').join('');
+            return '<span class="accessibility-audit-difficulty accessibility-audit-difficulty--' + v + '">'
+                + '<span class="accessibility-audit-difficulty__dots">' + dots + '</span> '
+                + Craft.escapeHtml(v.charAt(0).toUpperCase() + v.slice(1)) + '</span>';
+        };
+
+        const columns = [
+            { name: 'rule', title: Craft.t('accessibility-audit', 'Issue'), callback: ruleCell },
+            { name: 'wcagLevel', title: Craft.t('accessibility-audit', 'WCAG'), callback: (v) => v
+                ? '<span class="accessibility-audit-level accessibility-audit-level--' + Craft.escapeHtml(v.toLowerCase()) + '">' + Craft.escapeHtml(v) + '</span>'
+                : '<span class="accessibility-audit-level accessibility-audit-level--bp">BP</span>' },
+            { name: 'sc', title: Craft.t('accessibility-audit', 'SC'), callback: (v) => '<span class="code">' + Craft.escapeHtml(v || '—') + '</span>' },
+            { name: 'difficulty', title: Craft.t('accessibility-audit', 'Difficulty'), callback: difficultyCell },
+            { name: 'owner', title: Craft.t('accessibility-audit', 'Owner'), callback: (v) => {
+                const r = RESP[v];
+                return r ? '<span class="token accessibility-audit-owner--' + r.modifier + '">' + Craft.escapeHtml(r.label) + '</span>' : '<span class="light">—</span>';
+            } },
+            { name: 'count', title: Craft.t('accessibility-audit', 'Occurrences'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
+            { name: 'points', title: Craft.t('accessibility-audit', 'Points'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign', callback: (v) => '<span class="accessibility-audit-delta">+' + Craft.escapeHtml(v) + '</span>' },
+        ];
+
+        // Craft's table takes its endpoint once, so a new element-type filter
+        // builds the table again in a fresh container.
+        const wrap = document.getElementById('accessibility-audit-open-wrap');
+        const build = (elementType) => {
+            wrap.innerHTML = '<div id="accessibility-audit-open-table"></div>';
+            AccessibilityAuditTable.create({
+                container: '#accessibility-audit-open-table',
+                endpoint: 'accessibility-audit/dashboard/open-issues-table',
+                endpointParams: elementType !== 'all' ? 'elementType=' + encodeURIComponent(elementType) : '',
+                siteId: siteId,
+                columns: columns,
+                checkboxes: false,
+                bulkRescan: false,
+                buttons: BUTTONS,
+                emptyMessage: Craft.t('accessibility-audit', 'No issues match this filter.'),
+            });
+        };
+
+        const chips = document.getElementById('accessibility-audit-open-chips');
+        const select = document.getElementById('accessibility-audit-open-select');
+        const applyFilter = (filter) => {
+            if (chips) {
+                chips.querySelectorAll('[data-filter]').forEach((c) => {
+                    const on = c.dataset.filter === filter;
+                    c.classList.toggle('active', on);
+                    c.setAttribute('aria-pressed', on ? 'true' : 'false');
+                });
+            }
+            if (select) { select.value = filter; }
+            build(filter);
+        };
+
+        if (chips) {
+            chips.addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-filter]');
+                if (btn) { applyFilter(btn.dataset.filter); }
+            });
+        }
+        if (select) {
+            select.addEventListener('change', () => applyFilter(select.value));
+        }
+
+        build('all');
+    })();
+    {% endjs %}
     {% endif %}
 
 
@@ -91,10 +209,10 @@
         // Navigation, so a link styled as a button (not a <button>), with the
         // 'view' glyph and label mirroring the Re-scan action button. Opens the
         // Page Report in a new tab, keeping the filtered list in place.
-        const reportCell = (v) => v
-            ? '<a class="btn small accessibility-audit-rowbtn" data-icon="view" href="' + v + '" target="_blank" rel="noopener" title="' + Craft.t('accessibility-audit', 'View report') + '">'
+        const reportCell = (v) => v && v.url
+            ? '<a class="btn small accessibility-audit-rowbtn" data-icon="view" href="' + Craft.escapeHtml(v.url) + '" target="_blank" rel="noopener" title="' + Craft.t('accessibility-audit', 'View report') + '">'
                 + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'View report') + '</span>'
-                + '<span class="visually-hidden"> (' + Craft.t('accessibility-audit', 'opens in new tab') + ')</span></a>'
+                + '<span class="visually-hidden"> ' + Craft.escapeHtml(v.title) + ' (' + Craft.t('accessibility-audit', 'opens in new tab') + ')</span></a>'
             : '';
 
         const scoreCell = (value) => {
@@ -113,9 +231,12 @@
                 + dot('warning', v.warnings, Craft.t('accessibility-audit', 'warnings'))
                 + dot('notice', v.notices, Craft.t('accessibility-audit', 'notices')) + '</span>';
         };
-        const rescanCell = (value) => value
-            ? '<button class="btn small accessibility-audit-rowbtn" data-icon="refresh" title="' + Craft.t('accessibility-audit', 'Re-scan') + '" data-accessibility-audit-scan-entry="' + value + '" data-site-id="' + siteId + '">'
-                + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'Re-scan') + '</span></button>'
+        // The page's name rides along unseen, so each row's button has its own
+        // accessible name.
+        const rescanCell = (v) => v && v.id
+            ? '<button class="btn small accessibility-audit-rowbtn" data-icon="refresh" title="' + Craft.t('accessibility-audit', 'Re-scan') + '" data-accessibility-audit-scan-entry="' + v.id + '" data-site-id="' + siteId + '">'
+                + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'Re-scan') + '</span>'
+                + '<span class="visually-hidden"> ' + Craft.escapeHtml(v.title) + '</span></button>'
             : '';
 
         const columns = [
@@ -139,7 +260,10 @@
             endpoint: 'accessibility-audit/dashboard/scanned-pages-table',
             siteId: siteId,
             columns: columns,
-            emptyMessage: Craft.t('accessibility-audit', 'No scanned pages yet.'),
+            // A clean site and an unscanned one both leave this list empty.
+            emptyMessage: {{ scannedCount ? 'true' : 'false' }}
+                ? Craft.t('accessibility-audit', 'No pages with issues to show.')
+                : Craft.t('accessibility-audit', 'No scanned pages yet.'),
             onLoaded: purgeDetailRows,
             exportUrl: '{{ actionUrl('accessibility-audit/dashboard/scanned-pages-export', {siteId: siteId}) }}',
         });
@@ -165,12 +289,17 @@
         // here cannot say something different to one drawn server-side.
         const RESP = {{ craft.a11y.responsibilities()|json_encode|raw }};
 
+        const SEVERITY = {{ {
+            error: 'Error'|t('accessibility-audit'),
+            warning: 'Warning'|t('accessibility-audit'),
+            notice: 'Notice'|t('accessibility-audit'),
+        }|json_encode|raw }};
+
         const ruleCell = (r) => {
             if (!r) { return ''; }
-            const label = r.severity ? r.severity.charAt(0).toUpperCase() + r.severity.slice(1) : '';
-            const dot = '<span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--' + r.severity + '" aria-hidden="true" title="' + label + '"></span>'
-                + '<span class="visually-hidden">' + label + ':</span>';
-            const link = '<a href="' + r.detailUrl + '">' + Craft.escapeHtml(r.ruleId) + '</a>';
+            const label = SEVERITY[r.severity] || r.severity || '';
+            const dot = '<span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--' + Craft.escapeHtml(r.severity || '') + '" role="img" aria-label="' + Craft.escapeHtml(label) + '"></span>';
+            const link = '<span>' + AccessibilityAuditTable.ruleName(r.title, r.ruleId, r.detailUrl) + '</span>';
             const type = r.elementType ? ' <span class="token">' + Craft.escapeHtml(Craft.t('accessibility-audit', r.elementType)) + '</span>' : '';
             return '<span class="accessibility-audit-rowline" style="gap:8px">' + dot + link + type + '</span>';
         };

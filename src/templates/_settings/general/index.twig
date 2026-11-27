@@ -50,6 +50,8 @@
         instructions: 'The score the site is aiming for (0 to 100). The Overview tracks progress against it and the CI endpoint fails a build that falls below it. 90 is a sensible bar for most sites. Set it to 0 to turn the target off.'|t('accessibility-audit'),
         id: 'targetScore',
         name: 'settings[targetScore]',
+        warning: config.targetScore is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.targetScore is defined,
         value: settings.targetScore,
         type: 'number',
         min: 0,
@@ -68,11 +70,14 @@
         id: 'frontendAxe',
         name: 'settings[frontendAxe]',
         on: settings.frontendAxe,
+        toggle: 'accessibility-audit-overlay-options',
         errors: settings.getErrors('frontendAxe'),
         warning: config.frontendAxe is defined ? 'Overridden by config file.'|t('accessibility-audit'),
         disabled: config.frontendAxe is defined,
     }) }}
 
+    {% set overlayHasErrors = settings.hasErrors('overlayPosition') or settings.hasErrors('overlayCollapseWhenIdle') or settings.hasErrors('overlayIdleSeconds') %}
+    <div id="accessibility-audit-overlay-options"{% if not settings.frontendAxe and not overlayHasErrors %} class="hidden"{% endif %}>
     {{ forms.selectField({
         label: 'Overlay Position'|t('accessibility-audit'),
         instructions: 'Which corner of the screen the overlay panel and its badge dock to.'|t('accessibility-audit'),
@@ -97,11 +102,13 @@
         id: 'overlayCollapseWhenIdle',
         name: 'settings[overlayCollapseWhenIdle]',
         on: settings.overlayCollapseWhenIdle,
+        toggle: 'accessibility-audit-overlay-idle',
         errors: settings.getErrors('overlayCollapseWhenIdle'),
         warning: config.overlayCollapseWhenIdle is defined ? 'Overridden by config file.'|t('accessibility-audit'),
         disabled: config.overlayCollapseWhenIdle is defined,
     }) }}
 
+    <div id="accessibility-audit-overlay-idle"{% if not settings.overlayCollapseWhenIdle and not settings.hasErrors('overlayIdleSeconds') %} class="hidden"{% endif %}>
     {{ forms.textField({
         label: 'Idle Collapse Delay'|t('accessibility-audit'),
         instructions: 'Seconds of inactivity before the overlay collapses back to its badge. Only applies when “Collapse to Badge When Idle” is on.'|t('accessibility-audit'),
@@ -116,12 +123,12 @@
         warning: config.overlayIdleSeconds is defined ? 'Overridden by config file.'|t('accessibility-audit'),
         disabled: config.overlayIdleSeconds is defined,
     }) }}
+    </div>
+    </div>
 
     <hr>
 
-    {% if isPro %}
-       
-
+    {% if isPlus %}
         {{ forms.lightswitchField({
             label: 'Readability Preview'|t('accessibility-audit'),
             instructions: 'Adds a Readability view to the Preview menu of every entry the scanner covers.'|t('accessibility-audit')
@@ -150,11 +157,13 @@
             warning: config.readabilityTarget is defined ? 'Overridden by config file.'|t('accessibility-audit'),
             disabled: config.readabilityTarget is defined,
         }) }}
+    {% endif %}
 
+    {% if isPro %}
         {{ forms.autosuggestField({
             label: 'VPAT Export Template'|t('accessibility-audit'),
             instructions: 'Path to a site template that renders the VPAT export in place of the built-in document, e.g. `_vpat/export`.'|t('accessibility-audit')
-                ~ ' <span class="info">' ~ 'It receives the same `report` variable the built-in export gets and is responsible for the whole page, so it can carry your own branding and layout. Leave it empty for the built-in print-ready document. If the template cannot be found, the built-in one is used rather than nothing.'|t('accessibility-audit') ~ '</span>',
+                ~ ' <span class="info">' ~ 'It receives the same `report` variable the built-in export gets and is responsible for the whole page, so it can carry your own branding and layout. Leave it empty for the built-in print-ready document. If the template cannot be found, the built-in one is used instead.'|t('accessibility-audit') ~ '</span>',
             id: 'vpatExportTemplate',
             name: 'settings[vpatExportTemplate]',
             suggestions: craft.cp.getTemplateSuggestions(),

@@ -1,0 +1,121 @@
+{% import 'accessibility-audit/_macros' as macros %}
+{% set filterBase = filterBase ?? {} %}
+{% set pdfStatus = pdfStatus ?? 'issues' %}
+{% set pdfProblem = pdfProblem ?? null %}
+{% set pdfRows = pdfRows ?? [] %}
+{% set pdfReasons = pdfReasons ?? {} %}
+
+{% if not isPlus %}
+    {% include 'accessibility-audit/_includes/pro-upsell' with {
+        feature: 'PDF checks'|t('accessibility-audit'),
+        text: 'Check every PDF in the asset library for the failures a machine can settle: tags, language, title, alt text on figures, form fields, and more. Available on the Plus edition.'|t('accessibility-audit'),
+        edition: 'plus',
+        headingLevel: 2,
+    } only %}
+{% elseif not pdfEnabled %}
+    <p class="light">
+        {{ 'PDF checks are turned off.'|t('accessibility-audit') }}
+        <a href="{{ cpUrl('accessibility-audit/settings/scanning') }}" class="go">{{ 'Turn them on under Settings'|t('accessibility-audit') }}</a>
+    </p>
+{% else %}
+    {% if pdfRows is empty %}
+        <div class="zilch">
+            {% if pdfStats.checked + pdfStats.notChecked == 0 %}
+                <p>{{ 'No PDF has been checked yet'|t('accessibility-audit') }}</p>
+                <p class="light">{{ 'New and replaced PDFs are checked as they arrive. Run “Check all PDFs” to check the ones already in the library.'|t('accessibility-audit') }}</p>
+            {% elseif pdfStatus in ['issues', 'needs-fixing'] and not pdfProblem and not (filterBase.search ?? null) and not (filterBase.volume ?? null) %}
+                <p>{{ 'No PDF needs attention.'|t('accessibility-audit') }}</p>
+            {% else %}
+                <p>{{ 'No PDFs match these filters.'|t('accessibility-audit') }}</p>
+            {% endif %}
+        </div>
+    {% else %}
+        {% set severityLabels = {
+            error: 'Error'|t('accessibility-audit'),
+            warning: 'Warning'|t('accessibility-audit'),
+            review: 'Needs review'|t('accessibility-audit'),
+            notice: 'Notice'|t('accessibility-audit'),
+        } %}
+        <div class="tableview tablepane">
+            <table class="data fullwidth">
+                <thead>
+                    <tr>
+                        <th scope="col">{{ 'Document'|t('accessibility-audit') }}</th>
+                        <th scope="col">{{ 'Filename'|t('app') }}</th>
+                        <th scope="col">{{ 'Problems'|t('accessibility-audit') }}</th>
+                        <th scope="col" class="thin">{{ 'Pages'|t('accessibility-audit') }}</th>
+                        <th scope="col">{{ 'Location'|t('app') }}</th>
+                        <th scope="col" class="thin"><span class="visually-hidden">{{ 'Link'|t('app') }}</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in pdfRows %}
+                        {% set asset = row.asset %}
+                        {% set check = row.check %}
+                        {% set meta = check.meta ?? {} %}
+                        <tr data-asset-id="{{ asset.id }}">
+                            <th scope="row" class="accessibility-audit-pdf-doc">
+                                <div class="flex flex-nowrap">
+                                <span aria-hidden="true">{{ elementChip(asset, { showLabel: false, showStatus: false, attributes: { class: ['chromeless'] } }) }}</span>
+                                <a href="{{ cpUrl('accessibility-audit/assets/pdf/' ~ asset.id) }}">{{ (meta.title ?? null) ?: (asset.title ?: asset.filename) }}</a>
+                                {% if check.hasForm ?? false %}<span class="badge">{{ 'Form'|t('accessibility-audit') }}</span>{% endif %}
+                                </div>
+                            </th>
+                            <td>{{ asset.filename }}</td>
+                            <td>
+                                {% if check is null %}
+                                    <span class="light">{{ 'Not checked yet'|t('accessibility-audit') }}</span>
+                                {% elseif check.status == 'not-checked' %}
+                                    <span class="token accessibility-audit-problem"><span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--notice" aria-hidden="true"></span>{{ pdfReasons[check.reason].label ?? check.reason }}</span>
+                                {% elseif row.failing is empty %}
+                                    <span class="light"><span class="accessibility-audit-resolved-check" data-icon="check" aria-hidden="true"></span> {{ 'Passed'|t('accessibility-audit') }}</span>
+                                {% else %}
+                                    {% set tokens = [] %}
+                                    {% for item in row.failing %}
+                                        {% set tokens = tokens|merge([tag('span', {
+                                            class: ['token', 'accessibility-audit-problem'],
+                                            html: tag('span', { class: ['accessibility-audit-legend__dot', 'accessibility-audit-legend__dot--' ~ (item.severity in ['error', 'warning'] ? item.severity : 'notice')], 'aria-hidden': 'true' })
+                                                ~ tag('span', { class: 'visually-hidden', text: (severityLabels[item.severity] ?? '') ~ ': ' })
+                                                ~ (item.label|e),
+                                        })]) %}
+                                    {% endfor %}
+                                    <div class="inline-chips">
+                                        {{ tokens|first|raw }}
+                                        {% if tokens|length > 1 %}
+                                            {% set more = tokens|length - 1 %}
+                                            <button type="button" class="btn small accessibility-audit-problems-more" aria-expanded="false" aria-label="{{ '{n} more'|t('accessibility-audit', { n: more }) }}" data-other="{{ tokens|slice(1)|join('') }}">+{{ more }}</button>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
+                            </td>
+                            <td class="thin">{{ meta.pages ?? '' }}</td>
+                            <td>{% set folderPath = (asset.folder.path ?? '')|trim('/') %}<a href="{{ cpUrl('assets/' ~ asset.volume.handle ~ (folderPath ? '/' ~ folderPath : '')) }}">{{ asset.volume.name }}{% if folderPath %}/{{ folderPath }}{% endif %}</a></td>
+                            <td class="thin">{% if asset.url %}{{ asset.getAttributeHtml('link')|raw }}{% endif %}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+{% js %}
+(function () {
+  'use strict';
+  // Same reveal as Craft's relation previews, but focus lands on the first revealed
+  // token: the tokens are not focusable, so Craft's own handler would drop focus.
+  document.addEventListener('click', function (event) {
+    const button = event.target.closest('.accessibility-audit-problems-more');
+    if (!button) {
+      return;
+    }
+    const template = document.createElement('template');
+    template.innerHTML = button.dataset.other || '';
+    const first = template.content.firstElementChild;
+    button.replaceWith(template.content);
+    if (first) {
+      first.setAttribute('tabindex', '-1');
+      first.focus();
+    }
+  });
+})();
+{% endjs %}
+{% endif %}

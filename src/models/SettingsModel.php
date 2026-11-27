@@ -9,9 +9,11 @@ namespace johnhenry\accessibilityaudit\models;
 use Craft;
 use craft\base\Model;
 use craft\helpers\App;
+use Dompdf\Adapter\CPDF;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\helpers\ScannableElementTypes;
 use johnhenry\accessibilityaudit\services\HeadlessScanner;
+use johnhenry\accessibilityaudit\services\PdfChecker;
 use johnhenry\accessibilityaudit\services\ReadabilityService;
 
 /**
@@ -44,6 +46,33 @@ class SettingsModel extends Model
      * Resolved-issue retention: never pruned, kept as a permanent record.
      */
     public const RESOLVED_RETENTION_FOREVER = 'forever';
+
+    /**
+     * Scheduled summary: not sent.
+     */
+    public const REPORT_SCHEDULE_OFF = 'off';
+
+    /**
+     * Scheduled summary: sent once a week, covering the last 7 days.
+     */
+    public const REPORT_SCHEDULE_WEEKLY = 'weekly';
+
+    /**
+     * Scheduled summary: sent once a month, covering the month before.
+     */
+    public const REPORT_SCHEDULE_MONTHLY = 'monthly';
+
+    /**
+     * New uploads' alt text drafts: every one waits under Drafts to review.
+     * The default.
+     */
+    public const NEW_ASSET_ALT_REVIEW = 'review';
+
+    /**
+     * New uploads' alt text drafts: one Claude flagged nothing to check in is
+     * saved to the image; the rest wait under Drafts to review.
+     */
+    public const NEW_ASSET_ALT_SAVE = 'save';
 
     /**
      * The target score a fresh install starts on, so the dashboard has a bar to
@@ -172,6 +201,20 @@ class SettingsModel extends Model
     public int $browserSettleMs = 2000;
 
     /**
+     * @var bool Whether PDF assets are checked for accessibility. Plus
+     * and Pro only: on Lite nothing is checked whatever this says.
+     */
+    public bool $pdfChecks = true;
+
+    /**
+     * @var int The largest PDF checked, in bytes. Larger files are listed as
+     * not checked rather than skipped. Held between PdfChecker::MIN_MAX_BYTES
+     * and PdfChecker::MAX_MAX_BYTES at check time as well as on save, because
+     * a config file override never passes through validation.
+     */
+    public int $pdfMaxBytes = PdfChecker::DEFAULT_MAX_BYTES;
+
+    /**
      * @var string Overrides the User-Agent for every scanner request against
      * the site: the PHP scanner's HTML fetch, the readability fetch, and the
      * headless Chrome browser pass. Lets hosts allow-list the scanner in WAF
@@ -190,14 +233,14 @@ class SettingsModel extends Model
     /**
      * @var bool Whether elements the scanner covers get a Readability view in
      * their Preview menu, showing the text being written with its long
-     * sentences marked. Pro only.
+     * sentences marked. Plus and Pro only.
      */
     public bool $readabilityPreviewTarget = true;
 
     /**
      * @var string The reading target the Readability preview marks sentences
      * against for everyone who hasn't picked their own: 'accessible', 'default'
-     * or 'technical'. Pro only.
+     * or 'technical'. Plus and Pro only.
      */
     public string $readabilityTarget = ReadabilityService::DEFAULT_TARGET;
 
@@ -315,9 +358,16 @@ class SettingsModel extends Model
     public string $altTextLanguage = 'English';
 
     /**
-     * @var bool Whether to auto-generate alt text on image upload.
+     * @var bool Whether to draft alt text for review on image upload.
      */
     public bool $autoGenerateAlt = false;
+
+    /**
+     * @var string What happens to a new upload's alt text draft: `review`
+     *      keeps every draft for an editor, `save` writes the Standard version
+     *      to the image when Claude flagged nothing to check.
+     */
+    public string $newAssetAltMode = self::NEW_ASSET_ALT_REVIEW;
 
     /**
      * @var bool Whether to email a notification when a scan crosses a threshold.
@@ -353,6 +403,40 @@ class SettingsModel extends Model
      * @var int The number of points a score must drop before a notification fires.
      */
     public int $notifyScoreDropThreshold = 10;
+
+    /**
+     * @var string How often the directors summary is sent: one of the
+     * REPORT_SCHEDULE_* constants. Pro only.
+     */
+    public string $reportSchedule = self::REPORT_SCHEDULE_OFF;
+
+    /**
+     * @var string Comma- or newline-separated addresses the scheduled summary
+     * goes to. Empty uses the notification recipients.
+     */
+    public string $reportScheduleRecipients = '';
+
+    /**
+     * @var bool Whether the scheduled summary is also posted to the Slack webhook.
+     */
+    public bool $reportScheduleSlack = false;
+
+    /**
+     * @var bool Whether the emailed summary carries a PDF of itself.
+     */
+    public bool $reportScheduleAttachPdf = true;
+
+    /**
+     * @var string The paper size of the emailed summary PDF: any size dompdf
+     * knows, such as 'a4', 'letter' or 'legal'. Set from the config file.
+     */
+    public string $pdfPaperSize = 'a4';
+
+    /**
+     * @var string The orientation of the emailed summary PDF: 'portrait' or
+     * 'landscape'. Set from the config file.
+     */
+    public string $pdfPaperOrientation = 'portrait';
 
     /**
      * @var ?string A token used to authenticate CI/CD webhook requests, or null.
@@ -533,7 +617,7 @@ class SettingsModel extends Model
     /**
      * The CSS selectors every scan surface excludes: the built-in
      * consent-platform defaults plus the admin's own lines. All four engines
-     * (headless axe, the Inspect preview pass, the frontend overlay, and the
+     * (headless axe, the Page Report preview pass, the frontend overlay, and the
      * PHP scanner) read from here so an exclusion holds everywhere at once.
      *
      * @return string[]
@@ -641,9 +725,22 @@ class SettingsModel extends Model
             [['readabilityTarget'], 'in', 'range' => array_keys(ReadabilityService::TARGETS)],
             [['scanOnSave', 'frontendAxe', 'overlayCollapseWhenIdle', 'autoGenerateAlt', 'en301549', 'chromeNoSandbox', 'decoupledOverlay', 'readabilityPreviewTarget'], 'boolean'],
             [['resolvedRetention'], 'in', 'range' => [self::RESOLVED_RETENTION_WITH_SCANS, self::RESOLVED_RETENTION_KEEP_DAYS, self::RESOLVED_RETENTION_FOREVER]],
+            [['reportSchedule'], 'in', 'range' => [self::REPORT_SCHEDULE_OFF, self::REPORT_SCHEDULE_WEEKLY, self::REPORT_SCHEDULE_MONTHLY]],
+            [['reportScheduleRecipients'], 'string'],
+            [['reportScheduleSlack', 'reportScheduleAttachPdf'], 'boolean'],
+            [['pdfPaperSize'], 'in', 'range' => array_keys(CPDF::$PAPER_SIZES)],
+            [['pdfPaperOrientation'], 'in', 'range' => ['portrait', 'landscape']],
             [['overlayPosition'], 'in', 'range' => ['bottom-right', 'bottom-left', 'top-right', 'top-left']],
+            [['newAssetAltMode'], 'in', 'range' => [self::NEW_ASSET_ALT_REVIEW, self::NEW_ASSET_ALT_SAVE]],
             [['overlayIdleSeconds'], 'integer', 'min' => 3, 'max' => 600],
             [['browserSettleMs'], 'integer', 'min' => 0, 'max' => HeadlessScanner::MAX_SETTLE_MS],
+            [['pdfChecks'], 'boolean'],
+            [['pdfMaxBytes'], 'integer',
+                'min' => PdfChecker::MIN_MAX_BYTES,
+                'max' => PdfChecker::MAX_MAX_BYTES,
+                'tooSmall' => Craft::t('accessibility-audit', 'Keep it between {min} and {max} MB.', self::_pdfCapRangeMb()),
+                'tooBig' => Craft::t('accessibility-audit', 'Keep it between {min} and {max} MB.', self::_pdfCapRangeMb()),
+            ],
             [['notifyEmailEnabled', 'notifySlackEnabled', 'notifyOnNewError', 'notifyOnScoreDrop'], 'boolean'],
             [['retainDays'], 'integer', 'min' => 0],
             [['targetScore'], 'integer', 'min' => 0, 'max' => 100],
@@ -751,6 +848,22 @@ class SettingsModel extends Model
     }
 
     /**
+     * The PDF size cap's bounds in megabytes, for the validation message.
+     *
+     * @return array{min: int, max: int}
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private static function _pdfCapRangeMb(): array
+    {
+        return [
+            'min' => intdiv(PdfChecker::MIN_MAX_BYTES, 1048576),
+            'max' => intdiv(PdfChecker::MAX_MAX_BYTES, 1048576),
+        ];
+    }
+
+    /**
      * Whether a string is a hostname or IP literal and nothing else.
      *
      * parse_url() takes any character it is given as a host, so `*.example.com`
@@ -792,6 +905,8 @@ class SettingsModel extends Model
             'chromeWsEndpoint' => Craft::t('accessibility-audit', 'Remote Chrome Endpoint'),
             'chromeNoSandbox' => Craft::t('accessibility-audit', 'Launch Chrome Without Sandbox'),
             'browserSettleMs' => Craft::t('accessibility-audit', 'Browser Settle Time (ms)'),
+            'pdfChecks' => Craft::t('accessibility-audit', 'Check PDF Files'),
+            'pdfMaxBytes' => Craft::t('accessibility-audit', 'Largest PDF to Check'),
             'scannerUserAgent' => Craft::t('accessibility-audit', 'Scanner User-Agent'),
             'customUrls' => Craft::t('accessibility-audit', 'Additional URLs'),
             'ignoreRules' => Craft::t('accessibility-audit', 'Ignored Rules'),

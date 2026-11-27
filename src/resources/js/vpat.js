@@ -24,6 +24,12 @@
         }
     }
 
+    // Below Pro the page shows the upgrade prompt in place of the form, so
+    // there is nothing here to wire up.
+    if (!document.getElementById('vpat-save-meta')) {
+        return;
+    }
+
     // ── Product info save ───────────────────────────────────────────────────
 
     document.getElementById('vpat-save-meta').addEventListener('click', async () => {
@@ -61,7 +67,7 @@
         try {
             const result = await post(CFG.saveMetaUrl, data);
             if (result.success) {
-                setStatus(status, 'Saved ✓', false);
+                setStatus(status, Craft.t('accessibility-audit', 'Saved') + ' ✓', false);
                 if (window.Craft && Craft.cp) {
                     (Craft.cp.displaySuccess || Craft.cp.displayNotice).call(Craft.cp, CFG.savedMessage);
                 }
@@ -71,11 +77,11 @@
                 // save with no page re-render to surface it otherwise.
                 const messages = result.errors
                     ? Object.values(result.errors).flat()
-                    : (result.error ? [result.error] : ['Error saving']);
+                    : (result.error ? [result.error] : [Craft.t('accessibility-audit', 'Could not save.')]);
                 setStatus(status, messages.join(' '), true);
             }
         } catch (e) {
-            setStatus(status, 'Network error', true);
+            setStatus(status, Craft.t('accessibility-audit', 'Network error. Check your connection and try again.'), true);
         }
     });
 
@@ -182,20 +188,73 @@
             fill.style.width = rows.length ? Math.round((completed / rows.length) * 100) + '%' : '0%';
             fill.classList.toggle('accessibility-audit-vpat-progress__fill--complete', completed === rows.length);
         }
+
+        updateGapNotice();
     }
+
+    // ── Completeness ────────────────────────────────────────────────────────
+    // Counted across both tables. Unlike the headings' completed count, a row
+    // left on Not Evaluated is unanswered here, as that is how it exports.
+
+    function countGaps() {
+        let unanswered = 0;
+        let remarks = 0;
+
+        document.querySelectorAll('.accessibility-audit-vpat-row').forEach(row => {
+            const level = row.querySelector('.accessibility-audit-vpat-select')?.value || row.dataset.autoLevel || '';
+            const text  = (row.querySelector('.accessibility-audit-vpat-remarks')?.value || '').trim();
+            if (level === '' || level === 'Not Evaluated') unanswered++;
+            if (REMARK_REQUIRED_LEVELS.includes(level) && text === '') remarks++;
+        });
+
+        return { unanswered, remarks };
+    }
+
+    function gapText(gaps) {
+        const parts = [];
+        if (gaps.unanswered > 0) {
+            parts.push(Craft.t('accessibility-audit', '{n, plural, =1{# criterion still needs an answer.} other{# criteria still need an answer.}} Unanswered criteria export as Not Evaluated.', { n: gaps.unanswered }));
+        }
+        if (gaps.remarks > 0) {
+            parts.push(Craft.t('accessibility-audit', '{n, plural, =1{# criterion needs a remark to say why it got that level.} other{# criteria need a remark to say why they got that level.}}', { n: gaps.remarks }));
+        }
+        return parts.join(' ');
+    }
+
+    function updateGapNotice() {
+        const notice = document.getElementById('vpat-gaps');
+        const text   = document.getElementById('vpat-gaps-text');
+        if (!notice || !text) return;
+
+        const message = gapText(countGaps());
+        notice.hidden = message === '';
+        if (text.textContent.trim() !== message) text.textContent = message;
+    }
+
+    // A native confirm, as Craft's element actions use. Cancelling stops the
+    // download, or the new tab opening.
+    document.querySelectorAll('[data-vpat-export]').forEach(link => {
+        link.addEventListener('click', (e) => {
+            const message = gapText(countGaps());
+            if (message === '') return;
+            if (!window.confirm(Craft.t('accessibility-audit', 'This report still has gaps. {gaps} Export anyway?', { gaps: message }))) {
+                e.preventDefault();
+            }
+        });
+    });
 
     function saveCriterion(criterion, level, remarks, statusEl) {
         clearTimeout(timers[criterion]);
         timers[criterion] = setTimeout(async () => {
             try {
                 const result = await post(CFG.saveCriterionUrl, { siteId, criterion, level, remarks });
-                if (statusEl) setStatus(statusEl, result.success ? 'Saved ✓' : (result.error || 'Error'), !result.success);
+                if (statusEl) setStatus(statusEl, result.success ? Craft.t('accessibility-audit', 'Saved') + ' ✓' : (result.error || Craft.t('accessibility-audit', 'Could not save.')), !result.success);
                 if (result.success) {
                     const card = statusEl?.closest('.accessibility-audit-vpat-card');
                     if (card) updateTableProgress(card);
                 }
             } catch (e) {
-                if (statusEl) setStatus(statusEl, 'Network error', true);
+                if (statusEl) setStatus(statusEl, Craft.t('accessibility-audit', 'Network error. Check your connection and try again.'), true);
             }
         }, 600);
     }
@@ -274,10 +333,10 @@
                     statusEl.style.color = '#7a5200';
                     textarea.focus();
                 } else {
-                    setStatus(statusEl, result.error || 'Drafting failed', true);
+                    setStatus(statusEl, result.error || Craft.t('accessibility-audit', 'Drafting failed.'), true);
                 }
             } catch (e) {
-                setStatus(statusEl, 'Network error', true);
+                setStatus(statusEl, Craft.t('accessibility-audit', 'Network error. Check your connection and try again.'), true);
             } finally {
                 btn.disabled    = false;
                 btn.textContent = Craft.t('accessibility-audit', 'Draft with AI');

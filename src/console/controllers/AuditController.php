@@ -12,11 +12,13 @@ use craft\console\Controller;
 use craft\db\Query;
 use craft\elements\Asset;
 use craft\errors\SiteNotFoundException;
+use craft\helpers\Queue as QueueHelper;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\base\ConsoleSiteTrait;
 use johnhenry\accessibilityaudit\helpers\ElementLabel;
 use johnhenry\accessibilityaudit\jobs\AuditAssets;
-use johnhenry\accessibilityaudit\services\AuditService;
+use johnhenry\accessibilityaudit\jobs\CheckPdf;
+use johnhenry\accessibilityaudit\jobs\CheckPdfs;
 use Throwable;
 use yii\base\InvalidConfigException;
 use yii\console\ExitCode;
@@ -30,9 +32,12 @@ use yii\helpers\Console;
  *   php craft accessibility-audit/audit/scan-all
  *   php craft accessibility-audit/audit/scan-element --element-id=42
  *   php craft accessibility-audit/audit/scan-assets
+ *   php craft accessibility-audit/audit/check-pdfs --force
  *   php craft accessibility-audit/audit/prune --days=90
  *   php craft accessibility-audit/audit/prune-excluded
  *   php craft accessibility-audit/audit/report
+ *   php craft accessibility-audit/audit/snapshot
+ *   php craft accessibility-audit/audit/send-reports --force
  *
  * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
@@ -78,6 +83,11 @@ class AuditController extends Controller
      */
     public ?string $url = null;
 
+    /**
+     * @var bool check-pdfs: check every PDF again, including unchanged ones. send-reports: send every summary now, due or not.
+     */
+    public bool $force = false;
+
     // Public Methods
     // =========================================================================
 
@@ -91,6 +101,7 @@ class AuditController extends Controller
             'scan-element' => ['elementId', 'site'],
             'scan-url' => ['url', 'site'],
             'prune' => ['days'],
+            'check-pdfs', 'send-reports' => ['force'],
             default => [],
         });
     }
@@ -166,10 +177,12 @@ class AuditController extends Controller
 
                 $result = $audit->scanElement($element);
 
-                // A page that could not be read has no score, and printing one
-                // for it reads as a verdict on a page nobody opened.
-                if (($result['error'] ?? null) !== null) {
-                    $this->stdout('skipped: ' . $result['error'] . PHP_EOL, Console::FG_YELLOW);
+                // A page that was never scanned has no score, and printing the
+                // placeholder one reads as a verdict on a page nobody opened.
+                $skipReason = $this->_skipReason($result);
+
+                if ($skipReason !== null) {
+                    $this->stdout('skipped: ' . $skipReason . PHP_EOL, Console::FG_YELLOW);
                     continue;
                 }
 
@@ -197,8 +210,10 @@ class AuditController extends Controller
                 try {
                     $result = $audit->scanUrl($customUrl, $siteId);
 
-                    if ($result['scanId'] === 0) {
-                        $this->stdout('SKIPPED: ' . ($result['error'] ?? 'scan limit reached') . "\n", Console::FG_YELLOW);
+                    $skipReason = $this->_skipReason($result);
+
+                    if ($skipReason !== null) {
+                        $this->stdout('skipped: ' . $skipReason . PHP_EOL, Console::FG_YELLOW);
                         continue;
                     }
 
@@ -253,7 +268,7 @@ class AuditController extends Controller
         $label = class_basename(get_class($element)) . ': ' . ElementLabel::for($element);
         $this->stdout("Scanning \"{$label}\"...\n");
 
-        $result = AccessibilityAudit::getInstance()->getAudit()->scanElement($element);
+        $result = AccessibilityAudit::getInstance()->getAudit()->scanElement($element, manual: true);
 
         // A scan that never ran still comes back with a score, because the
         // caller is expected to read why it stopped. Printing the number on its
@@ -326,7 +341,7 @@ class AuditController extends Controller
         }
         $this->stdout("Scanning {$this->url}...\n");
 
-        $result = AccessibilityAudit::getInstance()->getAudit()->scanUrl($this->url, $siteId);
+        $result = AccessibilityAudit::getInstance()->getAudit()->scanUrl($this->url, $siteId, manual: true);
 
         if (!empty($result['error'])) {
             $this->stderr($result['error'] . "\n", Console::FG_RED);
@@ -372,6 +387,37 @@ class AuditController extends Controller
     }
 
     /**
+     * Queue a check of every PDF asset for accessibility (Pro).
+     *
+     * PDFs already checked as they are now are passed over unless --force is given.
+     *
+     * @return int
+     * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function actionCheckPdfs(): int
+    {
+        $pdfAudit = AccessibilityAudit::getInstance()->getPdfAudit();
+
+        if (!$pdfAudit->isEnabled()) {
+            $this->stderr("PDF checks need the Plus edition, with the Check PDF Files setting on.\n", Console::FG_RED);
+
+            return ExitCode::UNAVAILABLE;
+        }
+
+        $total = (int)$pdfAudit->pdfQuery()->count();
+
+        QueueHelper::push(new CheckPdfs(['force' => $this->force]), ttr: CheckPdf::ttr());
+
+        $this->stdout("PDF check queued: {$total} PDF(s) will be checked as the queue runs.\n", Console::FG_GREEN);
+        $this->stdout("Run the queue with: php craft queue/run\n");
+
+        return ExitCode::OK;
+    }
+
+    /**
      * Prune old scan results.
      *
      * @return int
@@ -385,12 +431,13 @@ class AuditController extends Controller
         $plugin = AccessibilityAudit::getInstance();
 
         $days = $this->days;
+        $cap = $plugin->retentionCap();
 
         // Zero means "keep history for good" everywhere else the setting is
         // read, including the garbage-collection prune, so it means that here
         // too. Read as a cutoff instead it puts the boundary at this moment and
         // takes every scan ever recorded with it.
-        if ($days <= 0 && $plugin->isPro()) {
+        if ($days <= 0 && $cap === null) {
             $this->stdout(
                 "A retention of 0 keeps history for good. Nothing pruned.\n",
                 Console::FG_YELLOW
@@ -399,12 +446,12 @@ class AuditController extends Controller
             return ExitCode::OK;
         }
 
-        if (!$plugin->isPro() && ($days <= 0 || $days > AuditService::STANDARD_RETENTION_CAP)) {
+        if ($cap !== null && ($days <= 0 || $days > $cap)) {
             $this->stdout(
-                "Standard edition keeps at most " . AuditService::STANDARD_RETENTION_CAP . " days of history; pruning to that.\n",
+                AccessibilityAudit::editionName($plugin->edition) . " edition keeps at most {$cap} days of history; pruning to that.\n",
                 Console::FG_YELLOW
             );
-            $days = AuditService::STANDARD_RETENTION_CAP;
+            $days = $cap;
         }
 
         $this->stdout("Pruning scan results older than {$days} days...\n");
@@ -522,8 +569,92 @@ class AuditController extends Controller
         return ExitCode::OK;
     }
 
+    /**
+     * Record today's score snapshot for every site, for a daily cron job.
+     *
+     * @return int
+     * @throws \yii\db\Exception
+     * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function actionSnapshot(): int
+    {
+        $recorded = AccessibilityAudit::getInstance()->getSnapshots()->recordAll();
+
+        $this->stdout("Recorded today's snapshot for {$recorded} site(s).\n", Console::FG_GREEN);
+
+        return ExitCode::OK;
+    }
+
+    /**
+     * Send the scheduled directors summary for every site that is due one, for a daily cron job.
+     *
+     * @return int
+     * @throws \Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function actionSendReports(): int
+    {
+        $plugin = AccessibilityAudit::getInstance();
+        $reports = $plugin->getScheduledReports();
+
+        if (!$plugin->isPro()) {
+            $this->stderr("Scheduled summaries need the Pro edition.\n", Console::FG_RED);
+
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        if (!$reports->isEnabled()) {
+            $this->stdout("Scheduled summaries are off, or have no email recipients or Slack webhook. Set them under Settings, Notifications.\n", Console::FG_YELLOW);
+
+            return ExitCode::OK;
+        }
+
+        $sent = $reports->sendDue($this->force);
+        $this->stdout("Sent the summary for {$sent} site(s).\n", Console::FG_GREEN);
+
+        return ExitCode::OK;
+    }
+
     // Private Methods
     // =========================================================================
+
+    /**
+     * Why a scan result stored nothing, or null when the page was scanned.
+     *
+     * A result with no scan behind it still carries a score (0 for a capped
+     * page, 100 for an excluded one) so callers have to read why it stopped.
+     *
+     * @param array<string, mixed> $result A result from scanElement() or scanUrl().
+     * @return string|null The reason the page was skipped.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _skipReason(array $result): ?string
+    {
+        if (!empty($result['error'])) {
+            return (string)$result['error'];
+        }
+
+        if (!empty($result['limitReached'])) {
+            return 'scan limit reached for this edition';
+        }
+
+        if (!empty($result['excluded'])) {
+            return 'on the excluded list';
+        }
+
+        if ((int)($result['scanId'] ?? 0) === 0) {
+            return 'no page to scan';
+        }
+
+        return null;
+    }
 
     /**
      * How many pages of each element type the sweep covers, for the summary

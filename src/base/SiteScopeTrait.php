@@ -14,7 +14,7 @@ use craft\models\Site;
 /**
  * Which sites this install may act on.
  *
- * Standard is primary-site only, so a posted site id is never taken at face
+ * Lite and Plus are primary-site only, so a posted site id is never taken at face
  * value: every screen and endpoint resolves it through here, and a site the
  * edition or the user cannot reach is refused in one place rather than in each
  * caller. The edition check itself stays on the plugin class, which is what
@@ -30,7 +30,7 @@ trait SiteScopeTrait
 
     /**
      * The sites the plugin may operate on for the active edition. Multi-site is
-     * a Pro feature, so the Standard edition is limited to the primary site.
+     * a Pro feature, so Lite and Plus are limited to the primary site.
      *
      * Editable sites, not all sites: a user without permission for a site must
      * not be offered it in a switcher or shown its scan data. This mirrors
@@ -63,7 +63,7 @@ trait SiteScopeTrait
      * means a different site on another environment, and Craft's own CP chrome
      * (Craft.siteId, the `requestedSite` Twig global) reads the `site` handle.
      *
-     * Standard is primary-site only, so a `site` handle in the URL can't reach
+     * Lite and Plus are primary-site only, so a `site` handle in the URL can't reach
      * another site's data on that edition.
      *
      * @return Site
@@ -105,7 +105,7 @@ trait SiteScopeTrait
      * posts, whose URLs are rebuilt on every page load and never bookmarked.
      * Navigable CP pages use requestedSiteId() and the `site` handle instead.
      *
-     * On Standard (single-site) this is always the primary site, so a
+     * Below Pro (single-site) this is always the primary site, so a
      * non-primary `siteId` in a request can't reach another site's data. On Pro
      * the requested site is honoured when it exists and the user may edit it,
      * otherwise the primary site is returned.
@@ -160,7 +160,7 @@ trait SiteScopeTrait
     {
         $sites = Craft::$app->getSites();
 
-        // Standard covers the primary site and nothing else, so a statement
+        // Lite and Plus cover the primary site and nothing else, so a statement
         // asked for by any other site has nothing of its own to show.
         if (!$this->isPro()) {
             return $sites->getPrimarySite()->id;
@@ -181,7 +181,7 @@ trait SiteScopeTrait
      *
      * The boolean counterpart to resolveSiteId(): where that clamps an unknown
      * request back to the primary site, this reports a plain yes/no so a caller
-     * can refuse outright rather than silently retarget. On Standard only the
+     * can refuse outright rather than silently retarget. Below Pro only the
      * primary site is allowed (multi-site is Pro); on Pro the site must be one
      * the current user may actually edit, so a crafted ID can't reach a site
      * outside their permissions.

@@ -60,7 +60,7 @@
                             <summary class="accessibility-audit-panel__issue-sum">
                                 <span class="accessibility-audit-panel__dot accessibility-audit-panel__dot--{{ issue.severity }}" aria-hidden="true"></span>
                                 <span class="visually-hidden">{{ severityLabel }}: </span>
-                                <span class="accessibility-audit-panel__issue-name">{{ issue.ruleId }}</span>
+                                <span class="accessibility-audit-panel__issue-name">{{ issue.title ?? issue.ruleId }}</span>
                                 {% if issue.occurrences is defined %}
                                     <span class="accessibility-audit-panel__issue-count">
                                         {{- issue.occurrences -}}
@@ -70,18 +70,19 @@
                                 <span class="accessibility-audit-panel__chev" aria-hidden="true">›</span>
                             </summary>
                             <div class="accessibility-audit-panel__issue-body">
-                                {% if issue.message %}<p class="accessibility-audit-panel__issue-msg">{{ issue.message }}</p>{% endif %}
+                                {% if issue.message %}<p class="accessibility-audit-panel__issue-msg">{% if issue.messageHtml is defined %}{{ issue.messageHtml|raw }}{% else %}{{ issue.message }}{% endif %}</p>{% endif %}
                                 <div class="accessibility-audit-panel__issue-meta">
                                     {{ macros.conformanceBadge(issue.wcagLevel ?? null) }}
                                     {% if issue.wcagCriterion %}<span class="light">{{ issue.wcagCriterion }}</span>{% endif %}
-                                    {% if issue.helpUrl and issue.helpUrl matches '/^https?:\\/\\//i' %}<a class="accessibility-audit-panel__fix" href="{{ issue.helpUrl }}" target="_blank" rel="noopener">{{ 'How to fix'|t('accessibility-audit') }} ↗</a>{% endif %}
+                                    <span class="light code smalltext">{{ issue.ruleId }}</span>
+                                    {% if issue.helpUrl and issue.helpUrl matches '/^https?:\\/\\//i' %}<a class="accessibility-audit-panel__fix" href="{{ issue.helpUrl }}" target="_blank" rel="noopener">{{ 'How to fix'|t('accessibility-audit') }}<span class="visually-hidden"> ({{ 'opens in new tab'|t('accessibility-audit') }})</span> <span aria-hidden="true">↗</span></a>{% endif %}
                                 </div>
                             </div>
                         </details>
                     {% endfor %}
                 </div>
             {% else %}
-                <p class="accessibility-audit-panel__empty light"><span aria-hidden="true">✓</span> {{ 'No issues found.'|t('accessibility-audit') }}</p>
+                <p class="accessibility-audit-panel__empty light accessibility-audit-emptyok"><span class="accessibility-audit-resolved-check" data-icon="check" aria-hidden="true"></span> {{ 'No issues found.'|t('accessibility-audit') }}</p>
             {% endif %}
         {% else %}
             <p class="accessibility-audit-panel__empty light">{{ 'This entry has not been scanned yet.'|t('accessibility-audit') }}</p>
@@ -104,10 +105,11 @@
 
     <div class="accessibility-audit-panel__pane" id="{{ sbReadPanelId }}" role="tabpanel"
          aria-labelledby="{{ sbReadTabId }}" data-accessibility-audit-panel-pane="readability" hidden>
-        {% if not readabilityPro %}
+        {% if not readabilityAvailable %}
             {% include 'accessibility-audit/_includes/pro-upsell' with {
                 feature: 'Readability'|t('accessibility-audit'),
-                text: 'Check this entry\'s reading ease and grade level against WCAG 3.1.5 on the Pro edition.'|t('accessibility-audit'),
+                text: 'Check this entry\'s reading ease and grade level against WCAG 3.1.5 on the Plus edition.'|t('accessibility-audit'),
+                edition: 'plus',
                 inline: true,
             } only %}
         {% elseif not (readabilitySupported ?? true) %}
@@ -122,11 +124,18 @@
                     </span>
                 </p>
                 <p class="accessibility-audit-panel__basis light">
-                    {{ 'Reading ease {n}, {label}. For the saved version, analysed {date}.'|t('accessibility-audit', {
-                        n: readabilityResult.readingEase,
-                        label: readabilityResult.readingEaseLabel|t('accessibility-audit'),
-                        date: (readabilityDate ?? null) ? readabilityDate|date('short') : '',
-                    }) }}
+                    {% if readabilityDate ?? null %}
+                        {{ 'Reading ease {n}, {label}. For the saved version, analysed {date}.'|t('accessibility-audit', {
+                            n: readabilityResult.readingEase,
+                            label: readabilityResult.readingEaseLabel|t('accessibility-audit'),
+                            date: readabilityDate|date('short'),
+                        }) }}
+                    {% else %}
+                        {{ 'Reading ease {n}, {label}. For the saved version.'|t('accessibility-audit', {
+                            n: readabilityResult.readingEase,
+                            label: readabilityResult.readingEaseLabel|t('accessibility-audit'),
+                        }) }}
+                    {% endif %}
                 </p>
             {% else %}
                 <p class="accessibility-audit-panel__basis light">{{ 'This entry has not been analysed yet.'|t('accessibility-audit') }}</p>

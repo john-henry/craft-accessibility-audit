@@ -6,22 +6,184 @@
 
 namespace johnhenry\accessibilityaudit\services;
 
+use Craft;
 use craft\db\Query;
+use craft\helpers\Db;
+use craft\helpers\FileHelper;
+use Dompdf\Dompdf;
+use Dompdf\Options;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\events\RegisterReportsEvent;
 use johnhenry\accessibilityaudit\helpers\Csv;
 use johnhenry\accessibilityaudit\helpers\ElementLabel;
+use johnhenry\accessibilityaudit\reports\BaseReport;
+use johnhenry\accessibilityaudit\reports\DirectorsSummary;
+use johnhenry\accessibilityaudit\reports\FixedAndNew;
+use johnhenry\accessibilityaudit\reports\PagesBelowTarget;
 use yii\base\Component;
 
 /**
- * Builds accessibility reports from stored scan data.
+ * Builds accessibility reports from stored scan data, and keeps the list of
+ * reports on the Reports screen.
  *
  * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class ReportService extends Component
 {
+    // Const Properties
+    // =========================================================================
+
+    /**
+     * @event RegisterReportsEvent Fired when the list of reports is built, so a
+     * module can add its own or take one away.
+     */
+    public const EVENT_REGISTER_REPORTS = 'registerReports';
+
+    /**
+     * @var int The longest team note the directors summary keeps, in characters.
+     */
+    public const NOTE_MAX_LENGTH = 2000;
+
+    // Private Properties
+    // =========================================================================
+
+    /**
+     * @var BaseReport[]|null The reports, keyed by handle, once built.
+     */
+    private ?array $_reports = null;
+
     // Public Methods
     // =========================================================================
+
+    /**
+     * Every report on the Reports screen, keyed by handle, in listing order.
+     *
+     * @return array<string, BaseReport>
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function getReports(): array
+    {
+        if ($this->_reports !== null) {
+            return $this->_reports;
+        }
+
+        $event = new RegisterReportsEvent([
+            'reports' => [
+                new DirectorsSummary(),
+                new FixedAndNew(),
+                new PagesBelowTarget(),
+            ],
+        ]);
+        $this->trigger(self::EVENT_REGISTER_REPORTS, $event);
+
+        $this->_reports = [];
+
+        foreach ($event->reports as $report) {
+            $this->_reports[$report->handle()] = $report;
+        }
+
+        return $this->_reports;
+    }
+
+    /**
+     * One report by its handle.
+     *
+     * @param string $handle The report's handle.
+     * @return BaseReport|null The report, or null for a handle nothing uses.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function getReport(string $handle): ?BaseReport
+    {
+        return $this->getReports()[$handle] ?? null;
+    }
+
+    /**
+     * The team's note for a site's directors summary.
+     *
+     * @param int $siteId The site.
+     * @return string The note, empty when none has been written.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function getNote(int $siteId): string
+    {
+        return (string)(new Query())
+            ->select(['note'])
+            ->from('{{%accessibilityaudit_report_notes}}')
+            ->where(['siteId' => $siteId])
+            ->scalar();
+    }
+
+    /**
+     * Saves the team's note for a site's directors summary.
+     *
+     * Trimmed and cut to {@see self::NOTE_MAX_LENGTH} characters; an empty
+     * note clears it.
+     *
+     * @param int $siteId The site.
+     * @param string $note The note.
+     * @param int|null $userId Who wrote it.
+     * @return void
+     * @throws \yii\db\Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function saveNote(int $siteId, string $note, ?int $userId): void
+    {
+        $note = mb_substr(trim($note), 0, self::NOTE_MAX_LENGTH);
+        $values = ['note' => $note, 'userId' => $userId];
+
+        Db::upsert('{{%accessibilityaudit_report_notes}}', ['siteId' => $siteId] + $values, $values);
+    }
+
+    /**
+     * Turns a report's HTML into a PDF with dompdf.
+     *
+     * Nothing outside the document is fetched: remote resources, PHP and
+     * JavaScript are all off, since the HTML carries editor-written titles and
+     * notes. DejaVu Sans ships with dompdf and covers the accented and
+     * typographic characters the translations use. The paper size and
+     * orientation come from the pdfPaperSize and pdfPaperOrientation
+     * settings, so the template sets margins only. Dompdf's font cache and
+     * temp files go under Craft's runtime folder, because the vendor folder
+     * is read-only on many hosts.
+     *
+     * @param string $html A complete HTML document.
+     * @return string The PDF bytes.
+     * @throws \yii\base\Exception If the runtime folder cannot be created.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function htmlToPdf(string $html): string
+    {
+        $workDir = Craft::$app->getPath()->getRuntimePath() . DIRECTORY_SEPARATOR . 'accessibility-audit' . DIRECTORY_SEPARATOR . 'dompdf';
+        FileHelper::createDirectory($workDir);
+
+        $options = new Options();
+        $options->setIsRemoteEnabled(false);
+        $options->setIsPhpEnabled(false);
+        $options->setIsJavascriptEnabled(false);
+        $settings = AccessibilityAudit::getInstance()->getSettings();
+        $options->setDefaultFont('DejaVu Sans');
+        $options->setDefaultPaperSize($settings->pdfPaperSize);
+        $options->setDefaultPaperOrientation($settings->pdfPaperOrientation);
+        $options->setTempDir($workDir);
+        $options->setFontCache($workDir);
+
+        $dompdf = new Dompdf($options);
+        $dompdf->loadHtml($html, 'UTF-8');
+        $dompdf->render();
+
+        return (string)$dompdf->output();
+    }
 
     /**
      * Every outstanding issue on a site, as a CSV a person can open.

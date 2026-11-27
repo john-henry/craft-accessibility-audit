@@ -41,7 +41,7 @@
 {% set potentialEmpty = (activeTab == 'issues' and potentialRules|length == 0)
     or (activeTab == 'pages' and pages.total == 0) %}
 {% if activeTab != 'dismissed' and not potentialEmpty %}
-    <p class="light readable mb-l">{{ 'Potential issues cannot be automatically confirmed as failures: they require human review. Each check is phrased as a question to guide your decision. These don\'t count against your accessibility score until you confirm them.'|t('accessibility-audit') }}</p>
+    <p class="light readable mb-l">{{ 'A scanner can\'t confirm a potential issue as a failure by itself, so each one needs a person to review it. Every check is put as a question for you to answer. They don\'t count against your accessibility score until you confirm them.'|t('accessibility-audit') }}</p>
 {% endif %}
 
 {% if activeTab == 'issues' %}
@@ -66,18 +66,18 @@
 
         const columns = [
             { name: 'question', title: Craft.t('accessibility-audit', 'Potential issue'), callback: (p) => p
-                ? '<a href="' + p.url + '">' + Craft.escapeHtml(p.title) + '</a>' : '' },
+                ? AccessibilityAuditTable.ruleName(p.title, p.ruleId, p.url) : '' },
             { name: 'conformance', title: Craft.t('accessibility-audit', 'Conformance'), callback: (v) => v
                 ? '<span class="accessibility-audit-level accessibility-audit-level--' + v.toLowerCase() + '">' + Craft.escapeHtml(v) + '</span>'
                 : '<span class="accessibility-audit-level accessibility-audit-level--bp">BP</span>' },
             { name: 'sc', title: Craft.t('accessibility-audit', 'SC'), callback: (v) => '<span class="code">' + Craft.escapeHtml(v || '—') + '</span>' },
-            { name: 'responsibility', title: Craft.t('accessibility-audit', 'Responsibility'), callback: (v) => {
+            { name: 'responsibility', title: Craft.t('accessibility-audit', 'Owner'), callback: (v) => {
                 const r = RESP[v];
                 return r ? '<span class="token accessibility-audit-owner--' + r.modifier + '">' + Craft.escapeHtml(r.label) + '</span>' : '<span class="light">—</span>';
             } },
             { name: 'elementType', title: Craft.t('accessibility-audit', 'Element type'), callback: (v) => v
                 ? '<span class="token">' + Craft.escapeHtml(Craft.t('accessibility-audit', v)) + '</span>' : '<span class="light">—</span>' },
-            { name: 'count', title: Craft.t('accessibility-audit', 'Count'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
+            { name: 'count', title: Craft.t('accessibility-audit', 'Occurrences'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
             { name: 'pages', title: Craft.t('accessibility-audit', 'Pages'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
         ];
 
@@ -116,21 +116,26 @@
             return title + urlLine;
         };
         
-        const reportCell = (v) => v
-            ? '<a class="btn small accessibility-audit-rowbtn" data-icon="view" href="' + v + '" target="_blank" rel="noopener" title="' + Craft.t('accessibility-audit', 'View report') + '">'
+        // The page's name rides along unseen, so each row's buttons have their
+        // own accessible names.
+        const reportCell = (v) => v && v.url
+            ? '<a class="btn small accessibility-audit-rowbtn" data-icon="view" href="' + Craft.escapeHtml(v.url) + '" target="_blank" rel="noopener" title="' + Craft.t('accessibility-audit', 'View report') + '">'
                 + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'View report') + '</span>'
-                + '<span class="visually-hidden"> (' + Craft.t('accessibility-audit', 'opens in new tab') + ')</span></a>'
+                + '<span class="visually-hidden"> ' + Craft.escapeHtml(v.title) + ' (' + Craft.t('accessibility-audit', 'opens in new tab') + ')</span></a>'
             : '';
 
-        const rescanCell = (value) => value
-            ? '<button class="btn small accessibility-audit-rowbtn" data-icon="refresh" title="' + Craft.t('accessibility-audit', 'Re-scan') + '" data-accessibility-audit-scan-entry="' + value + '" data-site-id="' + siteId + '">'
-                + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'Re-scan') + '</span></button>'
+        const rescanCell = (v) => v && v.id
+            ? '<button class="btn small accessibility-audit-rowbtn" data-icon="refresh" title="' + Craft.t('accessibility-audit', 'Re-scan') + '" data-accessibility-audit-scan-entry="' + v.id + '" data-site-id="' + siteId + '">'
+                + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'Re-scan') + '</span>'
+                + '<span class="visually-hidden"> ' + Craft.escapeHtml(v.title) + '</span></button>'
             : '';
 
         const columns = [
             { name: 'page', title: Craft.t('accessibility-audit', 'Page'), callback: pageCell, sortField: true },
-            { name: 'issues', title: Craft.t('accessibility-audit', 'Issues'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
-            { name: 'count', title: Craft.t('accessibility-audit', 'Count'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
+            // Read the way the page report reads them: how many different
+            // questions the page raises, and how many answers it is waiting on.
+            { name: 'issues', title: Craft.t('accessibility-audit', 'Question types'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
+            { name: 'count', title: Craft.t('accessibility-audit', 'Needs review'), sortField: true, titleClass: 'rightalign', dataClass: 'rightalign' },
             { name: 'lastScanned', title: Craft.t('accessibility-audit', 'Last scanned'), sortField: true },
             { name: 'report', title: '', callback: reportCell },
             { name: 'rescan', title: '', callback: rescanCell },
@@ -193,6 +198,8 @@
                 + ' data-url="' + Craft.escapeHtml(v.url || '') + '"'
                 + ' data-rule-id="' + Craft.escapeHtml(v.ruleId) + '"'
                 + ' data-context="' + Craft.escapeHtml(v.context) + '"'
+                + ' data-selector="' + Craft.escapeHtml(v.selector || '') + '"'
+                + ' data-every-page="' + (v.everyPage ? '1' : '0') + '"'
                 + ' data-site-id="' + v.siteId + '">'
                 + Craft.t('accessibility-audit', 'Restore') + '</button>';
         };
@@ -203,12 +210,16 @@
             const date = v.date
                 ? '<div class="light" style="font-size:11px">' + Craft.escapeHtml(v.date) + '</div>'
                 : '';
-            return Craft.escapeHtml(v.name) + date;
+            const everyPage = v.everyPage
+                ? '<div><span class="accessibility-audit-every-page">' + Craft.t('accessibility-audit', 'Every page') + '</span></div>'
+                : '';
+            return Craft.escapeHtml(v.name) + date + everyPage;
         };
 
         const columns = [
             { name: 'page', title: Craft.t('accessibility-audit', 'Page'), callback: pageCell, sortField: true },
-            { name: 'rule', title: Craft.t('accessibility-audit', 'Check'), sortField: true },
+            { name: 'rule', title: Craft.t('accessibility-audit', 'Check'), sortField: true, callback: (r) => r
+                ? AccessibilityAuditTable.ruleName(r.title, r.ruleId) : '' },
             { name: 'question', title: Craft.t('accessibility-audit', 'What was dismissed'), callback: questionCell },
             { name: 'dismissedBy', title: Craft.t('accessibility-audit', 'Dismissed by'), callback: dismissedByCell },
             { name: 'restore', title: '', callback: restoreCell },

@@ -46,10 +46,14 @@ class Anthropic
     public const MODEL = 'claude-haiku-4-5-20251001';
 
     /**
-     * @var int How many tokens an alt-text reply may run to. Alt text that
-     *      needs more than this is too long to be read out as alt text.
+     * @var int How many tokens an alt-text reply may run to. A reply with all
+     *      three versions carries up to four sentences, the image type and the
+     *      notes, wrapped in JSON, and a language like German or Finnish can
+     *      take several tokens a word. A reply cut off at the limit can't be
+     *      read and is thrown away, so the ceiling sits well clear of that;
+     *      length itself is checked in PHP.
      */
-    public const ALT_TEXT_MAX_TOKENS = 150;
+    public const ALT_TEXT_MAX_TOKENS = 500;
 
     /**
      * @var int Seconds a request may run for. Guzzle waits forever by default,
@@ -112,26 +116,34 @@ class Anthropic
     }
 
     /**
-     * Asks for one image to be described, and hands back what came out.
+     * Asks for one image to be described as JSON, and hands back the reply.
+     *
+     * The image goes before the text, which is where Anthropic's vision docs
+     * say it works best. The reply is held to a JSON schema; the caller checks
+     * the stop reason, since a refusal or a reply cut off at the token limit
+     * may not match it.
      *
      * @param Client $client The HTTP client.
      * @param string $apiKey The resolved API key.
      * @param array<string, mixed> $imageSource The image content block source.
-     * @param string $prompt The prompt to send with it.
-     * @return string The alt text, empty where the reply carried none.
+     * @param string $system The system prompt.
+     * @param string $prompt The text sent after the image.
+     * @param array<string, mixed> $schema The JSON schema the reply must follow.
+     * @return array{stopReason: string, text: string} The stop reason and the reply's text block.
      * @throws GuzzleException
      * @throws JsonException
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.5.0
      */
-    public static function describeImage(Client $client, string $apiKey, array $imageSource, string $prompt): string
+    public static function describeImage(Client $client, string $apiKey, array $imageSource, string $system, string $prompt, array $schema): array
     {
         $response = $client->post(self::ENDPOINT, [
             'headers' => self::headers($apiKey),
             'json' => [
                 'model' => self::MODEL,
                 'max_tokens' => self::ALT_TEXT_MAX_TOKENS,
+                'system' => $system,
                 'messages' => [[
                     'role' => 'user',
                     'content' => [
@@ -139,11 +151,22 @@ class Anthropic
                         ['type' => 'text',  'text' => $prompt],
                     ],
                 ]],
+                'output_config' => [
+                    'format' => ['type' => 'json_schema', 'schema' => $schema],
+                ],
             ],
         ]);
 
         $body = json_decode((string)$response->getBody(), true, 512, JSON_THROW_ON_ERROR);
 
-        return trim($body['content'][0]['text'] ?? '');
+        $text = '';
+        foreach ((array)($body['content'] ?? []) as $block) {
+            if (($block['type'] ?? '') === 'text') {
+                $text = (string)($block['text'] ?? '');
+                break;
+            }
+        }
+
+        return ['stopReason' => (string)($body['stop_reason'] ?? ''), 'text' => trim($text)];
     }
 }

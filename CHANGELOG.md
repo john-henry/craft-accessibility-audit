@@ -1,5 +1,125 @@
 # Release Notes for Accessibility Audit
 
+## 2.0.0 - 2026-11-28
+
+> [!IMPORTANT]
+> Things to check when you update:
+> - The plugin now has three editions: Lite, Plus and Pro. Standard is now called Plus. New installs start on the free Lite edition, and existing sites keep the edition they're on.
+> - `getAssets()->scanAsset()` is gone. Read PDF results from `getPdfAudit()`, and image alt text issues from the Assets listing methods.
+> - The `accessibility-audit/alt/save` controller action is gone. Alt text is saved through `accessibility-audit/alt/save-screen` now.
+> - The `AuditService::STANDARD_SCAN_LIMIT` and `AuditService::STANDARD_RETENTION_CAP` constants are gone. Read the caps from the plugin's `scanLimit()` and `retentionCap()`.
+> - Generate for New Assets now saves its drafts for review instead of writing alt text to the image. Change the New uploads setting if you want alt text saved straight to the image.
+
+### Added
+- PDF checks, on Plus and Pro. Every PDF in the asset library is checked for the failures a machine can settle for itself: tags, language, title, form field names, images with no alt text, security settings that block screen readers, and a few more.
+- With server-side browser scanning set up, PDFs also get their structure checked: headings, tables, lists, links, and alt text that says nothing.
+- The Assets page lists each PDF once with the checks it fails, forms first, under All issues, Need fixing, Couldn't be checked and Passed, with a filter by problem.
+- Each PDF has its own page listing every failing check with how to fix it, a sidebar with the file's details and a summary of the checks it fails and passes, and a Re-check button. Files that couldn't be checked say why.
+- PDFs are checked when they're uploaded and when the file is replaced.
+- Check all PDFs on the Assets page, and the `accessibility-audit/audit/check-pdfs` console command, check the PDFs already in the library.
+- Check PDF Files and Largest PDF to Check (MB) settings, under Settings → Scanning.
+- Draft alt text on the Assets page has Claude draft alt text in the background for every image missing it, in one volume or the lot. It asks first, and the drafts are saved for review, not to the images.
+- A Drafts to review source on the Assets page lists the waiting drafts. Review opens each one with its Standard version already in the Alt text field and the other versions and notes beside it, so you can save it, swap it, edit it, or discard the draft.
+- On the Assets page, an image with a draft waiting shows Craft's draft icon and a Review button, and its own edit screen opens with the draft ready to pick from.
+- Approve drafts, under Drafts to review, saves the Standard version as alt text on every selected image Claude raised nothing about. Flagged drafts are left for you to check.
+- The VPAT screen tells you how many criteria still need an answer or a remark.
+- Export OpenACR and Export HTML ask before exporting a VPAT that still has gaps.
+- An info icon beside the Overview's average page score explains how pages are scored.
+- Every rule now has a short title in plain words, with its rule ID beside it in small type.
+- A rule's page has a How to fix pane: plain advice for the plugin's own rules, and a link to Deque's guide for axe-core rules.
+- Each page listed on a rule's page expands to show that rule's occurrences on it, with the markup and selector.
+- The frontend overlay shows the lowest contrast ratio found for a contrast issue, with its text and background colours.
+- The Issues tab can be sorted by occurrences and points, and searched by title or rule ID.
+- Download fix guide, on Plus and Pro, gives you a Markdown to-do list for the site, a rule or a page, with an AI prompt for each developer fix.
+- Tools for Craft's MCP server, on Plus and Pro with Craft 5.12 or later: an AI assistant can read the accessibility summary, the open rules and how to fix them, and a page's issues, and can re-scan a page.
+- Remove scan data, in the Actions menu on the page tables, deletes the selected pages' scores, issues and scan history.
+- Not an issue on every page, on a review question in the page report, answers the same element on every page of the site at once, including pages scanned later.
+- Each site's average score and issue counts are saved once a day and kept after old scans are pruned, on every edition.
+- The `accessibility-audit/audit/snapshot` console command saves today's figures for every site, for running from cron.
+- A Reports screen, on Pro, with a directors summary, a fixed and new report for any period, and a list of pages below your target score, each ready to print, save as PDF or download as a CSV.
+- The directors summary keeps a note from the team on what's being done, ready for the next time you run it.
+- Modules can add their own reports through `ReportService::EVENT_REGISTER_REPORTS`.
+- The directors summary can be emailed every week or month, on Pro, with the short version posted to Slack if you want it. Set it up under Settings → Notifications.
+- The emailed summary comes with a PDF of it attached, ready to forward to people without a login. You can turn the attachment off.
+- The `pdfPaperSize` and `pdfPaperOrientation` config settings set the summary PDF's paper, A4 portrait by default.
+- The `accessibility-audit/audit/send-reports` console command sends any scheduled summary that's due, for running from cron.
+
+### Changed
+- Findings on a rule's page, in the page report and in the entry sidebar are easier to scan, with the contrast ratio picked out and the colours on their own line, each with a swatch.
+- The titles and fix advice of the plugin's own checks now show in the control panel's language. Rules from axe-core are still in English.
+- The scan that runs after you save an entry now asks for the page past any full-page cache, so it no longer flags issues the save just fixed.
+- Lite, the new free edition, scans up to 25 pages on the primary site and keeps 30 days of history. It has scoring, EN 301 549, issues by rule and page, potential issues, page reports, template and resolved issues, the admin and frontend overlays, colour tools, the accessibility statement, scan on save and the console commands.
+- Plus has everything in Lite, scans any number of pages, keeps 90 days of history, and adds server-side browser scanning, AI alt text, PDF checks, email and Slack notifications, and readability.
+- Pro has everything in Plus, keeps history for as long as you like, and adds multi-site scanning and reporting, VPAT conformance reporting, the CI/CD endpoint, the decoupled frontend overlay and a permanent record of resolved issues.
+- Sites on Standard move to Plus, which is the same edition under its new name, and get server-side browser scanning, PDF checks, notifications and readability, lose the 100-page cap, and keep 90 days of history instead of 30.
+- Upgrade prompts now name the edition a feature needs, Plus or Pro.
+- Edition refusals from the plugin's JSON endpoints, the CI/CD endpoint included, now carry an `editionRequired` key naming the edition needed.
+- The plugin now pulls in `tecnickcom/tc-lib-pdf-parser` and `tecnickcom/tc-lib-pdf-filter` (both LGPL-3.0-or-later) through Composer, and bundles pdf.js (Apache-2.0).
+- The Assets page is laid out like Craft's own asset index, with sources down the side and the search and filters in one bar.
+- Add alt and Rewrite on the Assets page open the image in a side panel, with a large preview and Save and next to move down the list, instead of editing in the row.
+- Generate with AI, in that panel and on an asset's own edit screen, now offers three versions to pick from (Short, Standard and Detailed) with notes on anything to check before saving, instead of writing straight into the field.
+- Mark decorative and Clear decorative for selected images now sit in the footer under the list, as Craft's own actions do, and selected rows are highlighted.
+- The Overview's assets panel now covers images and PDFs, counts drafts waiting for review, links each number to its list, offers the next step, and says when everything is sorted.
+- The All filter on the Assets page is now the All issues source, and lists the images and PDFs with something to fix.
+- AI alt text aims for one short sentence ending with a full stop, follows set rules for people, logos, charts and text in images, takes account of the entry an image is used in, names well-known artworks and landmarks for you to confirm, and no longer calls artworks decorative.
+- An AI draft that runs past 150 characters is flagged for you to shorten instead of being cut off part way through.
+- Generate for New Assets now saves its drafts under Drafts to review by default, instead of saving alt text to the image. A new New uploads setting brings back saving straight to the image when Claude has nothing for you to check.
+- Regenerating the CI or overlay token now asks before the old token stops working.
+- Settings that only apply while a switch is on are hidden until it is.
+- People who aren't admins see "Ask an admin to upgrade" in place of an upgrade button they can't use.
+- The Overview's level cards now lead with the number of criteria failing, with the pages' average for that level underneath, and the target level says so in its label.
+- Owner labels read Content, Design, Development and Technical everywhere, under one Owner heading.
+- A potential issue's page is titled with its question and no longer shows points to gain.
+- Columns that said Count now say Occurrences, and the Potential issues Pages tab says Question types and Needs review, matching the page report.
+- About this rule now says what the rule checks, and an axe-core rule's page links to the plugin's own rule of the same name where there is one.
+- The Ignored Rule IDs setting lists every rule the plugin's own checks can report, grouped by kind, and says how to name an axe-core rule.
+- The Statement screen names any failing criteria that come from an answer on the VPAT, and links to the VPAT for those instead of to Issues, since a new scan won't change them.
+- Browser checks for a page you re-scan yourself now run ahead of a site-wide scan already in the queue.
+- Queued browser checks are skipped for a page that has been scanned again since they were queued.
+- The Excluded Elements help and the VPAT's remarks on browser checks now say Page Report preview instead of Inspect preview.
+
+### Removed
+- `getAssets()->scanAsset()`. PDF results come from `getPdfAudit()` now, and image alt text issues from the Assets listing methods.
+- The `accessibility-audit/alt/save` controller action. The alt text panel saves through `accessibility-audit/alt/save-screen`.
+- Generate all alt text and Save all drafts on the Assets page. Draft alt text and Drafts to review do the job across the whole library now.
+
+### Fixed
+- The VPAT console commands now need the Pro edition, like the VPAT in the control panel, and exit with 69 on Lite and Plus.
+- The accessibility statement no longer counts VPAT answers of Not Applicable or Not Evaluated as failures. Not Applicable counts as signed off, and Not Evaluated keeps the full claim closed until it's answered.
+- Every settings field a config file sets now shows read-only with the "Overridden by config file" note. Notifications, alt text, Site Target Score and Ignored Rule IDs used to stay editable even though what was typed wasn't saved.
+- The VPAT editor's remarks box and Draft with AI button are now labelled for screen readers in the control panel's language.
+- The empty Issues list on a page now shows its message in the control panel's language.
+- The frontend overlay's grey text (the score label, each issue's details and the scan time) now meets the 4.5:1 contrast minimum.
+- Server-side browser scans wait for web fonts and skip animations to their end before checking, so text caught halfway through a fade-in is no longer reported for colour contrast, and the same page gives the same results from one scan to the next.
+- Occurrences in the page report can now be picked with the keyboard, not only the mouse.
+- Screen readers now announce the upgrade button by the words it shows, and the locked-feature notices have an upgrade link for admins.
+- Occurrence detail that fails to load in the page report now says so, instead of showing Loading… for good.
+- Analyse every page on the Readability screen can be used again once the analysis finishes.
+- The entry sidebar no longer shows "analysed ." when a readability result has no date.
+- The dashboard widget no longer shows an empty row when there are no errors or warnings.
+- Links that open in a new tab now say so to screen readers.
+- Status messages, labels and criteria counts on the VPAT, page report and Colour Tools screens now show in the control panel's language.
+- On multi-site installs, images that exist in only some sites are now listed, scanned and given AI alt text.
+- New uploads in a volume left out of the audit no longer get AI alt text.
+- The EN 301 549 note on the Overview is now at normal text size.
+- Severity dots in the issue tables are now read out to screen readers in the control panel's language.
+- Re-scan, Re-analyse and View report buttons in the page tables now tell screen readers which page they're for.
+- Show on page in the page report now finds the table behind a data or layout table question, and links and headings whose text was cut short or spaced differently.
+- An ignored axe-core or contrast rule no longer counts against page scores and error counts, or shows on the page report and entry sidebar.
+- Links, buttons, images and form fields hidden from screen readers with `aria-hidden` or `hidden` are no longer reported for a missing name, label, alt text or new-tab warning.
+- A button whose only content is hidden from screen readers is now reported as having no name.
+- A link marked `aria-hidden` that can still be reached with the Tab key is now reported, and one taken out of the tab order with `tabindex="-1"` no longer is.
+- The page report now names the template an element came from, instead of the last partial rendered above it.
+- Content written in an entry template's blocks is now traced back to that template in the page report.
+- With devMode on, a layout that sets variables before its doctype no longer renders in quirks mode.
+- The Overview's average score bar is now green, amber or red to match the score, instead of always orange.
+- Show on page now finds the right element for a contrast question about a plain tag such as `<dt>` that appears more than once on the page. Re-scan a page to pick this up.
+- The Pages with Issues tab no longer says no pages have been scanned on a site where every scanned page is clean.
+- A review question's own page now counts and lists only the occurrences still waiting for an answer, so its totals match the Potential issues list.
+- Text in something drawn over a background it isn't inside, such as a code block's copy button, is no longer reported as failing contrast against the page behind it.
+- Text near a decorative line drawn in CSS, such as the nav links under a thin border on a fixed header, is now measured for contrast instead of being sent for review.
+- `scan-all` now lists pages it skipped because of the Lite page limit or the excluded list as skipped, and no longer counts them as scanned or prints a score for them.
+
 ## 1.6.0 - 2026-10-08
 
 ### Added
@@ -157,7 +277,7 @@
 ## 1.4.0 - 2026-09-15
 
 ### Added
-- Export the VPAT as an OpenACR YAML file beside the HTML export. It needs a contact email set. See https://johnhenry.ie/plugins/accessibility-audit/docs/reporting-compliance/vpat-report
+- Export the VPAT as an OpenACR YAML file beside the HTML export. It needs a contact email set. See [VPAT Report](https://johnhenry.ie/plugins/accessibility-audit/docs/reporting-compliance/vpat-report)
 
 ### Changed
 - The Support tab now says plainly that the checks are run by axe-core, with the plugin's own checks added on top.

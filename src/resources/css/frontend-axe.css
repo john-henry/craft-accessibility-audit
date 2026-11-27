@@ -148,7 +148,7 @@
 .accessibility-audit-score__label {
   font-size: 12px;
   font-weight: 500;
-  color: #a3b0bd;
+  color: #5b6673;
 }
 
 .accessibility-audit-score--good .accessibility-audit-score__number {
@@ -277,8 +277,48 @@
 .accessibility-audit-issue__meta {
   display: block;
   font-size: 11px;
-  color: #7b8a9a;
+  color: #5b6673;
   margin-top: 2px;
+}
+
+/* A contrast row's lowest ratio and its colours. The ratio takes the error
+   dot's red, darkened to pass 4.5:1 on the panel's white at this size. */
+.accessibility-audit-issue__contrast {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #3f4b59;
+  line-height: 1.45;
+}
+
+.accessibility-audit-issue__contrast strong {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.accessibility-audit-issue__colours {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.accessibility-audit-issue__colours code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+.accessibility-audit-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border: 1px solid rgb(0 0 0 / 20%);
+  border-radius: 2px;
 }
 
 .accessibility-audit-highlight {
@@ -324,7 +364,7 @@
 .accessibility-audit-scanned {
   flex: 1;
   font-size: 11px;
-  color: #8b98a5;
+  color: #5b6673;
 }
 
 .accessibility-audit-report-link {
@@ -348,7 +388,7 @@
 }
 
 .accessibility-audit-hint {
-  color: #7b8a9a;
+  color: #5b6673;
   font-size: 12px;
   margin: 0;
   padding: 14px 16px;

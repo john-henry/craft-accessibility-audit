@@ -10,6 +10,7 @@ use Craft;
 use craft\db\Query;
 use craft\queue\BaseJob;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
+use johnhenry\accessibilityaudit\helpers\FreshRender;
 use johnhenry\accessibilityaudit\services\AuditService;
 use johnhenry\accessibilityaudit\services\HeadlessScanner;
 use yii\db\Exception;
@@ -34,6 +35,16 @@ use yii\queue\RetryableJobInterface;
  */
 class HeadlessScanJob extends BaseJob implements RetryableJobInterface
 {
+    // Const Properties
+    // =========================================================================
+
+    /**
+     * @var int The queue priority for a page someone asked for by hand.
+     *      Craft runs lower numbers first and queues at 1024 by default, so
+     *      this goes ahead of every job a sweep has already queued.
+     */
+    public const PRIORITY_MANUAL = 512;
+
     // Public Properties
     // =========================================================================
 
@@ -46,6 +57,11 @@ class HeadlessScanJob extends BaseJob implements RetryableJobInterface
      * @var string The absolute URL of the page to scan.
      */
     public string $url = '';
+
+    /**
+     * @var bool Whether to ask for the page past any full-page cache.
+     */
+    public bool $freshRender = false;
 
     // Public Methods
     // =========================================================================
@@ -113,13 +129,21 @@ class HeadlessScanJob extends BaseJob implements RetryableJobInterface
             return;
         }
 
+        // A newer scan of the page carries its own pass, or was measured in
+        // the page report's preview. Rendering this one would spend Chrome on
+        // a scan the reports no longer show.
+        if ($this->isSuperseded()) {
+            return;
+        }
+
         // One pass per viewport bucket on a single shared browser (launching
         // Chrome per viewport doubles the cost of large scans), each pass
         // replacing only its own bucket. A failed pass (null, already logged)
         // skips just that viewport: the PHP scan results and the other
         // viewport's findings stand on their own, and carried-forward overlay
         // data is untouched.
-        $results = $plugin->getHeadless()->scanUrlViewports($this->url, array_keys(HeadlessScanner::VIEWPORTS));
+        $url = $this->freshRender ? FreshRender::url($this->url) : $this->url;
+        $results = $plugin->getHeadless()->scanUrlViewports($url, array_keys(HeadlessScanner::VIEWPORTS));
 
         foreach ($results as $viewport => $findings) {
             if ($findings === null) {
@@ -144,6 +168,40 @@ class HeadlessScanJob extends BaseJob implements RetryableJobInterface
 
             Craft::info("Headless axe scan ({$viewport}) stored for scan {$this->scanId}", 'accessibility-audit');
         }
+    }
+
+    /**
+     * Whether the page has been scanned again since this job was queued.
+     *
+     * A page is the element on its site, or for a page with no element, its
+     * URL on its site. Only a later scan of that same page counts.
+     *
+     * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function isSuperseded(): bool
+    {
+        $scan = (new Query())
+            ->select(['elementId', 'url', 'siteId'])
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where(['id' => $this->scanId])
+            ->one();
+
+        if ($scan === null) {
+            return false;
+        }
+
+        $page = $scan['elementId'] !== null
+            ? ['elementId' => (int)$scan['elementId']]
+            : ['elementId' => null, 'url' => $scan['url']];
+
+        return (new Query())
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where($page + ['siteId' => (int)$scan['siteId']])
+            ->andWhere(['>', 'id', $this->scanId])
+            ->exists();
     }
 
     // Protected Methods

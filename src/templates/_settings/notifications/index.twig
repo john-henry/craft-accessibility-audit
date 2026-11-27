@@ -6,22 +6,23 @@
 {% set crumbs = [] %}
 
 
-{% set fullPageForm = (isPro ?? false) and not (readOnly ?? false) %}
+{% set fullPageForm = (isPlus ?? false) and not (readOnly ?? false) %}
 
 {% block blockContent %}
     {% if readOnly %}<fieldset class="accessibility-audit-readonly" disabled>{% endif %}
  
 
-    {% if not (isPro ?? false) %}
+    {% if not (isPlus ?? false) %}
         {% include 'accessibility-audit/_includes/pro-upsell' with {
             feature: 'Notifications'|t('accessibility-audit'),
             headline: 'Never ship an accessibility regression again'|t('accessibility-audit'),
-            description: 'Pro watches every scan for you and alerts your team the moment something breaks. Plus everything else in Pro:'|t('accessibility-audit'),
+            description: 'Plus watches every scan for you and alerts your team the moment something breaks. It comes with everything else in Plus:'|t('accessibility-audit'),
+            edition: 'plus',
             checklist: [
                 'Email & Slack alerts'|t('accessibility-audit'),
-                'VPAT export'|t('accessibility-audit'),
+                'AI alt text'|t('accessibility-audit'),
+                'PDF checks'|t('accessibility-audit'),
                 'Readability analysis'|t('accessibility-audit'),
-                'CI/CD Integration'|t('accessibility-audit'),
             ],
         } only %}
     {% else %}
@@ -29,7 +30,7 @@
     {{ redirectInput(url('accessibility-audit/settings/notifications')) }}
 
     <p class="light">
-        {{ 'Get notified when a scan finds a new problem or when a page\'s accessibility score drops. Notifications are checked each time an element is re-scanned, comparing against its previous scan.'|t('accessibility-audit') }}
+        {{ 'Get notified when a scan finds a new problem or when a page\'s accessibility score drops. The check runs each time an element is re-scanned, against its previous scan.'|t('accessibility-audit') }}
     </p>
 
     <h2>{{ 'When to notify'|t('accessibility-audit') }}</h2>
@@ -39,6 +40,8 @@
         instructions: 'Notify when a scan turns up a new error-severity issue that wasn\'t on the page\'s previous scan.'|t('accessibility-audit'),
         id: 'notifyOnNewError',
         name: 'settings[notifyOnNewError]',
+        warning: config.notifyOnNewError is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.notifyOnNewError is defined,
         on: settings.notifyOnNewError,
         errors: settings.getErrors('notifyOnNewError'),
     }) }}
@@ -48,15 +51,21 @@
         instructions: 'Notify when a page\'s score falls by at least the threshold below, compared to its previous scan.'|t('accessibility-audit'),
         id: 'notifyOnScoreDrop',
         name: 'settings[notifyOnScoreDrop]',
+        warning: config.notifyOnScoreDrop is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.notifyOnScoreDrop is defined,
         on: settings.notifyOnScoreDrop,
+        toggle: 'accessibility-audit-score-drop-threshold',
         errors: settings.getErrors('notifyOnScoreDrop'),
     }) }}
 
+    <div id="accessibility-audit-score-drop-threshold"{% if not settings.notifyOnScoreDrop and not settings.hasErrors('notifyScoreDropThreshold') %} class="hidden"{% endif %}>
     {{ forms.textField({
         label: 'Score drop threshold'|t('accessibility-audit'),
         instructions: 'How many points a score has to fall before a notification fires.'|t('accessibility-audit'),
         id: 'notifyScoreDropThreshold',
         name: 'settings[notifyScoreDropThreshold]',
+        warning: config.notifyScoreDropThreshold is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.notifyScoreDropThreshold is defined,
         type: 'number',
         size: 5,
         value: settings.notifyScoreDropThreshold,
@@ -64,6 +73,7 @@
         max: 100,
         errors: settings.getErrors('notifyScoreDropThreshold'),
     }) }}
+    </div>
 
     <hr>
 
@@ -73,20 +83,27 @@
         label: 'Send email notifications'|t('accessibility-audit'),
         id: 'notifyEmailEnabled',
         name: 'settings[notifyEmailEnabled]',
+        warning: config.notifyEmailEnabled is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.notifyEmailEnabled is defined,
         on: settings.notifyEmailEnabled,
+        toggle: 'accessibility-audit-email-recipients',
         errors: settings.getErrors('notifyEmailEnabled'),
     }) }}
 
+    <div id="accessibility-audit-email-recipients"{% if not settings.notifyEmailEnabled and not settings.hasErrors('notifyEmailRecipients') %} class="hidden"{% endif %}>
     {{ forms.textareaField({
         label: 'Recipients'|t('accessibility-audit'),
         instructions: 'One address per line, or separated by commas. Notifications go to every address listed.'|t('accessibility-audit'),
         id: 'notifyEmailRecipients',
         name: 'settings[notifyEmailRecipients]',
+        warning: config.notifyEmailRecipients is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.notifyEmailRecipients is defined,
         value: settings.notifyEmailRecipients,
         rows: 3,
         placeholder: 'team@example.com',
         errors: settings.getErrors('notifyEmailRecipients'),
     }) }}
+    </div>
 
     <hr>
 
@@ -96,24 +113,104 @@
         label: 'Send Slack notifications'|t('accessibility-audit'),
         id: 'notifySlackEnabled',
         name: 'settings[notifySlackEnabled]',
+        warning: config.notifySlackEnabled is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.notifySlackEnabled is defined,
         on: settings.notifySlackEnabled,
+        toggle: 'accessibility-audit-slack-webhook',
         errors: settings.getErrors('notifySlackEnabled'),
     }) }}
 
+    <div id="accessibility-audit-slack-webhook"{% if not settings.notifySlackEnabled and not settings.hasErrors('notifySlackWebhookUrl') %} class="hidden"{% endif %}>
     {{ forms.autosuggestField({
         label: 'Incoming webhook URL'|t('accessibility-audit'),
         instructions: 'Create an incoming webhook in Slack and paste its URL here. You can also reference an environment variable: type $ to see suggestions.'|t('accessibility-audit'),
         id: 'notifySlackWebhookUrl',
         name: 'settings[notifySlackWebhookUrl]',
+        warning: config.notifySlackWebhookUrl is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.notifySlackWebhookUrl is defined,
         value: settings.notifySlackWebhookUrl,
         suggestEnvVars: true,
         suggestAliases: false,
         placeholder: '$SLACK_WEBHOOK_URL or https://hooks.slack.com/services/…',
         errors: settings.getErrors('notifySlackWebhookUrl'),
     }) }}
+    </div>
 
     <hr>
     
+    <h2>{{ 'Scheduled summary'|t('accessibility-audit') }}</h2>
+
+    {% if not (isPro ?? false) %}
+        {% include 'accessibility-audit/_includes/pro-upsell' with {
+            feature: 'Scheduled summaries'|t('accessibility-audit'),
+            text: 'Pro emails the directors summary to whoever needs it, every week or month, and can post the short version to Slack.'|t('accessibility-audit'),
+            edition: 'pro',
+            inline: true,
+        } only %}
+    {% else %}
+        <p class="light">{{ 'Sends the directors summary from Reports on a schedule. It goes out when a full scan finishes or someone opens the Overview, so on a quiet site it can be a day or two late. For a fixed day, run the send-reports console command from cron.'|t('accessibility-audit') }}</p>
+
+        {{ forms.selectField({
+            label: 'Send the directors summary'|t('accessibility-audit'),
+            instructions: 'Weekly covers the last 7 days. Monthly covers the month before and goes out early in the month.'|t('accessibility-audit'),
+            id: 'reportSchedule',
+            name: 'settings[reportSchedule]',
+            warning: config.reportSchedule is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+            disabled: config.reportSchedule is defined,
+            options: [
+                { value: 'off', label: 'Never'|t('accessibility-audit') },
+                { value: 'weekly', label: 'Weekly'|t('accessibility-audit') },
+                { value: 'monthly', label: 'Monthly'|t('accessibility-audit') },
+            ],
+            value: settings.reportSchedule,
+            errors: settings.getErrors('reportSchedule'),
+        }) }}
+
+        {{ forms.textareaField({
+            label: 'Summary recipients'|t('accessibility-audit'),
+            instructions: 'One address per line, or separated by commas. Leave it empty to use the email recipients above.'|t('accessibility-audit'),
+            id: 'reportScheduleRecipients',
+            name: 'settings[reportScheduleRecipients]',
+            warning: config.reportScheduleRecipients is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+            disabled: config.reportScheduleRecipients is defined,
+            value: settings.reportScheduleRecipients,
+            rows: 3,
+            placeholder: 'director@example.com',
+            errors: settings.getErrors('reportScheduleRecipients'),
+        }) }}
+
+        {{ forms.lightswitchField({
+            label: 'Post the summary to Slack'|t('accessibility-audit'),
+            instructions: 'Posts the short version to the Slack webhook above.'|t('accessibility-audit'),
+            id: 'reportScheduleSlack',
+            name: 'settings[reportScheduleSlack]',
+            warning: config.reportScheduleSlack is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+            disabled: config.reportScheduleSlack is defined,
+            on: settings.reportScheduleSlack,
+            errors: settings.getErrors('reportScheduleSlack'),
+        }) }}
+
+        {{ forms.lightswitchField({
+            label: 'Attach a PDF of the summary'|t('accessibility-audit'),
+            instructions: 'Adds the summary to the email as a PDF to forward on. Turn it off where attachments are blocked or not wanted.'|t('accessibility-audit'),
+            id: 'reportScheduleAttachPdf',
+            name: 'settings[reportScheduleAttachPdf]',
+            warning: config.reportScheduleAttachPdf is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+            disabled: config.reportScheduleAttachPdf is defined,
+            on: settings.reportScheduleAttachPdf,
+            errors: settings.getErrors('reportScheduleAttachPdf'),
+        }) }}
+
+        <div class="readable">
+            <blockquote class="note tip">
+                <p>{{ 'To send any summary that is due on a fixed day, run this from cron every morning:'|t('accessibility-audit') }}</p>
+                <pre><code>php craft accessibility-audit/audit/send-reports</code></pre>
+            </blockquote>
+        </div>
+    {% endif %}
+
+    <hr>
+
     {{ forms.selectField({
         label: 'Test'|t('accessibility-audit'),
         instructions: 'The connection check confirms delivery works.'|t('accessibility-audit')

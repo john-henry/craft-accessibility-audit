@@ -128,7 +128,7 @@ class StatementMetaModel extends Model
      *
      * The VPAT records this per criterion with remarks, which is better
      * evidence, but the VPAT is a Pro feature and the statement is not. Without
-     * a blanket attestation here, a Standard site could never state full
+     * a blanket attestation here, a Plus site could never state full
      * compliance no matter how much manual testing it had actually done. The
      * principle was never "you must own Pro": it is that a machine must not
      * make this claim on a person's behalf.

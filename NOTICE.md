@@ -37,6 +37,57 @@ Chrome for server-side browser scanning.
 
 ---
 
+## tc-lib-pdf-parser
+
+Copyright © Nicola Asuni, Tecnick.com LTD.
+
+Licensed under the **GNU Lesser General Public License v3.0 or later (LGPL-3.0-or-later)**.
+Full license text: https://www.gnu.org/licenses/lgpl-3.0.html
+
+Installed as a Composer dependency, along with tecnickcom/tc-lib-pdf-filter
+(same licence, also required by the plugin directly), and used unmodified to
+read PDF assets for the PDF checks. None of its source is copied into this
+plugin; the plugin extends its parser class from its own code, so the library
+can be replaced with a modified version of your own through Composer.
+
+Source: https://github.com/tecnickcom/tc-lib-pdf-parser
+
+---
+
+## dompdf
+
+Copyright © The Dompdf Team.
+
+Licensed under the **GNU Lesser General Public License v2.1 (LGPL-2.1)**.
+Full license text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+
+Installed as a Composer dependency, along with dompdf/php-font-lib
+(LGPL-2.1-or-later) and dompdf/php-svg-lib (LGPL-3.0-or-later), and used unmodified to turn the scheduled
+directors summary into the PDF attached to its email. None of its source is
+copied into this plugin, so the library can be replaced with a modified
+version of your own through Composer.
+
+Source: https://github.com/dompdf/dompdf
+
+---
+
+## pdf.js
+
+Copyright © Mozilla Foundation and contributors.
+
+Licensed under the **Apache License 2.0**.
+Full license text: https://www.apache.org/licenses/LICENSE-2.0
+
+pdf.js 6.5.438 is bundled unmodified (resources/pdfjs/pdf.min.mjs and
+resources/pdfjs/pdf.worker.min.mjs, with its LICENSE file alongside) and run
+in headless Chrome for the structure part of the PDF checks. The standard
+fonts, CMaps, ICC profiles and WebAssembly decoders that ship with pdf.js are
+not included.
+
+Source: https://github.com/mozilla/pdf.js
+
+---
+
 ## VPAT®
 
 VPAT® is a registered trademark of the **Information Technology Industry Council (ITI)**.

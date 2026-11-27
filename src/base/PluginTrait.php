@@ -19,7 +19,6 @@ use craft\events\RegisterPreviewTargetsEvent;
 use craft\events\RegisterTemplateRootsEvent;
 use craft\events\RegisterUrlRulesEvent;
 use craft\events\RegisterUserPermissionsEvent;
-use craft\helpers\App;
 use craft\helpers\Cp;
 use craft\helpers\DateTimeHelper;
 use craft\helpers\Db;
@@ -28,9 +27,15 @@ use craft\helpers\Json;
 use craft\helpers\StringHelper;
 use craft\helpers\UrlHelper;
 use craft\log\MonologTarget;
+use craft\mcp\AdminInstructions;
+use craft\mcp\attributes\RequiresPermission;
+use craft\mcp\CapabilityRegistry;
+use craft\mcp\events\CollectingAdminInstructions;
+use craft\mcp\events\CollectingServerInstructions;
 use craft\queue\Queue as CraftQueue;
 use craft\services\Dashboard;
 use craft\services\Gc;
+use craft\services\Mcp;
 use craft\services\UserPermissions;
 use craft\web\Application as WebApplication;
 use craft\web\Request as WebRequest;
@@ -41,9 +46,13 @@ use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\assets\AccessibilityAuditAsset;
 use johnhenry\accessibilityaudit\assets\FrontendAxeAsset;
 use johnhenry\accessibilityaudit\assets\FrontendOverlayLoaderAsset;
+use johnhenry\accessibilityaudit\helpers\FindingHtml;
+use johnhenry\accessibilityaudit\helpers\FreshRender;
 use johnhenry\accessibilityaudit\helpers\ScannableElementTypes;
 use johnhenry\accessibilityaudit\jobs\GenerateAltTextJob;
 use johnhenry\accessibilityaudit\jobs\RecordReadability;
+use johnhenry\accessibilityaudit\mcp\AuditTools;
+use johnhenry\accessibilityaudit\mcp\Instructions as McpInstructions;
 use johnhenry\accessibilityaudit\models\SettingsModel;
 use johnhenry\accessibilityaudit\services\HeadlessScanner;
 use johnhenry\accessibilityaudit\services\PotentialScanner;
@@ -52,6 +61,7 @@ use johnhenry\accessibilityaudit\twig\A11yTemplateNodeVisitor;
 use johnhenry\accessibilityaudit\twig\A11yTwigExtension;
 use johnhenry\accessibilityaudit\variables\AccessibilityVariable;
 use johnhenry\accessibilityaudit\widgets\AccessibilityScoreWidget;
+use Mcp\Capability\Attribute\McpTool;
 use Monolog\Formatter\LineFormatter;
 use Psr\Log\LogLevel;
 use Throwable;
@@ -114,7 +124,6 @@ trait PluginTrait
         'Could not load the trend for that range.',
         'Could not queue the scan.',
         'Could not save that. Try again.',
-        'Count',
         'Counted the next time this page is analysed.',
         'Cumulative resolved issues by date',
         'Date',
@@ -128,14 +137,14 @@ trait PluginTrait
         'Failed to load.',
         'Failed to load: {error}',
         'Fail',
+        'Difficulty',
         'First detected',
         'Found in the Desktop view. Switch to Desktop to see it.',
         'Found in the Mobile view. Switch to Mobile to see it.',
-        'Generate Alt Text',
-        'Generating…',
         'Grade',
         'Hard',
         'Highlighted, but the element is inside a collapsed menu or panel. Open it on the page to see it.',
+        'Issue',
         'Issues',
         'Issues resolved over time, cumulative',
         'Last scanned',
@@ -146,10 +155,12 @@ trait PluginTrait
         'Loading…',
         'Marked decorative, no alt text needed.',
         'You can change that on the Assets page.',
+        'No issues match this filter.',
         'No pages analysed yet.',
         'No pages found.',
         'No pages with potential issues found.',
         'No resolved issues yet. Fixed issues appear here after the next scan.',
+        'No pages with issues to show.',
         'No scanned pages yet.',
         'Nothing has been dismissed yet.',
         'Occurrences',
@@ -157,20 +168,29 @@ trait PluginTrait
         'Occurrences and affected pages over time',
         'Owner',
         'Pages',
+        'Needs review',
         'Pass',
+        'Points',
         'Points gained',
         'Potential issue',
+        'Question types',
         'Queued {n} scans, check back soon',
         'Queuing…',
         'Re-analyse',
         'Re-analyse selected',
         'Re-scan',
+        'No issues found.',
         'Re-scan selected',
-        'Regenerate',
+        'Remove scan data',
+        'Dismiss selected on every page',
+        'Mark this as not an issue on every page of the site? Every element with the same markup is answered, now and on future scans. You can take it back from the Dismissed tab.',
+        'Every page',
+        '{n, plural, =1{Remove the scan data for this page?} other{Remove the scan data for these # pages?}}',
+        'Remove the scan data for the selected pages?',
+        'Their scores, issues and scan history are deleted and cannot be brought back. A page that can still be scanned comes back on its next scan, so exclude it under Settings → Scanning first if it should stay out.',
         'Resolved',
         'Resolved (running total)',
         'Resolved issue',
-        'Responsibility',
         'Restore',
         'Dismissed by',
         'Restored to Needs review.',
@@ -206,6 +226,36 @@ trait PluginTrait
         'opens in new tab',
         'warnings',
         'Page',
+        'AA Large',
+        'large text and UI components only',
+        'Saved',
+        'Could not save.',
+        'Drafting failed.',
+        'Network error. Check your connection and try again.',
+        'No occurrence detail available.',
+        '{n, plural, =1{# occurrence} other{# occurrences}}',
+        'How to fix',
+        'AI suggestions',
+        'Check before saving',
+        'Detailed',
+        'Dismiss',
+        'Generate with AI',
+        'Short',
+        'Standard',
+        'Use this',
+        'Writing three versions. This takes a few seconds.',
+        '{n} characters, longer than the {max} guideline',
+        'A draft is waiting for review. Pick a version, then save the image.',
+        'Error',
+        'Warning',
+        'Notice',
+        'In use',
+        '{n, plural, =1{# criterion still needs an answer.} other{# criteria still need an answer.}} Unanswered criteria export as Not Evaluated.',
+        '{n, plural, =1{# criterion needs a remark to say why it got that level.} other{# criteria need a remark to say why they got that level.}}',
+        'This report still has gaps. {gaps} Export anyway?',
+        '{n, plural, =1{Save the Standard draft as alt text on # image?} other{Save the Standard draft as alt text on # images?}} Drafts flagged Check are skipped.',
+        '{n, plural, =1{Approved # draft.} other{Approved # drafts.}}',
+        '{n, plural, =1{# draft needs a check before it can be saved.} other{# drafts need a check before they can be saved.}}',
     ];
 
     /**
@@ -274,7 +324,8 @@ trait PluginTrait
     public static function editions(): array
     {
         return [
-            self::EDITION_STANDARD,
+            self::EDITION_LITE,
+            self::EDITION_PLUS,
             self::EDITION_PRO,
         ];
     }
@@ -318,6 +369,7 @@ trait PluginTrait
             $subnav['readability'] = ['label' => Craft::t('accessibility-audit', 'Readability'), 'url' => 'accessibility-audit/readability' . $suffix];
             $subnav['vpat'] = ['label' => Craft::t('accessibility-audit', 'VPAT'),        'url' => 'accessibility-audit/vpat' . $suffix];
             $subnav['statement'] = ['label' => Craft::t('accessibility-audit', 'Statement'), 'url' => 'accessibility-audit/statement' . $suffix];
+            $subnav['reports'] = ['label' => Craft::t('accessibility-audit', 'Reports'), 'url' => 'accessibility-audit/reports' . $suffix];
             $subnav['color-tools'] = ['label' => Craft::t('accessibility-audit', 'Colour Tools'), 'url' => 'accessibility-audit/colour-tools' . $suffix];
         }
         // Admins keep the link even when admin changes are disabled: the
@@ -490,9 +542,9 @@ trait PluginTrait
             $days = (int)$plugin->getSettings()->retainDays;
 
             // Keeping history for good is a deliberate choice, and a Pro one.
-            // On Standard, pruneScanResults() clamps a zero to the edition cap
+            // Below Pro, pruneScanResults() clamps a zero to the edition cap
             // rather than treating it as "keep everything", so it still runs.
-            if ($days <= 0 && $plugin->isPro()) {
+            if ($days <= 0 && $plugin->retentionCap() === null) {
                 return;
             }
 
@@ -538,6 +590,7 @@ trait PluginTrait
                     'accessibility-audit/page-rule-occurrences' => 'accessibility-audit/dashboard/page-rule-occurrences',
                     'accessibility-audit/potential' => 'accessibility-audit/dashboard/potential',
                     'accessibility-audit/assets' => 'accessibility-audit/dashboard/assets',
+                    'accessibility-audit/assets/pdf/<assetId:\d+>' => 'accessibility-audit/dashboard/pdf',
                     'accessibility-audit/settings' => 'accessibility-audit/settings',
                     'accessibility-audit/settings/tools' => 'accessibility-audit/settings/edit-tools',
                     'accessibility-audit/settings/notifications' => 'accessibility-audit/settings/edit-notifications',
@@ -553,9 +606,13 @@ trait PluginTrait
                     'accessibility-audit/restore-verdicts' => 'accessibility-audit/audit/restore-verdicts',
                     'accessibility-audit/export' => 'accessibility-audit/audit/export',
                     'accessibility-audit/alt/generate' => 'accessibility-audit/alt/generate',
-                    'accessibility-audit/alt/save' => 'accessibility-audit/alt/save',
+                    'accessibility-audit/alt/edit' => 'accessibility-audit/alt/edit',
+                    'accessibility-audit/alt/save-screen' => 'accessibility-audit/alt/save-screen',
+                    'accessibility-audit/alt/queue-drafts' => 'accessibility-audit/alt/queue-drafts',
+                    'accessibility-audit/alt/discard-draft' => 'accessibility-audit/alt/discard-draft',
                     'accessibility-audit/alt/set-decorative' => 'accessibility-audit/alt/set-decorative',
                     'accessibility-audit/alt/set-decorative-bulk' => 'accessibility-audit/alt/set-decorative-bulk',
+                    'accessibility-audit/alt/approve-drafts' => 'accessibility-audit/alt/approve-drafts',
                     'accessibility-audit/alt/verify-key' => 'accessibility-audit/alt/verify-key',
                     'accessibility-audit/colour-tools' => 'accessibility-audit/dashboard/utilities',
                     'accessibility-audit/readability' => 'accessibility-audit/readability/index',
@@ -572,6 +629,10 @@ trait PluginTrait
                     'accessibility-audit/statement/save-meta' => 'accessibility-audit/statement/save-meta',
                     'accessibility-audit/statement/suggestions' => 'accessibility-audit/statement/suggestions',
                     'accessibility-audit/statement/preview' => 'accessibility-audit/statement/preview',
+                    'accessibility-audit/reports' => 'accessibility-audit/reports/index',
+                    'accessibility-audit/reports/<handle:[a-z0-9-]+>' => 'accessibility-audit/reports/report',
+                    'accessibility-audit/reports/<handle:[a-z0-9-]+>/view' => 'accessibility-audit/reports/view',
+                    'accessibility-audit/reports/<handle:[a-z0-9-]+>/csv' => 'accessibility-audit/reports/csv',
                 ], $e->rules);
             }
         );
@@ -654,6 +715,68 @@ trait PluginTrait
     }
 
     /**
+     * Offers the plugin's tools to Craft's MCP server, with instructions for
+     * using them.
+     *
+     * Craft's MCP server arrived in 5.12, so nothing is attached on an older
+     * Craft. Registered on every request, console included: the stdio server
+     * runs as a console command.
+     *
+     * The tools are only offered from Plus up. They are checked on the
+     * way in, because one tool that fails to load takes the whole MCP server
+     * down with it, every other plugin's tools and Craft's own included.
+     *
+     * @return void
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _registerMcpTools(): void
+    {
+        if (!class_exists(Mcp::class) || !class_exists(McpTool::class) || !class_exists(RequiresPermission::class)) {
+            return;
+        }
+
+        Event::on(Mcp::class, Mcp::EVENT_REGISTER_CAPABILITY_TYPES,
+            static function(RegisterComponentTypesEvent $e): void {
+                if (!AccessibilityAudit::getInstance()->isPlus()) {
+                    return;
+                }
+
+                try {
+                    (new CapabilityRegistry([AuditTools::class]))->definitions();
+                } catch (Throwable $exception) {
+                    Craft::error('MCP tools not registered: ' . $exception->getMessage(), 'accessibility-audit');
+
+                    return;
+                }
+
+                $e->types[] = AuditTools::class;
+            }
+        );
+
+        Event::on(AdminInstructions::class, AdminInstructions::EVENT_COLLECT_SERVER_INSTRUCTIONS,
+            static function(CollectingServerInstructions $e): void {
+                $brief = McpInstructions::brief();
+
+                if ($brief !== null) {
+                    $e->instructions[] = $brief;
+                }
+            }
+        );
+
+        Event::on(AdminInstructions::class, AdminInstructions::EVENT_COLLECT_INSTRUCTIONS,
+            static function(CollectingAdminInstructions $e): void {
+                $full = McpInstructions::full();
+
+                if ($full !== null) {
+                    $e->instructions[] = $full;
+                }
+            }
+        );
+    }
+
+    /**
      * Exposes the plugin's public-facing templates to the front end.
      *
      * Only `src/templates/public` is registered, never the whole template
@@ -729,7 +852,7 @@ trait PluginTrait
 
                 $this->_cpAssetsViews[$view] = true;
                 $settings = $this->getSettings();
-                $hasApiKey = !empty(trim((string)App::parseEnv($settings->anthropicApiKey)));
+                $hasApiKey = $this->canGenerateAltText();
 
                 $view->registerAssetBundle(AccessibilityAuditAsset::class);
 
@@ -759,6 +882,7 @@ trait PluginTrait
                         'storeContrastUrl' => UrlHelper::actionUrl('accessibility-audit/audit/store-contrast-results'),
                         'setVerdictUrl' => UrlHelper::actionUrl('accessibility-audit/audit/set-verdict'),
                         'setVerdictsBulkUrl' => UrlHelper::actionUrl('accessibility-audit/audit/set-verdicts-bulk'),
+                        'setVerdictEverywhereUrl' => UrlHelper::actionUrl('accessibility-audit/audit/set-verdict-everywhere'),
                         'issueDetailUrl' => UrlHelper::cpUrl('accessibility-audit/issues/detail'),
                         'readabilityAnalyseUrl' => UrlHelper::actionUrl('accessibility-audit/readability/analyse'),
                         'readabilityAnalyseEntryUrl' => UrlHelper::actionUrl('accessibility-audit/readability/analyse-entry'),
@@ -766,7 +890,7 @@ trait PluginTrait
                         'verifyKeyUrl' => UrlHelper::actionUrl('accessibility-audit/alt/verify-key'),
                         'hasApiKey' => $hasApiKey,
                         // Whether the plugin is operating across more than one site
-                        // for this edition (Standard is primary-site only), so the
+                        // for this edition (only Pro covers more than the primary site), so the
                         // "limit reached" message only says "across all sites" when
                         // that framing actually applies.
                         'isMultiSite' => count(AccessibilityAudit::getInstance()->allowedSites()) > 1,
@@ -804,29 +928,25 @@ trait PluginTrait
                 /** @var Element $element */
                 $element = $e->sender;
 
-                if (!($element instanceof Asset) || !$element->id) {
+                if (!($element instanceof Asset)) {
                     return;
                 }
 
-                $settings = self::$plugin->getSettings();
-                $hasApiKey = !empty(trim((string)App::parseEnv($settings->anthropicApiKey)));
+                // A decorative image gets a note in place of a Generate button
+                // that would invite alt text the flag says isn't wanted, and
+                // a waiting draft is shown ready to pick from. The marker
+                // travels in the screen's own sidebar, so the help in a
+                // slideout is always for the image that slideout is editing.
+                $marker = self::$plugin->getAltDrafts()->editScreenMarker($element);
 
-                // A decorative image correctly carries an empty alt, so the
-                // edit page shows a note instead of a Generate button that
-                // would invite writing alt text the flag says isn't wanted.
-                // The note is worth showing whether or not an API key is set;
-                // the Generate button still needs one.
-                $isDecorative = $element->kind === Asset::KIND_IMAGE
-                    && self::$plugin->getAssets()->isDecorative((int)$element->id);
-
-                if (!$hasApiKey && !$isDecorative) {
+                if ($marker === null) {
                     return;
                 }
 
-                // Tell the CP JS which asset is currently being edited.
+                $e->html .= $marker;
+
                 // POS_END works in both full-page renders and slideout AJAX responses.
                 Craft::$app->getView()->registerJs(
-                    'window.AccessibilityAudit=Object.assign(window.AccessibilityAudit||{},{assetId:' . (int)$element->id . ',assetDecorative:' . ($isDecorative ? 'true' : 'false') . '});' .
                     'if(typeof AccessibilityAuditInjectAltBtn==="function")AccessibilityAuditInjectAltBtn();',
                     ViewAlias::POS_END
                 );
@@ -836,7 +956,7 @@ trait PluginTrait
 
     /**
      * Adds a Readability view to the Preview menu of every element the scanner
-     * covers, on Pro with the setting on.
+     * covers, on Plus or Pro with the setting on.
      *
      * The target is an action URL on the Craft host rather than a site URL, so
      * it still opens where a site's front end is served by something else.
@@ -852,7 +972,7 @@ trait PluginTrait
                 $element = $event->sender;
                 $plugin = self::$plugin;
 
-                if (!$element->id || !$plugin->isPro() || !$plugin->getSettings()->readabilityPreviewTarget) {
+                if (!$element->id || !$plugin->isPlus() || !$plugin->getSettings()->readabilityPreviewTarget) {
                     return;
                 }
 
@@ -948,11 +1068,16 @@ trait PluginTrait
             // findings collapse into a count instead of filling the panel.
             // Same query the page report's issue list uses.
             $issues = $scan ? $plugin->getAudit()->getIssuesGroupedByScan((int) $scan['id']) : [];
-            $hasApiKey = trim((string)App::parseEnv($plugin->getSettings()->anthropicApiKey)) !== '';
-            $readabilityPro = $plugin->isPro();
+            // Encoded by the formatter, so the panel prints it raw.
+            foreach ($issues as &$issue) {
+                $issue['messageHtml'] = FindingHtml::format((string)($issue['message'] ?? ''));
+            }
+            unset($issue);
+            $hasApiKey = $plugin->canGenerateAltText();
+            $readabilityAvailable = $plugin->isPlus();
 
             $readabilityResult = null;
-            if ($readabilityPro) {
+            if ($readabilityAvailable) {
                 $readabilityResult = $plugin->getReadability()->getResults(1, $element->id, $element->siteId)[0] ?? null;
                 // The early return above guarantees a public URL, so the
                 // URL-keyed fallback needs no further guard.
@@ -966,7 +1091,7 @@ trait PluginTrait
                 'scan' => $scan,
                 'issues' => $issues,
                 'hasApiKey' => $hasApiKey,
-                'readabilityPro' => $readabilityPro,
+                'readabilityAvailable' => $readabilityAvailable,
                 'readabilitySupported' => $plugin->getReadability()->supportsSite((int)$element->siteId),
                 'readabilityUnsupportedMessage' => $plugin->getReadability()->unsupportedMessage(),
                 'readabilityResult' => $readabilityResult,
@@ -974,7 +1099,7 @@ trait PluginTrait
                 'readabilityDate' => !empty($readabilityResult['dateAnalysed'])
                     ? DateTimeHelper::toDateTime($readabilityResult['dateAnalysed'])
                     : null,
-                'readabilityPreview' => $readabilityPro && $plugin->getSettings()->readabilityPreviewTarget,
+                'readabilityPreview' => $readabilityAvailable && $plugin->getSettings()->readabilityPreviewTarget,
             ]);
         };
 
@@ -1027,6 +1152,31 @@ trait PluginTrait
             }
 
             $response->content = A11yTemplateNodeVisitor::stripMarkers($response->content);
+        });
+    }
+
+    /**
+     * Keeps a render asked for with the fresh-render parameter out of every
+     * shared cache.
+     *
+     * The parameter's value is new on every scan, so a cache that stored these
+     * renders would keep one copy per save that nobody else ever asks for.
+     * Applied when the page template renders, by which point Blitz is loaded
+     * whatever order the plugins started in.
+     *
+     * @return void
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _registerFreshRenderGuard(): void
+    {
+        if (!FreshRender::isRequested()) {
+            return;
+        }
+
+        Event::on(View::class, View::EVENT_BEFORE_RENDER_PAGE_TEMPLATE, static function() {
+            self::$plugin->getOverlay()->preventFullPageCaching();
         });
     }
 
@@ -1138,7 +1288,10 @@ trait PluginTrait
      * Keeps the stored asset audit current between sweeps: every image asset
      * save (a fresh upload, an alt text edit, an accepted AI suggestion)
      * re-syncs that asset's audit rows, so the dashboard's asset panel never
-     * waits for the next full sweep to reflect a fix.
+     * waits for the next full sweep to reflect a fix. An image saved with alt
+     * text, by whatever route, drops any AI draft waiting for it, since the
+     * draft no longer has anything to fill. A PDF that is new, or whose file
+     * was replaced, has a check queued (Plus and Pro).
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
@@ -1150,7 +1303,7 @@ trait PluginTrait
                 /** @var Element $element */
                 $element = $e->sender;
 
-                if (!($element instanceof Asset) || !$element->id || $element->kind !== Asset::KIND_IMAGE) {
+                if (!($element instanceof Asset) || !$element->id) {
                     return;
                 }
 
@@ -1158,7 +1311,20 @@ trait PluginTrait
                 // may not exist mid-install, and a failed sync is recoverable
                 // by the next sweep anyway.
                 try {
-                    self::$plugin->getAssets()->syncAssetAudit($element);
+                    if ($element->kind === Asset::KIND_IMAGE) {
+                        $assets = self::$plugin->getAssets();
+                        $assets->syncAssetAudit($element);
+
+                        if (trim((string)$assets->altText($element)) !== '') {
+                            self::$plugin->getAltDrafts()->discard((int)$element->id);
+                        }
+                    } elseif ($element->kind === Asset::KIND_PDF && !$element->resaving) {
+                        // Queued, never run here: an upload or a replaced file
+                        // is checked once the queue gets to it. A bulk resave
+                        // queues nothing, as scan on save does not: Check all
+                        // PDFs is the deliberate sweep.
+                        self::$plugin->getPdfAudit()->queueCheck($element);
+                    }
                 } catch (Throwable $err) {
                     Craft::error('Asset audit sync failed: ' . $err->getMessage(), 'accessibility-audit');
                 }
@@ -1241,12 +1407,15 @@ trait PluginTrait
                         return;
                     }
 
-                    self::$plugin->getAudit()->queueScan($element);
+                    // The save also queues the full-page cache's refresh, and
+                    // this scan can run before it. Asking past the cache keeps
+                    // a stale copy from showing issues the save fixed.
+                    self::$plugin->getAudit()->queueScan($element, freshRender: true);
 
                     // Queued rather than run here: this event fires inside the
                     // save's transaction, and the job covers every site the
                     // element is on, not only the one being saved.
-                    if (self::$plugin->isPro()) {
+                    if (self::$plugin->isPlus()) {
                         Craft::$app->getQueue()->push(new RecordReadability([
                             'elementId' => (int)$element->id,
                             'siteId' => (int)$element->siteId,

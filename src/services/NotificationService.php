@@ -74,10 +74,10 @@ class NotificationService extends Component
      */
     public function evaluateScan(array $newResult, ?array $previousResult): void
     {
-        // Notifications are a Pro-only feature. Bail immediately on Standard so
+        // Notifications need Plus or higher. Bail immediately on Lite so
         // nothing fires even if something internally still calls this: a
-        // belt-and-suspenders guard alongside the controller-level gating.
-        if (!AccessibilityAudit::getInstance()->isPro()) {
+        // second guard alongside the controller-level gating.
+        if (!AccessibilityAudit::getInstance()->isPlus()) {
             return;
         }
 
@@ -265,17 +265,19 @@ class NotificationService extends Component
      * @param string|null $color The attachment bar colour (a COLOR_* constant), or null for informational blue.
      * @param string $contextLine Muted footer line (site name and environment), or empty to omit.
      * @param string|null $actionUrl A URL rendered as a link button under the message, or null for none.
+     * @param string|null $actionLabel The button's label, or null for "Open page report".
+     * @return bool Whether Slack accepted the message.
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function notifySlack(string $subject, string $body, ?string $color = null, string $contextLine = '', ?string $actionUrl = null): void
+    public function notifySlack(string $subject, string $body, ?string $color = null, string $contextLine = '', ?string $actionUrl = null, ?string $actionLabel = null): bool
     {
         $settings = AccessibilityAudit::getInstance()->getSettings();
         $webhookUrl = trim((string)App::parseEnv($settings->notifySlackWebhookUrl));
 
         if ($webhookUrl === '') {
-            return;
+            return false;
         }
 
         // Held to the same guard as every other address this plugin fetches.
@@ -291,7 +293,7 @@ class NotificationService extends Component
                 'accessibility-audit',
             );
 
-            return;
+            return false;
         }
 
         $blocks = [
@@ -312,7 +314,7 @@ class NotificationService extends Component
                         'type' => 'button',
                         'text' => [
                             'type' => 'plain_text',
-                            'text' => Craft::t('accessibility-audit', 'Open page report'),
+                            'text' => $actionLabel ?? Craft::t('accessibility-audit', 'Open page report'),
                         ],
                         'url' => $actionUrl,
                     ],
@@ -354,7 +356,39 @@ class NotificationService extends Component
                 'Failed to post accessibility notification to Slack: ' . $e->getMessage(),
                 'accessibility-audit'
             );
+
+            return false;
         }
+
+        return true;
+    }
+
+    /**
+     * The addresses in a comma- or newline-separated list, blanks dropped.
+     *
+     * @param string $raw The list as typed into the settings.
+     * @return string[]
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function parseRecipients(string $raw): array
+    {
+        return $this->_parseRecipients($raw);
+    }
+
+    /**
+     * The muted footer line every notification ends with: the plugin, the
+     * system name and the environment.
+     *
+     * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function contextLine(): string
+    {
+        return $this->_contextLine();
     }
 
     // Private Methods

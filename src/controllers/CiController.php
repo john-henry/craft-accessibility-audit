@@ -54,7 +54,7 @@ class CiController extends Controller
         $this->requireAcceptsJson();
 
         // Check the edition before touching the token so we never leak whether a
-        // token would otherwise be valid: on Standard this is simply unavailable.
+        // token would otherwise be valid: below Pro this is simply unavailable.
         if (($refusal = $this->requireProJson('CI/CD integration')) !== null) {
             return $refusal;
         }

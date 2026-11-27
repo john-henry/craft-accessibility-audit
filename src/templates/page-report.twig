@@ -43,6 +43,9 @@
             <span class="visually-hidden">({{ 'opens in new tab'|t('accessibility-audit') }})</span>
         </a>
     {% endif %}
+    {% if craft.a11y.isPlus and scan and issues is not empty %}
+        <a href="{{ actionUrl('accessibility-audit/fix-guide/page', element ? { elementId: elementId, siteId: siteId } : { scanId: scan.id, siteId: siteId }) }}" class="btn" data-icon="download">{{ 'Download fix guide'|t('accessibility-audit') }}</a>
+    {% endif %}
     {% if element %}
         <button class="btn submit" data-icon="refresh" data-accessibility-audit-scan-entry="{{ elementId }}" data-site-id="{{ siteId }}">
             {{ 'Re-scan'|t('accessibility-audit') }}
@@ -154,7 +157,7 @@
             </button>
             <div class="accessibility-audit-pr-acc-body" id="accessibility-audit-pr-acc-issues">
                 {% if issues|length == 0 %}
-                    <p class="accessibility-audit-pr-empty">✓ {{ 'No issues found'|t('accessibility-audit') }}</p>
+                    <p class="accessibility-audit-pr-empty accessibility-audit-emptyok"><span class="accessibility-audit-resolved-check" data-icon="check" aria-hidden="true"></span> {{ 'No issues found.'|t('accessibility-audit') }}</p>
                 {% else %}
                     {% for issue in issues %}
                     {% set issueJson = {
@@ -180,13 +183,13 @@
                                  title="{{ 'Click to highlight and inspect'|t('accessibility-audit') }}">
                                 <span class="accessibility-audit-pr-dot accessibility-audit-pr-dot--{{ issue.severity }}"></span>
                                 <span class="visually-hidden">{{ severityLabels[issue.severity] ?? issue.severity }}:</span>
-                                <span class="accessibility-audit-pr-issue-name">{{ issue.ruleId }}</span>
+                                <span class="accessibility-audit-pr-issue-name">{{ issue.title ?? issue.ruleId }}</span>
                                 <span class="accessibility-audit-pr-issue-count">{{ issue.occurrences }}</span>
                             </div>
                             <a href="{{ url('accessibility-audit/issues/detail', {ruleId: issue.ruleId, site: siteHandle}) }}"
                                class="accessibility-audit-pr-detail-arrow"
                                title="{{ 'View issue details'|t('accessibility-audit') }}"
-                               aria-label="{{ 'View details for '|t('accessibility-audit') }}{{ issue.ruleId }}">→</a>
+                               aria-label="{{ 'View details for '|t('accessibility-audit') }}{{ issue.title ?? issue.ruleId }}">→</a>
                         </div>
                         <div class="accessibility-audit-pr-issue-expand" id="{{ prExpandId }}" hidden>
                             <div class="accessibility-audit-pr-issue-expand-body"></div>
@@ -221,6 +224,9 @@
                                 <button type="button" class="btn small" id="accessibility-audit-pr-bulk-dismiss" disabled>
                                     {{ 'Dismiss selected'|t('accessibility-audit') }}
                                 </button>
+                                <button type="button" class="btn small" id="accessibility-audit-pr-bulk-everywhere" disabled>
+                                    {{ 'Dismiss selected on every page'|t('accessibility-audit') }}
+                                </button>
                                 <span class="accessibility-audit-pr-review__status" id="accessibility-audit-pr-bulk-status" role="status" aria-live="polite"></span>
                             </div>
                         {% endif %}
@@ -242,7 +248,8 @@
                                     {% set sharedVp = cluster.occurrences|filter(o => (o.viewportLabel ?? '') != clusterVp)|length == 0 %}
                                     <div class="accessibility-audit-pr-cluster" data-accessibility-audit-cluster
                                          data-rule-id="{{ group.ruleId }}"
-                                         data-contexts="{{ cluster.occurrences|map(o => o.context|default(''))|json_encode }}">
+                                         data-contexts="{{ cluster.occurrences|map(o => o.context|default(''))|json_encode }}"
+                                         data-selectors="{{ cluster.occurrences|map(o => o.selector|default(''))|json_encode }}">
                                         <div class="accessibility-audit-pr-review accessibility-audit-pr-cluster__head">
                                             {% if canRunScans and potentialCount > 1 %}
                                                 <label class="accessibility-audit-pr-review__pick">
@@ -260,6 +267,9 @@
                                                 <button type="button" class="btn small" data-highlight-cluster>{{ 'Show all on page'|t('accessibility-audit') }}</button>
                                                 {% if canRunScans %}
                                                     <button type="button" class="btn small" data-cluster-verdict="dismissed">{{ 'Not an issue'|t('accessibility-audit') }}</button>
+                                                    {% if (cluster.occurrences|first).everyPage ?? false %}
+                                                        <button type="button" class="btn small" data-cluster-everywhere>{{ 'Not an issue on every page'|t('accessibility-audit') }}</button>
+                                                    {% endif %}
                                                     <button type="button" class="btn small accessibility-audit-pr-review__confirm" data-cluster-verdict="confirmed">{{ 'Confirm as failure'|t('accessibility-audit') }}</button>
                                                     <span class="accessibility-audit-pr-review__status" role="status" aria-live="polite"></span>
                                                 {% endif %}
@@ -274,7 +284,9 @@
                                             {% for row in cluster.occurrences %}
                                 <div class="accessibility-audit-pr-review accessibility-audit-pr-cluster__row" data-accessibility-audit-review="pending"
                                      data-rule-id="{{ row.ruleId }}"
-                                     data-context="{{ row.context|default('') }}">
+                                     data-context="{{ row.context|default('') }}"
+                                     data-selector="{{ row.selector|default('') }}"
+                                     data-every-page="{{ (row.everyPage ?? false) ? '1' : '0' }}">
                                     {% if canRunScans and potentialCount > 1 %}
                                         <label class="accessibility-audit-pr-review__pick">
                                             <input type="checkbox" class="checkbox" data-bulk-pick
@@ -294,6 +306,9 @@
                                         <button type="button" class="btn small" data-highlight>{{ 'Show on page'|t('accessibility-audit') }}</button>
                                         {% if canRunScans %}
                                             <button type="button" class="btn small" data-verdict="dismissed">{{ 'Not an issue'|t('accessibility-audit') }}</button>
+                                            {% if row.everyPage ?? false %}
+                                                <button type="button" class="btn small" data-verdict-everywhere>{{ 'Not an issue on every page'|t('accessibility-audit') }}</button>
+                                            {% endif %}
                                             <button type="button" class="btn small accessibility-audit-pr-review__confirm" data-verdict="confirmed">{{ 'Confirm as failure'|t('accessibility-audit') }}</button>
                                             <span class="accessibility-audit-pr-review__status" role="status" aria-live="polite"></span>
                                         {% endif %}
@@ -306,7 +321,9 @@
                                     {% set row = cluster.occurrences|first %}
                                 <div class="accessibility-audit-pr-review" data-accessibility-audit-review="pending"
                                      data-rule-id="{{ row.ruleId }}"
-                                     data-context="{{ row.context|default('') }}">
+                                     data-context="{{ row.context|default('') }}"
+                                     data-selector="{{ row.selector|default('') }}"
+                                     data-every-page="{{ (row.everyPage ?? false) ? '1' : '0' }}">
                                     {% if canRunScans and potentialCount > 1 %}
                                         <label class="accessibility-audit-pr-review__pick">
                                             <input type="checkbox" class="checkbox" data-bulk-pick
@@ -326,6 +343,9 @@
                                         <button type="button" class="btn small" data-highlight>{{ 'Show on page'|t('accessibility-audit') }}</button>
                                         {% if canRunScans %}
                                             <button type="button" class="btn small" data-verdict="dismissed">{{ 'Not an issue'|t('accessibility-audit') }}</button>
+                                            {% if row.everyPage ?? false %}
+                                                <button type="button" class="btn small" data-verdict-everywhere>{{ 'Not an issue on every page'|t('accessibility-audit') }}</button>
+                                            {% endif %}
                                             <button type="button" class="btn small accessibility-audit-pr-review__confirm" data-verdict="confirmed">{{ 'Confirm as failure'|t('accessibility-audit') }}</button>
                                             <span class="accessibility-audit-pr-review__status" role="status" aria-live="polite"></span>
                                         {% endif %}
@@ -383,7 +403,7 @@
                     <a href="{{ url('accessibility-audit/issues/detail', {ruleId: row.ruleId, site: siteHandle}) }}"
                        class="accessibility-audit-pr-issue-row accessibility-audit-pr-issue-row--resolved">
                         <span class="accessibility-audit-pr-dot accessibility-audit-pr-dot--resolved">✓</span>
-                        <span class="accessibility-audit-pr-issue-name">{{ row.ruleId }}</span>
+                        <span class="accessibility-audit-pr-issue-name">{{ row.title ?? row.ruleId }}</span>
                         <span class="accessibility-audit-pr-issue-count">{{ row.count }}</span>
                     </a>
                     {% endfor %}
@@ -563,7 +583,7 @@
 {% else %}
 <div class="readable mt-s">
     <blockquote class="note">
-        <p>{{ 'This page has no public URL, showing issue data only.'|t('accessibility-audit') }}</p>
+        <p>{{ 'This page has no public URL, so only its issue data is shown.'|t('accessibility-audit') }}</p>
     </blockquote>
 </div>
 
@@ -571,7 +591,7 @@
 <div class="accessibility-audit-card mt-l">
     <div class="accessibility-audit-card-header">{{ 'Issues'|t('accessibility-audit') }} <span class="accessibility-audit-card-subhead">{{ issues|length }}</span></div>
     {% if issues|length == 0 %}
-        <p class="accessibility-audit-clean mt-s">✓ {{ 'No issues found.'|t('accessibility-audit') }}</p>
+        <p class="light accessibility-audit-emptyok mt-s"><span class="accessibility-audit-resolved-check" data-icon="check" aria-hidden="true"></span> {{ 'No issues found.'|t('accessibility-audit') }}</p>
     {% else %}
     <div class="accessibility-audit-table-scroll">
     <table class="accessibility-audit-table accessibility-audit-rule-table data fullwidth">
@@ -580,18 +600,18 @@
             <th scope="col" class="accessibility-audit-num-center orderable" data-sort-type="number"><button type="button">{{ 'Conformance'|t('accessibility-audit') }}</button></th>
             <th scope="col" class="accessibility-audit-num-center orderable" data-sort-type="text"><button type="button">{{ 'Success Criteria'|t('accessibility-audit') }}</button></th>
             <th scope="col" class="orderable" data-sort-type="number"><button type="button">{{ 'Difficulty'|t('accessibility-audit') }}</button></th>
-            <th scope="col" class="orderable" data-sort-type="text"><button type="button">{{ 'Responsibility'|t('accessibility-audit') }}</button></th>
+            <th scope="col" class="orderable" data-sort-type="text"><button type="button">{{ 'Owner'|t('accessibility-audit') }}</button></th>
             <th scope="col" class="orderable" data-sort-type="text"><button type="button">{{ 'Element Type'|t('accessibility-audit') }}</button></th>
-            <th scope="col" class="rightalign orderable ordered desc" data-sort-type="number"><button type="button">{{ 'Count'|t('accessibility-audit') }}</button></th>
+            <th scope="col" class="rightalign orderable ordered desc" data-sort-type="number"><button type="button">{{ 'Occurrences'|t('accessibility-audit') }}</button></th>
         </tr></thead>
         <tbody>
             {% for issue in issues %}
             {% set conformanceRank = {a: 1, aa: 2, aaa: 3}[(issue.wcagLevel ?? '')|lower] ?? 0 %}
             {% set difficultyRank = {beginner: 1, intermediate: 2, advanced: 3}[issue.difficulty ?? ''] ?? 0 %}
             <tr>
-                <td data-sort-value="{{ issue.ruleId|e('html_attr') }}">
+                <td data-sort-value="{{ (issue.title ?? issue.ruleId)|e('html_attr') }}">
                     {{ macros.severityDot(issue.severity) }}
-                    <a href="{{ url('accessibility-audit/issues/detail', {ruleId: issue.ruleId, site: siteHandle}) }}">{{ issue.ruleId }}</a>
+                    {{ macros.ruleName(issue.title ?? issue.ruleId, issue.ruleId, url('accessibility-audit/issues/detail', {ruleId: issue.ruleId, site: siteHandle})) }}
                 </td>
                 <td class="accessibility-audit-num-center" data-sort-value="{{ conformanceRank }}">{{ macros.conformanceBadge(issue.wcagLevel ?? null) }}</td>
                 <td class="light accessibility-audit-num-center" data-sort-value="{{ issue.wcagCriterion ?? '' }}">{{ issue.wcagCriterion ?? '—' }}</td>

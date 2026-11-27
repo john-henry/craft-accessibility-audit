@@ -38,6 +38,11 @@ class ScanElementJob extends BaseJob
      */
     public int $siteId = 0;
 
+    /**
+     * @var bool Whether to ask for the page past any full-page cache.
+     */
+    public bool $freshRender = false;
+
     // Public Methods
     // =========================================================================
 
@@ -56,12 +61,12 @@ class ScanElementJob extends BaseJob
             return;
         }
 
-        $result = AccessibilityAudit::getInstance()->getAudit()->scanElement($element);
+        $result = AccessibilityAudit::getInstance()->getAudit()->scanElement($element, freshRender: $this->freshRender);
 
-        // On the Standard edition the distinct-page cap can refuse a brand-new
+        // On Lite the distinct-page cap can refuse a brand-new
         // page. Treat that as a quiet skip: no exception, no failed job.
         if (!empty($result['limitReached'])) {
-            Craft::info('Scan skipped: Standard edition page limit reached', 'accessibility-audit');
+            Craft::info('Scan skipped: Lite edition page limit reached', 'accessibility-audit');
         }
     }
 

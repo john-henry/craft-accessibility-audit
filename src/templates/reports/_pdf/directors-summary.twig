@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="{{ language }}">
+<head>
+<meta charset="UTF-8">
+<title>{{ title }}</title>
+<style>
+@page { margin: 18mm 16mm; }
+body { font-family: 'DejaVu Sans', sans-serif; font-size: 10pt; line-height: 1.45; color: #1f2933; }
+h1 { font-size: 17pt; margin: 0 0 2pt 0; }
+h2 { font-size: 12pt; margin: 16pt 0 5pt 0; }
+p { margin: 0 0 7pt 0; }
+.meta { color: #52606d; margin-bottom: 14pt; }
+table { width: 100%; border-collapse: collapse; margin: 4pt 0 10pt 0; }
+th, td { text-align: left; padding: 4pt 6pt; border-bottom: 0.5pt solid #cbd2d9; vertical-align: top; }
+thead th { border-bottom: 1pt solid #7b8794; font-size: 9pt; }
+.num { text-align: right; }
+.figures td { border: 0.5pt solid #cbd2d9; padding: 7pt 8pt; width: 25%; }
+.figure-value { font-size: 16pt; font-weight: bold; display: block; }
+.figure-label { font-size: 8.5pt; color: #52606d; display: block; }
+.note { border-left: 2pt solid #9aa5b1; padding: 2pt 0 2pt 8pt; white-space: pre-line; }
+.notice { background: #fff8e1; border: 0.5pt solid #e0c36a; padding: 5pt 8pt; }
+.footer { margin-top: 18pt; padding-top: 6pt; border-top: 0.5pt solid #cbd2d9; color: #52606d; font-size: 8.5pt; }
+</style>
+</head>
+<body>
+<h1>{{ title }}</h1>
+<p class="meta">
+    {{ organisationName is not empty ? organisationName ~ ', ' : '' }}{{ siteName }}.
+    {{ 'Period: {from} to {to}.'|t('accessibility-audit', { from: data.range[0], to: data.range[1] }) }}
+    {{ 'Made on {date}.'|t('accessibility-audit', { date: generated }) }}
+</p>
+
+{% if data.score is null %}
+    <p class="notice">{{ 'No pages have been scanned yet, so there is nothing to summarise.'|t('accessibility-audit') }}</p>
+{% else %}
+    {% set change = data.scoreAtStart is not null ? data.score - data.scoreAtStart : null %}
+
+    <h2>{{ 'Where things stand'|t('accessibility-audit') }}</h2>
+    <table class="figures">
+        <tr>
+            <td>
+                <span class="figure-value">{{ data.score }}/100</span>
+                <span class="figure-label">{{ 'average page score'|t('accessibility-audit') }}</span>
+            </td>
+            <td>
+                {% if change is not null %}
+                    <span class="figure-value">{{ change > 0 ? '+' ~ change : change }}</span>
+                    <span class="figure-label">{{ 'change since {date}'|t('accessibility-audit', { date: data.startDate }) }}</span>
+                {% else %}
+                    <span class="figure-value">{{ data.criticalPages|number }}</span>
+                    <span class="figure-label">{{ 'pages with at least one error'|t('accessibility-audit') }}</span>
+                {% endif %}
+            </td>
+            <td>
+                <span class="figure-value">{{ data.failingCriteriaAA }}</span>
+                <span class="figure-label">{{ 'WCAG AA requirements failing somewhere'|t('accessibility-audit') }}</span>
+            </td>
+            <td>
+                {% if data.pagesBelowTarget is not null %}
+                    <span class="figure-value">{{ data.pagesBelowTarget|number }}</span>
+                    <span class="figure-label">{{ 'pages under the target of {target}'|t('accessibility-audit', { target: data.target }) }}</span>
+                {% else %}
+                    <span class="figure-value">{{ data.pendingReview|number }}</span>
+                    <span class="figure-label">{{ 'possible problems waiting for review'|t('accessibility-audit') }}</span>
+                {% endif %}
+            </td>
+        </tr>
+    </table>
+
+    <h2>{{ 'How the score has moved'|t('accessibility-audit') }}</h2>
+    {% if data.trend|length >= 2 %}
+        {% set first = data.trend|first %}
+        {% set last = data.trend|last %}
+        <table>
+            <thead>
+                <tr>
+                    <th>{{ 'Day'|t('accessibility-audit') }}</th>
+                    <th class="num">{{ 'Average score'|t('accessibility-audit') }}</th>
+                    <th class="num">{{ 'Pages scanned'|t('accessibility-audit') }}</th>
+                    <th class="num">{{ 'Pages with errors'|t('accessibility-audit') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in [first, last] %}
+                    <tr>
+                        <td>{{ row.date }}</td>
+                        <td class="num">{{ row.avgScore }}</td>
+                        <td class="num">{{ row.scannedCount|number }}</td>
+                        <td class="num">{{ row.criticalPages|number }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% elseif data.trend is not empty %}
+        <p>{{ 'The score has only been recorded on one day in this period ({date}), so there is no trend to show yet.'|t('accessibility-audit', { date: (data.trend|first).date }) }}</p>
+    {% else %}
+        <p>{{ 'The score was not recorded in this period, so there is no trend to show yet. It is recorded once a day from now on.'|t('accessibility-audit') }}</p>
+    {% endif %}
+
+    <h2>{{ 'The biggest risks'|t('accessibility-audit') }}</h2>
+    {% if data.risks is empty %}
+        <p>{{ 'The automated checks found no open problems.'|t('accessibility-audit') }}</p>
+    {% else %}
+        <table>
+            <thead>
+                <tr>
+                    <th>{{ 'Problem'|t('accessibility-audit') }}</th>
+                    <th class="num">{{ 'Pages'|t('accessibility-audit') }}</th>
+                    <th class="num">{{ 'Times found'|t('accessibility-audit') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for risk in data.risks %}
+                    <tr>
+                        <td>{{ risk.title }}{% if risk.wcagCriterion %} (WCAG {{ risk.wcagCriterion }}){% endif %}</td>
+                        <td class="num">{{ risk.pages|number }}</td>
+                        <td class="num">{{ risk.occurrences|number }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+
+    {% if data.shared is not empty %}
+        <h2>{{ 'Problems that repeat across pages'|t('accessibility-audit') }}</h2>
+        <p>{{ 'These turn up on many pages at once, which usually means a shared part of the site such as a menu, footer or template. Fixing one in its shared part fixes it everywhere.'|t('accessibility-audit') }}</p>
+        <ul>
+            {% for item in data.shared %}
+                <li>{{ '{title}: on {n, plural, =1{# page} other{# pages}}'|t('accessibility-audit', { title: item.title, n: item.pages }) }}</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+    <h2>{{ 'Fixed and new in this period'|t('accessibility-audit') }}</h2>
+    <p>{{ '{fixed, plural, =1{# problem was} other{# problems were}} fixed, and {new, plural, =1{# new one turned up that is} other{# new ones turned up that are}} still open.'|t('accessibility-audit', { fixed: data.fixed, new: data.new }) }}</p>
+    {% if data.outrunsRetention %}
+        <p class="notice">{{ 'This period starts before the oldest scans the plugin still keeps, so the fixed count for the early part of it may be short.'|t('accessibility-audit') }}</p>
+    {% endif %}
+
+    <h2>{{ 'Conformance paperwork'|t('accessibility-audit') }}</h2>
+    <ul>
+        <li>
+            {% if data.vpatRecorded %}
+                {{ 'The VPAT conformance report was last recorded on {date}.'|t('accessibility-audit', { date: data.vpatRecorded|date('Y-m-d') }) }}
+            {% else %}
+                {{ 'No revision of the VPAT conformance report has been recorded yet.'|t('accessibility-audit') }}
+            {% endif %}
+        </li>
+        <li>
+            {{ data.statementStale
+                ? 'The accessibility statement needs updating to match the latest scans.'|t('accessibility-audit')
+                : 'The accessibility statement matches the latest scans.'|t('accessibility-audit') }}
+        </li>
+    </ul>
+{% endif %}
+
+{% if data.note is not empty %}
+    <h2>{{ 'What we’re doing about it'|t('accessibility-audit') }}</h2>
+    <p class="note">{{ data.note }}</p>
+{% endif %}
+
+<div class="footer">
+    <p>
+        {% if freshness.scanned > 0 %}
+            {{ 'Based on the latest scan of {scanned} of {scannable} pages.'|t('accessibility-audit', { scanned: freshness.scanned|number, scannable: max(freshness.scanned, freshness.scannable)|number }) }}
+            {% if freshness.oldestDays is not null %}
+                {{ 'Scans range from {newest} to {oldest} days old.'|t('accessibility-audit', { newest: freshness.newestDays, oldest: freshness.oldestDays }) }}
+            {% endif %}
+        {% endif %}
+    </p>
+    {% if freshness.sweeping %}
+        <p>{{ 'A full scan was running when this was made, so some pages are showing older results.'|t('accessibility-audit') }}</p>
+    {% endif %}
+    <p>{{ 'Automated checks find a share of accessibility problems, not all of them. Testing by people, with a keyboard and a screen reader, covers the rest.'|t('accessibility-audit') }}</p>
+</div>
+</body>
+</html>

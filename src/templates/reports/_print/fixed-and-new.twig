@@ -1,0 +1,60 @@
+{% extends 'accessibility-audit/reports/_print/layout' %}
+
+{% block filterLine %}
+    {{ 'Period: {from} to {to}.'|t('accessibility-audit', { from: data.range[0], to: data.range[1] }) }}
+{% endblock %}
+
+{% block body %}
+    <ul class="report-figures">
+        <li>
+            <span class="report-figure__value">{{ data.fixed|number }}</span>
+            <span class="report-figure__label">{{ 'problems fixed'|t('accessibility-audit') }}</span>
+        </li>
+        <li>
+            <span class="report-figure__value">{{ data.fixedPages|number }}</span>
+            <span class="report-figure__label">{{ 'page fixes'|t('accessibility-audit') }}</span>
+        </li>
+        <li>
+            <span class="report-figure__value">{{ data.new|number }}</span>
+            <span class="report-figure__label">{{ 'new problems still open'|t('accessibility-audit') }}</span>
+        </li>
+    </ul>
+
+    <p>{{ 'A problem counts as fixed when a fresh scan of its page no longer finds it, so fixes show up as pages get scanned again. Only definite failures are counted.'|t('accessibility-audit') }}</p>
+
+    {% if data.outrunsRetention %}
+        <p class="report-notice">{{ 'This period starts before the oldest scans the plugin still keeps, so the fixed count for the early part of it may be short.'|t('accessibility-audit') }}</p>
+    {% endif %}
+
+    {% if data.rows is empty %}
+        <p>{{ 'Nothing was fixed and nothing new turned up in this period.'|t('accessibility-audit') }}</p>
+    {% else %}
+        {% if data.total > data.rows|length %}
+            <p>{{ 'The first {shown} rules are listed here. The CSV has the lot.'|t('accessibility-audit', { shown: data.rows|length }) }}</p>
+        {% endif %}
+        <table>
+            <caption class="visually-hidden">{{ report.name() }}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">{{ 'Problem'|t('accessibility-audit') }}</th>
+                    <th scope="col">{{ 'WCAG'|t('accessibility-audit') }}</th>
+                    <th scope="col" class="num">{{ 'Fixed'|t('accessibility-audit') }}</th>
+                    <th scope="col" class="num">{{ 'New'|t('accessibility-audit') }}</th>
+                    <th scope="col" class="num">{{ 'Net change'|t('accessibility-audit') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in data.rows %}
+                    {% set net = row.new - row.fixed %}
+                    <tr>
+                        <th scope="row">{{ row.title }}</th>
+                        <td>{{ row.wcagCriterion }}</td>
+                        <td class="num">{{ row.fixed|number }}</td>
+                        <td class="num">{{ row.new|number }}</td>
+                        <td class="num">{{ net > 0 ? '+' ~ net|number : net|number }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+{% endblock %}

@@ -34,6 +34,8 @@
         instructions: 'The field handle used to store alt text on assets. Defaults to Craft\'s built-in "alt" field. Change this if your assets use a custom plain text field for alt text. The asset audit and AI generation both read and write this field.'|t('accessibility-audit'),
         id: 'altTextField',
         name: 'settings[altTextField]',
+        warning: config.altTextField is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.altTextField is defined,
         options: assetFieldOptions,
         value: settings.altTextField,
         errors: settings.getErrors('altTextField'),
@@ -41,11 +43,14 @@
     
     
 
+    {% if isPlus ?? false %}
     {{ forms.autosuggestField({
         label: 'Anthropic API Key'|t('accessibility-audit'),
         instructions: 'Used to generate alt text suggestions with Claude (Haiku). Get a key at platform.claude.com. You can also reference an environment variable: type $ to see suggestions.'|t('accessibility-audit'),
         id: 'anthropicApiKey',
         name: 'settings[anthropicApiKey]',
+        warning: config.anthropicApiKey is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.anthropicApiKey is defined,
         value: settings.anthropicApiKey,
         suggestEnvVars: true,
         suggestAliases: false,
@@ -67,6 +72,8 @@
         instructions: 'Language for generated alt text. Claude will respond in the selected language.'|t('accessibility-audit'),
         id: 'altTextLanguage',
         name: 'settings[altTextLanguage]',
+        warning: config.altTextLanguage is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.altTextLanguage is defined,
         options: [
             { value: 'English',    label: 'English' },
             { value: 'Spanish',    label: 'Spanish' },
@@ -90,22 +97,52 @@
     
     {{ forms.lightswitchField({
         label: 'Generate for New Assets'|t('accessibility-audit'),
-        instructions: 'Automatically generate alt text when new image assets are uploaded. Jobs run in the background via the Craft queue. Existing alt text is never overwritten.'|t('accessibility-audit'),
+        instructions: 'Draft alt text in the background when new images are uploaded. Existing alt text is never overwritten.'|t('accessibility-audit'),
         id: 'autoGenerateAlt',
         name: 'settings[autoGenerateAlt]',
+        warning: config.autoGenerateAlt is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.autoGenerateAlt is defined,
         on: settings.autoGenerateAlt,
+        toggle: 'accessibility-audit-new-asset-alt-mode',
         errors: settings.getErrors('autoGenerateAlt'),
     }) }}
+
+    <div id="accessibility-audit-new-asset-alt-mode"{% if not settings.autoGenerateAlt and not settings.hasErrors('newAssetAltMode') %} class="hidden"{% endif %}>
+    {{ forms.selectField({
+        label: 'New uploads'|t('accessibility-audit'),
+        instructions: 'Where the drafts go. Drafts Claude flags for checking always go to Drafts to review on the Assets page. Alt text saved straight to the image is not seen by anyone before it goes live, and text inside an image can sometimes steer the AI.'|t('accessibility-audit'),
+        id: 'newAssetAltMode',
+        name: 'settings[newAssetAltMode]',
+        warning: config.newAssetAltMode is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.newAssetAltMode is defined,
+        options: [
+            { value: 'review', label: 'Save drafts for review'|t('accessibility-audit') },
+            { value: 'save', label: 'Save to the image when there is nothing to check'|t('accessibility-audit') },
+        ],
+        value: settings.newAssetAltMode,
+        errors: settings.getErrors('newAssetAltMode'),
+    }) }}
+    </div>
     
     {{ forms.textareaField({
         label: 'Site Context (optional)'|t('accessibility-audit'),
         instructions: 'A short description of your site or brand. Sent with each generation request to improve accuracy. E.g. "E-commerce store selling premium fountain pens and stationery."'|t('accessibility-audit'),
         id: 'altTextContext',
         name: 'settings[altTextContext]',
+        warning: config.altTextContext is defined ? 'Overridden by config file.'|t('accessibility-audit'),
+        disabled: config.altTextContext is defined,
         value: settings.altTextContext,
         rows: 2,
         errors: settings.getErrors('altTextContext'),
     }) }}
+    {% else %}
+        {% include 'accessibility-audit/_includes/pro-upsell' with {
+            feature: 'AI alt text'|t('accessibility-audit'),
+            text: 'Draft alt text for your images with Claude, one at a time or the whole missing-alt list in one go, with every draft kept for review. Available on the Plus edition.'|t('accessibility-audit'),
+            edition: 'plus',
+            headingLevel: 4,
+        } only %}
+    {% endif %}
 
     <hr>
 
@@ -115,6 +152,7 @@
         {% include 'accessibility-audit/_includes/pro-upsell' with {
             feature: 'CI/CD Integration'|t('accessibility-audit'),
             text: 'Give your build pipeline a token to poll the site\'s accessibility score and gate deploys on a target. Available on the Pro edition.'|t('accessibility-audit'),
+            edition: 'pro',
             headingLevel: 4,
         } only %}
     {% else %}
@@ -148,7 +186,8 @@
         <div class="field">
             <button type="submit"
                     class="btn"
-                    formaction="{{ actionUrl('accessibility-audit/settings/generate-ci-token') }}">
+                    formaction="{{ actionUrl('accessibility-audit/settings/generate-ci-token') }}"
+                    {% if settings.ciApiToken %}data-aa-confirm="{{ 'Regenerate the CI token? Anything still using the current one will be refused until it is given the new one.'|t('accessibility-audit') }}"{% endif %}>
                 {{ settings.ciApiToken
                     ? 'Regenerate token'|t('accessibility-audit')
                     : 'Generate token'|t('accessibility-audit') }}
@@ -165,6 +204,7 @@
         {% include 'accessibility-audit/_includes/pro-upsell' with {
             feature: 'Decoupled Frontends'|t('accessibility-audit'),
             text: 'Run the admin overlay on a headless frontend (Next, Nuxt, Astro) with a single script tag. Available on the Pro edition.'|t('accessibility-audit'),
+            edition: 'pro',
             headingLevel: 4,
         } only %}
     {% else %}
@@ -229,7 +269,8 @@
         <div class="field">
             <button type="submit"
                     class="btn"
-                    formaction="{{ actionUrl('accessibility-audit/settings/generate-overlay-token') }}">
+                    formaction="{{ actionUrl('accessibility-audit/settings/generate-overlay-token') }}"
+                    {% if settings.overlayApiToken %}data-aa-confirm="{{ 'Regenerate the overlay token? Browsers activated with the current one stop showing the overlay until they are activated again.'|t('accessibility-audit') }}"{% endif %}>
                 {{ settings.overlayApiToken
                     ? 'Regenerate token'|t('accessibility-audit')
                     : 'Generate token'|t('accessibility-audit') }}
@@ -238,4 +279,13 @@
     {% endif %}
     {% endif %}
 {% if readOnly %}</fieldset>{% endif %}
+{% js %}
+document.querySelectorAll('[data-aa-confirm]').forEach(function(button) {
+    button.addEventListener('click', function(event) {
+        if (!window.confirm(button.dataset.aaConfirm)) {
+            event.preventDefault();
+        }
+    });
+});
+{% endjs %}
 {% endblock %}

@@ -1,0 +1,152 @@
+{% extends '_layouts/cp' %}
+{% import 'accessibility-audit/_macros' as macros %}
+
+{% set meta = check.meta ?? {} %}
+{% set title = (meta.title ?? null) ?: (asset.title ?: asset.filename) %}
+{% set selectedSubnavItem = 'assets' %}
+{% set crumbs = [
+    { label: 'Accessibility Audit'|t('accessibility-audit'), url: cpUrl('accessibility-audit') },
+    { label: 'Asset Accessibility'|t('accessibility-audit'), url: cpUrl('accessibility-audit/assets') },
+    { label: 'PDFs'|t('accessibility-audit'), url: cpUrl('accessibility-audit/assets', { filter: 'pdf' }) },
+] %}
+{% set fileUrl = asset.url %}
+
+{% block actionButton %}
+<div class="flex">
+    {% if canRunScans %}
+        <form method="post">
+            {{ csrfInput() }}
+            {{ actionInput('accessibility-audit/audit/check-pdf') }}
+            {{ hiddenInput('assetId', asset.id) }}
+            {{ redirectInput(url('accessibility-audit/assets/pdf/' ~ asset.id)) }}
+            <button type="submit" class="btn">{{ 'Re-check'|t('accessibility-audit') }}</button>
+        </form>
+    {% endif %}
+    {% if asset.cpEditUrl %}
+        <a href="{{ asset.cpEditUrl }}" class="btn">{{ 'Edit asset'|t('accessibility-audit') }}</a>
+    {% endif %}
+    {% if fileUrl %}
+        <a href="{{ fileUrl }}" class="btn" target="_blank" rel="noopener">{{ 'Open file'|t('accessibility-audit') }}{{ macros.newTabNote() }}</a>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block details %}
+    {% set yes = 'Yes'|t('app') %}
+    {% set no = 'No'|t('app') %}
+    {% set program = (meta.creator ?? null) ?: (meta.producer ?? null) %}
+    {% set rows = {
+        ('Filename'|t('app')): asset.filename,
+        ('Pages'|t('accessibility-audit')): meta.pages ?? null,
+        ('Language'|t('app')): meta.lang ?? null,
+        ('Made with'|t('accessibility-audit')): program,
+        ('Tagged'|t('accessibility-audit')): meta.tagged is defined ? (meta.tagged ? yes : no) : null,
+        ('PDF/UA identifier'|t('accessibility-audit')): meta.pdfua is defined and meta.pdfua is not null ? (meta.pdfua ? yes : no) : null,
+        ('Encrypted'|t('accessibility-audit')): meta.encrypted is defined ? (meta.encrypted ? yes : no) : null,
+        ('Form'|t('accessibility-audit')): (check.hasForm ?? false) ? yes : null,
+        ('Last checked'|t('accessibility-audit')): (check.dateChecked ?? null) ? check.dateChecked|date('short') : null,
+    } %}
+
+    {{ asset.getPreviewHtml()|raw }}
+
+    <dl class="meta read-only">
+        {% for label, value in rows %}
+            {% if value is not null and value != '' %}
+                <div class="data">
+                    <dt class="heading">{{ label }}</dt>
+                    <dd class="value">{{ value }}</dd>
+                </div>
+            {% endif %}
+        {% endfor %}
+    </dl>
+
+    <p class="light smalltext accessibility-audit-pdf-disclaimer">{{ 'These checks are not a PDF/UA validation: reading order, the quality of alt text and what table headers mean still need a person.'|t('accessibility-audit') }}</p>
+{% endblock %}
+
+{% block content %}
+<div class="readable">
+    {% if check is null %}
+        <h2>{{ 'Not checked yet'|t('accessibility-audit') }}</h2>
+        <p>{{ 'This PDF hasn’t been checked yet. New and replaced PDFs are checked as the queue runs.'|t('accessibility-audit') }}</p>
+    {% elseif reason %}
+        <h2>{{ 'Not checked: {reason}'|t('accessibility-audit', { reason: reason.label }) }}</h2>
+        <p>{{ reason.desc }}</p>
+        <p>{{ reason.advice }}</p>
+    {% else %}
+        <div class="accessibility-audit-pdf-summary">
+            <h2>
+                {%- if failing is empty -%}
+                    {{ 'Passes every check'|t('accessibility-audit') }}
+                {%- else -%}
+                    {{ '{n, plural, =1{# check failing} other{# checks failing}}'|t('accessibility-audit', { n: failing|length }) }}
+                {%- endif -%}
+            </h2>
+            <p class="light">
+                {{ '{n} passed'|t('accessibility-audit', { n: passed }) }}
+                {% if check.dateChecked ?? null %}&middot; {{ 'last checked {date}'|t('accessibility-audit', { date: check.dateChecked|date('short') }) }}{% endif %}
+            </p>
+        </div>
+
+        {% if failing is not empty %}
+            <p class="notice has-icon">
+                <span class="icon" aria-hidden="true"></span>
+                <span>{{ 'Easiest first: put the content on a web page, or fix it in the program that made it and export it again.'|t('accessibility-audit') }}</span>
+            </p>
+
+            {% set severityLabels = {
+                error: 'Error'|t('accessibility-audit'),
+                warning: 'Warning'|t('accessibility-audit'),
+                review: 'Needs review'|t('accessibility-audit'),
+                notice: 'Notice'|t('accessibility-audit'),
+            } %}
+            {% for item in failing %}
+                {% set finding = item.finding %}
+                {% set parts = [] %}
+                {% if finding.count is defined and finding.total is defined and finding.total > 0 %}
+                    {% set counted = { count: finding.count, total: finding.total } %}
+                    {% set ofTotal = {
+                        'pdf-field-no-tooltip': '{count} of {total, plural, =1{# field} other{# fields}}'|t('accessibility-audit', counted),
+                        'pdf-figure-no-alt': '{count} of {total, plural, =1{# image} other{# images}}'|t('accessibility-audit', counted),
+                        'pdf-figure-junk-alt': '{count} of {total, plural, =1{# image} other{# images}}'|t('accessibility-audit', counted),
+                        'pdf-heading-order': '{count} of {total, plural, =1{# heading} other{# headings}}'|t('accessibility-audit', counted),
+                        'pdf-table-no-th': '{count} of {total, plural, =1{# table} other{# tables}}'|t('accessibility-audit', counted),
+                        'pdf-th-no-scope': '{count} of {total, plural, =1{# header cell} other{# header cells}}'|t('accessibility-audit', counted),
+                        'pdf-list-structure': '{count} of {total, plural, =1{# list item} other{# list items}}'|t('accessibility-audit', counted),
+                        'pdf-link-untagged': '{count} of {total, plural, =1{# link} other{# links}}'|t('accessibility-audit', counted),
+                    } %}
+                    {% set parts = parts|merge([ofTotal[item.ruleId] ?? '{count} of {total, plural, =1{# page} other{# pages}}'|t('accessibility-audit', counted)]) %}
+                {% elseif finding.count is defined %}
+                    {% set parts = parts|merge([finding.count]) %}
+                {% elseif finding.total is defined %}
+                    {% set parts = parts|merge(['{n, plural, =1{# page} other{# pages}}'|t('accessibility-audit', { n: finding.total })]) %}
+                {% endif %}
+                {% set pages = finding.pages ?? [] %}
+                {% if pages is not empty %}
+                    {% set parts = parts|merge(['{n, plural, =1{Page} other{Pages}} {pages}'|t('accessibility-audit', { n: pages|length, pages: pages|join(', ') })]) %}
+                {% endif %}
+                {% set dotTone = item.severity in ['error', 'warning'] ? item.severity : 'notice' %}
+
+                <section class="accessibility-audit-pdf-check">
+                    <h3 class="accessibility-audit-rowline">
+                        <span class="accessibility-audit-legend__dot accessibility-audit-legend__dot--{{ dotTone }}" aria-hidden="true"></span>
+                        <span class="visually-hidden">{{ severityLabels[item.severity] ?? item.severity }}:</span>
+                        {{ item.label }}
+                    </h3>
+                    <p class="light accessibility-audit-pdf-check__meta">
+                        <span>{{ severityLabels[item.severity] ?? item.severity }}</span>
+                        {% if item.wcag %}
+                            <span>{{ macros.conformanceBadge(item.level ?? null) }} <span class="code">{{ item.wcag }}</span></span>
+                        {% endif %}
+                        {% for part in parts %}<span>{{ part }}</span>{% endfor %}
+                        {% if item.helpUrl %}
+                            <a href="{{ item.helpUrl }}" target="_blank" rel="noopener">{{ 'Understanding {criterion}'|t('accessibility-audit', { criterion: item.wcag }) }}{{ macros.newTabNote() }}</a>
+                        {% endif %}
+                    </p>
+                    <p>{{ item.desc }}</p>
+                    <p class="accessibility-audit-pdf-check__fix"><strong>{{ 'How to fix'|t('accessibility-audit') }}</strong> {{ item.advice }}</p>
+                </section>
+            {% endfor %}
+        {% endif %}
+    {% endif %}
+</div>
+{% endblock %}

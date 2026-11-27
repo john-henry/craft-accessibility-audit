@@ -81,6 +81,9 @@
     elementPlural: '{count} elements',
     contrastBelowMin: 'Colour contrast below the minimum ratio',
     contrastNeedsReview: 'Colour contrast needs manual review',
+    contrastNeed: '(need {ratio})',
+    contrastColours: 'Text {fg} on {bg}',
+    contrastWorst: 'Lowest found:',
     scoreEstimated: '/100 est.',
     scoreFinal: '/100',
   }, cfg.strings || {});
@@ -434,6 +437,7 @@
       title: row.ruleId,
       wcag: wcag,
       count: parseInt(row.occurrences, 10) || 0,
+      contrast: CONTRAST_RULE_IDS.indexOf(row.ruleId) !== -1 ? parseContrastMessage(row.message) : null,
       /* Stored issues carry no live-DOM selector, but rows matching the last
          in-browser axe run reuse its selectors so Highlight still works. */
       targets: state.liveTargets[row.ruleId] || [],
@@ -485,6 +489,7 @@
 
     violations.forEach((viol) => {
       const sev = impactToSeverity(viol.impact);
+      const isContrast = viol.id === 'color-contrast' || viol.id === 'color-contrast-enhanced';
       list.push({
         sev: sev,
         sevLabel: sevLabel(sev),
@@ -492,6 +497,7 @@
         wcag: wcagString(viol.tags),
         count: viol.nodes.length,
         targets: viol.nodes.map((n) => (n.target && n.target[0]) || '').filter(Boolean),
+        contrast: isContrast ? worstContrast(viol.nodes.map(axeContrastData)) : null,
       });
     });
 
@@ -503,6 +509,7 @@
         wcag: 'WCAG 1.4.3 AA',
         count: extraContrast.length,
         targets: [],
+        contrast: worstContrast(extraContrast),
       });
     }
 
@@ -566,6 +573,7 @@
         <span class="accessibility-audit-issue__main">
           <span class="accessibility-audit-issue__title">${esc(it.title)}</span>
           <span class="accessibility-audit-issue__meta">${esc(it.sevLabel)} · ${esc(it.wcag)} · ${elementCount(it.count)}</span>
+          ${it.contrast ? contrastDetailHtml(it.contrast, it.count) : ''}
         </span>
         ${it.targets.length ? `<button type="button" class="accessibility-audit-highlight" data-hl="${i}">${esc(strings.highlight)}</button>` : ''}
       </li>`).join('') + '</ul>';
@@ -777,6 +785,56 @@
        the rendered page can see. */
     return AccessibilityAuditShared.collectContrastFailures(document, opts)
       .concat(AccessibilityAuditShared.collectStateContrastFailures(document, opts));
+  }
+
+  // ─── Contrast detail ──────────────────────────────────────────────────────
+  /* The server's ruleIds for contrast findings: axe's two, and the three
+     read from the stylesheet for hover, focus and selection. */
+  const CONTRAST_RULE_IDS = ['color-contrast', 'color-contrast-enhanced', 'contrast-hover', 'contrast-focus', 'contrast-selection'];
+
+  /* Only a hex colour goes into a swatch's style attribute. */
+  function hexColour(value) {
+    return typeof value === 'string' && /^#[0-9a-f]{3,8}$/i.test(value.trim()) ? value.trim() : '';
+  }
+
+  /* One axe contrast node as { fg, bg, ratio, expected }, or null when axe
+     recorded no colours for it. */
+  function axeContrastData(node) {
+    const data = node && node.any && node.any[0] && node.any[0].data;
+    if (!data || !data.fgColor || !data.bgColor) return null;
+    return { fg: data.fgColor, bg: data.bgColor, ratio: +data.contrastRatio, expected: data.expectedContrastRatio || '4.5:1' };
+  }
+
+  /* The finding with the lowest ratio: the one furthest from passing. */
+  function worstContrast(list) {
+    return list.reduce((worst, f) => {
+      if (!f || !hexColour(f.fg) || !hexColour(f.bg) || !(f.ratio > 0)) return worst;
+      return !worst || f.ratio < worst.ratio ? f : worst;
+    }, null);
+  }
+
+  /* A stored finding's message, "Contrast 2.1:1 (need 4.5:1) · Text #abc on
+     #def", read back into the same shape. The server groups a rule's rows
+     under the lowest message, which for these is the lowest ratio. */
+  function parseContrastMessage(message) {
+    const m = /(\d+(?:\.\d+)?):1\s*\(need (\d+(?:\.\d+)?:1)\)[^#]*(#[0-9a-f]{3,8})\b[^#]*(#[0-9a-f]{3,8})\b/i.exec(String(message || ''));
+    return m ? { ratio: +m[1], expected: m[2], fg: m[3], bg: m[4] } : null;
+  }
+
+  function contrastDetailHtml(c, count) {
+    const fg = hexColour(c.fg);
+    const bg = hexColour(c.bg);
+    if (!fg || !bg) return '';
+    const swatch = (hex) => `<span class="accessibility-audit-swatch" style="background:${hex}" aria-hidden="true"></span><code>${esc(hex)}</code>`;
+    const ratio = (Math.round(c.ratio * 100) / 100) + ':1';
+    /* With several elements, say this is the worst of them rather than
+       implying every one fails by the same amount. */
+    const lead = count > 1 ? esc(strings.contrastWorst) + ' ' : '';
+    const colours = esc(strings.contrastColours)
+      .replace('{fg}', swatch(fg))
+      .replace('{bg}', swatch(bg));
+    return `<span class="accessibility-audit-issue__contrast">${lead}<strong>${esc(ratio)}</strong> ${esc(fmt(strings.contrastNeed, { ratio: c.expected }))}`
+      + `<span class="accessibility-audit-issue__colours">${colours}</span></span>`;
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────

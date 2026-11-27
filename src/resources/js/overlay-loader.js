@@ -98,7 +98,7 @@
     .then(function (data) {
       if (!data || !data.success || (!data.config && !data.excluded)) {
         if (fromFragment && data && data.error) {
-          // e.g. Standard edition, or the feature switched off: say why
+          // e.g. Plus edition, or the feature switched off: say why
           // instead of silently doing nothing.
           notice('Accessibility Audit: ' + data.error, true);
         }

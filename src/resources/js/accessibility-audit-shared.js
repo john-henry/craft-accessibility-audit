@@ -141,26 +141,24 @@
 
   /* ── Effective background resolution ─────────────────────────────────── */
 
-  /* Walks up the DOM compositing translucent backgrounds until an opaque one
-     is found. Returns null when the visual background can't be determined
-     (fixed/sticky ancestors, background images or gradients, pseudo-element
-     backgrounds): the same cases axe flags as needs-review. */
-  function effectiveBg(el, doc) {
-    doc = doc || el.ownerDocument;
-    var win = doc.defaultView;
-    var r = 255, g = 255, b = 255;
+  /* Composites the backgrounds of a run of elements, given top first, until
+     an opaque one is reached. Null when the visual background can't be
+     determined (fixed/sticky elements, background images or gradients,
+     pseudo-element backgrounds): the same cases axe flags as needs-review.
+     Also reports whether an absolutely positioned element was passed on the
+     way, which matters to a walk up the ancestors. */
+  function layersOver(list, win) {
     var layers = [];
-    var cur = el;
-    while (cur && cur.nodeType === 1) {
+    var positioned = false;
+
+    for (var i = 0; i < list.length; i++) {
+      var cur = list[i];
       var style = win.getComputedStyle(cur);
-      /* fixed/sticky: visual background cannot be determined from DOM ancestry */
       var pos = style.position;
       if (pos === 'fixed' || pos === 'sticky') return null;
-      /* background-image/gradient: effective colour is indeterminate */
+      if (pos === 'absolute') positioned = true;
       var bgImg = style.backgroundImage;
       if (bgImg && bgImg !== 'none') return null;
-      /* pseudo-element background: ::before/::after may paint the background
-         (matches the exact case axe-core flags as "needs review") */
       var pseudos = ['::before', '::after'];
       for (var pi = 0; pi < pseudos.length; pi++) {
         var ps = win.getComputedStyle(cur, pseudos[pi]);
@@ -172,17 +170,63 @@
       var bg = parseRgb(style.backgroundColor);
       if (bg && bg.a > 0) {
         layers.unshift(bg);
-        if (bg.a >= 1) break; /* opaque: ancestors are hidden behind it */
+        if (bg.a >= 1) break; /* opaque: anything further down is hidden */
       }
-      cur = cur.parentElement;
     }
+
     if (layers.length === 0) return null;
+
+    var r = 255, g = 255, b = 255;
     layers.forEach(function (l) {
       r = l.r * l.a + r * (1 - l.a);
       g = l.g * l.a + g * (1 - l.a);
       b = l.b * l.a + b * (1 - l.a);
     });
-    return { r: Math.round(r), g: Math.round(g), b: Math.round(b) };
+
+    return { rgb: { r: Math.round(r), g: Math.round(g), b: Math.round(b) }, positioned: positioned };
+  }
+
+  /* What is actually painted under an element's text, read from the
+     browser's hit-testing rather than the DOM tree. Null when that can't be
+     read: the text is off screen, or something else is drawn on top of it. */
+  function paintedBg(el, doc) {
+    var win = doc.defaultView;
+    if (!doc.elementsFromPoint) return null;
+
+    var rects = el.getClientRects();
+    if (!rects.length) return null;
+
+    var x = rects[0].left + rects[0].width / 2;
+    var y = rects[0].top + rects[0].height / 2;
+    if (x < 0 || y < 0 || x >= win.innerWidth || y >= win.innerHeight) return null;
+
+    var stack = doc.elementsFromPoint(x, y);
+    if (!stack.length || !(stack[0] === el || el.contains(stack[0]))) return null;
+
+    var painted = layersOver(stack, win);
+    return painted ? painted.rgb : null;
+  }
+
+  /* The background an element's text is seen against. The DOM ancestors
+     normally paint it, so they are walked first. An absolutely positioned
+     element breaks that: it is drawn over whatever occupies its spot, which
+     can be a sibling rather than an ancestor (a code block's toolbar sitting
+     over its <pre>), and the walk would climb past it to the page behind.
+     Past one, the answer comes from what is painted at the text instead, or
+     there is no answer at all. */
+  function effectiveBg(el, doc) {
+    doc = doc || el.ownerDocument;
+    var win = doc.defaultView;
+    var chain = [];
+    for (var cur = el; cur && cur.nodeType === 1; cur = cur.parentElement) {
+      chain.push(cur);
+    }
+
+    var walked = layersOver(chain, win);
+    if (!walked) return null;
+    if (!walked.positioned) return walked.rgb;
+
+    return paintedBg(el, doc);
   }
 
   /* ── Contrast failure collection ─────────────────────────────────────── */

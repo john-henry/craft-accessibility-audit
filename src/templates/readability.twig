@@ -20,13 +20,13 @@
 
 {% block details %}
 
-    {% if isPro %}
+    {% if isPlus %}
 <fieldset>
     <legend class="h6">{{ 'WCAG 3.1.5'|t('accessibility-audit') }}</legend>
     <div class="meta accessibility-audit-ref">
         <p class="accessibility-audit-ref__intro">{{ 'Reading Level (Level AAA) recommends that content not require reading ability more advanced than lower secondary education, approximately Grade 9, reading age 14.'|t('accessibility-audit') }}</p>
         <p class="accessibility-audit-ref__intro">{{ 'For AAA compliance, aim for Grade 9 or below. Supplementary versions in simpler language are an alternative.'|t('accessibility-audit') }}</p>
-        <a href="https://www.w3.org/WAI/WCAG22/Understanding/reading-level" target="_blank" rel="noopener" class="accessibility-audit-ref__intro">{{ 'WCAG 3.1.5 explained'|t('accessibility-audit') }} ↗</a>
+        <a href="https://www.w3.org/WAI/WCAG22/Understanding/reading-level" target="_blank" rel="noopener" class="accessibility-audit-ref__intro">{{ 'WCAG 3.1.5 explained'|t('accessibility-audit') }}<span class="visually-hidden"> ({{ 'opens in new tab'|t('accessibility-audit') }})</span> <span aria-hidden="true">↗</span></a>
     </div>
 </fieldset>
 
@@ -47,9 +47,9 @@
     <legend class="h6">{{ 'Resources'|t('accessibility-audit') }}</legend>
     <div class="meta accessibility-audit-ref">
         <ul class="accessibility-audit-reflist">
-            <li><a href="https://www.w3.org/WAI/WCAG22/Understanding/reading-level" target="_blank" rel="noopener">WCAG 3.1.5 Reading Level</a></li>
-            <li><a href="https://www.plainlanguage.gov/guidelines/" target="_blank" rel="noopener">US Plain Language Guidelines</a></li>
-            <li><a href="https://www.gov.uk/guidance/content-design/writing-for-gov-uk" target="_blank" rel="noopener">GOV.UK Content Design Guide</a></li>
+            <li><a href="https://www.w3.org/WAI/WCAG22/Understanding/reading-level" target="_blank" rel="noopener">WCAG 3.1.5 Reading Level<span class="visually-hidden"> ({{ 'opens in new tab'|t('accessibility-audit') }})</span></a></li>
+            <li><a href="https://www.plainlanguage.gov/guidelines/" target="_blank" rel="noopener">US Plain Language Guidelines<span class="visually-hidden"> ({{ 'opens in new tab'|t('accessibility-audit') }})</span></a></li>
+            <li><a href="https://www.gov.uk/guidance/content-design/writing-for-gov-uk" target="_blank" rel="noopener">GOV.UK Content Design Guide<span class="visually-hidden"> ({{ 'opens in new tab'|t('accessibility-audit') }})</span></a></li>
         </ul>
     </div>
 </fieldset>
@@ -57,7 +57,7 @@
 {% endblock %}
 
 {% block actionButton %}
-    {% if isPro and canRunScans and supportsSite %}
+    {% if isPlus and canRunScans and supportsSite %}
         <button type="button" id="accessibility-audit-rl-analyse-all" class="btn submit"
                 data-action-url="{{ actionUrl('accessibility-audit/readability/analyse-all') }}"
                 data-site-id="{{ siteId }}">
@@ -67,16 +67,17 @@
 {% endblock %}
 
 {% block content %}
-{% if not isPro %}
+{% if not isPlus %}
     {% include 'accessibility-audit/_includes/pro-upsell' with {
         feature: 'Readability'|t('accessibility-audit'),
         headline: 'Write content everyone can actually read'|t('accessibility-audit'),
-        description: 'Pro scores the reading ease and grade level of any page or entry against WCAG 3.1.5, tracks it over time, and suggests AI-assisted rewrites. Plus everything else in Pro:'|t('accessibility-audit'),
+        description: 'Plus scores the reading ease and grade level of any page or entry against WCAG 3.1.5, tracks it over time, and suggests AI-assisted rewrites. It comes with everything else in Plus:'|t('accessibility-audit'),
+        edition: 'plus',
         checklist: [
             'Readability analysis'|t('accessibility-audit'),
+            'AI alt text'|t('accessibility-audit'),
+            'PDF checks'|t('accessibility-audit'),
             'Email & Slack alerts'|t('accessibility-audit'),
-            'VPAT export'|t('accessibility-audit'),
-            'CI/CD Integration'|t('accessibility-audit'),
         ],
     } only %}
 {% else %}
@@ -144,16 +145,20 @@
                     Craft.cp.runQueue();
 
                     // The table fills as the job stores results; reload it until
-                    // the queue has nothing left.
+                    // the queue has nothing left, then let the button run again.
                     const table = window.AccessibilityAuditReadabilityTable;
-                    if (table) {
-                        const timer = setInterval(() => {
-                            table.reload();
-                            if (!(Craft.cp.jobInfo || []).length) {
-                                clearInterval(timer);
-                            }
-                        }, 5000);
+                    if (!table) {
+                        button.disabled = false;
+                        return;
                     }
+
+                    const timer = setInterval(() => {
+                        table.reload();
+                        if (!(Craft.cp.jobInfo || []).length) {
+                            clearInterval(timer);
+                            button.disabled = false;
+                        }
+                    }, 5000);
                 } catch (e) {
                     Craft.cp.displayError(Craft.t('accessibility-audit', 'Analysis request failed. Check your connection and try again.'));
                     button.disabled = false;
@@ -236,8 +241,11 @@
                     : 'data-url="' + Craft.escapeHtml(v.url) + '"';
                 // Worded like the Issues pages' Re-scan, collapsing to the icon
                 // when the table is short of room (see accessibility-audit.css).
+                // The page's name rides along unseen, so each row's button has
+                // its own accessible name.
                 return '<button type="button" class="btn small accessibility-audit-rowbtn" data-icon="refresh" title="' + Craft.t('accessibility-audit', 'Re-analyse') + '" data-accessibility-audit-reanalyse ' + target + '>'
-                    + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'Re-analyse') + '</span></button>';
+                    + '<span class="accessibility-audit-rowbtn__label">' + Craft.t('accessibility-audit', 'Re-analyse') + '</span>'
+                    + '<span class="visually-hidden"> ' + Craft.escapeHtml(v.title || v.url || '') + '</span></button>';
             };
 
             const columns = [

@@ -15,7 +15,7 @@ use craft\web\Controller;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\helpers\ScannableElementTypes;
 use johnhenry\accessibilityaudit\models\SettingsModel;
-use johnhenry\accessibilityaudit\services\AuditService;
+use johnhenry\accessibilityaudit\services\RuleRegistry;
 use yii\base\InvalidConfigException;
 use yii\db\Exception;
 use yii\web\BadRequestHttpException;
@@ -83,6 +83,7 @@ class SettingsController extends Controller
             'settings' => $settings,
             'config' => Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'),
             'isPro' => $plugin->isPro(),
+            'isPlus' => $plugin->isPlus(),
             'readOnly' => !Craft::$app->getConfig()->getGeneral()->allowAdminChanges,
         ]);
     }
@@ -110,10 +111,12 @@ class SettingsController extends Controller
             'settings' => $settings,
             'config' => Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'),
             'isPro' => $plugin->isPro(),
+            'isPlus' => $plugin->isPlus(),
             'readOnly' => !Craft::$app->getConfig()->getGeneral()->allowAdminChanges,
             'headlessAvailable' => $plugin->getHeadless()->isAvailable(),
             'elementTypeOptions' => ScannableElementTypes::all(),
             'scannedElementTypes' => $settings->resolvedScannedElementTypes(),
+            'ignorableRuleIds' => RuleRegistry::IGNORABLE_RULE_IDS,
         ]);
     }
 
@@ -140,8 +143,11 @@ class SettingsController extends Controller
             'settings' => $settings,
             'config' => Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'),
             'isPro' => $plugin->isPro(),
+            'isPlus' => $plugin->isPlus(),
             'readOnly' => !Craft::$app->getConfig()->getGeneral()->allowAdminChanges,
-            'retentionCap' => AuditService::STANDARD_RETENTION_CAP,
+            'retentionCap' => $plugin->retentionCap(),
+            // Not `editionName`: Craft's CP layout sets that to Craft's own edition.
+            'pluginEditionName' => AccessibilityAudit::editionName($plugin->edition),
         ]);
     }
 
@@ -169,6 +175,7 @@ class SettingsController extends Controller
             'settings' => $settings,
             'config' => Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'),
             'isPro' => $plugin->isPro(),
+            'isPlus' => $plugin->isPlus(),
             'readOnly' => !Craft::$app->getConfig()->getGeneral()->allowAdminChanges,
             // Set once by actionGenerateCiToken() and read here so the full
             // token can be shown with a copy button right on the page,
@@ -208,6 +215,7 @@ class SettingsController extends Controller
             'settings' => $settings,
             'config' => Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'),
             'isPro' => $plugin->isPro(),
+            'isPlus' => $plugin->isPlus(),
             'readOnly' => !Craft::$app->getConfig()->getGeneral()->allowAdminChanges,
         ]);
     }
@@ -285,7 +293,7 @@ class SettingsController extends Controller
     }
 
     /**
-     * Saves the Notifications settings tab, which is a Pro feature.
+     * Saves the Notifications settings tab, which needs Plus or higher.
      *
      * @return Response
      * @throws MissingComponentException
@@ -299,7 +307,7 @@ class SettingsController extends Controller
      */
     public function actionSaveNotifications(): Response
     {
-        if (($refusal = $this->requireProJson('Notifications')) !== null) {
+        if (($refusal = $this->requirePlusJson('Notifications')) !== null) {
             return $refusal;
         }
 
@@ -437,7 +445,7 @@ class SettingsController extends Controller
         // anything, so no admin-changes requirement.
         $this->requireAdmin(false);
 
-        if (($refusal = $this->requireProJson('Notifications')) !== null) {
+        if (($refusal = $this->requirePlusJson('Notifications')) !== null) {
             return $refusal;
         }
 
@@ -540,19 +548,23 @@ class SettingsController extends Controller
         $settings->overlayCollapseWhenIdle = (bool)   $this->request->getBodyParam('settings[overlayCollapseWhenIdle]', $settings->overlayCollapseWhenIdle);
         $settings->overlayPosition = (string) $this->request->getBodyParam('settings[overlayPosition]', $settings->overlayPosition);
         $settings->overlayIdleSeconds = (int)    $this->request->getBodyParam('settings[overlayIdleSeconds]', $settings->overlayIdleSeconds);
-        // Server-side browser scanning is a Pro feature, and its settings aren't
-        // rendered on Standard, so leave the stored values alone there rather
-        // than reading whatever was posted. Skipping the read matters on a
-        // downgrade: saving this page on Standard must not wipe the endpoint or
-        // binary path a licence might get back.
-        if ($plugin->isPro()) {
+        // Server-side browser scanning and PDF checks need Plus or higher,
+        // and their settings aren't rendered on Lite, so leave the stored
+        // values alone there rather than reading whatever was posted. Skipping
+        // the read matters on a downgrade: saving this page on Lite must not
+        // wipe the endpoint or binary path a licence might get back.
+        if ($plugin->isPlus()) {
             $settings->chromePath = (string) $this->request->getBodyParam('settings[chromePath]', $settings->chromePath);
             $settings->chromeWsEndpoint = (string) $this->request->getBodyParam('settings[chromeWsEndpoint]', $settings->chromeWsEndpoint);
             $settings->chromeNoSandbox = (bool)   $this->request->getBodyParam('settings[chromeNoSandbox]', $settings->chromeNoSandbox);
             $settings->browserSettleMs = (int)    $this->request->getBodyParam('settings[browserSettleMs]', $settings->browserSettleMs);
+            $settings->pdfChecks = (bool)   $this->request->getBodyParam('settings[pdfChecks]', $settings->pdfChecks);
+            // Shown in megabytes, stored in bytes.
+            $pdfMaxMegabytes = (float)$this->request->getBodyParam('settings[pdfMaxMegabytes]', $settings->pdfMaxBytes / 1048576);
+            $settings->pdfMaxBytes = (int)round($pdfMaxMegabytes * 1048576);
         }
-        // The decoupled overlay is Pro-only and its fields aren't rendered on
-        // Standard, so leave the stored values alone there (same downgrade
+        // The decoupled overlay is Pro-only and its fields aren't rendered
+        // below Pro, so leave the stored values alone there (same downgrade
         // reasoning as the Chrome settings above).
         if ($plugin->isPro()) {
             $settings->decoupledOverlay = (bool)   $this->request->getBodyParam('settings[decoupledOverlay]', $settings->decoupledOverlay);
@@ -561,23 +573,24 @@ class SettingsController extends Controller
         $settings->scannerUserAgent = (string) $this->request->getBodyParam('settings[scannerUserAgent]', $settings->scannerUserAgent);
         $settings->excludedSelectors = (string) $this->request->getBodyParam('settings[excludedSelectors]', $settings->excludedSelectors);
         $settings->en301549 = (bool)   $this->request->getBodyParam('settings[en301549]',        $settings->en301549);
-        // Pro only and not rendered on Standard, so the stored value stands there
-        // rather than being read as off.
-        if ($plugin->isPro()) {
+        // Plus or higher, and not rendered on Lite, so the stored value
+        // stands there rather than being read as off.
+        if ($plugin->isPlus()) {
             $settings->readabilityPreviewTarget = (bool)$this->request->getBodyParam('settings[readabilityPreviewTarget]', $settings->readabilityPreviewTarget);
             $settings->readabilityTarget = (string)$this->request->getBodyParam('settings[readabilityTarget]', $settings->readabilityTarget);
         }
         $settings->vpatExportTemplate = (string) $this->request->getBodyParam('settings[vpatExportTemplate]', $settings->vpatExportTemplate);
         $settings->statementTemplate = (string) $this->request->getBodyParam('settings[statementTemplate]', $settings->statementTemplate);
         $settings->retainDays = (int)    $this->request->getBodyParam('settings[retainDays]',      $settings->retainDays);
-        // Retention beyond STANDARD_RETENTION_CAP days (and "never", i.e. 0) is a
-        // Pro feature, so clamp the saved value on Standard.
-        if (!$plugin->isPro() && ($settings->retainDays <= 0 || $settings->retainDays > AuditService::STANDARD_RETENTION_CAP)) {
-            $settings->retainDays = AuditService::STANDARD_RETENTION_CAP;
+        // Retention beyond the edition's cap (and "never", i.e. 0) needs a
+        // higher edition, so clamp the saved value to the cap.
+        $retentionCap = $plugin->retentionCap();
+        if ($retentionCap !== null && ($settings->retainDays <= 0 || $settings->retainDays > $retentionCap)) {
+            $settings->retainDays = $retentionCap;
         }
         $settings->resolvedRetention = (string) $this->request->getBodyParam('settings[resolvedRetention]', $settings->resolvedRetention);
         // Keeping resolved issues forever (unbounded retention) is a Pro feature,
-        // in line with the retainDays cap above; fall back to keepDays on Standard.
+        // in line with the retainDays cap above; fall back to keepDays below Pro.
         if (!$plugin->isPro() && $settings->resolvedRetention === SettingsModel::RESOLVED_RETENTION_FOREVER) {
             $settings->resolvedRetention = SettingsModel::RESOLVED_RETENTION_KEEP_DAYS;
         }
@@ -591,6 +604,7 @@ class SettingsController extends Controller
         $settings->altTextContext = (string) $this->request->getBodyParam('settings[altTextContext]',  $settings->altTextContext);
         $settings->altTextLanguage = (string) $this->request->getBodyParam('settings[altTextLanguage]', $settings->altTextLanguage);
         $settings->autoGenerateAlt = (bool)   $this->request->getBodyParam('settings[autoGenerateAlt]', $settings->autoGenerateAlt);
+        $settings->newAssetAltMode = (string) $this->request->getBodyParam('settings[newAssetAltMode]', $settings->newAssetAltMode);
 
         $settings->notifyEmailEnabled = (bool)   $this->request->getBodyParam('settings[notifyEmailEnabled]',    $settings->notifyEmailEnabled);
         $settings->notifyEmailRecipients = (string) $this->request->getBodyParam('settings[notifyEmailRecipients]', $settings->notifyEmailRecipients);
@@ -599,6 +613,14 @@ class SettingsController extends Controller
         $settings->notifyOnNewError = (bool)   $this->request->getBodyParam('settings[notifyOnNewError]',      $settings->notifyOnNewError);
         $settings->notifyOnScoreDrop = (bool)   $this->request->getBodyParam('settings[notifyOnScoreDrop]',     $settings->notifyOnScoreDrop);
         $settings->notifyScoreDropThreshold = (int)    $this->request->getBodyParam('settings[notifyScoreDropThreshold]', $settings->notifyScoreDropThreshold);
+        // Scheduled summaries are Pro and their fields aren't rendered below
+        // Pro, so the stored values stand there.
+        if ($plugin->isPro()) {
+            $settings->reportSchedule = (string)$this->request->getBodyParam('settings[reportSchedule]', $settings->reportSchedule);
+            $settings->reportScheduleRecipients = (string)$this->request->getBodyParam('settings[reportScheduleRecipients]', $settings->reportScheduleRecipients);
+            $settings->reportScheduleSlack = (bool)$this->request->getBodyParam('settings[reportScheduleSlack]', $settings->reportScheduleSlack);
+            $settings->reportScheduleAttachPdf = (bool)$this->request->getBodyParam('settings[reportScheduleAttachPdf]', $settings->reportScheduleAttachPdf);
+        }
 
         // Ignored rules, excluded URI patterns and additional URLs are only on
         // the Scanning tab, and every tab saves through here, so a field missing

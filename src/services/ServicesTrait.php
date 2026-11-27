@@ -28,6 +28,12 @@ use yii\base\InvalidConfigException;
  * @property NotificationService $notifications
  * @property VerdictService $verdicts
  * @property OverlayService $overlay
+ * @property PdfChecker $pdf
+ * @property PdfAuditService $pdfAudit
+ * @property AltDrafts $altDrafts
+ * @property FixGuideService $fixGuides
+ * @property SnapshotService $snapshots
+ * @property ScheduledReportService $scheduledReports
  *
  * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
@@ -62,6 +68,12 @@ trait ServicesTrait
                 'notifications' => NotificationService::class,
                 'verdicts' => VerdictService::class,
                 'overlay' => OverlayService::class,
+                'pdf' => PdfChecker::class,
+                'pdfAudit' => PdfAuditService::class,
+                'altDrafts' => AltDrafts::class,
+                'fixGuides' => FixGuideService::class,
+                'snapshots' => SnapshotService::class,
+                'scheduledReports' => ScheduledReportService::class,
             ],
         ];
     }
@@ -243,6 +255,54 @@ trait ServicesTrait
     }
 
     /**
+     * The PdfChecker component.
+     *
+     * @return PdfChecker The service.
+     * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function getPdf(): PdfChecker
+    {
+        $component = $this->get('pdf');
+        assert($component instanceof PdfChecker);
+        return $component;
+    }
+
+    /**
+     * The PdfAuditService component.
+     *
+     * @return PdfAuditService The service.
+     * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function getPdfAudit(): PdfAuditService
+    {
+        $component = $this->get('pdfAudit');
+        assert($component instanceof PdfAuditService);
+        return $component;
+    }
+
+    /**
+     * The AltDrafts component.
+     *
+     * @return AltDrafts The service.
+     * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function getAltDrafts(): AltDrafts
+    {
+        $component = $this->get('altDrafts');
+        assert($component instanceof AltDrafts);
+        return $component;
+    }
+
+    /**
      * The HeadlessScanner component.
      *
      * @return HeadlessScanner The service.
@@ -271,6 +331,54 @@ trait ServicesTrait
     {
         $component = $this->get('verdicts');
         assert($component instanceof VerdictService);
+        return $component;
+    }
+
+    /**
+     * The FixGuideService component.
+     *
+     * @return FixGuideService The service.
+     * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function getFixGuides(): FixGuideService
+    {
+        $component = $this->get('fixGuides');
+        assert($component instanceof FixGuideService);
+        return $component;
+    }
+
+    /**
+     * The SnapshotService component.
+     *
+     * @return SnapshotService The service.
+     * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function getSnapshots(): SnapshotService
+    {
+        $component = $this->get('snapshots');
+        assert($component instanceof SnapshotService);
+        return $component;
+    }
+
+    /**
+     * The ScheduledReportService component.
+     *
+     * @return ScheduledReportService The service.
+     * @throws InvalidConfigException
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function getScheduledReports(): ScheduledReportService
+    {
+        $component = $this->get('scheduledReports');
+        assert($component instanceof ScheduledReportService);
         return $component;
     }
 }

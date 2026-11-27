@@ -14,6 +14,7 @@ use HeadlessChromium\BrowserFactory;
 use HeadlessChromium\Communication\Connection;
 use HeadlessChromium\Communication\Message;
 use HeadlessChromium\Communication\Socket\Wrench as WrenchSocket;
+use HeadlessChromium\Exception\OperationTimedOut;
 use HeadlessChromium\Page;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\helpers\RemoteChromeClient;
@@ -29,12 +30,15 @@ use yii\base\InvalidConfigException;
  * a full browser pass, so contrast, focus, and target-size findings stay
  * complete and fresh across the whole site.
  *
- * Needs the Pro edition and a browser to drive, which can come from either of
- * two places: a Chrome/Chromium binary on the server (`chromePath`), or an
+ * Needs the Plus edition or higher and a browser to drive, which can come
+ * from either of two places: a Chrome/Chromium binary on the server (`chromePath`), or an
  * already-running Chrome reached over a WebSocket (`chromeWsEndpoint`), which
  * covers hosts that can't install a binary at all. When neither is configured
  * the scanner reports unavailable and the pipeline falls back to overlay-only
  * axe coverage.
+ *
+ * The same browser reads PDF assets with pdf.js for the structure part of the
+ * PDF checks; see {@see self::checkPdf()}.
  *
  * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
@@ -86,10 +90,17 @@ class HeadlessScanner extends Component
      * @var int The Chrome round trips one viewport pass waits on, each bounded
      * by PAGE_TIMEOUT_MS. Counted from {@see self::_runViewportPass()}: the
      * viewport, the user agent, the navigation, reading the landed URL, and
-     * the three evaluates that inject axe, probe the viewport and run the
-     * rules.
+     * the four evaluates that steady the page, inject axe, load the viewport
+     * and pseudo-element probes, and run the rules.
      */
-    private const AWAITS_PER_VIEWPORT = 7;
+    private const AWAITS_PER_VIEWPORT = 8;
+
+    /**
+     * @var int The longest the pass waits for web fonts, in milliseconds. A
+     * font that never arrives should cost a scan this much, not the whole
+     * PAGE_TIMEOUT_MS.
+     */
+    public const MAX_FONT_WAIT_MS = 3000;
 
     /**
      * @var int Nodes stored per violation. Bounds the payload on pathological
@@ -137,8 +148,47 @@ class HeadlessScanner extends Component
      */
     public const MAX_NODE_HTML_LENGTH = 300;
 
+    /**
+     * @var int The longest one PDF's browser pass may take once Chrome is in
+     * hand, in milliseconds: loading pdf.js, handing the file over and
+     * reading it. Every round trip waits on what is left of this, not a
+     * timeout of its own, so the total holds however many chunks a file takes.
+     */
+    private const PDF_TIMEOUT_MS = 120000;
+
+    /**
+     * @var int How long the page walk may run inside the tab, in milliseconds.
+     * Under PDF_TIMEOUT_MS so the tab stops itself and hands back the pages it
+     * read before PHP stops waiting.
+     */
+    private const PDF_BUDGET_MS = 90000;
+
+    /**
+     * @var int Characters per message when handing over pdf.js and the file,
+     * so no single DevTools message is large enough for a remote endpoint to
+     * refuse.
+     */
+    private const PDF_CHUNK_CHARS = 1048576;
+
+    /**
+     * @var int Structure nodes, figures and headings the walk keeps, so a
+     * pathological file cannot return a payload larger than the file.
+     */
+    private const PDF_MAX_NODES = 100000;
+
+    /**
+     * @var int Figures and headings returned per document.
+     */
+    private const PDF_MAX_ITEMS = 2000;
+
     // Private Properties
     // =========================================================================
+
+    /**
+     * @var array{lib: string, worker: string, check: string}|null Memoized
+     * pdf.js, its worker and the check script, read once per request.
+     */
+    private ?array $_pdfSources = null;
 
     /**
      * @var string|null Memoized axe-core source, read once per request.
@@ -185,9 +235,9 @@ class HeadlessScanner extends Component
     }
 
     /**
-     * Whether server-side browser scanning can run: the Pro edition plus a
-     * browser to drive, either a remote endpoint or a local binary that exists
-     * on disk.
+     * Whether server-side browser scanning can run: Plus or higher, plus
+     * a browser to drive, either a remote endpoint or a local binary that
+     * exists on disk.
      *
      * A remote endpoint is taken at face value: reachability can't be proven
      * without opening a socket, and this is called on every settings render.
@@ -200,7 +250,7 @@ class HeadlessScanner extends Component
      */
     public function isAvailable(): bool
     {
-        if (!AccessibilityAudit::getInstance()->isPro()) {
+        if (!AccessibilityAudit::getInstance()->isPlus()) {
             return false;
         }
 
@@ -291,21 +341,114 @@ class HeadlessScanner extends Component
                 $results[$viewport] = $this->_runViewportPass($browser, $url, $viewport, $axeSource);
             }
         } finally {
-            try {
-                if ($isRemote) {
-                    // Browser::close() sends Browser.close, which would shut the
-                    // remote Chrome down under every other client sharing it.
-                    // Hang up instead; the per-pass tabs are already closed.
-                    $browser->getConnection()->disconnect();
-                } else {
-                    $browser->close();
-                }
-            } catch (Throwable) {
-                // Chrome already gone: nothing to clean up.
-            }
+            $this->_releaseBrowser($browser, $isRemote);
         }
 
         return $results;
+    }
+
+    /**
+     * The longest one PDF's browser pass can take, in seconds: acquiring the
+     * browser, then the pass itself.
+     *
+     * @return int Seconds.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public static function worstCasePdfSeconds(): int
+    {
+        return (int)ceil((self::PAGE_TIMEOUT_MS + self::PDF_TIMEOUT_MS) / 1000);
+    }
+
+    /**
+     * Reads a PDF with pdf.js in a blank tab, for the structure checks the
+     * PHP layer does not make.
+     *
+     * pdf.js, its worker and the file are handed over through the DevTools
+     * protocol, the way axe is, and loaded as blob URL modules. Nothing is
+     * fetched, so no URL has to be reachable from the browser and a remote
+     * Chrome works the same as a local one. One tab per document, closed
+     * after; pdf.js destroys the document itself before handing back.
+     *
+     * Returns what the tab read, for PdfChecker::applyBrowserLayer() to judge,
+     * `['ok' => false, 'error' => 'timeout']` where it ran out of time, and
+     * null where the pass could not run at all (logged).
+     *
+     * @param string $path A local copy of the PDF.
+     * @return array<string, mixed>|null
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function checkPdf(string $path): ?array
+    {
+        if (!$this->isAvailable()) {
+            return null;
+        }
+
+        $sources = $this->_loadPdfSources();
+        $data = is_readable($path) ? file_get_contents($path) : false;
+
+        if ($sources === null || $data === false) {
+            return null;
+        }
+
+        $label = 'PDF ' . basename($path);
+        $isRemote = $this->chromeWsEndpoint() !== '';
+        $browser = $this->_acquireBrowser($label);
+
+        if ($browser === null) {
+            return null;
+        }
+
+        $page = null;
+        $deadline = microtime(true) * 1000 + self::PDF_TIMEOUT_MS;
+
+        try {
+            $page = $browser->createPage();
+            $page->evaluate($sources['check'])->waitForResponse(self::_remainingMs($deadline));
+
+            $this->_handOver($page, 'lib', $sources['lib'], $deadline);
+            $this->_handOver($page, 'worker', $sources['worker'], $deadline);
+            $page->callFunction('function () { return window.__aaPdfCheck.load(); }')
+                ->getReturnValue(self::_remainingMs($deadline));
+
+            $this->_handOver($page, 'pdf', base64_encode($data), $deadline);
+            unset($data);
+
+            $result = $page->callFunction('function (config) { return window.__aaPdfCheck.run(config); }', [[
+                'maxPages' => PdfChecker::PAGE_SAMPLE,
+                'budgetMs' => self::PDF_BUDGET_MS,
+                'maxNodes' => self::PDF_MAX_NODES,
+                'maxFigures' => self::PDF_MAX_ITEMS,
+                'maxHeadings' => self::PDF_MAX_ITEMS,
+            ]])->getReturnValue(self::_remainingMs($deadline));
+
+            if (!is_array($result)) {
+                Craft::warning("HeadlessScanner: unexpected result reading {$label}", 'accessibility-audit');
+
+                return null;
+            }
+
+            return $result;
+        } catch (OperationTimedOut) {
+            Craft::warning("HeadlessScanner: reading {$label} timed out", 'accessibility-audit');
+
+            return ['ok' => false, 'error' => 'timeout'];
+        } catch (Throwable $e) {
+            Craft::error("HeadlessScanner: reading {$label} failed: " . $e->getMessage(), 'accessibility-audit');
+
+            return null;
+        } finally {
+            try {
+                $page?->close();
+            } catch (Throwable) {
+                // Page already gone with its browser: nothing to clean up.
+            }
+
+            $this->_releaseBrowser($browser, $isRemote);
+        }
     }
 
     /**
@@ -440,6 +583,114 @@ class HeadlessScanner extends Component
     }
 
     /**
+     * Lets go of a browser once a scan is done with it.
+     *
+     * Browser::close() sends Browser.close, which would shut a remote Chrome
+     * down under every other client sharing it, so a remote one is hung up on
+     * instead; its tabs are already closed.
+     *
+     * @param Browser $browser The browser.
+     * @param bool $isRemote Whether it was reached over the remote endpoint.
+     * @return void
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _releaseBrowser(Browser $browser, bool $isRemote): void
+    {
+        try {
+            if ($isRemote) {
+                $browser->getConnection()->disconnect();
+            } else {
+                $browser->close();
+            }
+        } catch (Throwable) {
+            // Chrome already gone: nothing to clean up.
+        }
+    }
+
+    /**
+     * Hands a string to the PDF check script in the tab, a chunk at a time.
+     *
+     * @param Page $page The tab.
+     * @param string $key Which value this is: lib, worker or pdf.
+     * @param string $source The string.
+     * @param float $deadline When the whole pass must be done, in epoch milliseconds.
+     * @return void
+     * @throws OperationTimedOut
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _handOver(Page $page, string $key, string $source, float $deadline): void
+    {
+        $length = strlen($source);
+
+        for ($offset = 0; $offset < $length; $offset += self::PDF_CHUNK_CHARS) {
+            $page->callFunction(
+                'function (key, part) { return window.__aaPdfCheck.put(key, part); }',
+                [$key, substr($source, $offset, self::PDF_CHUNK_CHARS)],
+            )->waitForResponse(self::_remainingMs($deadline));
+        }
+    }
+
+    /**
+     * What is left of a deadline, never less than a second so the last
+     * round trip is not given nothing to work with.
+     *
+     * @param float $deadline The deadline, in epoch milliseconds.
+     * @return int Milliseconds.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private static function _remainingMs(float $deadline): int
+    {
+        return max(1000, (int)($deadline - microtime(true) * 1000));
+    }
+
+    /**
+     * Reads pdf.js, its worker and the check script, memoized per request.
+     *
+     * pdf.js is the minified build exactly as published, so its licence
+     * header travels with it.
+     *
+     * @return array{lib: string, worker: string, check: string}|null The
+     *         sources, or null where a bundled file is missing.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _loadPdfSources(): ?array
+    {
+        if ($this->_pdfSources !== null) {
+            return $this->_pdfSources;
+        }
+
+        $resources = dirname(__DIR__) . '/resources';
+        $sources = [];
+
+        foreach ([
+            'lib' => '/pdfjs/pdf.min.mjs',
+            'worker' => '/pdfjs/pdf.worker.min.mjs',
+            'check' => '/js/pdf-check.js',
+        ] as $key => $file) {
+            $path = $resources . $file;
+            $source = is_readable($path) ? file_get_contents($path) : false;
+
+            if ($source === false || $source === '') {
+                Craft::error("HeadlessScanner: bundled {$file} missing at {$path}", 'accessibility-audit');
+
+                return null;
+            }
+
+            $sources[$key] = $source;
+        }
+
+        return $this->_pdfSources = $sources;
+    }
+
+    /**
      * Renders the URL at one viewport in a fresh tab on an already-acquired
      * browser and runs the axe pass there. Returns null on any failure (logged
      * internally); the tab is closed either way so passes never pile pages
@@ -504,8 +755,9 @@ class HeadlessScanner extends Component
                 usleep($settleMs * 1000);
             }
 
+            $page->evaluate($this->_steadyPageScript())->getReturnValue(self::PAGE_TIMEOUT_MS);
             $page->evaluate($axeSource)->waitForResponse(self::PAGE_TIMEOUT_MS);
-            $page->evaluate(self::IN_VIEW_PROBE_JS)->waitForResponse(self::PAGE_TIMEOUT_MS);
+            $page->evaluate(self::IN_VIEW_PROBE_JS . "\n" . self::PSEUDO_REMEASURE_JS)->waitForResponse(self::PAGE_TIMEOUT_MS);
 
             $result = $page->evaluate($this->_axeRunScript())->getReturnValue(self::PAGE_TIMEOUT_MS);
             $decoded = is_string($result) ? Json::decodeIfJson($result) : null;
@@ -744,6 +996,253 @@ class HeadlessScanner extends Component
         JS;
 
     /**
+     * @var string A function that measures again the text axe gave up on
+     *      because an ancestor has a `::before` or `::after`.
+     *
+     *      axe stops at any ancestor pseudo-element with a background, wherever
+     *      that pseudo-element sits, because it cannot read the pseudo-element's
+     *      box. A one-pixel rule along the top of a fixed header puts every nav
+     *      link in the review queue. This works the box out from the computed
+     *      style instead, and where no pseudo-element on any of those ancestors
+     *      overlaps the text, it removes them and runs the contrast rule again
+     *      on just those elements. An absolutely positioned pseudo-element
+     *      takes no part in layout and does not cover the text, so the colour
+     *      behind the text is the same with it gone, and the second answer is a
+     *      measurement: a pass leaves the queue and a failure becomes a
+     *      violation.
+     *
+     *      Anything it cannot place exactly stays as axe left it: a
+     *      pseudo-element in normal flow or positioned against some other
+     *      ancestor, one that is transformed, clipped, masked, filtered or
+     *      shadowed, an ancestor that is transformed or split across lines, and
+     *      a target inside a shadow root or a frame.
+     *
+     *      Kept as a constant so the browser pass and its test run the same
+     *      source.
+     */
+    public const PSEUDO_REMEASURE_JS = <<<'JS'
+        window.__aaRemeasurePseudo = function (results, exclude) {
+          var ATTR = 'data-aa-pseudo-off';
+          var TOLERANCE = 1;
+
+          var px = function (value) {
+            var n = parseFloat(value);
+            return /px$/.test(value) && isFinite(n) ? n : null;
+          };
+
+          // The border box of an absolutely positioned pseudo-element, in
+          // viewport coordinates, or null where it cannot be worked out.
+          var pseudoBox = function (host, s) {
+            if (s.position !== 'absolute') return null;
+            if (s.transform !== 'none' || s.clipPath !== 'none' || s.filter !== 'none') return null;
+            if ((s.maskImage || s.webkitMaskImage || 'none') !== 'none') return null;
+            if (s.boxShadow !== 'none' || s.outlineStyle !== 'none') return null;
+
+            var hs = getComputedStyle(host);
+            if (hs.position === 'static' || hs.transform !== 'none') return null;
+
+            var rects = host.getClientRects();
+            if (rects.length !== 1) return null;
+
+            var cbLeft = rects[0].left + host.clientLeft;
+            var cbTop = rects[0].top + host.clientTop;
+            var cbRight = cbLeft + host.clientWidth;
+            var cbBottom = cbTop + host.clientHeight;
+
+            var w = px(s.width);
+            var h = px(s.height);
+            if (w === null || h === null) return null;
+
+            if (s.boxSizing !== 'border-box') {
+              w += (px(s.paddingLeft) || 0) + (px(s.paddingRight) || 0)
+                + (px(s.borderLeftWidth) || 0) + (px(s.borderRightWidth) || 0);
+              h += (px(s.paddingTop) || 0) + (px(s.paddingBottom) || 0)
+                + (px(s.borderTopWidth) || 0) + (px(s.borderBottomWidth) || 0);
+            }
+
+            var left = px(s.left);
+            var right = px(s.right);
+            var top = px(s.top);
+            var bottom = px(s.bottom);
+            var x;
+            var y;
+
+            if (left !== null) {
+              x = cbLeft + left + (px(s.marginLeft) || 0);
+            } else if (right !== null) {
+              x = cbRight - right - (px(s.marginRight) || 0) - w;
+            } else {
+              return null;
+            }
+
+            if (top !== null) {
+              y = cbTop + top + (px(s.marginTop) || 0);
+            } else if (bottom !== null) {
+              y = cbBottom - bottom - (px(s.marginBottom) || 0) - h;
+            } else {
+              return null;
+            }
+
+            return { left: x, top: y, right: x + w, bottom: y + h };
+          };
+
+          var overlaps = function (a, b) {
+            return a.left < b.right - TOLERANCE && b.left < a.right - TOLERANCE
+              && a.top < b.bottom - TOLERANCE && b.top < a.bottom - TOLERANCE;
+          };
+
+          // Whether every pseudo-element on the host can be placed and none of
+          // them reaches the text.
+          var clearOf = function (host, textRects) {
+            var pseudos = ['::before', '::after'];
+
+            for (var i = 0; i < pseudos.length; i++) {
+              var s = getComputedStyle(host, pseudos[i]);
+
+              if (s.content === 'none' || s.content === 'normal' || s.display === 'none') continue;
+
+              var box = pseudoBox(host, s);
+              if (!box) return false;
+
+              for (var j = 0; j < textRects.length; j++) {
+                if (overlaps(box, textRects[j])) return false;
+              }
+            }
+
+            return true;
+          };
+
+          var one = function (target) {
+            if (!Array.isArray(target) || target.length !== 1 || typeof target[0] !== 'string') return null;
+            try { return document.querySelector(target[0]); } catch (e) { return null; }
+          };
+
+          var contrast = (results.incomplete || []).filter(function (v) { return v.id === 'color-contrast'; })[0];
+          if (!contrast) return Promise.resolve(results);
+
+          var candidates = [];
+          var hosts = [];
+
+          contrast.nodes.forEach(function (node) {
+            var check = node.any && node.any[0];
+            if (!check || !check.data || check.data.messageKey !== 'pseudoContent') return;
+
+            var el = one(node.target);
+            var related = (check.relatedNodes || []).map(function (r) { return one(r.target); });
+            if (!el || !related.length || related.indexOf(null) !== -1) return;
+
+            var textRects = Array.prototype.slice.call(el.getClientRects());
+            if (!textRects.length) return;
+
+            for (var i = 0; i < related.length; i++) {
+              if (!clearOf(related[i], textRects)) return;
+            }
+
+            candidates.push({ node: node, el: el });
+            related.forEach(function (host) { if (hosts.indexOf(host) === -1) hosts.push(host); });
+          });
+
+          if (!candidates.length) return Promise.resolve(results);
+
+          var style = document.createElement('style');
+          style.textContent = '[' + ATTR + ']::before, [' + ATTR + ']::after { content: none !important; }';
+          (document.head || document.documentElement).appendChild(style);
+          hosts.forEach(function (host) { host.setAttribute(ATTR, ''); });
+
+          var restore = function () {
+            hosts.forEach(function (host) { host.removeAttribute(ATTR); });
+            style.remove();
+          };
+
+          var context = {
+            include: candidates.map(function (c) { return [c.node.target[0]]; }),
+            exclude: exclude || [],
+          };
+
+          return axe.run(context, {
+            runOnly: { type: 'rule', values: ['color-contrast'] },
+            resultTypes: ['violations', 'incomplete'],
+          }).then(function (again) {
+            restore();
+
+            var els = candidates.map(function (c) { return c.el; });
+            var ours = function (n) { return els.indexOf(one(n.target)) !== -1; };
+            var pick = function (list) {
+              var hit = (list || []).filter(function (v) { return v.id === 'color-contrast'; })[0];
+              return hit ? { rule: hit, nodes: hit.nodes.filter(ours) } : null;
+            };
+
+            contrast.nodes = contrast.nodes.filter(function (n) {
+              return candidates.every(function (c) { return c.node !== n; });
+            });
+
+            var stillUnsure = pick(again.incomplete);
+            if (stillUnsure) contrast.nodes = contrast.nodes.concat(stillUnsure.nodes);
+
+            var failing = pick(again.violations);
+            if (failing && failing.nodes.length) {
+              var existing = results.violations.filter(function (v) { return v.id === 'color-contrast'; })[0];
+              if (existing) {
+                existing.nodes = existing.nodes.concat(failing.nodes);
+              } else {
+                failing.rule.nodes = failing.nodes;
+                results.violations.push(failing.rule);
+              }
+            }
+
+            return results;
+          }, function () {
+            restore();
+            return results;
+          });
+        };
+        JS;
+
+    /**
+     * The in-page script that holds the page still before axe measures it.
+     *
+     * Contrast is read off computed colours and glyph sizes, so text still
+     * drawn in a fallback font, or partway through a fade, gives a different
+     * answer on every run. The script finishes CSS animations and transitions
+     * on the spot, then waits for web fonts up to MAX_FONT_WAIT_MS.
+     *
+     * Animations are cut to zero length rather than removed: with
+     * `animation: none` an element that fades in with `forwards` would drop
+     * back to its starting style, often invisible. Transforms are left alone
+     * because layout can depend on them (a modal centred with translate).
+     *
+     * @return string The JavaScript to evaluate in the page.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _steadyPageScript(): string
+    {
+        $fontWaitMs = self::MAX_FONT_WAIT_MS;
+
+        return <<<JS
+            (function() {
+                var style = document.createElement('style');
+                style.textContent = '*, *::before, *::after {'
+                    + ' animation-duration: 0s !important;'
+                    + ' animation-delay: 0s !important;'
+                    + ' animation-iteration-count: 1 !important;'
+                    + ' transition: none !important; }';
+                (document.head || document.documentElement).appendChild(style);
+
+                if (!document.fonts || !document.fonts.ready) {
+                    return Promise.resolve(true);
+                }
+
+                return Promise.race([
+                    document.fonts.ready.then(function() { return true; }),
+                    new Promise(function(resolve) { setTimeout(function() { resolve(false); }, {$fontWaitMs}); }),
+                ]);
+            })()
+            JS;
+    }
+
+    /**
      * The in-page script that runs axe and hands back a slimmed payload.
      *
      * Each node is cut down to what storeAxeIssues() consumes: the markup
@@ -774,6 +1273,10 @@ class HeadlessScanner extends Component
             axe.run({ exclude: {$excludeJson} }, {
                 runOnly: { type: 'tag', values: {$tagsJson} },
                 resultTypes: ['violations', 'incomplete'],
+            }).then(function(r) {
+                return window.__aaRemeasurePseudo
+                    ? window.__aaRemeasurePseudo(r, {$excludeJson})
+                    : r;
             }).then(function(r) {
                 var slim = function(v) {
                     return {

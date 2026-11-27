@@ -14,12 +14,14 @@ use craft\db\Table;
 use craft\helpers\Db;
 use craft\helpers\ElementHelper;
 use craft\helpers\Json;
+use craft\helpers\Queue as QueueHelper;
 use craft\helpers\StringHelper;
 use craft\helpers\UrlHelper;
 use DateTime;
 use johnhenry\accessibilityaudit\AccessibilityAudit;
 use johnhenry\accessibilityaudit\exceptions\UnsafeUrlException;
 use johnhenry\accessibilityaudit\helpers\ElementLabel;
+use johnhenry\accessibilityaudit\helpers\FreshRender;
 use johnhenry\accessibilityaudit\helpers\QueuedJobs;
 use johnhenry\accessibilityaudit\helpers\UrlSafety;
 use johnhenry\accessibilityaudit\jobs\HeadlessScanJob;
@@ -45,20 +47,6 @@ use yii\db\Expression;
 class AuditService extends Component
 {
     /**
-     * @var int The maximum number of distinct elements a Standard-edition
-     * install may scan. Re-scanning an already-scanned element never counts
-     * against this cap. This is an edition boundary, not a user setting.
-     */
-    public const STANDARD_SCAN_LIMIT = 100;
-
-    /**
-     * @var int The maximum scan-history retention, in days, on the Standard
-     * edition. Longer or unlimited retention is a Pro feature. This is an
-     * edition boundary, not a user setting.
-     */
-    public const STANDARD_RETENTION_CAP = 30;
-
-    /**
      * @var string The desktop viewport bucket for browser-sourced findings.
      */
     public const VIEWPORT_DESKTOP = 'desktop';
@@ -74,6 +62,12 @@ class AuditService extends Component
      * width rather than a fixed logical width.
      */
     public const MOBILE_MAX_WIDTH = 767;
+
+    /**
+     * @var int How many pages a rule has to be open on before it reads as
+     * coming from a shared template rather than from any one page.
+     */
+    public const TEMPLATE_PAGE_THRESHOLD = 5;
 
     private const SEVERITY_WEIGHT = ['error' => 10, 'warning' => 4, 'notice' => 1];
 
@@ -207,17 +201,20 @@ class AuditService extends Component
      * Queues a background scan of one element.
      *
      * @param Element $element The element to scan.
+     * @param bool $freshRender Whether to ask for the page past any
+     * full-page cache, as the scan after a save does.
      * @return void
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function queueScan(Element $element): void
+    public function queueScan(Element $element, bool $freshRender = false): void
     {
         Craft::$app->getQueue()->push(new ScanElementJob([
             'elementId' => $element->id,
             'elementType' => get_class($element),
             'siteId' => $element->siteId,
+            'freshRender' => $freshRender,
         ]));
     }
 
@@ -277,7 +274,7 @@ class AuditService extends Component
 
     /**
      * Returns the number of distinct elements that have been scanned across all
-     * sites. Used to enforce the Standard-edition scan cap. Intentionally global
+     * sites. Used to enforce the Lite scan cap. Intentionally global
      * (not scoped to a single site) to stay consistent with this plugin's other
      * multi-site features.
      * @return int The distinct elements scanned across all sites.
@@ -312,8 +309,8 @@ class AuditService extends Component
     /**
      * Whether a scan may be created for the given URL.
      *
-     * The same rule elements get: always on Pro, always for a URL already
-     * scanned, otherwise subject to the Standard cap.
+     * The same rule elements get: always where the edition has no page cap,
+     * always for a URL already scanned, otherwise subject to the cap.
      *
      * @param string $url The absolute URL.
      * @param int $siteId The site it belongs to.
@@ -324,7 +321,9 @@ class AuditService extends Component
      */
     public function canScanNewUrl(string $url, int $siteId): bool
     {
-        if (AccessibilityAudit::getInstance()->is(AccessibilityAudit::EDITION_PRO)) {
+        $limit = AccessibilityAudit::getInstance()->scanLimit();
+
+        if ($limit === null) {
             return true;
         }
 
@@ -337,15 +336,16 @@ class AuditService extends Component
             return true;
         }
 
-        return $this->getScannedElementCount() < self::STANDARD_SCAN_LIMIT;
+        return $this->getScannedElementCount() < $limit;
     }
 
     /**
      * Whether a scan may be created for the given element in the given site.
      *
-     * Always allowed on the Pro edition, and always allowed when the element has
-     * already been scanned in this site (re-scanning is never capped). Otherwise
-     * the Standard-edition distinct-element cap applies.
+     * Always allowed where the edition has no page cap, and always allowed
+     * when the element has already been scanned in this site (re-scanning is
+     * never capped). Otherwise the Lite distinct-page cap applies.
+     *
      * @param int $elementId The element to scan.
      * @param int $siteId The site to scan it in.
      * @return bool Whether the scan may go ahead.
@@ -355,7 +355,9 @@ class AuditService extends Component
      */
     public function canScanNewElement(int $elementId, int $siteId): bool
     {
-        if (AccessibilityAudit::getInstance()->is(AccessibilityAudit::EDITION_PRO)) {
+        $limit = AccessibilityAudit::getInstance()->scanLimit();
+
+        if ($limit === null) {
             return true;
         }
 
@@ -368,7 +370,7 @@ class AuditService extends Component
             return true;
         }
 
-        return $this->getScannedElementCount() < self::STANDARD_SCAN_LIMIT;
+        return $this->getScannedElementCount() < $limit;
     }
 
     // URI Exclusion
@@ -585,6 +587,59 @@ class AuditService extends Component
             ->execute();
     }
 
+    /**
+     * Removes every scan record for the given elements on one site, with the
+     * issues that cascade from them.
+     *
+     * For a page that has no public page of its own, or that was scanned by
+     * mistake, so its scores and issues stop counting in the reports. Saved
+     * answers to review questions are kept: they are keyed to the element, not
+     * the scan, so a page that comes back is not asked the same questions
+     * again.
+     *
+     * @param int[] $elementIds The elements whose scans to remove.
+     * @param int $siteId The site to remove them from.
+     * @return array{pages: int, issues: int} What was removed.
+     * @throws Exception
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function deletePageScans(array $elementIds, int $siteId): array
+    {
+        $elementIds = array_values(array_unique(array_filter(array_map('intval', $elementIds), static fn(int $id): bool => $id > 0)));
+
+        if ($elementIds === []) {
+            return ['pages' => 0, 'issues' => 0];
+        }
+
+        $scans = (new Query())
+            ->select(['id', 'elementId'])
+            ->from('{{%accessibilityaudit_scans}}')
+            ->where(['elementId' => $elementIds, 'siteId' => $siteId])
+            ->all();
+
+        if ($scans === []) {
+            return ['pages' => 0, 'issues' => 0];
+        }
+
+        $scanIds = array_map(static fn(array $row): int => (int)$row['id'], $scans);
+        $pages = count(array_unique(array_map(static fn(array $row): int => (int)$row['elementId'], $scans)));
+
+        $issueCount = (int)(new Query())
+            ->from('{{%accessibilityaudit_issues}}')
+            ->where(['scanId' => $scanIds])
+            ->count();
+
+        // issues.scanId is ON DELETE CASCADE, so deleting the scans clears their
+        // issues in the same step.
+        Craft::$app->getDb()->createCommand()
+            ->delete('{{%accessibilityaudit_scans}}', ['id' => $scanIds])
+            ->execute();
+
+        return ['pages' => $pages, 'issues' => $issueCount];
+    }
+
     // Scan Element (Any Type)
     // =========================================================================
 
@@ -604,6 +659,8 @@ class AuditService extends Component
      * @param string $url The URL to scan, absolute or site-relative.
      * @param int $siteId The site the URL belongs to.
      * @param bool $withHeadless Whether to queue the server-side browser pass.
+     * @param bool $manual Whether someone asked for this page by hand, which
+     * queues its browser pass ahead of a sweep's.
      * @return array{scanId: int, score: int, url: string, error?: string, limitReached?: bool}
      * @throws \Exception
      * @throws Throwable
@@ -611,7 +668,7 @@ class AuditService extends Component
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
-    public function scanUrl(string $url, int $siteId, bool $withHeadless = true): array
+    public function scanUrl(string $url, int $siteId, bool $withHeadless = true, bool $manual = false): array
     {
         $url = $this->absoluteUrl($url, $siteId);
 
@@ -639,7 +696,7 @@ class AuditService extends Component
             ];
         }
 
-        // The Standard cap counts pages, and a URL is a page like any other.
+        // The Lite cap counts pages, and a URL is a page like any other.
         if (!$this->canScanNewUrl($url, $siteId)) {
             return ['scanId' => 0, 'score' => 0, 'url' => $url, 'limitReached' => true];
         }
@@ -666,13 +723,7 @@ class AuditService extends Component
         $score = $this->_calculateScore($definiteIssues);
 
         if ($withHeadless && $scanId > 0 && $plugin->getHeadless()->isAvailable()) {
-            Craft::$app->getQueue()->push(new HeadlessScanJob([
-                'scanId' => $scanId,
-                'url' => $url,
-                'description' => Craft::t('accessibility-audit', 'Browser accessibility checks: {page}', [
-                    'page' => $url,
-                ]),
-            ]));
+            $this->_queueBrowserChecks($scanId, $url, $url, $manual);
         }
 
         return ['scanId' => $scanId, 'score' => $score, 'url' => $url];
@@ -741,7 +792,7 @@ class AuditService extends Component
                 $this->_insertIssue(
                     $scanId, null, null, $siteId, $issue,
                     $this->_resolveFirstDetectedForUrl($url, $siteId, $issue->ruleId),
-                    $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context),
+                    $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context, $issue->selector),
                 );
             }
 
@@ -792,6 +843,46 @@ class AuditService extends Component
     }
 
     /**
+     * Queues the server-side browser pass for one scan.
+     *
+     * A page someone asked for by hand goes ahead of the queue: during a sweep
+     * the queue already holds a browser job for every page on the site, and the
+     * person who pressed Re-scan is waiting on this one. Sweeps and saves keep
+     * Craft's default priority, so a sweep still runs in the order it was
+     * queued.
+     *
+     * @param int $scanId The scan to store the findings on.
+     * @param string $url The absolute URL to render.
+     * @param string $pageLabel The page's name for the queue listing.
+     * @param bool $manual Whether someone asked for this page by hand.
+     * @param bool $freshRender Whether the browser asks for the page past any
+     * full-page cache.
+     * @return void
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _queueBrowserChecks(
+        int $scanId,
+        string $url,
+        string $pageLabel,
+        bool $manual,
+        bool $freshRender = false,
+    ): void {
+        QueueHelper::push(
+            new HeadlessScanJob([
+                'scanId' => $scanId,
+                'url' => $url,
+                'freshRender' => $freshRender,
+                'description' => Craft::t('accessibility-audit', 'Browser accessibility checks: {page}', [
+                    'page' => $pageLabel,
+                ]),
+            ]),
+            $manual ? HeadlessScanJob::PRIORITY_MANUAL : null,
+        );
+    }
+
+    /**
      * The page's own title, for a scan that has no element to borrow one from.
      *
      * @param string $html The fetched page.
@@ -819,14 +910,22 @@ class AuditService extends Component
      * (when available). The Inspect page passes false: its preview runs the
      * browser checks itself, and two browser writers racing on one scan is
      * exactly what makes results flip-flop.
+     * @param bool $manual Whether someone asked for this page by hand, which
+     * queues its browser pass ahead of a sweep's.
+     * @param bool $freshRender Whether both passes ask for the page past any
+     * full-page cache.
      * @return array{scanId: int, score: int, issues: IssueModel[], excluded?: bool, limitReached?: bool, error?: string}
      * @throws Throwable
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function scanElement(ElementInterface $element, bool $withHeadless = true): array
-    {
+    public function scanElement(
+        ElementInterface $element,
+        bool $withHeadless = true,
+        bool $manual = false,
+        bool $freshRender = false,
+    ): array {
         assert($element instanceof Element);
 
         // A draft or revision never gets a scan of its own, the same rule
@@ -849,7 +948,7 @@ class AuditService extends Component
             return ['scanId' => 0, 'score' => 0, 'issues' => [], 'limitReached' => true];
         }
 
-        $page = $this->_fetchPage($url);
+        $page = $this->_fetchPage($url, $freshRender);
 
         // Nothing was read, so there is nothing to score. A number here would
         // read as a verdict on the page rather than as the absence of one.
@@ -886,13 +985,7 @@ class AuditService extends Component
             // checks" rows tells nobody what is actually being worked through.
             $pageLabel = ElementLabel::for($element, $element->id, $url);
 
-            Craft::$app->getQueue()->push(new HeadlessScanJob([
-                'scanId' => (int) $result['scanId'],
-                'url' => $url,
-                'description' => Craft::t('accessibility-audit', 'Browser accessibility checks: {page}', [
-                    'page' => $pageLabel,
-                ]),
-            ]));
+            $this->_queueBrowserChecks((int) $result['scanId'], $url, $pageLabel, $manual, $freshRender);
         }
 
         return $result;
@@ -975,7 +1068,7 @@ class AuditService extends Component
      * even when no PHP scan has been run yet. Returns an existing scan if one
      * exists within the last 24 hours, otherwise inserts a fresh record.
      *
-     * Returns 0 without inserting when the Standard-edition scan cap has been
+     * Returns 0 without inserting when the Lite scan cap has been
      * reached and this element has never been scanned before, so the frontend
      * axe-core overlay can't bypass the cap.
      *
@@ -1145,6 +1238,10 @@ class AuditService extends Component
         // thousands of nodes writes a row for each, inside the request.
         $axeViolations = array_slice($axeViolations, 0, self::MAX_AXE_VIOLATIONS);
 
+        // An ignored rule is never stored, the same as the PHP scanner skipping
+        // it, so it stays out of the score and the counts as well as the lists.
+        $ignored = $this->_ignoredRuleIds();
+
         foreach ($axeViolations as $violation) {
             $wcag = $this->_extractWcagFromAxe($violation);
             $axeId = $violation['id'] ?? 'unknown';
@@ -1154,6 +1251,10 @@ class AuditService extends Component
                 continue;
             }
             $ruleId = $this->_axeRuleId($axeId);
+
+            if (in_array($ruleId, $ignored, true)) {
+                continue;
+            }
             $nodes = array_slice($violation['nodes'] ?? [], 0, HeadlessScanner::MAX_NODES_PER_VIOLATION);
 
             // color-contrast: store every node with per-occurrence colour data
@@ -1453,6 +1554,7 @@ class AuditService extends Component
 
         foreach ($rows as &$row) {
             $meta = RuleRegistry::get($row['ruleId']);
+            $row['title'] = RuleRegistry::title($row['ruleId']);
             $row['difficulty'] = $meta['difficulty'];
             $row['responsibility'] = $meta['responsibility'];
             $row['elementType'] = $meta['elementType'];
@@ -1548,8 +1650,9 @@ class AuditService extends Component
      * reads 100 out of 100 with nothing failing.
      *
      * @param int $siteId The site to measure.
-     * @return array{scanned: int, scannable: int} Pages with a scan, and pages
-     *                                             a full sweep would cover.
+     * @return array{scanned: int, scannable: int, sweeping: bool} Pages with a
+     *         scan, pages a full sweep would cover, and whether a sweep is
+     *         under way.
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
@@ -1725,6 +1828,62 @@ class AuditService extends Component
         ];
     }
 
+    /**
+     * The two counts a daily snapshot needs beyond the site summary, over the
+     * same latest-scan-per-page set.
+     *
+     * @param int $siteId The site to count.
+     * @param int $targetScore The target score; 0 means no target is set.
+     * @return array{pagesBelowTarget: int|null, pendingReview: int} Pages under
+     *         the target (null with no target), and potential issues still
+     *         waiting on a human answer.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function getSnapshotCounts(int $siteId, int $targetScore): array
+    {
+        if (!$this->_hasScans($siteId)) {
+            return ['pagesBelowTarget' => $targetScore > 0 ? 0 : null, 'pendingReview' => 0];
+        }
+
+        $belowTarget = null;
+
+        if ($targetScore > 0) {
+            $belowTarget = (int)(new Query())
+                ->from('{{%accessibilityaudit_scans}}')
+                ->where(['id' => $this->_latestScanIdsQuery($siteId)])
+                ->andWhere(['<', 'score', $targetScore])
+                ->count();
+        }
+
+        $pending = (int)(new Query())
+            ->from('{{%accessibilityaudit_issues}}')
+            ->where(['scanId' => $this->_latestScanIdsQuery($siteId)])
+            ->andWhere($this->pendingPotentialCondition())
+            ->count();
+
+        return ['pagesBelowTarget' => $belowTarget, 'pendingReview' => $pending];
+    }
+
+    /**
+     * The ids of each page's latest scan on a site, as a subquery.
+     *
+     * The same set the Overview and every listing read from, with trashed,
+     * disabled and archived elements already left out, for report queries
+     * built outside this service.
+     *
+     * @param int $siteId The site to read.
+     * @return Query<int, mixed> The subquery, for use as a value in a condition.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function latestScanIdsQuery(int $siteId): Query
+    {
+        return $this->_latestScanIdsQuery($siteId);
+    }
+
     // Issues by Rule / Impact
     // =========================================================================
 
@@ -1827,6 +1986,7 @@ class AuditService extends Component
             $weight = self::SEVERITY_WEIGHT[$row['severity']] ?? 1;
             $row['impactScore'] = (int) $row['occurrences'] * $weight;
             $row['pointsToGain'] = round(min(2, $row['impactScore'] / 500), 2);
+            $row['title'] = RuleRegistry::title($row['ruleId']);
 
             $meta = RuleRegistry::get($row['ruleId']);
             $row['difficulty'] = $meta['difficulty'];
@@ -1839,6 +1999,45 @@ class AuditService extends Component
         usort($rows, static fn($a, $b) => $b['impactScore'] <=> $a['impactScore']);
 
         return array_slice($rows, 0, $limit);
+    }
+
+    /**
+     * How many pages each open rule is on, across the site's latest scans.
+     *
+     * Counted over the same rows getIssuesByImpact() reads: unresolved,
+     * definite, and with ignored rules left out. A rule split over several
+     * criteria or severities is counted once per page.
+     *
+     * @param int $siteId The site to read.
+     * @return array<string, int> Pages per rule, keyed by rule ID.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function getRulePageCounts(int $siteId): array
+    {
+        if (!$this->_hasScans($siteId)) {
+            return [];
+        }
+
+        $query = (new Query())
+            ->select(['ruleId', 'COUNT(DISTINCT scanId) as pageCount'])
+            ->from('{{%accessibilityaudit_issues}}')
+            ->where(['scanId' => $this->_latestScanIdsQuery($siteId), 'isResolved' => false])
+            ->andWhere($this->definiteCondition());
+        $ignored = $this->_ignoredRuleIds();
+
+        if (!empty($ignored)) {
+            $query->andWhere(['not in', 'ruleId', $ignored]);
+        }
+
+        $counts = [];
+
+        foreach ($query->groupBy(['ruleId'])->all() as $row) {
+            $counts[(string)$row['ruleId']] = (int)$row['pageCount'];
+        }
+
+        return $counts;
     }
 
     /**
@@ -1875,7 +2074,7 @@ class AuditService extends Component
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function getTemplateIssues(int $siteId, int $threshold = 5): array
+    public function getTemplateIssues(int $siteId, int $threshold = self::TEMPLATE_PAGE_THRESHOLD): array
     {
         $latestIds = $this->_latestScanIdsQuery($siteId);
         if (!$this->_hasScans($siteId)) {
@@ -1892,11 +2091,11 @@ class AuditService extends Component
             $query->andWhere(['not in', 'ruleId', $ignored]);
         }
 
-        return $query
+        return self::_withTitles($query
             ->groupBy(['ruleId', 'wcagCriterion', 'wcagLevel', 'severity'])
             ->having(['>=', 'COUNT(DISTINCT scanId)', $threshold])
             ->orderBy(['pageCount' => SORT_DESC])
-            ->all();
+            ->all());
     }
 
     // Resolved Issues
@@ -1936,11 +2135,11 @@ class AuditService extends Component
             $query->andWhere(['not in', 'i.ruleId', $ignored]);
         }
 
-        return $query
+        return self::_withTitles($query
             ->groupBy(['i.ruleId', 'i.wcagCriterion', 'i.severity'])
             ->orderBy(['MAX(i.dateResolved)' => SORT_DESC])
             ->limit($limit)
-            ->all();
+            ->all());
     }
 
     /**
@@ -1985,6 +2184,7 @@ class AuditService extends Component
             $weight = self::SEVERITY_WEIGHT[$row['severity']] ?? 1;
             $impactScore = (int)$row['occurrences'] * $weight;
             $row['pointsGained'] = round(min(2, $impactScore / 500), 2);
+            $row['title'] = RuleRegistry::title($row['ruleId']);
 
             $meta = RuleRegistry::get($row['ruleId']);
             $row['difficulty'] = $meta['difficulty'];
@@ -2090,7 +2290,7 @@ class AuditService extends Component
      */
     private function _resolvedIssuesFor(array $target, int $siteId, int $limit): array
     {
-        return (new Query())
+        return self::_withTitles((new Query())
             ->select([
                 'i.ruleId',
                 'i.wcagCriterion',
@@ -2107,7 +2307,7 @@ class AuditService extends Component
             ->groupBy(['i.ruleId', 'i.wcagCriterion', 'i.severity'])
             ->orderBy(['MAX(i.dateResolved)' => SORT_DESC])
             ->limit($limit)
-            ->all();
+            ->all());
     }
 
     // Issue Detail
@@ -2143,6 +2343,7 @@ class AuditService extends Component
             ])
             ->from(['i' => '{{%accessibilityaudit_issues}}'])
             ->where(['i.scanId' => $latestIds, 'i.ruleId' => $ruleId, 'i.isResolved' => false])
+            ->andWhere($this->_waitingOnly($ruleId, 'i'))
             ->one();
 
         if (!$row || !(int)$row['occurrences']) {
@@ -2203,7 +2404,8 @@ class AuditService extends Component
             ->select(['COUNT(DISTINCT i.scanId)'])
             ->from(['i' => '{{%accessibilityaudit_issues}}'])
             ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], 's.id = i.scanId')
-            ->where(['i.scanId' => $latestIds, 'i.ruleId' => $ruleId, 'i.isResolved' => false]);
+            ->where(['i.scanId' => $latestIds, 'i.ruleId' => $ruleId, 'i.isResolved' => false])
+            ->andWhere($this->_waitingOnly($ruleId, 'i'));
         $applyTitle($totalQuery);
         $total = (int)$totalQuery->scalar();
 
@@ -2231,6 +2433,7 @@ class AuditService extends Component
             ->from(['i' => '{{%accessibilityaudit_issues}}'])
             ->innerJoin(['s' => '{{%accessibilityaudit_scans}}'], 's.id = i.scanId')
             ->where(['i.scanId' => $latestIds, 'i.ruleId' => $ruleId, 'i.isResolved' => false])
+            ->andWhere($this->_waitingOnly($ruleId, 'i'))
             ->groupBy($groupBy)
             ->orderBy([$orderColumn => $orderDir])
             ->offset(($page - 1) * $perPage)
@@ -2258,6 +2461,67 @@ class AuditService extends Component
         }
 
         return ['total' => $total, 'entries' => $result];
+    }
+
+    /**
+     * The first few occurrences of one rule on each of a set of scans, for the
+     * rows of the rule's page listing.
+     *
+     * Capped per scan in SQL, with a window over each scan's rows, so a page
+     * carrying hundreds of the same finding loads no more than the cap. Read
+     * from the same rows getPagesForRule() counts, so the count beside a page
+     * and the occurrences under it agree.
+     *
+     * @param string $ruleId The rule to read.
+     * @param int[] $scanIds The scans to read it from.
+     * @param int $perScan Most occurrences to return for each scan.
+     * @return array<int, array<int, array{message: string, markup: string, selector: string}>>
+     *         Keyed by scan ID, oldest finding first.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function getRuleOccurrencesForScans(string $ruleId, array $scanIds, int $perScan = 10): array
+    {
+        $scanIds = array_values(array_filter(array_map('intval', $scanIds)));
+
+        if ($scanIds === [] || $perScan < 1) {
+            return [];
+        }
+
+        $ranked = (new Query())
+            ->select([
+                'id',
+                'scanId',
+                'message',
+                'context',
+                'rn' => new Expression('ROW_NUMBER() OVER (PARTITION BY [[scanId]] ORDER BY [[id]])'),
+            ])
+            ->from('{{%accessibilityaudit_issues}}')
+            ->where(['scanId' => $scanIds, 'ruleId' => $ruleId, 'isResolved' => false])
+            ->andWhere($this->_waitingOnly($ruleId));
+
+        $rows = (new Query())
+            ->select(['scanId', 'message', 'context'])
+            ->from(['r' => $ranked])
+            ->where(['<=', 'rn', $perScan])
+            ->orderBy(['scanId' => SORT_ASC, 'id' => SORT_ASC])
+            ->all();
+
+        $result = [];
+
+        foreach ($rows as $row) {
+            $context = (string)($row['context'] ?? '');
+            $decoded = str_starts_with($context, '{') ? Json::decodeIfJson($context) : null;
+
+            $result[(int)$row['scanId']][] = [
+                'message' => (string)$row['message'],
+                'markup' => self::contextMarkup($context),
+                'selector' => is_array($decoded) && is_string($decoded['selector'] ?? null) ? $decoded['selector'] : '',
+            ];
+        }
+
+        return $result;
     }
 
     /**
@@ -2296,6 +2560,7 @@ class AuditService extends Component
                 ['and', '[[es.elementId]] = [[i.elementId]]', ['es.siteId' => $siteId]],
             )
             ->where(['i.scanId' => $latestIds, 'i.ruleId' => $ruleId, 'i.isResolved' => false])
+            ->andWhere($this->_waitingOnly($ruleId, 'i'))
             ->groupBy(['i.elementId', 'es.title', 'es.uri', 's.score', 's.dateScanned'])
             ->orderBy(['occurrences' => SORT_DESC])
             ->all();
@@ -2381,6 +2646,7 @@ class AuditService extends Component
 
         foreach ($rows as &$row) {
             $meta = RuleRegistry::get($row['ruleId']);
+            $row['title'] = RuleRegistry::title($row['ruleId']);
             $row['difficulty'] = $meta['difficulty'];
             $row['responsibility'] = $meta['responsibility'];
             $row['elementType'] = $meta['elementType'];
@@ -2728,13 +2994,13 @@ class AuditService extends Component
      *   still hosting a kept resolved issue survives past its own cutoff.
      * - RESOLVED_RETENTION_FOREVER: resolved issues are never pruned, and any
      *   scan hosting one is kept as long as it does. This mode requires the Pro
-     *   edition; on Standard it is treated as RESOLVED_RETENTION_KEEP_DAYS.
+     *   edition; below Pro it is treated as RESOLVED_RETENTION_KEEP_DAYS.
      *
      * In the latter two modes a scan is only removed once nothing (resolved or
      * unresolved) still references it.
      *
-     * Retention beyond the Standard cap (and $days <= 0, "never prune") is a Pro
-     * feature; on Standard $days is clamped to self::STANDARD_RETENTION_CAP.
+     * Below Pro, $days is clamped to the edition's retention cap, and a
+     * $days <= 0 ("never prune") is read as the cap.
      *
      * @param int $days The age in days beyond which scan results are pruned.
      * @return int The number of {{%accessibilityaudit_scans}} rows deleted.
@@ -2748,11 +3014,11 @@ class AuditService extends Component
         $db = Craft::$app->getDb();
         $plugin = AccessibilityAudit::getInstance();
 
-        // Retention beyond the Standard cap (and "never", i.e. <= 0) is a Pro
-        // feature. Enforce it here, not just on save, so no caller can exceed it
-        // on a Standard site (including one downgraded from Pro).
-        if (!$plugin->isPro() && ($days <= 0 || $days > self::STANDARD_RETENTION_CAP)) {
-            $days = self::STANDARD_RETENTION_CAP;
+        // Enforced here, not just on save, so no caller can exceed the cap
+        // (including on a site downgraded to a lower edition).
+        $cap = $plugin->retentionCap();
+        if ($cap !== null && ($days <= 0 || $days > $cap)) {
+            $days = $cap;
         }
 
         $cutoff = Db::prepareDateForDb((new DateTime())->modify("-{$days} days"));
@@ -3212,14 +3478,14 @@ class AuditService extends Component
             foreach ($issues as $issue) {
                 $firstDetected = $this->_resolveFirstDetected($elementId, $siteId, $issue->ruleId);
                 $this->_insertIssue($scanId, $elementId, $elementType, $siteId, $issue, $firstDetected,
-                    $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context));
+                    $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context, $issue->selector));
                 $currentRules[] = $issue->ruleId;
             }
 
             foreach ($potentialIssues as $issue) {
                 $firstDetected = $this->_resolveFirstDetected($elementId, $siteId, $issue->ruleId);
                 $this->_insertIssue($scanId, $elementId, $elementType, $siteId, $issue, $firstDetected,
-                    $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context));
+                    $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context, $issue->selector));
                 $currentRules[] = $issue->ruleId;
             }
 
@@ -3287,6 +3553,7 @@ class AuditService extends Component
                 'severity' => $row['severity'],
                 'message' => $row['message'],
                 'context' => $row['context'],
+                'selector' => $row['selector'] ?? null,
                 'helpUrl' => $row['helpUrl'],
                 'source' => $row['source'],
                 'viewport' => $row['viewport'],
@@ -3343,6 +3610,7 @@ class AuditService extends Component
             'severity' => $issue->severity,
             'message' => $this->_scrubUtf8($issue->message),
             'context' => $this->_scrubUtf8($issue->context),
+            'selector' => $issue->selector,
             'helpUrl' => $issue->helpUrl,
             'source' => $issue->source,
             'origin' => $issue->origin,
@@ -3441,7 +3709,7 @@ class AuditService extends Component
      * occurrences would ask one question and apply the answer to several.
      *
      * @param int $scanId The scan.
-     * @return array<array-key, array{id: int, ruleId: string, message: string, context: string|null, wcagCriterion: string|null, wcagLevel: string|null, viewport: string|null}>
+     * @return array<array-key, array{id: int, ruleId: string, message: string, context: string|null, selector: string|null, wcagCriterion: string|null, wcagLevel: string|null, viewport: string|null}>
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
@@ -3449,7 +3717,7 @@ class AuditService extends Component
     public function getPendingPotentialForScan(int $scanId): array
     {
         return (new Query())
-            ->select(['id', 'ruleId', 'message', 'context', 'wcagCriterion', 'wcagLevel', 'viewport'])
+            ->select(['id', 'ruleId', 'message', 'context', 'selector', 'wcagCriterion', 'wcagLevel', 'viewport'])
             ->from('{{%accessibilityaudit_issues}}')
             ->where(['scanId' => $scanId, 'isResolved' => false])
             ->andWhere($this->pendingPotentialCondition())
@@ -3503,7 +3771,7 @@ class AuditService extends Component
 
         $query = (new Query())
             ->select([
-                'i.id', 'i.scanId', 'i.ruleId', 'i.message', 'i.context',
+                'i.id', 'i.scanId', 'i.ruleId', 'i.message', 'i.context', 'i.selector',
                 'i.elementId', 'i.elementType', 's.url', 's.title',
             ])
             ->from(['i' => '{{%accessibilityaudit_issues}}'])
@@ -3582,6 +3850,32 @@ class AuditService extends Component
             ['not like', $rule, 'potential:%', false],
             [$verdict => VerdictService::VERDICT_CONFIRMED],
         ];
+    }
+
+    /**
+     * Keeps a review question's rows to those still waiting for an answer.
+     *
+     * A review question's page is titled with the question, so it counts and
+     * lists what is still to be answered, as the Potential issues list does.
+     * Answered rows are shown where they now belong: dismissals on the
+     * Dismissed tab, confirmed failures with the definite issues. Any other
+     * rule has no answers, and gets no condition.
+     *
+     * @param string $ruleId The rule being listed.
+     * @param string $alias The issues table's alias in the query, if any.
+     * @return array<int|string, mixed> A condition for andWhere(), empty for
+     *         a rule that is not a review question.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private function _waitingOnly(string $ruleId, string $alias = ''): array
+    {
+        if (!str_starts_with($ruleId, 'potential:')) {
+            return [];
+        }
+
+        return [($alias !== '' ? "$alias." : '') . 'verdict' => null];
     }
 
     /**
@@ -3884,6 +4178,25 @@ class AuditService extends Component
     }
 
     /**
+     * Adds each rule row's title.
+     *
+     * @param array<int, array<string, mixed>> $rows Rows carrying `ruleId`.
+     * @return array<int, array<string, mixed>> The rows, each with `title`.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    private static function _withTitles(array $rows): array
+    {
+        foreach ($rows as &$row) {
+            $row['title'] = RuleRegistry::title((string)$row['ruleId']);
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    /**
      * Whether the site has been scanned at all.
      *
      * Stands in for the emptiness test the callers used to run on the id list.
@@ -3914,6 +4227,9 @@ class AuditService extends Component
      * ephemeral environments (DDEV self-signed certs); production verifies certs.
      *
      * @param string $url The address to fetch.
+     * @param bool $freshRender Whether to ask for the page past any full-page
+     *        cache. The address handed back is the page's own, without the
+     *        fresh-render parameter.
      * @return array{html: string|null, url: string, error: string|null} The
      *         body, the address it actually came from after any redirects, and
      *         a reason when there is no body.
@@ -3921,7 +4237,7 @@ class AuditService extends Component
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
-    private function _fetchPage(string $url): array
+    private function _fetchPage(string $url, bool $freshRender = false): array
     {
         $miss = static fn(string $reason): array => ['html' => null, 'url' => $url, 'error' => $reason];
 
@@ -3943,14 +4259,19 @@ class AuditService extends Component
             // the token by default, or the admin's own override if set.
             $clientConfig['headers'] = [
                 'User-Agent' => AccessibilityAudit::getInstance()->getSettings()->getFetchUserAgent(),
-            ];
+            ] + ($freshRender ? FreshRender::HEADERS : []);
 
             // Fetched through the guard, which connects only to the addresses
             // it validated rather than letting the client resolve the name a
             // second time.
-            $landed = $url;
-            $response = UrlSafety::fetch($url, $clientConfig, $landed);
+            $requested = $freshRender ? FreshRender::url($url) : $url;
+            $landed = $requested;
+            $response = UrlSafety::fetch($requested, $clientConfig, $landed);
             $status = $response->getStatusCode();
+
+            if ($freshRender) {
+                $landed = FreshRender::strip($landed);
+            }
 
             // A redirect that leaves the site leaves the remit with it. What
             // is at the other end is somebody else's page: auditing it says
@@ -4169,6 +4490,7 @@ class AuditService extends Component
 
         $count = 0;
         $occurrences = array_slice($occurrences, 0, self::MAX_AXE_VIOLATIONS * HeadlessScanner::MAX_NODES_PER_VIOLATION);
+        $ignored = $this->_ignoredRuleIds();
 
         foreach ($occurrences as $occ) {
             $fg = (string)self::cssColour($occ['fg']);
@@ -4217,6 +4539,10 @@ class AuditService extends Component
             ]);
 
             $ruleId = $state !== '' ? 'contrast-' . $state : 'color-contrast';
+
+            if (in_array($ruleId, $ignored, true)) {
+                continue;
+            }
 
             $this->_insertIssue($scanId, $scan['elementId'], $scan['elementType'], $scan['siteId'], IssueModel::make(
                 ruleId: $ruleId,
@@ -4666,6 +4992,7 @@ class AuditService extends Component
                 // ran. See openingTagOf().
                 $html = self::openingTagOf(mb_substr($node['html'] ?? '', 0, 300));
                 $data = $node['any'][0]['data'] ?? [];
+                $target = $node['target'][0] ?? null;
 
                 // "Element is hidden" is axe saying there was nothing on
                 // screen to measure. Contrast is about what a person can see,
@@ -4692,7 +5019,12 @@ class AuditService extends Component
                     helpUrl: $result['helpUrl'] ?? null,
                     source: 'axe',
                     viewport: $viewport,
-                ), null, $verdicts->lookup($verdictMap, self::RULE_POTENTIAL_CONTRAST, $html));
+                    // A bare opening tag such as <dt> is shared by every
+                    // element of its kind, so the report needs axe's own
+                    // selector to find this one. A target inside a shadow root
+                    // or frame comes as an array and is left out.
+                    selector: is_string($target) ? $target : null,
+                ), null, $verdicts->lookup($verdictMap, self::RULE_POTENTIAL_CONTRAST, $html, is_string($target) ? $target : null));
             }
         }
     }
@@ -4947,7 +5279,7 @@ class AuditService extends Component
                 (int)$scan['siteId'],
                 $issue,
                 null,
-                $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context),
+                $verdicts->lookup($verdictMap, $issue->ruleId, $issue->context, $issue->selector),
             );
         }
 

@@ -51,7 +51,7 @@ class FrontendOverlayController extends Controller
      * `active: false` when the overlay shouldn't run there for this session.
      * A guest or non-admin also has the marker cookie expired, so a stale
      * marker costs one request at most. An admin keeps it on an ineligible
-     * page (excluded, or a non-primary site on Standard), since the next page
+     * page (excluded, or a non-primary site below Pro), since the next page
      * may well be eligible.
      *
      * @return Response

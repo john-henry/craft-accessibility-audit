@@ -76,6 +76,20 @@ class StatementService extends Component
      */
     private const LEVEL_SUPPORTS = 'Supports';
 
+    /**
+     * @var string A VPAT answer saying the criterion has nothing to apply to on
+     * this site. It neither passes nor fails, and drops out of the count the
+     * non-compliant threshold is measured against.
+     */
+    private const LEVEL_NOT_APPLICABLE = 'Not Applicable';
+
+    /**
+     * @var string A VPAT answer saying nobody has checked the criterion. It is
+     * not a failure, but it stays unconfirmed even under the blanket manual
+     * review attestation, because the VPAT itself says the check wasn't done.
+     */
+    private const LEVEL_NOT_EVALUATED = 'Not Evaluated';
+
     // Private Properties
     // =========================================================================
 
@@ -228,15 +242,24 @@ class StatementService extends Component
      * off every criterion no scanner can test, via the VPAT, because a scanner
      * that finds nothing has not established that there is nothing to find.
      *
+     * Only Partially Supports and Does Not Support count as failing. Not
+     * Applicable is a person's sign-off that the criterion has nothing to apply
+     * to, so it is left out of both lists and of applicableCount. Not Evaluated
+     * is unconfirmed whatever the attestation says.
+     *
      * @param int $siteId The site to assess.
      * @return array{
      *     status: string,
      *     canClaimFull: bool,
      *     hasScanData: bool,
      *     failingCriteria: string[],
+     *     failingFromVpat: array<int, array{number: string, name: string}>,
      *     unconfirmedCriteria: string[],
      *     applicableCount: int,
      * }
+     *     failingFromVpat lists the failing criteria whose level is an answer
+     *     given on the VPAT rather than one a scan gave. A new scan does not
+     *     change those, so the screen sends the reader to the VPAT for them.
      * @throws Exception
      * @throws \Exception
      *
@@ -250,18 +273,35 @@ class StatementService extends Component
 
         // A blanket attestation stands in for per-criterion VPAT sign-off. The
         // VPAT is better evidence and is a Pro feature; the statement is not, so
-        // without this a Standard site could never state full compliance no
+        // without this a Plus site could never state full compliance no
         // matter how thoroughly it had been tested by hand.
         $attested = (bool) ($this->getRecord($siteId)['meta']['manualReviewConfirmed'] ?? false);
 
         $failing = [];
+        $failingFromVpat = [];
         $unconfirmed = [];
+        $notApplicable = 0;
 
         foreach ($rows as $number => $row) {
             $effective = (string) $row['effectiveLevel'];
 
+            if ($effective === self::LEVEL_NOT_APPLICABLE) {
+                $notApplicable++;
+                continue;
+            }
+
+            if ($effective === self::LEVEL_NOT_EVALUATED) {
+                $unconfirmed[] = (string) $number;
+                continue;
+            }
+
             if ($effective !== '' && $effective !== self::LEVEL_SUPPORTS) {
                 $failing[] = (string) $number;
+
+                if (($row['overrideLevel'] ?? null) !== null) {
+                    $failingFromVpat[] = ['number' => (string) $number, 'name' => (string) $row['name']];
+                }
+
                 continue;
             }
 
@@ -275,7 +315,7 @@ class StatementService extends Component
             }
         }
 
-        $applicable = count($rows);
+        $applicable = count($rows) - $notApplicable;
         $hasScanData = (bool) $report['hasScanData'];
 
         $status = StatementMetaModel::STATUS_PARTIAL;
@@ -296,6 +336,7 @@ class StatementService extends Component
             'canClaimFull' => $canClaimFull,
             'hasScanData' => $hasScanData,
             'failingCriteria' => $failing,
+            'failingFromVpat' => $failingFromVpat,
             'unconfirmedCriteria' => $unconfirmed,
             'applicableCount' => $applicable,
         ];

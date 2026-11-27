@@ -15,12 +15,52 @@
  *       columns: [...],
  *       emptyMessage: '...',
  *       exportUrl: '...',
+ *       buttons: [{label: '...', icon: 'download', href: '...'}],
  *   });
  */
 (function () {
     'use strict';
 
+    /* Craft's table posts a menu action as soon as it is clicked and offers no
+       confirmation for one, so a destructive action is asked about here first.
+       Listening in the capture phase puts this ahead of the table's own click
+       handler, and stopping the event there means a cancelled click never
+       reaches it. */
+    document.addEventListener('click', function (e) {
+        var item = e.target && e.target.closest ? e.target.closest('.accessibility-audit-confirm-remove') : null;
+
+        if (!item) {
+            return;
+        }
+
+        var scope = item.closest('.vue-admin-table') || document;
+        var n = scope.querySelectorAll('tbody .checkbox.checked, tbody input[type="checkbox"]:checked').length;
+        var question = n > 0
+            ? Craft.t('accessibility-audit', '{n, plural, =1{Remove the scan data for this page?} other{Remove the scan data for these # pages?}}', { n: n })
+            : Craft.t('accessibility-audit', 'Remove the scan data for the selected pages?');
+        var warning = Craft.t('accessibility-audit', 'Their scores, issues and scan history are deleted and cannot be brought back. A page that can still be scanned comes back on its next scan, so exclude it under Settings → Scanning first if it should stay out.');
+
+        if (!window.confirm(question + '\n\n' + warning)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+    }, true);
+
     window.AccessibilityAuditTable = {
+        /**
+         * A rule's name for a table cell: its title, linked where a URL is
+         * given, with the rule ID after it in small code type so developers
+         * can still match it. The same markup as the ruleName Twig macro.
+         */
+        ruleName: function (title, ruleId, url) {
+            var name = Craft.escapeHtml(title || ruleId || '');
+            var label = url ? '<a href="' + Craft.escapeHtml(url) + '">' + name + '</a>' : '<span>' + name + '</span>';
+
+            return title && ruleId && title !== ruleId
+                ? label + ' <span class="light code smalltext">' + Craft.escapeHtml(ruleId) + '</span>'
+                : label;
+        },
+
         /**
          * Builds a VueAdminTable with this plugin's defaults and extras.
          */
@@ -58,6 +98,11 @@
                 label: Craft.t('accessibility-audit', 'Re-scan selected'),
                 action: 'accessibility-audit/audit/scan-entries',
                 icon: 'refresh',
+            }, {
+                label: Craft.t('accessibility-audit', 'Remove scan data'),
+                action: 'accessibility-audit/audit/remove-scans',
+                icon: 'trash',
+                destructive: true,
             }] : []);
 
             if (bulkActions.length) {
@@ -72,24 +117,35 @@
                         // Object, not a string: the component spreads this into
                         // Vue's class binding, and a string would spread to one
                         // class per character.
-                        ...(a.icon ? {
+                        // Craft's own option for a menu item that deletes: it draws
+                        // the item red, as Craft's own Delete actions are.
+                        ...(a.destructive ? { separator: true, error: true } : {}),
+                        ...(a.icon || a.destructive ? {
                             class: {
-                                'accessibility-audit-menu-icon': true,
-                                ['accessibility-audit-menu-icon--' + a.icon]: true,
+                                'accessibility-audit-menu-icon': !!a.icon,
+                                ['accessibility-audit-menu-icon--' + a.icon]: !!a.icon,
+                                'accessibility-audit-confirm-remove': !!a.destructive,
                             },
                         } : {}),
                     })),
                 }];
             }
 
-            // A plain anchor, which is all Craft's `buttons` are: it downloads
-            // the full CSV straight from the export action and needs no JS.
+            // Plain anchors, which is all Craft's `buttons` are: each downloads
+            // its file straight from an action and needs no JS. opts.buttons
+            // adds more beside Export CSV, each {label, icon, href}.
+            const buttons = (opts.buttons || []).slice();
+
             if (opts.exportUrl) {
-                settings.buttons = [{
+                buttons.unshift({
                     label: Craft.t('accessibility-audit', 'Export CSV'),
                     icon: 'download',
                     href: opts.exportUrl,
-                }];
+                });
+            }
+
+            if (buttons.length) {
+                settings.buttons = buttons;
             }
 
             return new Craft.VueAdminTable(settings);

@@ -781,6 +781,21 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.accessibility-audit-pr-occ-head:focus-visible {
+  outline: 2px solid var(--aa-notice-strong);
+  outline-offset: 4px;
+  border-radius: 4px;
 }
 
 .accessibility-audit-pr-occ-head .accessibility-audit-pr-occ-selector {

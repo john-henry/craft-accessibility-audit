@@ -163,6 +163,35 @@ class AccessibilityVariable
     }
 
     /**
+     * The display name of an edition handle.
+     * Usage: {{ craft.a11y.editionName('plus') }}
+     *
+     * @param string $edition One of the plugin's edition handles.
+     * @return string
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function editionName(string $edition): string
+    {
+        return AccessibilityAudit::editionName($edition);
+    }
+
+    /**
+     * Whether the active edition is Plus or higher.
+     * Usage: {% if craft.a11y.isPlus %}
+     *
+     * @return bool
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public function isPlus(): bool
+    {
+        return AccessibilityAudit::getInstance()->isPlus();
+    }
+
+    /**
      * Site-wide summary stats.
      * Usage: {{ craft.a11y.summary().avgScore }}
      *
@@ -204,7 +233,7 @@ class AccessibilityVariable
      * across every environment.
      * Usage: {{ craft.a11y.overlayScriptTag() }}
      *
-     * Renders nothing on the Standard edition or when the decoupled overlay
+     * Renders nothing below Pro or when the decoupled overlay
      * is disabled, so the tag can sit in a shared layout unconditionally.
      * Only useful in Craft-rendered templates (a hybrid install); a decoupled
      * frontend can't run Twig and uses the raw tag from the docs instead.
@@ -252,7 +281,7 @@ class AccessibilityVariable
      * template (an accessibility statement page, say). Returns the same
      * structure the CP editor and HTML export use: `meta`, `levelA`, `levelAA`
      * (each criterion carrying `effectiveLevel` / `effectiveRemarks`), and
-     * `hasScanData`. Returns null on the Standard edition, where VPAT
+     * `hasScanData`. Returns null below Pro, where VPAT
      * reporting is not available.
      *
      * `meta` holds the editor's product details:

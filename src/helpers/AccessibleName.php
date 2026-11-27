@@ -68,6 +68,47 @@ class AccessibleName
     }
 
     /**
+     * Whether an element is out of the accessibility tree, as far as static
+     * HTML can tell.
+     *
+     * The element or any ancestor carrying `hidden`, `aria-hidden="true"`, or
+     * an inline display:none or visibility:hidden removes it from the tree, and
+     * an element that is not exposed cannot fail a naming rule. Hiding by class
+     * needs the browser pass to see, so those elements are still judged here.
+     *
+     * Kept apart from `for()` on purpose: an empty name means "unnamed" to
+     * every caller, and folding hidden elements into that would report them.
+     *
+     * @param DOMElement $el The element to test.
+     * @return bool True when the element is hidden from assistive technology.
+     *
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 2.0.0
+     */
+    public static function isHidden(DOMElement $el): bool
+    {
+        for ($node = $el; $node instanceof DOMElement; $node = $node->parentNode) {
+            if ($node->hasAttribute('hidden')) {
+                return true;
+            }
+
+            if (strtolower(trim($node->getAttribute('aria-hidden'))) === 'true') {
+                return true;
+            }
+
+            $style = strtolower(preg_replace('/\s+/', '', $node->getAttribute('style')) ?? '');
+
+            // opacity:0 is deliberately not here: it leaves the element in the
+            // accessibility tree and reachable by keyboard.
+            if (str_contains($style, 'display:none') || str_contains($style, 'visibility:hidden')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * The name built from the elements an `aria-labelledby` points at, in the
      * order it lists them.
      *

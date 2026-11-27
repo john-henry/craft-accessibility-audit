@@ -67,6 +67,11 @@ class Install extends Migration
         $this->dropTableIfExists('{{%accessibilityaudit_asset_issues}}');
         $this->dropTableIfExists('{{%accessibilityaudit_asset_stats}}');
         $this->dropTableIfExists('{{%accessibilityaudit_asset_flags}}');
+        $this->dropTableIfExists('{{%accessibilityaudit_pdf_checks}}');
+        $this->dropTableIfExists('{{%accessibilityaudit_alt_drafts}}');
+        $this->dropTableIfExists('{{%accessibilityaudit_snapshots}}');
+        $this->dropTableIfExists('{{%accessibilityaudit_report_notes}}');
+        $this->dropTableIfExists('{{%accessibilityaudit_report_sends}}');
         return true;
     }
 
@@ -117,6 +122,9 @@ class Install extends Migration
                 'severity' => $this->enum('severity', ['error', 'warning', 'notice'])->notNull()->defaultValue('warning'),
                 'message' => $this->text()->notNull(),
                 'context' => $this->text()->null(),
+                // The browser engine's own selector for the element, where the
+                // context alone cannot single it out. Not part of the ruling key.
+                'selector' => $this->string(300)->null(),
                 'helpUrl' => $this->string(255)->null(),
                 'source' => $this->enum('source', ['php', 'axe', 'contrast'])->notNull()->defaultValue('php'),
                 'origin' => $this->string(50)->null(),
@@ -279,6 +287,100 @@ class Install extends Migration
             ]);
         }
 
+        if (!$this->db->tableExists('{{%accessibilityaudit_pdf_checks}}')) {
+            // One row per PDF asset: whether it was checked, and the file it
+            // was checked as. The findings themselves go into asset_issues.
+            $this->createTable('{{%accessibilityaudit_pdf_checks}}', [
+                'id' => $this->primaryKey(),
+                'assetId' => $this->integer()->notNull(),
+                'fileSize' => $this->bigInteger(),
+                'fileModified' => $this->dateTime(),
+                'status' => $this->string(20)->notNull(),
+                'reason' => $this->string(30),
+                'ruleSetVersion' => $this->smallInteger()->notNull()->defaultValue(0),
+                'hasForm' => $this->boolean()->notNull()->defaultValue(false),
+                'meta' => $this->mediumText(),
+                'dateChecked' => $this->dateTime()->notNull(),
+                'dateCreated' => $this->dateTime()->notNull(),
+                'dateUpdated' => $this->dateTime()->notNull(),
+                'uid' => $this->uid(),
+            ]);
+        }
+
+        if (!$this->db->tableExists('{{%accessibilityaudit_alt_drafts}}')) {
+            // One row per image: the AI alt text drafted for it, waiting for an
+            // editor to approve, or why no draft could be written.
+            $this->createTable('{{%accessibilityaudit_alt_drafts}}', [
+                'id' => $this->primaryKey(),
+                'assetId' => $this->integer()->notNull(),
+                'shortAlt' => $this->text(),
+                'standardAlt' => $this->text(),
+                'detailedAlt' => $this->text(),
+                'imageType' => $this->string(30),
+                'reviewReasons' => $this->text(),
+                'status' => $this->string(20)->notNull(),
+                'error' => $this->text(),
+                'dateCreated' => $this->dateTime()->notNull(),
+                'dateUpdated' => $this->dateTime()->notNull(),
+                'uid' => $this->uid(),
+            ]);
+        }
+
+        if (!$this->db->tableExists('{{%accessibilityaudit_snapshots}}')) {
+            // One row per site per day: the headline figures as they stood,
+            // kept after the scans behind them are pruned.
+            $this->createTable('{{%accessibilityaudit_snapshots}}', [
+                'id' => $this->primaryKey(),
+                'siteId' => $this->integer()->notNull(),
+                'date' => $this->date()->notNull(),
+                'avgScore' => $this->smallInteger()->unsigned()->notNull(),
+                'avgScoreA' => $this->smallInteger()->unsigned()->notNull(),
+                'avgScoreAA' => $this->smallInteger()->unsigned()->notNull(),
+                'avgScoreAAA' => $this->smallInteger()->unsigned()->notNull(),
+                'scannedCount' => $this->integer()->unsigned()->notNull(),
+                'scannableCount' => $this->integer()->unsigned()->notNull(),
+                'errorCount' => $this->integer()->unsigned()->notNull(),
+                'warningCount' => $this->integer()->unsigned()->notNull(),
+                'noticeCount' => $this->integer()->unsigned()->notNull(),
+                'criticalPages' => $this->integer()->unsigned()->notNull(),
+                'failingCriteriaAA' => $this->smallInteger()->unsigned()->notNull(),
+                'targetScore' => $this->smallInteger()->unsigned()->notNull(),
+                'pagesBelowTarget' => $this->integer()->unsigned()->null(),
+                'pendingReview' => $this->integer()->unsigned()->notNull(),
+                'sweepRunning' => $this->boolean()->notNull()->defaultValue(false),
+                'dateCreated' => $this->dateTime()->notNull(),
+                'dateUpdated' => $this->dateTime()->notNull(),
+                'uid' => $this->uid(),
+            ]);
+        }
+
+        if (!$this->db->tableExists('{{%accessibilityaudit_report_sends}}')) {
+            // One row per site: the day its scheduled summary last went out.
+            $this->createTable('{{%accessibilityaudit_report_sends}}', [
+                'id' => $this->primaryKey(),
+                'siteId' => $this->integer()->notNull(),
+                'lastSent' => $this->date()->notNull(),
+                'dateCreated' => $this->dateTime()->notNull(),
+                'dateUpdated' => $this->dateTime()->notNull(),
+                'uid' => $this->uid(),
+            ]);
+        }
+
+        if (!$this->db->tableExists('{{%accessibilityaudit_report_notes}}')) {
+            // One row per site: the team's note for the directors summary,
+            // kept apart from the organisation details the VPAT and statement
+            // editors save as a whole.
+            $this->createTable('{{%accessibilityaudit_report_notes}}', [
+                'id' => $this->primaryKey(),
+                'siteId' => $this->integer()->notNull(),
+                'note' => $this->text(),
+                'userId' => $this->integer()->null(),
+                'dateCreated' => $this->dateTime()->notNull(),
+                'dateUpdated' => $this->dateTime()->notNull(),
+                'uid' => $this->uid(),
+            ]);
+        }
+
         return true;
     }
 
@@ -309,6 +411,10 @@ class Install extends Migration
         $this->createIndex(null, '{{%accessibilityaudit_asset_issues}}', ['assetId', 'ruleId'], true);
         $this->createIndex(null, '{{%accessibilityaudit_asset_issues}}', ['ruleId']);
         $this->createIndex(null, '{{%accessibilityaudit_asset_flags}}', ['assetId'], true);
+        $this->createIndex(null, '{{%accessibilityaudit_pdf_checks}}', ['assetId'], true);
+        $this->createIndex(null, '{{%accessibilityaudit_pdf_checks}}', ['status', 'reason']);
+        $this->createIndex(null, '{{%accessibilityaudit_alt_drafts}}', ['assetId'], true);
+        $this->createIndex(null, '{{%accessibilityaudit_alt_drafts}}', ['status']);
         $this->createIndex(null, '{{%accessibilityaudit_issues}}', ['verdict']);
         $this->createIndex(null, '{{%accessibilityaudit_issues}}', ['origin']);
         // One ruling per target + rule + occurrence.
@@ -316,6 +422,9 @@ class Install extends Migration
         $this->createIndex(null, '{{%accessibilityaudit_verdicts}}', ['siteId', 'targetHash']);
         $this->createIndex(null, '{{%accessibilityaudit_verdicts}}', ['elementId', 'siteId']);
         $this->createIndex(null, '{{%accessibilityaudit_vpat_revisions}}', ['siteId', 'dateCreated']);
+        $this->createIndex(null, '{{%accessibilityaudit_snapshots}}', ['siteId', 'date'], true);
+        $this->createIndex(null, '{{%accessibilityaudit_report_notes}}', ['siteId'], true);
+        $this->createIndex(null, '{{%accessibilityaudit_report_sends}}', ['siteId'], true);
     }
 
     /**
@@ -396,6 +505,18 @@ class Install extends Migration
         );
         $this->addForeignKey(
             null,
+            '{{%accessibilityaudit_pdf_checks}}', 'assetId',
+            '{{%elements}}', 'id',
+            'CASCADE', 'CASCADE'
+        );
+        $this->addForeignKey(
+            null,
+            '{{%accessibilityaudit_alt_drafts}}', 'assetId',
+            '{{%elements}}', 'id',
+            'CASCADE', 'CASCADE'
+        );
+        $this->addForeignKey(
+            null,
             '{{%accessibilityaudit_verdicts}}', 'elementId',
             '{{%elements}}', 'id',
             'CASCADE', 'CASCADE'
@@ -405,6 +526,30 @@ class Install extends Migration
             '{{%accessibilityaudit_verdicts}}', 'siteId',
             '{{%sites}}', 'id',
             'CASCADE', 'CASCADE'
+        );
+        $this->addForeignKey(
+            null,
+            '{{%accessibilityaudit_snapshots}}', 'siteId',
+            '{{%sites}}', 'id',
+            'CASCADE', 'CASCADE'
+        );
+        $this->addForeignKey(
+            null,
+            '{{%accessibilityaudit_report_notes}}', 'siteId',
+            '{{%sites}}', 'id',
+            'CASCADE', 'CASCADE'
+        );
+        $this->addForeignKey(
+            null,
+            '{{%accessibilityaudit_report_sends}}', 'siteId',
+            '{{%sites}}', 'id',
+            'CASCADE', 'CASCADE'
+        );
+        $this->addForeignKey(
+            null,
+            '{{%accessibilityaudit_report_notes}}', 'userId',
+            '{{%users}}', 'id',
+            'SET NULL', 'CASCADE'
         );
         // Keep the ruling if the author who made it is deleted: the judgement
         // still stands, we just lose the attribution.
