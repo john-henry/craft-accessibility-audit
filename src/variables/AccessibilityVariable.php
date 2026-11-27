@@ -164,7 +164,7 @@ class AccessibilityVariable
 
     /**
      * The display name of an edition handle.
-     * Usage: {{ craft.a11y.editionName('standard') }}
+     * Usage: {{ craft.a11y.editionName('plus') }}
      *
      * @param string $edition One of the plugin's edition handles.
      * @return string
@@ -178,17 +178,17 @@ class AccessibilityVariable
     }
 
     /**
-     * Whether the active edition is Standard or higher.
-     * Usage: {% if craft.a11y.isStandard %}
+     * Whether the active edition is Plus or higher.
+     * Usage: {% if craft.a11y.isPlus %}
      *
      * @return bool
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 2.0.0
      */
-    public function isStandard(): bool
+    public function isPlus(): bool
     {
-        return AccessibilityAudit::getInstance()->isStandard();
+        return AccessibilityAudit::getInstance()->isPlus();
     }
 
     /**

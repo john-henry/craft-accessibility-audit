@@ -20,7 +20,7 @@
     {{ forms.lightswitchField({
         label: 'Scan on Entry Save'|t('accessibility-audit'),
         instructions: 'Automatically queue an accessibility scan when a live entry is saved. Scans run via the Craft queue worker.'|t('accessibility-audit')
-            ~ ((isStandard ?? false) ? ' <span class="info">' ~ 'Saving also records the entry\'s readability from its own text, so the Readability report stays current.'|t('accessibility-audit') ~ '</span>' : ''),
+            ~ ((isPlus ?? false) ? ' <span class="info">' ~ 'Saving also records the entry\'s readability from its own text, so the Readability report stays current.'|t('accessibility-audit') ~ '</span>' : ''),
         id: 'scanOnSave',
         name: 'settings[scanOnSave]',
         on: settings.scanOnSave,
@@ -59,11 +59,11 @@
 
     <h2>{{ 'Server-side Browser Scanning'|t('accessibility-audit') }}</h2>
 
-    {% if not (isStandard ?? false) %}
+    {% if not (isPlus ?? false) %}
         {% include 'accessibility-audit/_includes/pro-upsell' with {
             feature: 'Server-side browser scanning'|t('accessibility-audit'),
-            text: 'Run the full axe-core browser checks (contrast, focus, touch targets) on every queued scan with headless Chrome, so the whole site gets browser coverage without an admin visiting each page. Available on the Standard edition.'|t('accessibility-audit'),
-            edition: 'standard',
+            text: 'Run the full axe-core browser checks (contrast, focus, touch targets) on every queued scan with headless Chrome, so the whole site gets browser coverage without an admin visiting each page. Available on the Plus edition.'|t('accessibility-audit'),
+            edition: 'plus',
             headingLevel: 4,
         } only %}
     {% else %}
@@ -142,11 +142,11 @@
 
     <h2>{{ 'PDF Checks'|t('accessibility-audit') }}</h2>
 
-    {% if not (isStandard ?? false) %}
+    {% if not (isPlus ?? false) %}
         {% include 'accessibility-audit/_includes/pro-upsell' with {
             feature: 'PDF checks'|t('accessibility-audit'),
-            text: 'Check every PDF in the asset library for the failures a machine can settle: tags, language, title, alt text on figures, form fields, and more. Available on the Standard edition.'|t('accessibility-audit'),
-            edition: 'standard',
+            text: 'Check every PDF in the asset library for the failures a machine can settle: tags, language, title, alt text on figures, form fields, and more. Available on the Plus edition.'|t('accessibility-audit'),
+            edition: 'plus',
             headingLevel: 4,
         } only %}
     {% else %}

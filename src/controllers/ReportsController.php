@@ -27,7 +27,7 @@ use yii\web\Response;
  * printable page to save as PDF and, where it has rows, a CSV.
  *
  * Reports are Pro. The list and each report's page show the upgrade note on
- * Lite and Standard; the printable page, the CSV and saving the team note
+ * Lite and Plus; the printable page, the CSV and saving the team note
  * refuse outright.
  *
  * @author John Henry Donovan <info@johnhenry.ie>

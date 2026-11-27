@@ -254,7 +254,7 @@ class StatementService extends Component
 
         // A blanket attestation stands in for per-criterion VPAT sign-off. The
         // VPAT is better evidence and is a Pro feature; the statement is not, so
-        // without this a Standard site could never state full compliance no
+        // without this a Plus site could never state full compliance no
         // matter how thoroughly it had been tested by hand.
         $attested = (bool) ($this->getRecord($siteId)['meta']['manualReviewConfirmed'] ?? false);
 

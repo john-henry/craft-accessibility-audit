@@ -59,7 +59,7 @@ class FixGuideController extends Controller
     {
         $this->requirePermission('accessibility-audit:view-reports');
 
-        if (($refusal = $this->requireStandardJson('Fix guides')) !== null) {
+        if (($refusal = $this->requirePlusJson('Fix guides')) !== null) {
             return $refusal;
         }
 
@@ -90,7 +90,7 @@ class FixGuideController extends Controller
     {
         $this->requirePermission('accessibility-audit:view-reports');
 
-        if (($refusal = $this->requireStandardJson('Fix guides')) !== null) {
+        if (($refusal = $this->requirePlusJson('Fix guides')) !== null) {
             return $refusal;
         }
 
@@ -127,7 +127,7 @@ class FixGuideController extends Controller
     {
         $this->requirePermission('accessibility-audit:view-reports');
 
-        if (($refusal = $this->requireStandardJson('Fix guides')) !== null) {
+        if (($refusal = $this->requirePlusJson('Fix guides')) !== null) {
             return $refusal;
         }
 

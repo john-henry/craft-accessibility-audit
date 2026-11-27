@@ -14,7 +14,7 @@ use craft\models\Site;
 /**
  * Which sites this install may act on.
  *
- * Lite and Standard are primary-site only, so a posted site id is never taken at face
+ * Lite and Plus are primary-site only, so a posted site id is never taken at face
  * value: every screen and endpoint resolves it through here, and a site the
  * edition or the user cannot reach is refused in one place rather than in each
  * caller. The edition check itself stays on the plugin class, which is what
@@ -30,7 +30,7 @@ trait SiteScopeTrait
 
     /**
      * The sites the plugin may operate on for the active edition. Multi-site is
-     * a Pro feature, so Lite and Standard are limited to the primary site.
+     * a Pro feature, so Lite and Plus are limited to the primary site.
      *
      * Editable sites, not all sites: a user without permission for a site must
      * not be offered it in a switcher or shown its scan data. This mirrors
@@ -63,7 +63,7 @@ trait SiteScopeTrait
      * means a different site on another environment, and Craft's own CP chrome
      * (Craft.siteId, the `requestedSite` Twig global) reads the `site` handle.
      *
-     * Lite and Standard are primary-site only, so a `site` handle in the URL can't reach
+     * Lite and Plus are primary-site only, so a `site` handle in the URL can't reach
      * another site's data on that edition.
      *
      * @return Site
@@ -160,7 +160,7 @@ trait SiteScopeTrait
     {
         $sites = Craft::$app->getSites();
 
-        // Lite and Standard cover the primary site and nothing else, so a statement
+        // Lite and Plus cover the primary site and nothing else, so a statement
         // asked for by any other site has nothing of its own to show.
         if (!$this->isPro()) {
             return $sites->getPrimarySite()->id;

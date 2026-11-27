@@ -89,7 +89,7 @@
             notice: 'Notice'|t('accessibility-audit'),
         }|json_encode|raw }};
         const RANK = { beginner: 1, intermediate: 2, advanced: 3 };
-        const BUTTONS = {{ (craft.a11y.isStandard ? [{
+        const BUTTONS = {{ (craft.a11y.isPlus ? [{
             label: 'Download fix guide'|t('accessibility-audit'),
             icon: 'download',
             href: actionUrl('accessibility-audit/fix-guide/site', { siteId: siteId }),

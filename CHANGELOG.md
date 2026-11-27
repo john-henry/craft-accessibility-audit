@@ -4,14 +4,14 @@
 
 > [!IMPORTANT]
 > Things to check when you update:
-> - The plugin now has three editions: Lite, Standard and Pro. New installs start on the free Lite edition, and existing sites keep the edition they're on.
+> - The plugin now has three editions: Lite, Plus and Pro. Standard is now called Plus. New installs start on the free Lite edition, and existing sites keep the edition they're on.
 > - `getAssets()->scanAsset()` is gone. Read PDF results from `getPdfAudit()`, and image alt text issues from the Assets listing methods.
 > - The `accessibility-audit/alt/save` controller action is gone. Alt text is saved through `accessibility-audit/alt/save-screen` now.
 > - The `AuditService::STANDARD_SCAN_LIMIT` and `AuditService::STANDARD_RETENTION_CAP` constants are gone. Read the caps from the plugin's `scanLimit()` and `retentionCap()`.
 > - Generate for New Assets now saves its drafts for review instead of writing alt text to the image. Change the New uploads setting if you want alt text saved straight to the image.
 
 ### Added
-- PDF checks, on Standard and Pro. Every PDF in the asset library is checked for the failures a machine can settle for itself: tags, language, title, form field names, images with no alt text, security settings that block screen readers, and a few more.
+- PDF checks, on Plus and Pro. Every PDF in the asset library is checked for the failures a machine can settle for itself: tags, language, title, form field names, images with no alt text, security settings that block screen readers, and a few more.
 - With server-side browser scanning set up, PDFs also get their structure checked: headings, tables, lists, links, and alt text that says nothing.
 - The Assets page lists each PDF once with the checks it fails, forms first, under All issues, Need fixing, Couldn't be checked and Passed, with a filter by problem.
 - Each PDF has its own page listing every failing check with how to fix it, a sidebar with the file's details and a summary of the checks it fails and passes, and a Re-check button. Files that couldn't be checked say why.
@@ -30,8 +30,8 @@
 - Each page listed on a rule's page expands to show that rule's occurrences on it, with the markup and selector.
 - The frontend overlay shows the lowest contrast ratio found for a contrast issue, with its text and background colours.
 - The Issues tab can be sorted by occurrences and points, and searched by title or rule ID.
-- Download fix guide, on Standard and Pro, gives you a Markdown to-do list for the site, a rule or a page, with an AI prompt for each developer fix.
-- Tools for Craft's MCP server, on Standard and Pro with Craft 5.12 or later: an AI assistant can read the accessibility summary, the open rules and how to fix them, and a page's issues, and can re-scan a page.
+- Download fix guide, on Plus and Pro, gives you a Markdown to-do list for the site, a rule or a page, with an AI prompt for each developer fix.
+- Tools for Craft's MCP server, on Plus and Pro with Craft 5.12 or later: an AI assistant can read the accessibility summary, the open rules and how to fix them, and a page's issues, and can re-scan a page.
 - Remove scan data, in the Actions menu on the page tables, deletes the selected pages' scores, issues and scan history.
 - Not an issue on every page, on a review question in the page report, answers the same element on every page of the site at once, including pages scanned later.
 - Each site's average score and issue counts are saved once a day and kept after old scans are pruned, on every edition.
@@ -47,10 +47,10 @@
 ### Changed
 - Findings on a rule's page, in the page report and in the entry sidebar are easier to scan, with the contrast ratio picked out and the colours on their own line, each with a swatch.
 - Lite, the new free edition, scans up to 25 pages on the primary site and keeps 30 days of history. It has scoring, EN 301 549, issues by rule and page, potential issues, page reports and Inspect, template and resolved issues, the admin and frontend overlays, colour tools, the accessibility statement, scan on save and the console commands.
-- Standard has everything in Lite, scans any number of pages, keeps 90 days of history, and adds server-side browser scanning, AI alt text, PDF checks, email and Slack notifications, and readability.
-- Pro has everything in Standard, keeps history for as long as you like, and adds multi-site scanning and reporting, VPAT conformance reporting, the CI/CD endpoint, the decoupled frontend overlay and a permanent record of resolved issues.
-- Sites already on Standard get server-side browser scanning, PDF checks, notifications and readability, lose the 100-page cap, and keep 90 days of history instead of 30.
-- Upgrade prompts now name the edition a feature needs, Standard or Pro.
+- Plus has everything in Lite, scans any number of pages, keeps 90 days of history, and adds server-side browser scanning, AI alt text, PDF checks, email and Slack notifications, and readability.
+- Pro has everything in Plus, keeps history for as long as you like, and adds multi-site scanning and reporting, VPAT conformance reporting, the CI/CD endpoint, the decoupled frontend overlay and a permanent record of resolved issues.
+- Sites on Standard move to Plus, which is the same edition under its new name, and get server-side browser scanning, PDF checks, notifications and readability, lose the 100-page cap, and keep 90 days of history instead of 30.
+- Upgrade prompts now name the edition a feature needs, Plus or Pro.
 - Edition refusals from the plugin's JSON endpoints, the CI/CD endpoint included, now carry an `editionRequired` key naming the edition needed.
 - The plugin now pulls in `tecnickcom/tc-lib-pdf-parser` and `tecnickcom/tc-lib-pdf-filter` (both LGPL-3.0-or-later) through Composer, and bundles pdf.js (Apache-2.0).
 - The Assets page is laid out like Craft's own asset index, with sources down the side and the search and filters in one bar.

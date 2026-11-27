@@ -95,18 +95,18 @@ trait ProGateTrait
      *
      * @param string $feature The human-readable feature name, used to build the
      *                        refusal message (e.g. "Readability analysis").
-     * @return Response|null A refusal response, or null on Standard or Pro.
+     * @return Response|null A refusal response, or null on Plus or Pro.
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 2.0.0
      */
-    protected function requireStandardJson(string $feature): ?Response
+    protected function requirePlusJson(string $feature): ?Response
     {
-        if (AccessibilityAudit::getInstance()->isStandard()) {
+        if (AccessibilityAudit::getInstance()->isPlus()) {
             return null;
         }
 
-        return $this->_editionRefusal($feature, AccessibilityAudit::EDITION_STANDARD);
+        return $this->_editionRefusal($feature, AccessibilityAudit::EDITION_PLUS);
     }
 
     // Private Methods

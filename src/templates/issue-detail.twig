@@ -31,7 +31,7 @@
     {% if guidanceUrl %}
         <a href="{{ guidanceUrl }}" target="_blank" rel="noopener" class="btn">{{ 'View WCAG guidance'|t('accessibility-audit') }}<span class="visually-hidden"> ({{ 'opens in new tab'|t('accessibility-audit') }})</span></a>
     {% endif %}
-    {% if craft.a11y.isStandard and detail is not empty and not isPotential %}
+    {% if craft.a11y.isPlus and detail is not empty and not isPotential %}
         <a href="{{ actionUrl('accessibility-audit/fix-guide/rule', { ruleId: ruleId, siteId: siteId }) }}" class="btn" data-icon="download">{{ 'Download fix guide'|t('accessibility-audit') }}</a>
     {% endif %}
 </div>

@@ -12,7 +12,7 @@ When a client, a procurement team or a regulator asks whether the site meets WCA
 There are three editions, and the full split is on the [Editions](https://johnhenry.ie/plugins/accessibility-audit/docs/getting-started/editions) page.
 
 - **Lite** is free: up to 25 pages, the primary site, and 30 days of scan history.
-- **Standard** takes the page cap off and keeps 90 days of history.
+- **Plus** takes the page cap off and keeps 90 days of history.
 - **Pro** adds multi-site and keeps history for as long as you want it.
 
 ## In every edition
@@ -30,7 +30,7 @@ There are three editions, and the full split is on the [Editions](https://johnhe
 - **Colour tools**: a contrast analyser, a colour-blindness simulator and a grid for a whole palette.
 - **The accessibility statement** the EU and UK require, built to your jurisdiction's model, with the compliance claim held to what your evidence supports.
 
-## Standard adds
+## Plus adds
 
 - **Unlimited pages and 90 days of history.**
 - **Server-side browser scanning.** Point it at Chrome on the server, or at a remote Chrome on hosts like Craft Cloud where nothing can be installed, and every queued scan runs the browser checks at both widths without anybody visiting the page.
@@ -44,6 +44,7 @@ There are three editions, and the full split is on the [Editions](https://johnhe
 ## Pro adds
 
 - **Multi-site**, with every site in the install scanned and reported on.
+- **Reports** for the people who don't open the control panel: a directors summary in plain words, emailed weekly or monthly with a PDF attached, plus what changed over a period and which pages sit below your target.
 - **VPAT / ACR**, the conformance report procurement teams ask for, filled in from your scans and exported print-ready, through your own template, or as OpenACR.
 - **A CI/CD endpoint**, so a build pipeline can hold a deploy until the score reaches your target.
 - **The decoupled frontend overlay**, for headless front ends like Next, Nuxt or Astro, from one script tag.
@@ -70,7 +71,7 @@ Need a hand? Open an issue on the [GitHub Issues page](https://github.com/john-h
 
 Proprietary. Copyright (c) 2026 John Henry Donovan.
 
-The PDF checks use [tc-lib-pdf-parser](https://github.com/tecnickcom/tc-lib-pdf-parser) and [tc-lib-pdf-filter](https://github.com/tecnickcom/tc-lib-pdf-filter) (both LGPL-3.0-or-later), installed by Composer as dependencies, and bundle [pdf.js](https://github.com/mozilla/pdf.js) (Apache-2.0). See [NOTICE.md](https://github.com/john-henry/craft-accessibility-audit/blob/craft-5/NOTICE.md) for the third-party notices.
+The PDF checks use [tc-lib-pdf-parser](https://github.com/tecnickcom/tc-lib-pdf-parser) and [tc-lib-pdf-filter](https://github.com/tecnickcom/tc-lib-pdf-filter) (both LGPL-3.0-or-later), installed by Composer as dependencies, and bundle [pdf.js](https://github.com/mozilla/pdf.js) (Apache-2.0). The PDF attached to the directors summary is made with [dompdf](https://github.com/dompdf/dompdf) (LGPL-2.1), also installed by Composer. See [NOTICE.md](https://github.com/john-henry/craft-accessibility-audit/blob/craft-5/NOTICE.md) for the third-party notices.
 
 ---
 

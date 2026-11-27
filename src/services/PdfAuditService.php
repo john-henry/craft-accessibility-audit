@@ -34,7 +34,7 @@ use yii\db\Expression;
  * never reach the site score or the image counts: they are reported on the
  * Assets screen alone.
  *
- * Standard and Pro only. On Lite nothing is queued, checked or listed.
+ * Plus and Pro only. On Lite nothing is queued, checked or listed.
  *
  * @phpstan-type CheckRow array{status: string, reason: string|null, hasForm: bool, meta: array<string, mixed>, findings: array<string, array<string, mixed>>, dateChecked: string|null}
  * @phpstan-type FailingCheck array{ruleId: string, label: string, desc: string, advice: string, severity: string, wcag: string|null, level: string|null, helpUrl: string|null, finding: array<string, mixed>}
@@ -110,7 +110,7 @@ class PdfAuditService extends Component
     // =========================================================================
 
     /**
-     * Whether PDF checks run on this install: Standard or higher, with the
+     * Whether PDF checks run on this install: Plus or higher, with the
      * setting on.
      *
      * @return bool
@@ -122,7 +122,7 @@ class PdfAuditService extends Component
     {
         $plugin = AccessibilityAudit::getInstance();
 
-        return $plugin->isStandard() && $plugin->getSettings()->pdfChecks;
+        return $plugin->isPlus() && $plugin->getSettings()->pdfChecks;
     }
 
     /**

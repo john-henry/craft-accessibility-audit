@@ -43,7 +43,7 @@
             <span class="visually-hidden">({{ 'opens in new tab'|t('accessibility-audit') }})</span>
         </a>
     {% endif %}
-    {% if craft.a11y.isStandard and scan and issues is not empty %}
+    {% if craft.a11y.isPlus and scan and issues is not empty %}
         <a href="{{ actionUrl('accessibility-audit/fix-guide/page', element ? { elementId: elementId, siteId: siteId } : { scanId: scan.id, siteId: siteId }) }}" class="btn" data-icon="download">{{ 'Download fix guide'|t('accessibility-audit') }}</a>
     {% endif %}
     {% if element %}

@@ -50,10 +50,10 @@ class AccessibilityAudit extends BasePlugin
     public const EDITION_LITE = 'lite';
 
     /**
-     * @var string The Standard edition handle. Scanning is unlimited and
-     * history is kept for up to self::STANDARD_RETENTION_DAYS days.
+     * @var string The Plus edition handle. Scanning is unlimited and
+     * history is kept for up to self::PLUS_RETENTION_DAYS days.
      */
-    public const EDITION_STANDARD = 'standard';
+    public const EDITION_PLUS = 'plus';
 
     /**
      * @var string The Pro edition handle. Scanning and history retention are
@@ -74,9 +74,9 @@ class AccessibilityAudit extends BasePlugin
     public const LITE_RETENTION_DAYS = 30;
 
     /**
-     * @var int The longest scan-history retention, in days, on Standard.
+     * @var int The longest scan-history retention, in days, on Plus.
      */
-    public const STANDARD_RETENTION_DAYS = 90;
+    public const PLUS_RETENTION_DAYS = 90;
 
     // Static Properties
     // =========================================================================
@@ -107,7 +107,7 @@ class AccessibilityAudit extends BasePlugin
     /**
      * @var string The plugin's schema version, used to track migrations.
      */
-    public string $schemaVersion = '2.0.1';
+    public string $schemaVersion = '2.0.2';
 
     // Public Methods
     // =========================================================================
@@ -128,13 +128,13 @@ class AccessibilityAudit extends BasePlugin
     {
         return match ($edition) {
             self::EDITION_LITE => 'Lite',
-            self::EDITION_STANDARD => 'Standard',
+            self::EDITION_PLUS => 'Plus',
             default => 'Pro',
         };
     }
 
     /**
-     * Whether AI alt text can run: Standard or higher, with an Anthropic API
+     * Whether AI alt text can run: Plus or higher, with an Anthropic API
      * key set.
      *
      * @return bool
@@ -144,7 +144,7 @@ class AccessibilityAudit extends BasePlugin
      */
     public function canGenerateAltText(): bool
     {
-        return $this->isStandard()
+        return $this->isPlus()
             && trim((string)App::parseEnv($this->getSettings()->anthropicApiKey)) !== '';
     }
 
@@ -165,7 +165,7 @@ class AccessibilityAudit extends BasePlugin
     }
 
     /**
-     * Whether the active edition is Standard or higher.
+     * Whether the active edition is Plus or higher.
      *
      * The check every feature Lite lacks routes through. Pro passes it too.
      *
@@ -174,9 +174,9 @@ class AccessibilityAudit extends BasePlugin
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 2.0.0
      */
-    public function isStandard(): bool
+    public function isPlus(): bool
     {
-        return $this->is(self::EDITION_STANDARD, '>=');
+        return $this->is(self::EDITION_PLUS, '>=');
     }
 
     /**
@@ -191,7 +191,7 @@ class AccessibilityAudit extends BasePlugin
     {
         return match (true) {
             $this->isPro() => null,
-            $this->isStandard() => self::STANDARD_RETENTION_DAYS,
+            $this->isPlus() => self::PLUS_RETENTION_DAYS,
             default => self::LITE_RETENTION_DAYS,
         };
     }
@@ -206,7 +206,7 @@ class AccessibilityAudit extends BasePlugin
      */
     public function scanLimit(): ?int
     {
-        return $this->isStandard() ? null : self::LITE_SCAN_LIMIT;
+        return $this->isPlus() ? null : self::LITE_SCAN_LIMIT;
     }
 
     /**

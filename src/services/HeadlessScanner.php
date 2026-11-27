@@ -30,7 +30,7 @@ use yii\base\InvalidConfigException;
  * a full browser pass, so contrast, focus, and target-size findings stay
  * complete and fresh across the whole site.
  *
- * Needs the Standard edition or higher and a browser to drive, which can come
+ * Needs the Plus edition or higher and a browser to drive, which can come
  * from either of two places: a Chrome/Chromium binary on the server (`chromePath`), or an
  * already-running Chrome reached over a WebSocket (`chromeWsEndpoint`), which
  * covers hosts that can't install a binary at all. When neither is configured
@@ -235,7 +235,7 @@ class HeadlessScanner extends Component
     }
 
     /**
-     * Whether server-side browser scanning can run: Standard or higher, plus
+     * Whether server-side browser scanning can run: Plus or higher, plus
      * a browser to drive, either a remote endpoint or a local binary that
      * exists on disk.
      *
@@ -250,7 +250,7 @@ class HeadlessScanner extends Component
      */
     public function isAvailable(): bool
     {
-        if (!AccessibilityAudit::getInstance()->isStandard()) {
+        if (!AccessibilityAudit::getInstance()->isPlus()) {
             return false;
         }
 

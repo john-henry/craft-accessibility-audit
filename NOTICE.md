@@ -61,8 +61,8 @@ Copyright © The Dompdf Team.
 Licensed under the **GNU Lesser General Public License v2.1 (LGPL-2.1)**.
 Full license text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
 
-Installed as a Composer dependency, along with dompdf/php-font-lib and
-dompdf/php-svg-lib (same licence), and used unmodified to turn the scheduled
+Installed as a Composer dependency, along with dompdf/php-font-lib
+(LGPL-2.1-or-later) and dompdf/php-svg-lib (LGPL-3.0-or-later), and used unmodified to turn the scheduled
 directors summary into the PDF attached to its email. None of its source is
 copied into this plugin, so the library can be replaced with a modified
 version of your own through Composer.

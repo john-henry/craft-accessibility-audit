@@ -219,7 +219,7 @@ class AuditController extends Controller
         $this->requirePostRequest();
         $this->requirePermission('accessibility-audit:run-scans');
 
-        // Multi-site is Pro: on Lite and Standard, a batch scan only ever covers the
+        // Multi-site is Pro: on Lite and Plus, a batch scan only ever covers the
         // primary site, whatever siteId is posted.
         $plugin = AccessibilityAudit::getInstance();
         $siteId = $plugin->resolveSiteId($this->request->getBodyParam('siteId'));
@@ -320,7 +320,7 @@ class AuditController extends Controller
         $pdfAudit = AccessibilityAudit::getInstance()->getPdfAudit();
 
         if (!$pdfAudit->isEnabled()) {
-            Craft::$app->getSession()->setError(Craft::t('accessibility-audit', 'PDF checks need the Standard edition, with Check PDF Files turned on.'));
+            Craft::$app->getSession()->setError(Craft::t('accessibility-audit', 'PDF checks need the Plus edition, with Check PDF Files turned on.'));
 
             return $this->redirectToPostedUrl();
         }
@@ -340,7 +340,7 @@ class AuditController extends Controller
 
     /**
      * POST /accessibility-audit/audit/check-pdf
-     * Queues a fresh check of one PDF, whether or not it has changed (Standard and Pro).
+     * Queues a fresh check of one PDF, whether or not it has changed (Plus and Pro).
      *
      * @return Response
      * @throws ForbiddenHttpException
@@ -360,7 +360,7 @@ class AuditController extends Controller
         $pdfAudit = AccessibilityAudit::getInstance()->getPdfAudit();
 
         if (!$pdfAudit->isEnabled()) {
-            Craft::$app->getSession()->setError(Craft::t('accessibility-audit', 'PDF checks need the Standard edition, with Check PDF Files turned on.'));
+            Craft::$app->getSession()->setError(Craft::t('accessibility-audit', 'PDF checks need the Plus edition, with Check PDF Files turned on.'));
 
             return $this->redirectToPostedUrl();
         }
@@ -1113,7 +1113,7 @@ class AuditController extends Controller
     /**
      * Refuses a request aimed at a site the edition or the user cannot touch.
      *
-     * Lite and Standard are primary-site only whatever is posted. On Pro the site must be
+     * Lite and Plus are primary-site only whatever is posted. On Pro the site must be
      * one the user may edit: the `run-scans` permission is install-wide, so a
      * crafted siteId would otherwise reach sites outside their permissions, and
      * the per-site fence has to happen here.
@@ -1130,7 +1130,7 @@ class AuditController extends Controller
         $plugin = AccessibilityAudit::getInstance();
         $sites = Craft::$app->getSites();
 
-        // Lite and Standard are primary-site only, whatever siteId is posted.
+        // Lite and Plus are primary-site only, whatever siteId is posted.
         if (!$plugin->isPro() && $siteId !== $sites->getPrimarySite()->id) {
             return $this->asJson([
                 'success' => false,

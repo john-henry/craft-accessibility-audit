@@ -74,10 +74,10 @@ class NotificationService extends Component
      */
     public function evaluateScan(array $newResult, ?array $previousResult): void
     {
-        // Notifications need Standard or higher. Bail immediately on Lite so
+        // Notifications need Plus or higher. Bail immediately on Lite so
         // nothing fires even if something internally still calls this: a
         // second guard alongside the controller-level gating.
-        if (!AccessibilityAudit::getInstance()->isStandard()) {
+        if (!AccessibilityAudit::getInstance()->isPlus()) {
             return;
         }
 

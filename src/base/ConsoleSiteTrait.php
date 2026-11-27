@@ -33,7 +33,7 @@ trait ConsoleSiteTrait
 
     /**
      * @var string|null The handle of the site to act on. Pro only; the
-     *                  Lite and Standard always act on the primary site.
+     *                  Lite and Plus always act on the primary site.
      */
     public ?string $site = null;
 
@@ -53,7 +53,7 @@ trait ConsoleSiteTrait
     private function _resolveSiteId(): ?int
     {
         // Multi-site is a Pro feature: --site is only honoured on Pro, so
-        // Lite and Standard always operate on the primary site.
+        // Lite and Plus always operate on the primary site.
         if ($this->site) {
             $plugin = AccessibilityAudit::getInstance();
 

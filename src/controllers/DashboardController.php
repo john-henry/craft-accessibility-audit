@@ -183,8 +183,8 @@ class DashboardController extends Controller
             'assetStats' => $plugin->getAssets()->getStoredAssetStats(),
             // The assets band's other figures, all already kept by the Assets
             // page: drafts waiting, a drafting run under way, decorative images,
-            // and from Standard up the PDF results.
-            'assetDraftCount' => $plugin->isStandard() ? $plugin->getAltDrafts()->countReady() : 0,
+            // and from Plus up the PDF results.
+            'assetDraftCount' => $plugin->isPlus() ? $plugin->getAltDrafts()->countReady() : 0,
             'assetDraftRunning' => DraftAltText::isRunning(),
             'assetDecorativeCount' => $plugin->getAssets()->getDecorativeCount(),
             'assetHasApiKey' => $plugin->canGenerateAltText(),
@@ -885,7 +885,7 @@ class DashboardController extends Controller
         $pdfView = $pdfListing !== null;
 
         // The drafts list is the AI alt text review queue, which Lite lacks.
-        $aiAltText = $plugin->isStandard();
+        $aiAltText = $plugin->isPlus();
         $filters = ['asset-alt-missing', 'asset-alt-filename', 'asset-alt-short', 'decorative'];
         if ($aiAltText) {
             $filters[] = AltDrafts::FILTER;
@@ -949,7 +949,7 @@ class DashboardController extends Controller
             : null;
 
         return $this->renderTemplate('accessibility-audit/assets', [
-            'isStandard' => $aiAltText,
+            'isPlus' => $aiAltText,
             'pdfEnabled' => $pdfEnabled,
             'pdfView' => $pdfView,
             'pdfStatus' => $pdfListing['status'] ?? PdfAuditService::LIST_ISSUES,

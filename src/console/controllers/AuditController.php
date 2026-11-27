@@ -398,7 +398,7 @@ class AuditController extends Controller
         $pdfAudit = AccessibilityAudit::getInstance()->getPdfAudit();
 
         if (!$pdfAudit->isEnabled()) {
-            $this->stderr("PDF checks need the Standard edition, with the Check PDF Files setting on.\n", Console::FG_RED);
+            $this->stderr("PDF checks need the Plus edition, with the Check PDF Files setting on.\n", Console::FG_RED);
 
             return ExitCode::UNAVAILABLE;
         }

@@ -603,8 +603,8 @@ class AuditTools
     {
         $plugin = AccessibilityAudit::getInstance();
 
-        if (!$plugin->isStandard()) {
-            throw new ToolCallException("Accessibility Audit's MCP tools need the Standard or Pro edition. This site runs Lite.");
+        if (!$plugin->isPlus()) {
+            throw new ToolCallException("Accessibility Audit's MCP tools need the Plus or Pro edition. This site runs Lite.");
         }
 
         $user = Craft::$app->getUser();

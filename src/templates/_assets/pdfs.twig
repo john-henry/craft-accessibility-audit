@@ -5,11 +5,11 @@
 {% set pdfRows = pdfRows ?? [] %}
 {% set pdfReasons = pdfReasons ?? {} %}
 
-{% if not isStandard %}
+{% if not isPlus %}
     {% include 'accessibility-audit/_includes/pro-upsell' with {
         feature: 'PDF checks'|t('accessibility-audit'),
-        text: 'Check every PDF in the asset library for the failures a machine can settle: tags, language, title, alt text on figures, form fields, and more. Available on the Standard edition.'|t('accessibility-audit'),
-        edition: 'standard',
+        text: 'Check every PDF in the asset library for the failures a machine can settle: tags, language, title, alt text on figures, form fields, and more. Available on the Plus edition.'|t('accessibility-audit'),
+        edition: 'plus',
         headingLevel: 2,
     } only %}
 {% elseif not pdfEnabled %}

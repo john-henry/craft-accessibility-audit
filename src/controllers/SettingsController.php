@@ -83,7 +83,7 @@ class SettingsController extends Controller
             'settings' => $settings,
             'config' => Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'),
             'isPro' => $plugin->isPro(),
-            'isStandard' => $plugin->isStandard(),
+            'isPlus' => $plugin->isPlus(),
             'readOnly' => !Craft::$app->getConfig()->getGeneral()->allowAdminChanges,
         ]);
     }
@@ -111,7 +111,7 @@ class SettingsController extends Controller
             'settings' => $settings,
             'config' => Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'),
             'isPro' => $plugin->isPro(),
-            'isStandard' => $plugin->isStandard(),
+            'isPlus' => $plugin->isPlus(),
             'readOnly' => !Craft::$app->getConfig()->getGeneral()->allowAdminChanges,
             'headlessAvailable' => $plugin->getHeadless()->isAvailable(),
             'elementTypeOptions' => ScannableElementTypes::all(),
@@ -143,7 +143,7 @@ class SettingsController extends Controller
             'settings' => $settings,
             'config' => Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'),
             'isPro' => $plugin->isPro(),
-            'isStandard' => $plugin->isStandard(),
+            'isPlus' => $plugin->isPlus(),
             'readOnly' => !Craft::$app->getConfig()->getGeneral()->allowAdminChanges,
             'retentionCap' => $plugin->retentionCap(),
             // Not `editionName`: Craft's CP layout sets that to Craft's own edition.
@@ -175,7 +175,7 @@ class SettingsController extends Controller
             'settings' => $settings,
             'config' => Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'),
             'isPro' => $plugin->isPro(),
-            'isStandard' => $plugin->isStandard(),
+            'isPlus' => $plugin->isPlus(),
             'readOnly' => !Craft::$app->getConfig()->getGeneral()->allowAdminChanges,
             // Set once by actionGenerateCiToken() and read here so the full
             // token can be shown with a copy button right on the page,
@@ -215,7 +215,7 @@ class SettingsController extends Controller
             'settings' => $settings,
             'config' => Craft::$app->getConfig()->getConfigFromFile('accessibility-audit'),
             'isPro' => $plugin->isPro(),
-            'isStandard' => $plugin->isStandard(),
+            'isPlus' => $plugin->isPlus(),
             'readOnly' => !Craft::$app->getConfig()->getGeneral()->allowAdminChanges,
         ]);
     }
@@ -293,7 +293,7 @@ class SettingsController extends Controller
     }
 
     /**
-     * Saves the Notifications settings tab, which needs Standard or higher.
+     * Saves the Notifications settings tab, which needs Plus or higher.
      *
      * @return Response
      * @throws MissingComponentException
@@ -307,7 +307,7 @@ class SettingsController extends Controller
      */
     public function actionSaveNotifications(): Response
     {
-        if (($refusal = $this->requireStandardJson('Notifications')) !== null) {
+        if (($refusal = $this->requirePlusJson('Notifications')) !== null) {
             return $refusal;
         }
 
@@ -445,7 +445,7 @@ class SettingsController extends Controller
         // anything, so no admin-changes requirement.
         $this->requireAdmin(false);
 
-        if (($refusal = $this->requireStandardJson('Notifications')) !== null) {
+        if (($refusal = $this->requirePlusJson('Notifications')) !== null) {
             return $refusal;
         }
 
@@ -548,12 +548,12 @@ class SettingsController extends Controller
         $settings->overlayCollapseWhenIdle = (bool)   $this->request->getBodyParam('settings[overlayCollapseWhenIdle]', $settings->overlayCollapseWhenIdle);
         $settings->overlayPosition = (string) $this->request->getBodyParam('settings[overlayPosition]', $settings->overlayPosition);
         $settings->overlayIdleSeconds = (int)    $this->request->getBodyParam('settings[overlayIdleSeconds]', $settings->overlayIdleSeconds);
-        // Server-side browser scanning and PDF checks need Standard or higher,
+        // Server-side browser scanning and PDF checks need Plus or higher,
         // and their settings aren't rendered on Lite, so leave the stored
         // values alone there rather than reading whatever was posted. Skipping
         // the read matters on a downgrade: saving this page on Lite must not
         // wipe the endpoint or binary path a licence might get back.
-        if ($plugin->isStandard()) {
+        if ($plugin->isPlus()) {
             $settings->chromePath = (string) $this->request->getBodyParam('settings[chromePath]', $settings->chromePath);
             $settings->chromeWsEndpoint = (string) $this->request->getBodyParam('settings[chromeWsEndpoint]', $settings->chromeWsEndpoint);
             $settings->chromeNoSandbox = (bool)   $this->request->getBodyParam('settings[chromeNoSandbox]', $settings->chromeNoSandbox);
@@ -573,9 +573,9 @@ class SettingsController extends Controller
         $settings->scannerUserAgent = (string) $this->request->getBodyParam('settings[scannerUserAgent]', $settings->scannerUserAgent);
         $settings->excludedSelectors = (string) $this->request->getBodyParam('settings[excludedSelectors]', $settings->excludedSelectors);
         $settings->en301549 = (bool)   $this->request->getBodyParam('settings[en301549]',        $settings->en301549);
-        // Standard or higher, and not rendered on Lite, so the stored value
+        // Plus or higher, and not rendered on Lite, so the stored value
         // stands there rather than being read as off.
-        if ($plugin->isStandard()) {
+        if ($plugin->isPlus()) {
             $settings->readabilityPreviewTarget = (bool)$this->request->getBodyParam('settings[readabilityPreviewTarget]', $settings->readabilityPreviewTarget);
             $settings->readabilityTarget = (string)$this->request->getBodyParam('settings[readabilityTarget]', $settings->readabilityTarget);
         }

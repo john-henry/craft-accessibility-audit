@@ -47,7 +47,7 @@ class m261121_000000_announce_editions extends Migration
             heading: Translation::prep('accessibility-audit', 'Editions, PDF checks and reports'),
             body: Translation::prep(
                 'accessibility-audit',
-                'Accessibility Audit now comes in Lite, Standard and Pro, and this site keeps the edition it is on. Standard and Pro check the PDFs in your asset library, draft alt text for images missing it, and give you fix guides to hand to a developer. Pro adds a Reports screen, with a directors summary you can email every week or month. [Read the release notes]({url}).',
+                'Accessibility Audit now comes in Lite, Plus and Pro, and this site keeps the edition it is on. Plus and Pro check the PDFs in your asset library, draft alt text for images missing it, and give you fix guides to hand to a developer. Pro adds a Reports screen, with a directors summary you can email every week or month. [Read the release notes]({url}).',
                 ['url' => self::RELEASE_NOTES_URL],
             ),
             pluginHandle: 'accessibility-audit',

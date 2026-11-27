@@ -201,7 +201,7 @@ class SettingsModel extends Model
     public int $browserSettleMs = 2000;
 
     /**
-     * @var bool Whether PDF assets are checked for accessibility. Standard
+     * @var bool Whether PDF assets are checked for accessibility. Plus
      * and Pro only: on Lite nothing is checked whatever this says.
      */
     public bool $pdfChecks = true;

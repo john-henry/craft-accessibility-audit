@@ -6,18 +6,18 @@
 {% set crumbs = [] %}
 
 
-{% set fullPageForm = (isStandard ?? false) and not (readOnly ?? false) %}
+{% set fullPageForm = (isPlus ?? false) and not (readOnly ?? false) %}
 
 {% block blockContent %}
     {% if readOnly %}<fieldset class="accessibility-audit-readonly" disabled>{% endif %}
  
 
-    {% if not (isStandard ?? false) %}
+    {% if not (isPlus ?? false) %}
         {% include 'accessibility-audit/_includes/pro-upsell' with {
             feature: 'Notifications'|t('accessibility-audit'),
             headline: 'Never ship an accessibility regression again'|t('accessibility-audit'),
-            description: 'Standard watches every scan for you and alerts your team the moment something breaks. Plus everything else in Standard:'|t('accessibility-audit'),
-            edition: 'standard',
+            description: 'Plus watches every scan for you and alerts your team the moment something breaks. It comes with everything else in Plus:'|t('accessibility-audit'),
+            edition: 'plus',
             checklist: [
                 'Email & Slack alerts'|t('accessibility-audit'),
                 'AI alt text'|t('accessibility-audit'),

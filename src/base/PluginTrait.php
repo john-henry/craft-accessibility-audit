@@ -324,7 +324,7 @@ trait PluginTrait
     {
         return [
             self::EDITION_LITE,
-            self::EDITION_STANDARD,
+            self::EDITION_PLUS,
             self::EDITION_PRO,
         ];
     }
@@ -721,7 +721,7 @@ trait PluginTrait
      * Craft. Registered on every request, console included: the stdio server
      * runs as a console command.
      *
-     * The tools are only offered from Standard up. They are checked on the
+     * The tools are only offered from Plus up. They are checked on the
      * way in, because one tool that fails to load takes the whole MCP server
      * down with it, every other plugin's tools and Craft's own included.
      *
@@ -738,7 +738,7 @@ trait PluginTrait
 
         Event::on(Mcp::class, Mcp::EVENT_REGISTER_CAPABILITY_TYPES,
             static function(RegisterComponentTypesEvent $e): void {
-                if (!AccessibilityAudit::getInstance()->isStandard()) {
+                if (!AccessibilityAudit::getInstance()->isPlus()) {
                     return;
                 }
 
@@ -955,7 +955,7 @@ trait PluginTrait
 
     /**
      * Adds a Readability view to the Preview menu of every element the scanner
-     * covers, on Standard or Pro with the setting on.
+     * covers, on Plus or Pro with the setting on.
      *
      * The target is an action URL on the Craft host rather than a site URL, so
      * it still opens where a site's front end is served by something else.
@@ -971,7 +971,7 @@ trait PluginTrait
                 $element = $event->sender;
                 $plugin = self::$plugin;
 
-                if (!$element->id || !$plugin->isStandard() || !$plugin->getSettings()->readabilityPreviewTarget) {
+                if (!$element->id || !$plugin->isPlus() || !$plugin->getSettings()->readabilityPreviewTarget) {
                     return;
                 }
 
@@ -1073,7 +1073,7 @@ trait PluginTrait
             }
             unset($issue);
             $hasApiKey = $plugin->canGenerateAltText();
-            $readabilityAvailable = $plugin->isStandard();
+            $readabilityAvailable = $plugin->isPlus();
 
             $readabilityResult = null;
             if ($readabilityAvailable) {
@@ -1265,7 +1265,7 @@ trait PluginTrait
      * waits for the next full sweep to reflect a fix. An image saved with alt
      * text, by whatever route, drops any AI draft waiting for it, since the
      * draft no longer has anything to fill. A PDF that is new, or whose file
-     * was replaced, has a check queued (Standard and Pro).
+     * was replaced, has a check queued (Plus and Pro).
      *
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
@@ -1386,7 +1386,7 @@ trait PluginTrait
                     // Queued rather than run here: this event fires inside the
                     // save's transaction, and the job covers every site the
                     // element is on, not only the one being saved.
-                    if (self::$plugin->isStandard()) {
+                    if (self::$plugin->isPlus()) {
                         Craft::$app->getQueue()->push(new RecordReadability([
                             'elementId' => (int)$element->id,
                             'siteId' => (int)$element->siteId,

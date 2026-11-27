@@ -30,7 +30,7 @@
                 </span>
             {% else %}
                 {% set currentEdition = craft.a11y.editionName(edition) %}
-                {% set nextEdition = craft.a11y.editionName(edition == 'lite' ? 'standard' : 'pro') %}
+                {% set nextEdition = craft.a11y.editionName(edition == 'lite' ? 'plus' : 'pro') %}
                 <a href="{{ cpUrl('plugin-store/accessibility-audit') }}"
                    class="accessibility-audit-standard--outlined"
                    title="{{ 'Upgrade to {edition}'|t('accessibility-audit', { edition: nextEdition }) }}">
@@ -50,14 +50,14 @@
         {% set overLimit = scannedElementCount >= scanLimit %}
         <a href="{{ cpUrl('plugin-store/accessibility-audit') }}"
            class="accessibility-audit-usage-badge{% if overLimit %} accessibility-audit-usage-badge--full{% endif %}"
-           title="{{ 'The Lite edition scans up to {n} pages. Upgrade to Standard for unlimited scanning.'|t('accessibility-audit', {n: scanLimit}) }}">
+           title="{{ 'The Lite edition scans up to {n} pages. Upgrade to Plus for unlimited scanning.'|t('accessibility-audit', {n: scanLimit}) }}">
             {% if isMultiSite %}
                 {{ '{used}/{limit} pages scanned across all sites'|t('accessibility-audit', {used: scannedElementCount, limit: scanLimit}) }}
             {% else %}
                 {{ '{used}/{limit} pages scanned'|t('accessibility-audit', {used: scannedElementCount, limit: scanLimit}) }}
             {% endif %}
             <span class="accessibility-audit-usage-badge__pro" aria-hidden="true">{{ 'Upgrade'|t('accessibility-audit') }}</span>
-            <span class="visually-hidden">{{ 'Upgrade to {edition}'|t('accessibility-audit', { edition: craft.a11y.editionName('standard') }) }}</span>
+            <span class="visually-hidden">{{ 'Upgrade to {edition}'|t('accessibility-audit', { edition: craft.a11y.editionName('plus') }) }}</span>
         </a>
     {% endif %}
     <button class="btn submit" data-accessibility-audit-scan-all data-site-id="{{ siteId }}">

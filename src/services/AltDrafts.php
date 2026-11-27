@@ -360,7 +360,7 @@ class AltDrafts extends Component
         // A draft costs nothing to show, so it appears with or without an API
         // key, though not on Lite, which has no review queue.
         $draft = null;
-        if (!$isDecorative && $plugin->isStandard()) {
+        if (!$isDecorative && $plugin->isPlus()) {
             $ready = $this->getReady((int)$asset->id);
             $draft = $ready !== null ? $this->suggestion($ready) : null;
         }

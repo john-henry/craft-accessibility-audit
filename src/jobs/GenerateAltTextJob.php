@@ -63,7 +63,7 @@ class GenerateAltTextJob extends BaseJob
         $apiKey = trim((string)App::parseEnv($plugin->getSettings()->anthropicApiKey));
 
         if (!$plugin->canGenerateAltText()) {
-            Craft::warning('A11y: GenerateAltTextJob skipped, AI alt text needs the Standard edition and an API key.', 'accessibility-audit');
+            Craft::warning('A11y: GenerateAltTextJob skipped, AI alt text needs the Plus edition and an API key.', 'accessibility-audit');
             return;
         }
 

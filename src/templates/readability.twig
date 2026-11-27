@@ -20,7 +20,7 @@
 
 {% block details %}
 
-    {% if isStandard %}
+    {% if isPlus %}
 <fieldset>
     <legend class="h6">{{ 'WCAG 3.1.5'|t('accessibility-audit') }}</legend>
     <div class="meta accessibility-audit-ref">
@@ -57,7 +57,7 @@
 {% endblock %}
 
 {% block actionButton %}
-    {% if isStandard and canRunScans and supportsSite %}
+    {% if isPlus and canRunScans and supportsSite %}
         <button type="button" id="accessibility-audit-rl-analyse-all" class="btn submit"
                 data-action-url="{{ actionUrl('accessibility-audit/readability/analyse-all') }}"
                 data-site-id="{{ siteId }}">
@@ -67,12 +67,12 @@
 {% endblock %}
 
 {% block content %}
-{% if not isStandard %}
+{% if not isPlus %}
     {% include 'accessibility-audit/_includes/pro-upsell' with {
         feature: 'Readability'|t('accessibility-audit'),
         headline: 'Write content everyone can actually read'|t('accessibility-audit'),
-        description: 'Standard scores the reading ease and grade level of any page or entry against WCAG 3.1.5, tracks it over time, and suggests AI-assisted rewrites. Plus everything else in Standard:'|t('accessibility-audit'),
-        edition: 'standard',
+        description: 'Plus scores the reading ease and grade level of any page or entry against WCAG 3.1.5, tracks it over time, and suggests AI-assisted rewrites. It comes with everything else in Plus:'|t('accessibility-audit'),
+        edition: 'plus',
         checklist: [
             'Readability analysis'|t('accessibility-audit'),
             'AI alt text'|t('accessibility-audit'),

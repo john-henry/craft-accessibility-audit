@@ -108,8 +108,8 @@
         {% if not readabilityAvailable %}
             {% include 'accessibility-audit/_includes/pro-upsell' with {
                 feature: 'Readability'|t('accessibility-audit'),
-                text: 'Check this entry\'s reading ease and grade level against WCAG 3.1.5 on the Standard edition.'|t('accessibility-audit'),
-                edition: 'standard',
+                text: 'Check this entry\'s reading ease and grade level against WCAG 3.1.5 on the Plus edition.'|t('accessibility-audit'),
+                edition: 'plus',
                 inline: true,
             } only %}
         {% elseif not (readabilitySupported ?? true) %}

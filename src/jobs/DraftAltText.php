@@ -151,7 +151,7 @@ class DraftAltText extends BaseBatchedJob implements RetryableJobInterface
     public function execute($queue): void
     {
         if (!AccessibilityAudit::getInstance()->canGenerateAltText()) {
-            Craft::warning('A11y: alt text drafting stopped, AI alt text needs the Standard edition and an API key.', 'accessibility-audit');
+            Craft::warning('A11y: alt text drafting stopped, AI alt text needs the Plus edition and an API key.', 'accessibility-audit');
             self::_release();
 
             return;

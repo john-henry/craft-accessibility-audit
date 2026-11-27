@@ -263,7 +263,7 @@
           // install, so on multi-site installs the refusal says so rather than
           // reading as an arbitrary per-site limit.
           const scope = (window.AccessibilityAudit && window.AccessibilityAudit.isMultiSite) ? ' across all sites' : '';
-          const msg = `Scan limit reached (${limit} pages${scope}). Upgrade to Standard for unlimited scanning.`;
+          const msg = `Scan limit reached (${limit} pages${scope}). Upgrade to Plus for unlimited scanning.`;
           if (window.Craft && Craft.cp) Craft.cp.displayError(msg);
           setText(Craft.t('accessibility-audit', 'Limit reached'));
           return;

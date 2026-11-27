@@ -41,7 +41,7 @@
     
     
 
-    {% if isStandard ?? false %}
+    {% if isPlus ?? false %}
     {{ forms.autosuggestField({
         label: 'Anthropic API Key'|t('accessibility-audit'),
         instructions: 'Used to generate alt text suggestions with Claude (Haiku). Get a key at platform.claude.com. You can also reference an environment variable: type $ to see suggestions.'|t('accessibility-audit'),
@@ -126,8 +126,8 @@
     {% else %}
         {% include 'accessibility-audit/_includes/pro-upsell' with {
             feature: 'AI alt text'|t('accessibility-audit'),
-            text: 'Draft alt text for your images with Claude, one at a time or the whole missing-alt list in one go, with every draft kept for review. Available on the Standard edition.'|t('accessibility-audit'),
-            edition: 'standard',
+            text: 'Draft alt text for your images with Claude, one at a time or the whole missing-alt list in one go, with every draft kept for review. Available on the Plus edition.'|t('accessibility-audit'),
+            edition: 'plus',
             headingLevel: 4,
         } only %}
     {% endif %}

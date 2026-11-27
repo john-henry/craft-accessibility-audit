@@ -95,7 +95,7 @@ class AltController extends Controller
         $this->requireAcceptsJson();
         $this->requirePermission('accessibility-audit:run-scans');
 
-        if (($refusal = $this->requireStandardJson('AI alt text')) !== null) {
+        if (($refusal = $this->requirePlusJson('AI alt text')) !== null) {
             return $refusal;
         }
 
@@ -193,8 +193,8 @@ class AltController extends Controller
 
         $plugin = AccessibilityAudit::getInstance();
 
-        if (!$plugin->isStandard()) {
-            return $this->_queueResponse(false, $this->editionRequiredMessage('AI alt text', AccessibilityAudit::EDITION_STANDARD));
+        if (!$plugin->isPlus()) {
+            return $this->_queueResponse(false, $this->editionRequiredMessage('AI alt text', AccessibilityAudit::EDITION_PLUS));
         }
 
         if (trim((string)App::parseEnv($plugin->getSettings()->anthropicApiKey)) === '') {
@@ -287,7 +287,7 @@ class AltController extends Controller
         $assets = $plugin->getAssets();
         $drafts = $plugin->getAltDrafts();
         // The review queue is part of AI alt text, so Lite shows no draft.
-        $draft = $plugin->isStandard() ? $drafts->getReady((int)$asset->id) : null;
+        $draft = $plugin->isPlus() ? $drafts->getReady((int)$asset->id) : null;
 
         return $this->asCpScreen()
             ->title($asset->getUiLabel())
@@ -501,7 +501,7 @@ class AltController extends Controller
         $this->requireAcceptsJson();
         $this->requirePermission('accessibility-audit:run-scans');
 
-        if (($refusal = $this->requireStandardJson('AI alt text')) !== null) {
+        if (($refusal = $this->requirePlusJson('AI alt text')) !== null) {
             return $refusal;
         }
 

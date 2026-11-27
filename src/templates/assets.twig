@@ -2,7 +2,7 @@
 
 {% set title = 'Asset Accessibility'|t('accessibility-audit') %}
 {% set selectedSubnavItem = 'assets' %}
-{% set isStandard = isStandard ?? false %}
+{% set isPlus = isPlus ?? false %}
 {% set pdfEnabled = pdfEnabled ?? false %}
 {% set pdfView = pdfView ?? false %}
 {% set pdfStats = pdfStats ?? null %}
@@ -56,7 +56,7 @@
 {% set siteParam = craft.app.request.getQueryParam('site') %}
 {% set allCount = storedStats ? storedStats.withIssues : (activeFilter in ['decorative', 'drafts'] ? 0 : assetIssues|length) %}
 {% set filterBase = { site: siteParam, volume: currentVolume, search: currentSearch }|filter(v => v) %}
-{% set pdfSourcesOn = isStandard and pdfEnabled and pdfStats %}
+{% set pdfSourcesOn = isPlus and pdfEnabled and pdfStats %}
 
 {% block actionButton %}
 <div class="flex gap-s">
@@ -216,7 +216,7 @@
 
 {% block footer %}
     {% if pdfView %}
-        {% if isStandard and pdfEnabled and pdfStats %}
+        {% if isPlus and pdfEnabled and pdfStats %}
             {% import 'accessibility-audit/_macros' as macros %}
             <div class="flex">
                 <span class="accessibility-audit-meta">
@@ -273,12 +273,12 @@
 {% endblock %}
 
 {% block content %}
-    {% if not isStandard and not pdfView %}
+    {% if not isPlus and not pdfView %}
         <div class="mb-l">
             {% include 'accessibility-audit/_includes/pro-upsell' with {
                 feature: 'AI alt text'|t('accessibility-audit'),
-                text: 'Draft alt text for your images with Claude, one at a time or the whole missing-alt list in one go, with every draft kept for review. Available on the Standard edition.'|t('accessibility-audit'),
-                edition: 'standard',
+                text: 'Draft alt text for your images with Claude, one at a time or the whole missing-alt list in one go, with every draft kept for review. Available on the Plus edition.'|t('accessibility-audit'),
+                edition: 'plus',
                 inline: true,
             } only %}
         </div>
@@ -406,7 +406,7 @@
 
     {% if pdfView %}
         {% include 'accessibility-audit/_assets/pdfs' with {
-            isStandard: isStandard,
+            isPlus: isPlus,
             pdfEnabled: pdfEnabled,
             pdfStats: pdfStats,
             pdfStatus: pdfStatus,
